@@ -1,0 +1,2 @@
+# aws-c-auth
+C99 library implementation of AWS client-side authentication: standard credentials providers and signing.
