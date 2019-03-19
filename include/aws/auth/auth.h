@@ -52,5 +52,4 @@ void aws_auth_load_log_subject_strings(void);
 
 AWS_EXTERN_C_END
 
-
 #endif /* AWS_AUTH_AUTH_H */
