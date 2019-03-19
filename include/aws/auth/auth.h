@@ -35,9 +35,7 @@ enum aws_auth_log_subject {
     AWS_LS_AUTH_LAST = (AWS_LS_AUTH_GENERAL + AWS_LOG_SUBJECT_SPACE_SIZE - 1)
 };
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+AWS_EXTERN_C_BEGIN
 
 /**
  * Loads error strings for this library so that aws_last_error_str etc... will
@@ -52,8 +50,7 @@ void aws_auth_load_error_strings(void);
 AWS_AUTH_API
 void aws_auth_load_log_subject_strings(void);
 
-#ifdef __cplusplus
-}
-#endif
+AWS_EXTERN_C_END
+
 
 #endif /* AWS_AUTH_AUTH_H */
