@@ -33,6 +33,8 @@ if [ "$TRAVIS_OS_NAME" != "osx" ]; then
 fi
 install_library aws-c-common
 install_library aws-c-io
+install_library aws-c-cal
+install_library aws-c-http
 
 mkdir -p build
 pushd build
