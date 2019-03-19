@@ -21,18 +21,18 @@
 #include <aws/io/logging.h>
 
 enum aws_auth_errors {
-    AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR = 0x1800,
-    AWS_AUTH_PROFILE_PARSE_FATAL_ERROR,
+  AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR = 0x1800,
+  AWS_AUTH_PROFILE_PARSE_FATAL_ERROR,
 
-    AWS_AUTH_ERROR_END_RANGE = 0x1BFF
+  AWS_AUTH_ERROR_END_RANGE = 0x1BFF
 };
 
 enum aws_auth_log_subject {
-    AWS_LS_AUTH_GENERAL = 0x1800,
-    AWS_LS_AUTH_PROFILE,
-    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+  AWS_LS_AUTH_GENERAL = 0x1800,
+  AWS_LS_AUTH_PROFILE,
+  AWS_LS_AUTH_CREDENTIALS_PROVIDER,
 
-    AWS_LS_AUTH_LAST = (AWS_LS_AUTH_GENERAL + AWS_LOG_SUBJECT_SPACE_SIZE - 1)
+  AWS_LS_AUTH_LAST = (AWS_LS_AUTH_GENERAL + AWS_LOG_SUBJECT_SPACE_SIZE - 1)
 };
 
 #ifdef __cplusplus
@@ -40,7 +40,8 @@ extern "C" {
 #endif
 
 /**
- * Loads error strings for this library so that aws_last_error_str etc... will return useful debug strings.
+ * Loads error strings for this library so that aws_last_error_str etc... will
+ * return useful debug strings.
  */
 AWS_AUTH_API
 void aws_auth_load_error_strings(void);

@@ -17,57 +17,62 @@
 
 #include <aws/common/string.h>
 
+struct aws_credentials *
+aws_credentials_new(struct aws_allocator *allocator,
+                    const struct aws_string *access_key_id,
+                    const struct aws_string *secret_access_key,
+                    const struct aws_string *session_token) {
 
-struct aws_credentials *aws_credentials_new(
-    struct aws_allocator *allocator,
-    const struct aws_string *access_key_id,
-    const struct aws_string *secret_access_key,
-    const struct aws_string *session_token) {
+  struct aws_credentials *credentials =
+      (struct aws_credentials *)(aws_mem_acquire(
+          allocator, sizeof(struct aws_credentials)));
+  if (credentials == NULL) {
+    return NULL;
+  }
 
-    struct aws_credentials *credentials = (struct aws_credentials *)(aws_mem_acquire(allocator, sizeof(struct aws_credentials)));
-    if (credentials == NULL) {
-        return NULL;
-    }
+  AWS_ZERO_STRUCT(*credentials);
 
-    AWS_ZERO_STRUCT(*credentials);
+  credentials->allocator = allocator;
 
-    credentials->allocator = allocator;
+  if (access_key_id != NULL) {
+    credentials->access_key_id =
+        aws_string_new_from_string(allocator, access_key_id);
+  }
 
-    if (access_key_id != NULL) {
-        credentials->access_key_id = aws_string_new_from_string(allocator, access_key_id);
-    }
+  if (secret_access_key != NULL) {
+    credentials->secret_access_key =
+        aws_string_new_from_string(allocator, secret_access_key);
+  }
 
-    if (secret_access_key != NULL) {
-        credentials->secret_access_key = aws_string_new_from_string(allocator, secret_access_key);
-    }
+  if (session_token != NULL) {
+    credentials->session_token =
+        aws_string_new_from_string(allocator, session_token);
+  }
 
-    if (session_token != NULL) {
-        credentials->session_token = aws_string_new_from_string(allocator, session_token);
-    }
-
-    return credentials;
+  return credentials;
 }
 
-struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials)
-{
-    return aws_credentials_new(
-        allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
+struct aws_credentials *
+aws_credentials_new_copy(struct aws_allocator *allocator,
+                         struct aws_credentials *credentials) {
+  return aws_credentials_new(allocator, credentials->access_key_id,
+                             credentials->secret_access_key,
+                             credentials->session_token);
 }
 
-void aws_credentials_destroy(struct aws_credentials* credentials) {
+void aws_credentials_destroy(struct aws_credentials *credentials) {
 
-    if (credentials->access_key_id != NULL) {
-        aws_string_destroy(credentials->access_key_id);
-    }
+  if (credentials->access_key_id != NULL) {
+    aws_string_destroy(credentials->access_key_id);
+  }
 
-    if (credentials->secret_access_key != NULL) {
-        aws_string_destroy(credentials->secret_access_key);
-    }
+  if (credentials->secret_access_key != NULL) {
+    aws_string_destroy(credentials->secret_access_key);
+  }
 
-    if (credentials->session_token != NULL) {
-        aws_string_destroy(credentials->session_token);
-    }
+  if (credentials->session_token != NULL) {
+    aws_string_destroy(credentials->session_token);
+  }
 
-    aws_mem_release(credentials->allocator, credentials);
+  aws_mem_release(credentials->allocator, credentials);
 }
-

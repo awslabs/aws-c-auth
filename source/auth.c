@@ -16,7 +16,8 @@
 
 #include <aws/common/error.h>
 
-#define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
+#define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR)                                  \
+  AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
 
 /* clang-format off */
 static struct aws_error_info s_errors[] = {
@@ -37,28 +38,33 @@ static struct aws_error_info_list s_error_list = {
 static bool s_error_strings_loaded = false;
 
 void aws_auth_load_error_strings(void) {
-    if (!s_error_strings_loaded) {
-        s_error_strings_loaded = true;
-        aws_register_error_info(&s_error_list);
-    }
+  if (!s_error_strings_loaded) {
+    s_error_strings_loaded = true;
+    aws_register_error_info(&s_error_list);
+  }
 }
 
 static struct aws_log_subject_info s_auth_log_subject_infos[] = {
-    DEFINE_LOG_SUBJECT_INFO(AWS_LS_AUTH_GENERAL, "AuthGeneral", "Subject for aws-c-auth logging that defies categorization."),
-    DEFINE_LOG_SUBJECT_INFO(AWS_LS_AUTH_PROFILE, "AuthProfile", "Subject for config profile related logging."),
-    DEFINE_LOG_SUBJECT_INFO(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "AuthCredentialsProvider", "Subject for credentials provider related logging."),
+    DEFINE_LOG_SUBJECT_INFO(
+        AWS_LS_AUTH_GENERAL, "AuthGeneral",
+        "Subject for aws-c-auth logging that defies categorization."),
+    DEFINE_LOG_SUBJECT_INFO(AWS_LS_AUTH_PROFILE, "AuthProfile",
+                            "Subject for config profile related logging."),
+    DEFINE_LOG_SUBJECT_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "AuthCredentialsProvider",
+        "Subject for credentials provider related logging."),
 };
 
 static struct aws_log_subject_info_list s_auth_log_subject_list = {
-        .subject_list = s_auth_log_subject_infos,
-        .count = AWS_ARRAY_SIZE(s_auth_log_subject_infos),
+    .subject_list = s_auth_log_subject_infos,
+    .count = AWS_ARRAY_SIZE(s_auth_log_subject_infos),
 };
 
 static bool s_log_subject_strings_loaded = false;
 
 void aws_auth_load_log_subject_strings(void) {
-    if (!s_log_subject_strings_loaded) {
-        s_log_subject_strings_loaded = true;
-        aws_register_log_subject_info_list(&s_auth_log_subject_list);
-    }
+  if (!s_log_subject_strings_loaded) {
+    s_log_subject_strings_loaded = true;
+    aws_register_log_subject_info_list(&s_auth_log_subject_list);
+  }
 }
