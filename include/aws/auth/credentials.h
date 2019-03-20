@@ -33,17 +33,17 @@ struct aws_credentials {
 
 struct aws_credentials_provider;
 
-typedef void(on_aws_get_credentials_callback_fn)(struct aws_credentials *credentials, void *user_data);
+typedef void(aws_on_get_credentials_callback_fn)(struct aws_credentials *credentials, void *user_data);
 
-typedef int(get_credentials_async_fn)(
+typedef int(aws_credentials_provider_get_credentials_fn)(
     struct aws_credentials_provider *provider,
-    on_aws_get_credentials_callback_fn callback,
+    aws_on_get_credentials_callback_fn callback,
     void *user_data);
-typedef void(aws_credentials_provider_cleanup_fn)(struct aws_credentials_provider *provider);
+typedef void(aws_credentials_provider_clean_up_fn)(struct aws_credentials_provider *provider);
 
 struct aws_credentials_provider_vtable {
-    get_credentials_async_fn *get_credentials_async;
-    aws_credentials_provider_cleanup_fn *cleanup;
+    aws_credentials_provider_get_credentials_fn *get_credentials;
+    aws_credentials_provider_clean_up_fn *clean_up;
 };
 
 struct aws_credentials_provider {
@@ -54,7 +54,7 @@ struct aws_credentials_provider {
 
 struct aws_credentials_query {
     struct aws_credentials_provider *provider;
-    on_aws_get_credentials_callback_fn *callback;
+    aws_on_get_credentials_callback_fn *callback;
     void *user_data;
 };
 
@@ -71,7 +71,8 @@ struct aws_credentials_provider_cached_options {
 };
 
 struct aws_credentials_provider_chain_options {
-    struct aws_array_list providers;
+    struct aws_credentials_provider **providers;
+    size_t provider_count;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -80,9 +81,6 @@ AWS_EXTERN_C_BEGIN
  * Credentials APIs
  */
 
-/*
- * Does this need to be externally visible?
- */
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
@@ -99,17 +97,22 @@ void aws_credentials_destroy(struct aws_credentials *credentials);
 /*
  * Credentials provider APIs
  */
+
 AWS_AUTH_API
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider);
 
 AWS_AUTH_API
-int aws_credentials_provider_get_credentials_async(
+int aws_credentials_provider_get_credentials(
     struct aws_credentials_provider *provider,
-    on_aws_get_credentials_callback_fn callback,
+    aws_on_get_credentials_callback_fn callback,
     void *user_data);
 
 /*
  * Credentials provider variant creation
+ */
+
+/*
+ * A simple provider that just returns a fixed set of credentials
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_static_new(
@@ -118,26 +121,62 @@ struct aws_credentials_provider *aws_credentials_provider_static_new(
     const struct aws_string *secret_access_key,
     const struct aws_string *session_token);
 
+/*
+ * A provider that returns credentials sourced from the environment variables:
+ *
+ * AWS_ACCESS_KEY_ID
+ * AWS_SECRET_ACCESS_KEY
+ * AWS_SESSION_TOKEN
+ */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_environment_new(struct aws_allocator *allocator);
+struct aws_credentials_provider *aws_credentials_provider_new_environment(struct aws_allocator *allocator);
 
+/*
+ * A provider that functions as a caching decorating of another provider.
+ *
+ * For example, the default chain is implemented as:
+ *
+ * CachedProvider -> ProviderChain(EnvironmentProvider -> ProfileProvider -> ECS/EC2IMD etc...)
+ */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_cached_new(
+struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_cached_options *options);
 
+/*
+ * A provider that sources credentials from key-value profiles loaded from the aws credentials
+ * file ("~/.aws/credentials" by default) and the aws config file ("~/.aws/config" by
+ * default)
+ */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_profile_new(
+struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_profile_options *options);
 
+/*
+ * A provider that sources credentials from an ordered sequence of providers, with the overall result
+ * being from the first provider to return a valid set of credentials
+ */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_chain_new(
+struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_chain_options *options);
 
+/*
+ * Creates the default provider chain used by most AWS SDKs.
+ *
+ * Generally:
+ *
+ * (1) Environment
+ * (2) Profile
+ * (3) (conditional, off by default) ECS
+ * (4) (conditional, on by default) EC2 Instance Metadata
+ *
+ * Support for environmental control of the default provider chain is not yet
+ * implemented.
+ */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_chain_default_new(struct aws_allocator *allocator);
+struct aws_credentials_provider *aws_credentials_provider_new_chain_default(struct aws_allocator *allocator);
 
 AWS_EXTERN_C_END
 

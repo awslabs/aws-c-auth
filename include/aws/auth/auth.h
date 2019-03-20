@@ -35,11 +35,12 @@ enum aws_auth_log_subject {
     AWS_LS_AUTH_LAST = (AWS_LS_AUTH_GENERAL + AWS_LOG_SUBJECT_SPACE_SIZE - 1)
 };
 
-AWS_EXTERN_C_BEGIN
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
- * Loads error strings for this library so that aws_last_error_str etc... will
- * return useful debug strings.
+ * Loads error strings for this library so that aws_last_error_str etc... will return useful debug strings.
  */
 AWS_AUTH_API
 void aws_auth_load_error_strings(void);
@@ -50,6 +51,8 @@ void aws_auth_load_error_strings(void);
 AWS_AUTH_API
 void aws_auth_load_log_subject_strings(void);
 
-AWS_EXTERN_C_END
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* AWS_AUTH_AUTH_H */
