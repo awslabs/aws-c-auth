@@ -180,4 +180,4 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
 
 AWS_EXTERN_C_END
 
-#endif // AWS_AUTH_CREDENTIALS_PROVIDER_H
+#endif /* AWS_AUTH_CREDENTIALS_PROVIDER_H */
