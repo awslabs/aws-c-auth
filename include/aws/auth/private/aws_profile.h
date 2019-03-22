@@ -146,7 +146,7 @@ size_t aws_profile_get_property_count(const struct aws_profile *profile);
 AWS_AUTH_API
 const struct aws_string *aws_profile_property_get_sub_property(
     const struct aws_profile_property *property,
-    const struct aws_string *property_name);
+    const struct aws_string *sub_property_name);
 
 /**
  * Returns how many sub properties the property holds

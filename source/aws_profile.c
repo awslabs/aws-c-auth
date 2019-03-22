@@ -1094,14 +1094,18 @@ static void s_parse_and_apply_line_to_profile_collection(
 
     if (s_parse_profile_declaration(&line, context)) {
         return;
-    } else if (s_parse_property_continuation(&line, context)) {
-        return;
-    } else if (s_parse_property(&line, context)) {
-        return;
-    } else {
-        AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Unidentifiable line type encountered while parsing profile file");
-        context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
     }
+
+    if (s_parse_property_continuation(&line, context)) {
+        return;
+    }
+
+    if (s_parse_property(&line, context)) {
+        return;
+    }
+
+    AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Unidentifiable line type encountered while parsing profile file");
+    context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
 }
 
 struct aws_profile_collection *aws_profile_collection_new_from_file(
@@ -1363,9 +1367,6 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
         if (i == 0 && segment_cursor.len == 1 && *segment_cursor.ptr == '~') {
             if (home_directory == NULL) {
                 home_directory = s_get_home_directory(allocator);
-                if (home_directory == NULL) {
-                    goto on_home_directory_failure;
-                }
             }
 
             final_string_length += home_directory->len;
@@ -1397,6 +1398,9 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
          * See above for explanation
          */
         if (i == 0 && segment_cursor.len == 1 && *segment_cursor.ptr == '~') {
+            if (home_directory == NULL) {
+                goto on_home_directory_failure;
+            }
             struct aws_byte_cursor home_cursor = aws_byte_cursor_from_string(home_directory);
             if (aws_byte_buf_append(&result, &home_cursor)) {
                 goto on_byte_buf_write_failure;
@@ -1478,6 +1482,7 @@ struct aws_string *get_final_credentials_path(struct aws_allocator *allocator, c
 }
 
 struct aws_string *get_final_config_path(struct aws_allocator *allocator, const struct aws_string *override_name) {
+
     struct aws_string *raw_path =
         s_get_raw_file_path(allocator, override_name, s_config_file_path_env_variable_name, s_default_config_path);
 
