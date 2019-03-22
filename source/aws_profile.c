@@ -22,6 +22,9 @@
 #include <aws/io/file_utils.h>
 #include <aws/io/logging.h>
 
+#define PROPERTIES_TABLE_DEFAULT_SIZE 4
+#define PROFILE_TABLE_DEFAULT_SIZE 5
+
 /*
  * Character-based profile parse helper functions
  */
@@ -85,18 +88,18 @@ static bool s_is_carriage_return(uint8_t value) {
 /*
  * Line and string based parse helper functions
  */
-static bool s_is_comment_line(struct aws_byte_cursor *line_cursor) {
+static bool s_is_comment_line(const struct aws_byte_cursor *line_cursor) {
     char first_char = *line_cursor->ptr;
     return first_char == '#' || first_char == ';';
 }
 
-static bool s_is_whitespace_line(struct aws_byte_cursor *line_cursor) {
+static bool s_is_whitespace_line(const struct aws_byte_cursor *line_cursor) {
     return aws_byte_cursor_left_trim_pred(line_cursor, s_is_whitespace).len == 0;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_name, "default");
 
-static bool s_is_default_profile_name(struct aws_byte_cursor *profile_name) {
+static bool s_is_default_profile_name(const struct aws_byte_cursor *profile_name) {
     return aws_string_eq_byte_cursor(s_default_profile_name, profile_name);
 }
 
@@ -110,7 +113,7 @@ static bool s_is_default_profile_name(struct aws_byte_cursor *profile_name) {
  *
  * On success, start is updated to the new position.
  */
-bool parse_by_character_predicate(
+static bool s_parse_by_character_predicate(
     struct aws_byte_cursor *start,
     aws_byte_predicate_fn predicate,
     struct aws_byte_cursor *parsed,
@@ -151,7 +154,11 @@ bool parse_by_character_predicate(
  *
  * On success, start is updated to the new position.
  */
-bool parse_by_token(struct aws_byte_cursor *start, const struct aws_string *token, struct aws_byte_cursor *parsed) {
+static bool s_parse_by_token(
+    struct aws_byte_cursor *start,
+    const struct aws_string *token,
+    struct aws_byte_cursor *parsed) {
+
     bool matched = false;
 
     if (token->len <= start->len) {
@@ -176,8 +183,8 @@ bool parse_by_token(struct aws_byte_cursor *start, const struct aws_string *toke
 
 struct aws_profile_property *aws_profile_property_new(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor *name,
-    struct aws_byte_cursor *value) {
+    const struct aws_byte_cursor *name,
+    const struct aws_byte_cursor *value) {
 
     struct aws_profile_property *property =
         (struct aws_profile_property *)aws_mem_acquire(allocator, sizeof(struct aws_profile_property));
@@ -237,10 +244,7 @@ on_hash_table_init_failure:
 
 void aws_profile_property_destroy(struct aws_profile_property *property) {
     aws_string_destroy(property->name);
-
-    if (property->value) {
-        aws_string_destroy(property->value);
-    }
+    aws_string_destroy(property->value);
 
     aws_hash_table_clean_up(&property->sub_properties);
 
@@ -253,9 +257,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_newline, "\n");
  * Continuations are applied to the property value by concatenating the old value and the new value, with a '\n'
  * inbetween.
  */
-int aws_profile_property_add_continuation(
+static int s_aws_profile_property_add_continuation(
     struct aws_profile_property *property,
-    struct aws_byte_cursor *continuation_value) {
+    const struct aws_byte_cursor *continuation_value) {
 
     int result = AWS_OP_ERR;
     struct aws_byte_buf concatenation;
@@ -293,10 +297,10 @@ on_append_failure:
     return result;
 }
 
-int aws_profile_property_add_sub_property(
+static int s_aws_profile_property_add_sub_property(
     struct aws_profile_property *property,
-    struct aws_byte_cursor *key,
-    struct aws_byte_cursor *value) {
+    const struct aws_byte_cursor *key,
+    const struct aws_byte_cursor *value) {
 
     struct aws_string *key_string = aws_string_new_from_array(property->allocator, key->ptr, key->len);
     if (key_string == NULL) {
@@ -336,7 +340,7 @@ on_failure:
     return AWS_OP_ERR;
 }
 
-int aws_profile_property_merge(struct aws_profile_property *dest, struct aws_profile_property *source) {
+static int s_aws_profile_property_merge(struct aws_profile_property *dest, const struct aws_profile_property *source) {
 
     if (source == NULL) {
         return AWS_OP_SUCCESS;
@@ -364,7 +368,7 @@ int aws_profile_property_merge(struct aws_profile_property *dest, struct aws_pro
         dest->value = new_value;
     }
 
-    source->is_empty_valued = source->is_empty_valued;
+    dest->is_empty_valued = source->is_empty_valued;
 
     /*
      * Iterate sub properties, stomping on conflicts
@@ -406,15 +410,21 @@ void property_hash_table_value_destroy(void *value) {
     aws_profile_property_destroy((struct aws_profile_property *)value);
 }
 
-#define PROPERTIES_TABLE_DEFAULT_SIZE 4
-
 /*
  * aws_profile APIs
  */
 
+void aws_profile_destroy(struct aws_profile *profile) {
+    aws_string_destroy(profile->name);
+
+    aws_hash_table_clean_up(&profile->properties);
+
+    aws_mem_release(profile->allocator, profile);
+}
+
 struct aws_profile *aws_profile_new(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor *name,
+    const struct aws_byte_cursor *name,
     bool has_profile_prefix) {
 
     struct aws_profile *profile = (struct aws_profile *)aws_mem_acquire(allocator, sizeof(struct aws_profile));
@@ -447,21 +457,9 @@ struct aws_profile *aws_profile_new(
     return profile;
 
 cleanup:
-    if (profile->name) {
-        aws_string_destroy(profile->name);
-    }
-
-    aws_mem_release(allocator, profile);
+    aws_profile_destroy(profile);
 
     return NULL;
-}
-
-void aws_profile_destroy(struct aws_profile *profile) {
-    aws_string_destroy(profile->name);
-
-    aws_hash_table_clean_up(&profile->properties);
-
-    aws_mem_release(profile->allocator, profile);
 }
 
 /*
@@ -470,10 +468,10 @@ void aws_profile_destroy(struct aws_profile *profile) {
  * If a property already exists then the old one is removed and replaced by the
  * new one.
  */
-struct aws_profile_property *aws_profile_add_property(
+static struct aws_profile_property *s_aws_profile_add_property(
     struct aws_profile *profile,
-    struct aws_byte_cursor *key_cursor,
-    struct aws_byte_cursor *value_cursor) {
+    const struct aws_byte_cursor *key_cursor,
+    const struct aws_byte_cursor *value_cursor) {
 
     struct aws_string *property_name = aws_string_new_from_array(profile->allocator, key_cursor->ptr, key_cursor->len);
     if (property_name == NULL) {
@@ -484,8 +482,6 @@ struct aws_profile_property *aws_profile_add_property(
     if (property == NULL) {
         goto on_property_new_failure;
     }
-
-    aws_hash_table_remove(&profile->properties, property_name, NULL, NULL);
 
     if (aws_hash_table_put(&profile->properties, property_name, property, NULL)) {
         goto on_hash_table_put_failure;
@@ -503,7 +499,7 @@ on_property_new_failure:
 }
 
 struct aws_profile_property *aws_profile_get_property(
-    struct aws_profile *profile,
+    const struct aws_profile *profile,
     const struct aws_string *property_name) {
 
     struct aws_hash_element *element = NULL;
@@ -516,7 +512,7 @@ struct aws_profile_property *aws_profile_get_property(
     return element->value;
 }
 
-int aws_profile_merge(struct aws_profile *dest_profile, struct aws_profile *source_profile) {
+static int s_aws_profile_merge(struct aws_profile *dest_profile, const struct aws_profile *source_profile) {
 
     if (source_profile == NULL) {
         return AWS_OP_SUCCESS;
@@ -550,7 +546,7 @@ int aws_profile_merge(struct aws_profile *dest_profile, struct aws_profile *sour
             }
         }
 
-        if (aws_profile_property_merge(dest_property, source_property)) {
+        if (s_aws_profile_property_merge(dest_property, source_property)) {
             return AWS_OP_ERR;
         }
 
@@ -563,7 +559,7 @@ int aws_profile_merge(struct aws_profile *dest_profile, struct aws_profile *sour
 /*
  * Hash table destroy helper for profile collection's profiles member
  */
-void profile_hash_table_value_destroy(void *value) {
+static void s_profile_hash_table_value_destroy(void *value) {
     aws_profile_destroy((struct aws_profile *)value);
 }
 
@@ -578,7 +574,7 @@ void aws_profile_collection_destroy(struct aws_profile_collection *profile_colle
 }
 
 struct aws_profile *aws_profile_collection_get_profile(
-    struct aws_profile_collection *profile_collection,
+    const struct aws_profile_collection *profile_collection,
     const struct aws_string *profile_name) {
     struct aws_hash_element *element = NULL;
     aws_hash_table_find(&profile_collection->profiles, profile_name, &element);
@@ -590,9 +586,9 @@ struct aws_profile *aws_profile_collection_get_profile(
     return element->value;
 }
 
-struct aws_profile *aws_profile_collection_add_profile(
+static struct aws_profile *s_aws_profile_collection_add_profile(
     struct aws_profile_collection *profile_collection,
-    struct aws_byte_cursor *profile_name,
+    const struct aws_byte_cursor *profile_name,
     bool has_prefix) {
 
     struct aws_string *key =
@@ -610,7 +606,7 @@ struct aws_profile *aws_profile_collection_add_profile(
 
     aws_string_destroy(key);
 
-    if (profile_collection->profile_file_type == PST_CONFIG && s_is_default_profile_name(profile_name)) {
+    if (profile_collection->profile_source == PST_CONFIG && s_is_default_profile_name(profile_name)) {
         /*
          *  In a config file, "profile default" always supercedes "default"
          */
@@ -665,9 +661,10 @@ on_aws_profile_new_failure:
     return NULL;
 }
 
-int aws_profile_collection_merge(
+static int s_aws_profile_collection_merge(
     struct aws_profile_collection *dest_collection,
-    struct aws_profile_collection *source_collection) {
+    const struct aws_profile_collection *source_collection) {
+
     if (source_collection == NULL) {
         return AWS_OP_SUCCESS;
     }
@@ -699,7 +696,7 @@ int aws_profile_collection_merge(
             }
         }
 
-        if (aws_profile_merge(dest_profile, source_profile)) {
+        if (s_aws_profile_merge(dest_profile, source_profile)) {
             return AWS_OP_ERR;
         }
 
@@ -711,8 +708,8 @@ int aws_profile_collection_merge(
 
 struct aws_profile_collection *aws_profile_collection_new_from_merge(
     struct aws_allocator *allocator,
-    struct aws_profile_collection *config_profiles,
-    struct aws_profile_collection *credentials_profiles) {
+    const struct aws_profile_collection *config_profiles,
+    const struct aws_profile_collection *credentials_profiles) {
 
     struct aws_profile_collection *merged =
         (struct aws_profile_collection *)(aws_mem_acquire(allocator, sizeof(struct aws_profile_collection)));
@@ -731,7 +728,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_merge(
     }
 
     merged->allocator = allocator;
-    merged->profile_file_type = PST_NONE;
+    merged->profile_source = PST_NONE;
 
     if (aws_hash_table_init(
             &merged->profiles,
@@ -740,15 +737,15 @@ struct aws_profile_collection *aws_profile_collection_new_from_merge(
             aws_hash_string,
             aws_hash_callback_string_eq,
             aws_hash_callback_string_destroy,
-            profile_hash_table_value_destroy)) {
+            s_profile_hash_table_value_destroy)) {
         goto cleanup;
     }
 
-    if (aws_profile_collection_merge(merged, config_profiles)) {
+    if (s_aws_profile_collection_merge(merged, config_profiles)) {
         goto cleanup;
     }
 
-    if (aws_profile_collection_merge(merged, credentials_profiles)) {
+    if (s_aws_profile_collection_merge(merged, credentials_profiles)) {
         goto cleanup;
     }
 
@@ -775,11 +772,11 @@ cleanup:
  * a trailing comment is started by ';' or '#'
  * Only certain types of lines allow comments without prefixing whitespace
  */
-struct aws_byte_cursor trim_trailing_comment(struct aws_byte_cursor *line) {
+static struct aws_byte_cursor s_trim_trailing_comment(const struct aws_byte_cursor *line) {
 
     struct aws_byte_cursor line_copy = *line;
     struct aws_byte_cursor trimmed;
-    parse_by_character_predicate(&line_copy, s_is_not_comment_token, &trimmed, 0);
+    s_parse_by_character_predicate(&line_copy, s_is_not_comment_token, &trimmed, 0);
 
     return trimmed;
 }
@@ -788,7 +785,7 @@ struct aws_byte_cursor trim_trailing_comment(struct aws_byte_cursor *line) {
  * A trailing whitespace comment is started by " ;", " #", "\t;", or "\t#"
  * Certain types of lines require comments be whitespace-prefixed
  */
-struct aws_byte_cursor trim_trailing_whitespace_comment(struct aws_byte_cursor *line) {
+static struct aws_byte_cursor s_trim_trailing_whitespace_comment(const struct aws_byte_cursor *line) {
     struct aws_byte_cursor trimmed;
     trimmed.ptr = line->ptr;
 
@@ -828,18 +825,20 @@ AWS_STATIC_STRING_FROM_LITERAL(s_profile_token, "profile");
  *
  * Return false if this is not a profile declaration, true otherwise (stop parsing the line)
  */
-bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profile_file_parse_context *context) {
+static bool s_parse_profile_declaration(
+    const struct aws_byte_cursor *line_cursor,
+    struct profile_file_parse_context *context) {
 
     /*
      * Strip comment and right-side whitespace
      */
-    struct aws_byte_cursor profile_line_cursor = trim_trailing_comment(line_cursor);
+    struct aws_byte_cursor profile_line_cursor = s_trim_trailing_comment(line_cursor);
     struct aws_byte_cursor profile_cursor = aws_byte_cursor_right_trim_pred(&profile_line_cursor, s_is_whitespace);
 
     /*
      * "[" + <whitespace>? + <"profile ">? + <profile name = identifier> + <whitespace>? + "]"
      */
-    if (!parse_by_character_predicate(&profile_cursor, s_is_profile_start, NULL, 1)) {
+    if (!s_parse_by_character_predicate(&profile_cursor, s_is_profile_start, NULL, 1)) {
         /*
          * This isn't a profile declaration, try something else
          */
@@ -850,7 +849,7 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
     context->current_profile = NULL;
     context->current_property = NULL;
 
-    parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 0);
+    s_parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 0);
 
     /*
      * Check if the profile name starts with the 'profile' keyword.  We need to check for
@@ -858,11 +857,11 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
      * ("[profilefoo]" for example) should rewind and use the whole name properly.
      */
     struct aws_byte_cursor backtrack_cursor = profile_cursor;
-    bool has_profile_prefix = parse_by_token(&profile_cursor, s_profile_token, NULL) &&
-                              parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 1);
+    bool has_profile_prefix = s_parse_by_token(&profile_cursor, s_profile_token, NULL) &&
+                              s_parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 1);
 
     if (has_profile_prefix) {
-        if (context->profile_collection->profile_file_type == PST_CREDENTIALS) {
+        if (context->profile_collection->profile_source == PST_CREDENTIALS) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_PROFILE,
                 "Profile declarations in credentials files are not allowed to begin with the \"profile\" keyword");
@@ -870,19 +869,19 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
             return true;
         }
 
-        parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 0);
+        s_parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 0);
     } else {
         profile_cursor = backtrack_cursor;
     }
 
     struct aws_byte_cursor profile_name;
-    if (!parse_by_character_predicate(&profile_cursor, s_is_identifier, &profile_name, 0)) {
+    if (!s_parse_by_character_predicate(&profile_cursor, s_is_identifier, &profile_name, 0)) {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Profile declarations must contain a valid identifier for a name");
         context->parse_error = AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR;
         return true;
     }
 
-    if (context->profile_collection->profile_file_type == PST_CONFIG && !has_profile_prefix &&
+    if (context->profile_collection->profile_source == PST_CONFIG && !has_profile_prefix &&
         !s_is_default_profile_name(&profile_name)) {
         AWS_LOGF_WARN(
             AWS_LS_AUTH_PROFILE, "Non-default profile declarations in config files must use the \"profile\" keyword");
@@ -890,7 +889,7 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
         return true;
     }
 
-    parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 0);
+    s_parse_by_character_predicate(&profile_cursor, s_is_whitespace, NULL, 0);
 
     /*
      * Special case the right side bracket check.  We need to distinguish between a missing right bracket
@@ -901,7 +900,7 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
      * (empty invalid_chars cursor).
      */
     struct aws_byte_cursor invalid_chars;
-    parse_by_character_predicate(&profile_cursor, s_is_not_profile_end, &invalid_chars, 0);
+    s_parse_by_character_predicate(&profile_cursor, s_is_not_profile_end, &invalid_chars, 0);
     if (profile_cursor.len == 0) {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Profile declaration missing required ending bracket");
         context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
@@ -921,7 +920,7 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
      * Apply to the profile collection
      */
     context->current_profile =
-        aws_profile_collection_add_profile(context->profile_collection, &profile_name, has_profile_prefix);
+        s_aws_profile_collection_add_profile(context->profile_collection, &profile_name, has_profile_prefix);
     context->current_property = NULL;
 
     return true;
@@ -932,7 +931,9 @@ bool parse_profile_declaration(struct aws_byte_cursor *line_cursor, struct profi
  *
  * Return false if this is not a property continuation line, true otherwise (stop parsing the line)
  */
-bool parse_property_continuation(struct aws_byte_cursor *line_cursor, struct profile_file_parse_context *context) {
+static bool s_parse_property_continuation(
+    const struct aws_byte_cursor *line_cursor,
+    struct profile_file_parse_context *context) {
 
     /*
      * Strip right-side whitespace only.  Comments cannot be made on continuation lines.  They
@@ -943,7 +944,7 @@ bool parse_property_continuation(struct aws_byte_cursor *line_cursor, struct pro
     /*
      * Can't be a continuation without at least one whitespace on the left
      */
-    if (!parse_by_character_predicate(&continuation_cursor, s_is_whitespace, NULL, 0)) {
+    if (!s_parse_by_character_predicate(&continuation_cursor, s_is_whitespace, NULL, 0)) {
         return false;
     }
 
@@ -965,7 +966,7 @@ bool parse_property_continuation(struct aws_byte_cursor *line_cursor, struct pro
         return true;
     }
 
-    if (aws_profile_property_add_continuation(context->current_property, &continuation_cursor)) {
+    if (s_aws_profile_property_add_continuation(context->current_property, &continuation_cursor)) {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Property continuation could not be applied to the current property");
         context->parse_error = AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR;
         return true;
@@ -974,14 +975,14 @@ bool parse_property_continuation(struct aws_byte_cursor *line_cursor, struct pro
     if (context->current_property->is_empty_valued) {
 
         struct aws_byte_cursor key_cursor;
-        if (!parse_by_character_predicate(&continuation_cursor, s_is_not_assignment_operator, &key_cursor, 0)) {
+        if (!s_parse_by_character_predicate(&continuation_cursor, s_is_not_assignment_operator, &key_cursor, 0)) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_PROFILE, "Empty-valued property continuation must contain the assignment operator");
             context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
             return true;
         }
 
-        if (!parse_by_character_predicate(&continuation_cursor, s_is_assignment_operator, NULL, 1)) {
+        if (!s_parse_by_character_predicate(&continuation_cursor, s_is_assignment_operator, NULL, 1)) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_PROFILE, "Empty-valued property continuation must contain the assignment operator");
             context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
@@ -998,13 +999,13 @@ bool parse_property_continuation(struct aws_byte_cursor *line_cursor, struct pro
             return true;
         }
 
-        parse_by_character_predicate(&continuation_cursor, s_is_whitespace, NULL, 0);
+        s_parse_by_character_predicate(&continuation_cursor, s_is_whitespace, NULL, 0);
 
         /*
          * everything left in the continuation_cursor is the sub property value
          */
 
-        aws_profile_property_add_sub_property(context->current_property, &trimmed_key_cursor, &continuation_cursor);
+        s_aws_profile_property_add_sub_property(context->current_property, &trimmed_key_cursor, &continuation_cursor);
     }
 
     return true;
@@ -1015,18 +1016,18 @@ bool parse_property_continuation(struct aws_byte_cursor *line_cursor, struct pro
  *
  * Return false if this is not a property line, true otherwise (stop parsing the line)
  */
-bool parse_property(struct aws_byte_cursor *line_cursor, struct profile_file_parse_context *context) {
+static bool s_parse_property(const struct aws_byte_cursor *line_cursor, struct profile_file_parse_context *context) {
 
     /*
      * Strip whitespace-prefixed comment and right-side whitespace
      */
-    struct aws_byte_cursor property_line_cursor = trim_trailing_whitespace_comment(line_cursor);
+    struct aws_byte_cursor property_line_cursor = s_trim_trailing_whitespace_comment(line_cursor);
     struct aws_byte_cursor property_cursor = aws_byte_cursor_right_trim_pred(&property_line_cursor, s_is_whitespace);
 
     context->current_property = NULL;
 
     struct aws_byte_cursor key_cursor;
-    if (!parse_by_character_predicate(&property_cursor, s_is_not_assignment_operator, &key_cursor, 0)) {
+    if (!s_parse_by_character_predicate(&property_cursor, s_is_not_assignment_operator, &key_cursor, 0)) {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Property definition does not contain the assignment operator");
         context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
         return true;
@@ -1040,20 +1041,20 @@ bool parse_property(struct aws_byte_cursor *line_cursor, struct profile_file_par
         return true;
     }
 
-    if (!parse_by_character_predicate(&property_cursor, s_is_assignment_operator, NULL, 1)) {
+    if (!s_parse_by_character_predicate(&property_cursor, s_is_assignment_operator, NULL, 1)) {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Property definition does not contain the assignment operator");
         context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
         return true;
     }
 
-    parse_by_character_predicate(&property_cursor, s_is_whitespace, NULL, 0);
+    s_parse_by_character_predicate(&property_cursor, s_is_whitespace, NULL, 0);
 
     /*
      * If appropriate, apply to the profile collection, property_cursor contains the trimmed value, if one exists
      */
     if (context->current_profile != NULL) {
         context->current_property =
-            aws_profile_add_property(context->current_profile, &trimmed_key_cursor, &property_cursor);
+            s_aws_profile_add_property(context->current_profile, &trimmed_key_cursor, &property_cursor);
     } else {
         /*
          * By definition, if we haven't seen any profiles yet, this is a fatal error
@@ -1072,9 +1073,9 @@ bool parse_property(struct aws_byte_cursor *line_cursor, struct profile_file_par
 
 AWS_STATIC_STRING_FROM_LITERAL(s_none_string, "<None>");
 
-void parse_and_apply_line_to_profile_collection(
+static void s_parse_and_apply_line_to_profile_collection(
     struct profile_file_parse_context *context,
-    struct aws_byte_cursor *line_cursor) {
+    const struct aws_byte_cursor *line_cursor) {
 
     /*
      * Ignore line feed on windows
@@ -1091,19 +1092,17 @@ void parse_and_apply_line_to_profile_collection(
         context->current_profile ? context->current_profile->name->bytes : s_none_string->bytes,
         context->current_property ? context->current_property->name->bytes : s_none_string->bytes);
 
-    if (parse_profile_declaration(&line, context)) {
+    if (s_parse_profile_declaration(&line, context)) {
         return;
-    } else if (parse_property_continuation(&line, context)) {
+    } else if (s_parse_property_continuation(&line, context)) {
         return;
-    } else if (parse_property(&line, context)) {
+    } else if (s_parse_property(&line, context)) {
         return;
     } else {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Unidentifiable line type encountered while parsing profile file");
         context->parse_error = AWS_AUTH_PROFILE_PARSE_FATAL_ERROR;
     }
 }
-
-#define PROFILE_TABLE_DEFAULT_SIZE 5
 
 struct aws_profile_collection *aws_profile_collection_new_from_file(
     struct aws_allocator *allocator,
@@ -1130,7 +1129,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_file(
 
 struct aws_profile_collection *aws_profile_collection_new_from_buffer(
     struct aws_allocator *allocator,
-    struct aws_byte_buf *buffer,
+    const struct aws_byte_buf *buffer,
     enum aws_profile_source_type source) {
 
     struct aws_profile_collection *profile_collection =
@@ -1141,7 +1140,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_buffer(
 
     AWS_ZERO_STRUCT(*profile_collection);
 
-    profile_collection->profile_file_type = source;
+    profile_collection->profile_source = source;
     profile_collection->allocator = allocator;
 
     if (aws_hash_table_init(
@@ -1151,7 +1150,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_buffer(
             aws_hash_string,
             aws_hash_callback_string_eq,
             aws_hash_callback_string_destroy,
-            profile_hash_table_value_destroy)) {
+            s_profile_hash_table_value_destroy)) {
         goto cleanup;
     }
 
@@ -1167,7 +1166,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_buffer(
 
     while (aws_byte_cursor_next_split(&current_position, '\n', &line_cursor)) {
 
-        parse_and_apply_line_to_profile_collection(&context, &line_cursor);
+        s_parse_and_apply_line_to_profile_collection(&context, &line_cursor);
         if (context.parse_error == AWS_AUTH_PROFILE_PARSE_FATAL_ERROR) {
             AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Fatal error while parsing aws profile collection");
             goto cleanup;
@@ -1185,7 +1184,7 @@ cleanup:
 }
 
 static const struct aws_string *s_aws_profile_get_property_value(
-    struct aws_profile *profile,
+    const struct aws_profile *profile,
     const struct aws_string *property_name) {
 
     struct aws_profile_property *property = aws_profile_get_property(profile, property_name);
@@ -1200,7 +1199,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "access_key_id");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "secret_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "session_token");
 
-struct aws_credentials *aws_profile_create_credentials(struct aws_allocator *allocator, struct aws_profile *profile) {
+struct aws_credentials *aws_profile_create_credentials(
+    struct aws_allocator *allocator,
+    const struct aws_profile *profile) {
     const struct aws_string *access_key = s_aws_profile_get_property_value(profile, s_access_key_id_profile_var);
     const struct aws_string *secret_key = s_aws_profile_get_property_value(profile, s_secret_access_key_profile_var);
     if (access_key == NULL || secret_key == NULL) {
@@ -1215,11 +1216,11 @@ struct aws_credentials *aws_profile_create_credentials(struct aws_allocator *all
  * Config file path resolution helpers; eventually some things should be factored
  * until generic file utilities
  */
-bool is_directory_separator(char value) {
+static bool s_is_directory_separator(char value) {
     return value == '\\' || value == '/';
 }
 
-char get_local_platform_directory_separator(void) {
+static char s_get_local_platform_directory_separator(void) {
 #ifdef _WIN32
     return '\\';
 #else
@@ -1235,7 +1236,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_homedrive_env_var, "HOMEDRIVE");
 AWS_STATIC_STRING_FROM_LITERAL(s_homepath_env_var, "HOMEPATH");
 #endif /* _WIN32 */
 
-struct aws_string *get_home_directory(struct aws_allocator *allocator) {
+static struct aws_string *s_get_home_directory(struct aws_allocator *allocator) {
 
     /*
      * 1. Check HOME
@@ -1298,7 +1299,7 @@ struct aws_string *get_home_directory(struct aws_allocator *allocator) {
     return NULL;
 }
 
-struct aws_string *process_profile_file_path(struct aws_allocator *allocator, const struct aws_string *path) {
+static struct aws_string *s_process_profile_file_path(struct aws_allocator *allocator, const struct aws_string *path) {
     struct aws_string *final_path = NULL;
 
     /*
@@ -1314,7 +1315,7 @@ struct aws_string *process_profile_file_path(struct aws_allocator *allocator, co
     /*
      * Fake directory cursor for final directory construction
      */
-    char local_platform_separator = get_local_platform_directory_separator();
+    char local_platform_separator = s_get_local_platform_directory_separator();
     struct aws_byte_cursor separator_cursor;
     AWS_ZERO_STRUCT(separator_cursor);
     separator_cursor.ptr = (uint8_t *)&local_platform_separator;
@@ -1322,7 +1323,7 @@ struct aws_string *process_profile_file_path(struct aws_allocator *allocator, co
 
     for (size_t i = 0; i < path_copy->len; ++i) {
         char value = path_copy->bytes[i];
-        if (is_directory_separator(value)) {
+        if (s_is_directory_separator(value)) {
             ((char *)(path_copy->bytes))[i] = local_platform_separator;
         }
     }
@@ -1361,7 +1362,7 @@ struct aws_string *process_profile_file_path(struct aws_allocator *allocator, co
          */
         if (i == 0 && segment_cursor.len == 1 && *segment_cursor.ptr == '~') {
             if (home_directory == NULL) {
-                home_directory = get_home_directory(allocator);
+                home_directory = s_get_home_directory(allocator);
                 if (home_directory == NULL) {
                     goto on_home_directory_failure;
                 }
@@ -1445,7 +1446,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_path_env_variable_name, "AWS_S
 AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path, "~/.aws/config");
 AWS_STATIC_STRING_FROM_LITERAL(s_config_file_path_env_variable_name, "AWS_CONFIG_FILE");
 
-struct aws_string *get_raw_file_path(
+static struct aws_string *s_get_raw_file_path(
     struct aws_allocator *allocator,
     const struct aws_string *override_path,
     const struct aws_string *override_env_var_name,
@@ -1465,10 +1466,11 @@ struct aws_string *get_raw_file_path(
 }
 
 struct aws_string *get_final_credentials_path(struct aws_allocator *allocator, const struct aws_string *override_name) {
-    struct aws_string *raw_path = get_raw_file_path(
+
+    struct aws_string *raw_path = s_get_raw_file_path(
         allocator, override_name, s_credentials_file_path_env_variable_name, s_default_credentials_path);
 
-    struct aws_string *final_path = process_profile_file_path(allocator, raw_path);
+    struct aws_string *final_path = s_process_profile_file_path(allocator, raw_path);
 
     aws_string_destroy(raw_path);
 
@@ -1477,9 +1479,9 @@ struct aws_string *get_final_credentials_path(struct aws_allocator *allocator, c
 
 struct aws_string *get_final_config_path(struct aws_allocator *allocator, const struct aws_string *override_name) {
     struct aws_string *raw_path =
-        get_raw_file_path(allocator, override_name, s_config_file_path_env_variable_name, s_default_config_path);
+        s_get_raw_file_path(allocator, override_name, s_config_file_path_env_variable_name, s_default_config_path);
 
-    struct aws_string *final_path = process_profile_file_path(allocator, raw_path);
+    struct aws_string *final_path = s_process_profile_file_path(allocator, raw_path);
 
     aws_string_destroy(raw_path);
 
@@ -1504,20 +1506,20 @@ struct aws_string *get_profile_name(struct aws_allocator *allocator, const struc
     return profile_name;
 }
 
-size_t aws_profile_get_property_count(struct aws_profile *profile) {
+size_t aws_profile_get_property_count(const struct aws_profile *profile) {
     return aws_hash_table_get_entry_count(&profile->properties);
 }
 
-size_t aws_profile_collection_get_profile_count(struct aws_profile_collection *profile_collection) {
+size_t aws_profile_collection_get_profile_count(const struct aws_profile_collection *profile_collection) {
     return aws_hash_table_get_entry_count(&profile_collection->profiles);
 }
 
-size_t aws_profile_property_get_sub_property_count(struct aws_profile_property *property) {
+size_t aws_profile_property_get_sub_property_count(const struct aws_profile_property *property) {
     return aws_hash_table_get_entry_count(&property->sub_properties);
 }
 
 const struct aws_string *aws_profile_property_get_sub_property(
-    struct aws_profile_property *property,
+    const struct aws_profile_property *property,
     const struct aws_string *sub_property_name) {
     struct aws_hash_element *element = NULL;
 

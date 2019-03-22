@@ -59,7 +59,7 @@ enum aws_profile_source_type { PST_NONE, PST_CONFIG, PST_CREDENTIALS };
 
 struct aws_profile_collection {
     struct aws_allocator *allocator;
-    enum aws_profile_source_type profile_file_type;
+    enum aws_profile_source_type profile_source;
     struct aws_hash_table profiles;
 };
 
@@ -91,8 +91,8 @@ struct aws_profile_collection *aws_profile_collection_new_from_file(
 AWS_AUTH_API
 struct aws_profile_collection *aws_profile_collection_new_from_merge(
     struct aws_allocator *allocator,
-    struct aws_profile_collection *config_profiles,
-    struct aws_profile_collection *credentials_profiles);
+    const struct aws_profile_collection *config_profiles,
+    const struct aws_profile_collection *credentials_profiles);
 
 /**
  * Create a new profile collection by parsing text in a buffer.  Primarily
@@ -101,7 +101,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_merge(
 AWS_AUTH_API
 struct aws_profile_collection *aws_profile_collection_new_from_buffer(
     struct aws_allocator *allocator,
-    struct aws_byte_buf *buffer,
+    const struct aws_byte_buf *buffer,
     enum aws_profile_source_type source);
 
 /**
@@ -109,14 +109,14 @@ struct aws_profile_collection *aws_profile_collection_new_from_buffer(
  */
 AWS_AUTH_API
 struct aws_profile *aws_profile_collection_get_profile(
-    struct aws_profile_collection *profile_collection,
+    const struct aws_profile_collection *profile_collection,
     const struct aws_string *profile_name);
 
 /**
  * Returns how many profiles a collection holds
  */
 AWS_AUTH_API
-size_t aws_profile_collection_get_profile_count(struct aws_profile_collection *profile_collection);
+size_t aws_profile_collection_get_profile_count(const struct aws_profile_collection *profile_collection);
 
 /**************
  * profile APIs
@@ -127,14 +127,14 @@ size_t aws_profile_collection_get_profile_count(struct aws_profile_collection *p
  */
 AWS_AUTH_API
 struct aws_profile_property *aws_profile_get_property(
-    struct aws_profile *profile,
+    const struct aws_profile *profile,
     const struct aws_string *property_name);
 
 /**
  * Returns how many properties a profile holds
  */
 AWS_AUTH_API
-size_t aws_profile_get_property_count(struct aws_profile *profile);
+size_t aws_profile_get_property_count(const struct aws_profile *profile);
 
 /***********************
  * profile property APIs
@@ -145,14 +145,14 @@ size_t aws_profile_get_property_count(struct aws_profile *profile);
  */
 AWS_AUTH_API
 const struct aws_string *aws_profile_property_get_sub_property(
-    struct aws_profile_property *property,
+    const struct aws_profile_property *property,
     const struct aws_string *property_name);
 
 /**
  * Returns how many sub properties the property holds
  */
 AWS_AUTH_API
-size_t aws_profile_property_get_sub_property_count(struct aws_profile_property *property);
+size_t aws_profile_property_get_sub_property_count(const struct aws_profile_property *property);
 
 /***********
  * Misc APIs
@@ -162,7 +162,9 @@ size_t aws_profile_property_get_sub_property_count(struct aws_profile_property *
  * Returns a set of credentials associated with a profile, based on the properties within the profile
  */
 AWS_AUTH_API
-struct aws_credentials *aws_profile_create_credentials(struct aws_allocator *allocator, struct aws_profile *profile);
+struct aws_credentials *aws_profile_create_credentials(
+    struct aws_allocator *allocator,
+    const struct aws_profile *profile);
 
 /**
  * Computes the final platform-specific path for the profile config file.  Does limited home directory
