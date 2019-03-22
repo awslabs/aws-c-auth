@@ -22,7 +22,7 @@
 #include <errno.h>
 
 #define EXPECT_PROFILE_COUNT(profile_collection, profile_count)                                                        \
-    { ASSERT_TRUE(aws_profile_collection_get_profile_count(profile_collection) == profile_count); }
+    { ASSERT_TRUE(aws_profile_collection_get_profile_count(profile_collection) == (profile_count)); }
 
 #define EXPECT_PROFILE(profile_collection, profile_name)                                                               \
     {                                                                                                                  \
@@ -37,7 +37,7 @@
         struct aws_string *profile_name_str = aws_string_new_from_c_str(allocator, profile_name);                      \
         struct aws_profile *profile = aws_profile_collection_get_profile(profile_collection, profile_name_str);        \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(aws_profile_get_property_count(profile) == expected_property_count);                               \
+        ASSERT_TRUE(aws_profile_get_property_count(profile) == (expected_property_count));                             \
     }
 
 #define EXPECT_PROPERTY(profile_collection, profile_name, property_name, expected_property_value)                      \
@@ -59,7 +59,7 @@
         struct aws_profile_property *property = aws_profile_get_property(profile, property_name_str);                  \
         aws_string_destroy(property_name_str);                                                                         \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(aws_profile_property_get_sub_property_count(property) == expected_sub_property_count);             \
+        ASSERT_TRUE(aws_profile_property_get_sub_property_count(property) == (expected_sub_property_count));           \
     }
 
 #define EXPECT_SUB_PROPERTY(                                                                                           \
