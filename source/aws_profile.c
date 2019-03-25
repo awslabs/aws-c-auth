@@ -115,7 +115,7 @@ static bool s_is_default_profile_name(const struct aws_byte_cursor *profile_name
  */
 static bool s_parse_by_character_predicate(
     struct aws_byte_cursor *start,
-    aws_byte_predicate_fn predicate,
+    aws_byte_predicate_fn *predicate,
     struct aws_byte_cursor *parsed,
     size_t maximum_allowed) {
 
@@ -181,6 +181,19 @@ static bool s_parse_by_token(
  * aws_profile_property APIs
  */
 
+static void s_aws_profile_property_destroy(struct aws_profile_property *property) {
+    if (property == NULL) {
+        return;
+    }
+
+    aws_string_destroy(property->name);
+    aws_string_destroy(property->value);
+
+    aws_hash_table_clean_up(&property->sub_properties);
+
+    aws_mem_release(property->allocator, property);
+}
+
 struct aws_profile_property *aws_profile_property_new(
     struct aws_allocator *allocator,
     const struct aws_byte_cursor *name,
@@ -193,6 +206,7 @@ struct aws_profile_property *aws_profile_property_new(
     }
 
     AWS_ZERO_STRUCT(*property);
+    property->allocator = allocator;
 
     if (aws_hash_table_init(
             &property->sub_properties,
@@ -202,53 +216,27 @@ struct aws_profile_property *aws_profile_property_new(
             aws_hash_callback_string_eq,
             aws_hash_callback_string_destroy,
             aws_hash_callback_string_destroy)) {
-        goto on_hash_table_init_failure;
+        goto on_generic_failure;
     }
 
-    /*
-     * Allow NULL value for when we create an empty merge target pre-merge.  No point in creating a value that is just
-     * going to get immediately stomped.
-     */
-    if (value != NULL) {
-        struct aws_string *value_string = aws_string_new_from_array(allocator, value->ptr, value->len);
-        if (value_string == NULL) {
-            goto on_value_string_allocation_failure;
-        }
-
-        property->value = value_string;
-        property->is_empty_valued = value->len == 0;
+    property->value = aws_string_new_from_array(allocator, value->ptr, value->len);
+    if (property->value == NULL) {
+        goto on_generic_failure;
     }
 
     property->name = aws_string_new_from_array(allocator, name->ptr, name->len);
     if (property->name == NULL) {
-        goto on_clone_name_failure;
+        goto on_generic_failure;
     }
 
-    property->allocator = allocator;
+    property->is_empty_valued = value->len == 0;
 
     return property;
 
-on_clone_name_failure:
-    if (property->value) {
-        aws_string_destroy(property->value);
-    }
-
-on_value_string_allocation_failure:
-    aws_hash_table_clean_up(&property->sub_properties);
-
-on_hash_table_init_failure:
-    aws_mem_release(allocator, property);
+on_generic_failure:
+    s_aws_profile_property_destroy(property);
 
     return NULL;
-}
-
-void aws_profile_property_destroy(struct aws_profile_property *property) {
-    aws_string_destroy(property->name);
-    aws_string_destroy(property->value);
-
-    aws_hash_table_clean_up(&property->sub_properties);
-
-    aws_mem_release(property->allocator, property);
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_newline, "\n");
@@ -269,29 +257,29 @@ static int s_aws_profile_property_add_continuation(
 
     struct aws_byte_cursor old_value = aws_byte_cursor_from_string(property->value);
     if (aws_byte_buf_append(&concatenation, &old_value)) {
-        goto on_append_failure;
+        goto on_generic_failure;
     }
 
     struct aws_byte_cursor newline = aws_byte_cursor_from_string(s_newline);
     if (aws_byte_buf_append(&concatenation, &newline)) {
-        goto on_append_failure;
+        goto on_generic_failure;
     }
 
     if (aws_byte_buf_append(&concatenation, continuation_value)) {
-        goto on_append_failure;
+        goto on_generic_failure;
     }
 
     struct aws_string *new_value =
         aws_string_new_from_array(property->allocator, concatenation.buffer, concatenation.len);
     if (new_value == NULL) {
-        goto on_append_failure;
+        goto on_generic_failure;
     }
 
     result = AWS_OP_SUCCESS;
     aws_string_destroy(property->value);
     property->value = new_value;
 
-on_append_failure:
+on_generic_failure:
     aws_byte_buf_clean_up(&concatenation);
 
     return result;
@@ -389,7 +377,16 @@ static int s_aws_profile_property_merge(struct aws_profile_property *dest, const
             return AWS_OP_ERR;
         }
 
-        aws_hash_table_remove(&dest->sub_properties, dest_key, NULL, NULL);
+        int was_present = 0;
+        aws_hash_table_remove(&dest->sub_properties, dest_key, NULL, &was_present);
+        if (was_present) {
+            AWS_LOGF_WARN(
+                AWS_LS_AUTH_PROFILE,
+                "subproperty \"%s\" of property \"%s\" had value overridden with new value \"%s\"",
+                dest_key->bytes,
+                dest->name->bytes,
+                dest_sub_property->bytes);
+        }
 
         if (aws_hash_table_put(&dest->sub_properties, dest_key, dest_sub_property, NULL)) {
             aws_string_destroy(dest_sub_property);
@@ -407,7 +404,7 @@ static int s_aws_profile_property_merge(struct aws_profile_property *dest, const
  * Helper destroy function for aws_profile's hash table of properties
  */
 void property_hash_table_value_destroy(void *value) {
-    aws_profile_property_destroy((struct aws_profile_property *)value);
+    s_aws_profile_property_destroy((struct aws_profile_property *)value);
 }
 
 /*
@@ -415,6 +412,10 @@ void property_hash_table_value_destroy(void *value) {
  */
 
 void aws_profile_destroy(struct aws_profile *profile) {
+    if (profile == NULL) {
+        return;
+    }
+
     aws_string_destroy(profile->name);
 
     aws_hash_table_clean_up(&profile->properties);
@@ -490,7 +491,7 @@ static struct aws_profile_property *s_aws_profile_add_property(
     return property;
 
 on_hash_table_put_failure:
-    aws_profile_property_destroy(property);
+    s_aws_profile_property_destroy(property);
 
 on_property_new_failure:
     aws_string_destroy(property_name);
@@ -532,15 +533,18 @@ static int s_aws_profile_merge(struct aws_profile *dest_profile, const struct aw
                 return AWS_OP_ERR;
             }
 
+            struct aws_byte_cursor empty_value;
+            AWS_ZERO_STRUCT(empty_value);
+
             struct aws_byte_cursor property_name = aws_byte_cursor_from_string(dest_key);
-            dest_property = aws_profile_property_new(dest_profile->allocator, &property_name, NULL);
+            dest_property = aws_profile_property_new(dest_profile->allocator, &property_name, &empty_value);
             if (dest_property == NULL) {
                 aws_string_destroy(dest_key);
                 return AWS_OP_ERR;
             }
 
             if (aws_hash_table_put(&dest_profile->properties, dest_key, dest_property, NULL)) {
-                aws_profile_property_destroy(dest_property);
+                s_aws_profile_property_destroy(dest_property);
                 aws_string_destroy(dest_key);
                 return AWS_OP_ERR;
             }
@@ -568,6 +572,10 @@ static void s_profile_hash_table_value_destroy(void *value) {
  */
 
 void aws_profile_collection_destroy(struct aws_profile_collection *profile_collection) {
+    if (profile_collection == NULL) {
+        return;
+    }
+
     aws_hash_table_clean_up(&profile_collection->profiles);
 
     aws_mem_release(profile_collection->allocator, profile_collection);
@@ -1004,7 +1012,6 @@ static bool s_parse_property_continuation(
         /*
          * everything left in the continuation_cursor is the sub property value
          */
-
         s_aws_profile_property_add_sub_property(context->current_property, &trimmed_key_cursor, &continuation_cursor);
     }
 
@@ -1203,7 +1210,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "access_key_id");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "secret_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "session_token");
 
-struct aws_credentials *aws_profile_create_credentials(
+struct aws_credentials *aws_credentials_new_from_profile(
     struct aws_allocator *allocator,
     const struct aws_profile *profile) {
     const struct aws_string *access_key = s_aws_profile_get_property_value(profile, s_access_key_id_profile_var);

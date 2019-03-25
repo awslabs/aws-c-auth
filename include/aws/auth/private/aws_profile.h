@@ -162,7 +162,7 @@ size_t aws_profile_property_get_sub_property_count(const struct aws_profile_prop
  * Returns a set of credentials associated with a profile, based on the properties within the profile
  */
 AWS_AUTH_API
-struct aws_credentials *aws_profile_create_credentials(
+struct aws_credentials *aws_credentials_new_from_profile(
     struct aws_allocator *allocator,
     const struct aws_profile *profile);
 
