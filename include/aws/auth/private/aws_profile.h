@@ -55,7 +55,7 @@ struct aws_profile {
  * The profile specification has rule exceptions based on what file
  * the profile collection comes from.
  */
-enum aws_profile_source_type { PST_NONE, PST_CONFIG, PST_CREDENTIALS };
+enum aws_profile_source_type { AWS_PST_NONE, AWS_PST_CONFIG, AWS_PST_CREDENTIALS };
 
 struct aws_profile_collection {
     struct aws_allocator *allocator;

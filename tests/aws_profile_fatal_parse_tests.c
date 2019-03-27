@@ -26,7 +26,7 @@ static int s_do_aws_profile_fatal_parse_test(
     aws_byte_buf_init_copy_from_cursor(&buffer, allocator, contents);
 
     struct aws_profile_collection *profile_collection =
-        aws_profile_collection_new_from_buffer(allocator, &buffer, PST_NONE);
+        aws_profile_collection_new_from_buffer(allocator, &buffer, AWS_PST_NONE);
 
     aws_byte_buf_clean_up(&buffer);
 

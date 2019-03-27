@@ -108,7 +108,7 @@ struct aws_profile_collection *aws_prepare_merged_profile_test(
     aws_byte_buf_init_copy_from_cursor(&config_buffer, allocator, config_cursor);
 
     struct aws_profile_collection *config_profile_collection =
-        aws_profile_collection_new_from_buffer(allocator, &config_buffer, PST_CONFIG);
+        aws_profile_collection_new_from_buffer(allocator, &config_buffer, AWS_PST_CONFIG);
 
     aws_byte_buf_clean_up(&config_buffer);
 
@@ -117,7 +117,7 @@ struct aws_profile_collection *aws_prepare_merged_profile_test(
     aws_byte_buf_init_copy_from_cursor(&credentials_buffer, allocator, credentials_cursor);
 
     struct aws_profile_collection *credentials_profile_collection =
-        aws_profile_collection_new_from_buffer(allocator, &credentials_buffer, PST_CREDENTIALS);
+        aws_profile_collection_new_from_buffer(allocator, &credentials_buffer, AWS_PST_CREDENTIALS);
 
     aws_byte_buf_clean_up(&credentials_buffer);
 
@@ -143,7 +143,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "");
 static int s_aws_profile_empty_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_profile_collection *profile_collection = aws_prepare_profile_test(allocator, s_empty_string, PST_CONFIG);
+    struct aws_profile_collection *profile_collection =
+        aws_prepare_profile_test(allocator, s_empty_string, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 0);
@@ -164,7 +165,7 @@ static int s_aws_profile_empty_profile_test(struct aws_allocator *allocator, voi
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_empty_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_empty_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -187,7 +188,7 @@ static int s_aws_profile_whitespace_empty_profile_test(struct aws_allocator *all
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_whitespace_empty_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_whitespace_empty_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -210,7 +211,7 @@ static int s_aws_profile_tab_empty_profile_test(struct aws_allocator *allocator,
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_tab_empty_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_tab_empty_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -233,7 +234,7 @@ static int s_aws_profile_single_simple_property_profile_test(struct aws_allocato
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_single_simple_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_single_simple_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -257,7 +258,7 @@ static int s_aws_profile_equal_containing_property_profile_test(struct aws_alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_equal_containing_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_equal_containing_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -281,7 +282,7 @@ static int s_aws_profile_unicode_containing_property_profile_test(struct aws_all
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_unicode_containing_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_unicode_containing_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -307,7 +308,7 @@ static int s_aws_profile_multiple_property_profile_test(struct aws_allocator *al
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_multiple_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_multiple_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -332,7 +333,7 @@ static int s_aws_profile_trimmable_property_profile_test(struct aws_allocator *a
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_trimmable_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_trimmable_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -356,7 +357,7 @@ static int s_aws_profile_empty_property_profile_test(struct aws_allocator *alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_empty_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_empty_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -380,7 +381,7 @@ static int s_aws_profile_multiple_empty_profile_test(struct aws_allocator *alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_multiple_empty_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_multiple_empty_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 2);
@@ -405,7 +406,7 @@ static int s_aws_profile_multiple_profile_test(struct aws_allocator *allocator, 
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_multiple_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_multiple_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 2);
@@ -434,7 +435,7 @@ static int s_aws_profile_blank_lines_ignored_test(struct aws_allocator *allocato
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_blank_lines_ignored_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_blank_lines_ignored_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 2);
@@ -462,7 +463,7 @@ static int s_aws_profile_pound_comments_ignored_test(struct aws_allocator *alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_pound_comments_ignored_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_pound_comments_ignored_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -488,7 +489,7 @@ static int s_aws_profile_semicolon_comments_ignored_test(struct aws_allocator *a
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_semicolon_comments_ignored_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_semicolon_comments_ignored_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -514,7 +515,7 @@ static int s_aws_profile_mixed_comments_ignored_test(struct aws_allocator *alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_mixed_comments_ignored_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_mixed_comments_ignored_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -538,7 +539,7 @@ static int s_aws_profile_empty_comments_ignored_test(struct aws_allocator *alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_empty_comments_ignored_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_empty_comments_ignored_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -564,7 +565,7 @@ static int s_aws_profile_profile_adjacent_comment_test(struct aws_allocator *all
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_profile_adjacent_comment_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_profile_adjacent_comment_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 2);
@@ -591,7 +592,7 @@ static int s_aws_profile_value_adjacent_comment_test(struct aws_allocator *alloc
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_value_adjacent_comment_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_value_adjacent_comment_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -616,7 +617,7 @@ static int s_aws_profile_continued_property_value_test(struct aws_allocator *all
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_continued_property_value_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_continued_property_value_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -642,7 +643,7 @@ static int s_aws_profile_multiline_continued_property_value_test(struct aws_allo
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_multiline_continued_property_value_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_multiline_continued_property_value_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -670,7 +671,7 @@ static int s_aws_profile_continued_property_value_trim_test(struct aws_allocator
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_continued_property_value_trim_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_continued_property_value_trim_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -696,7 +697,7 @@ static int s_aws_profile_continued_property_value_pound_comment_test(struct aws_
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_continued_property_value_pound_comment_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_continued_property_value_pound_comment_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -724,7 +725,7 @@ static int s_aws_profile_continued_property_value_semicolon_comment_test(struct 
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_continued_property_value_semicolon_comment_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_continued_property_value_semicolon_comment_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -752,7 +753,7 @@ static int s_aws_profile_duplicate_profiles_merge_test(struct aws_allocator *all
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_duplicate_profiles_merge_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_duplicate_profiles_merge_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -779,7 +780,7 @@ static int s_aws_profile_duplicate_properties_last_property_value_test(struct aw
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_duplicate_properties_last_property_value_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_duplicate_properties_last_property_value_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -807,7 +808,7 @@ static int s_aws_profile_duplicate_profiles_last_property_value_test(struct aws_
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_duplicate_profiles_last_property_value_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_duplicate_profiles_last_property_value_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -837,7 +838,7 @@ static int s_aws_profile_duplicate_default_profiles_property_resolution1_test(
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_duplicate_default_profiles_property_resolution1_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_duplicate_default_profiles_property_resolution1_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -867,7 +868,7 @@ static int s_aws_profile_duplicate_default_profiles_property_resolution2_test(
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_duplicate_default_profiles_property_resolution2_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_duplicate_default_profiles_property_resolution2_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -915,7 +916,7 @@ static int s_aws_profile_invalid_property_names_ignored_test(struct aws_allocato
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_invalid_property_names_ignored_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_invalid_property_names_ignored_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -940,7 +941,7 @@ static int s_aws_profile_all_valid_profile_characters_test(struct aws_allocator 
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_all_valid_profile_characters_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_all_valid_profile_characters_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -965,7 +966,7 @@ static int s_aws_profile_all_valid_property_characters_test(struct aws_allocator
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_all_valid_property_characters_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_all_valid_property_characters_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -990,7 +991,7 @@ static int s_aws_profile_basic_sub_property_test(struct aws_allocator *allocator
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_basic_sub_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_basic_sub_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -1017,7 +1018,7 @@ static int s_aws_profile_empty_sub_property_test(struct aws_allocator *allocator
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_empty_sub_property_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_empty_sub_property_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -1044,7 +1045,7 @@ static int s_aws_profile_invalid_sub_property_name_test(struct aws_allocator *al
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_invalid_sub_property_name_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_invalid_sub_property_name_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -1072,7 +1073,7 @@ static int s_aws_profile_sub_property_blank_line_test(struct aws_allocator *allo
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_sub_property_blank_line_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_sub_property_blank_line_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -1128,7 +1129,7 @@ static int s_aws_profile_mixed_prefix_default_test(struct aws_allocator *allocat
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_mixed_prefix_default_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_mixed_prefix_default_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 1);
@@ -1180,7 +1181,7 @@ static int s_aws_profile_no_prefix_nondefault_test(struct aws_allocator *allocat
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_no_prefix_nondefault_profile, PST_CONFIG);
+        aws_prepare_profile_test(allocator, s_no_prefix_nondefault_profile, AWS_PST_CONFIG);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 0);
@@ -1202,7 +1203,7 @@ static int s_aws_profile_prefix_credentials_test(struct aws_allocator *allocator
     (void)ctx;
 
     struct aws_profile_collection *profile_collection =
-        aws_prepare_profile_test(allocator, s_prefix_credentials_profile, PST_CREDENTIALS);
+        aws_prepare_profile_test(allocator, s_prefix_credentials_profile, AWS_PST_CREDENTIALS);
 
     ASSERT_TRUE(profile_collection != NULL);
     EXPECT_PROFILE_COUNT(profile_collection, 0);
