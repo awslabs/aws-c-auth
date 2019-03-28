@@ -167,24 +167,26 @@ struct aws_credentials *aws_credentials_new_from_profile(
     const struct aws_profile *profile);
 
 /**
- * Computes the final platform-specific path for the profile config file.  Does limited home directory
- * expansion/resolution.
- */
-AWS_AUTH_API
-struct aws_string *get_final_credentials_path(struct aws_allocator *allocator, const struct aws_string *override_name);
-
-/**
  * Computes the final platform-specific path for the profile credentials file.  Does limited home directory
  * expansion/resolution.
  */
 AWS_AUTH_API
-struct aws_string *get_final_config_path(struct aws_allocator *allocator, const struct aws_string *override_name);
+struct aws_string *aws_get_credentials_file_path(
+    struct aws_allocator *allocator,
+    const struct aws_string *override_path);
+
+/**
+ * Computes the final platform-specific path for the profile config file.  Does limited home directory
+ * expansion/resolution.
+ */
+AWS_AUTH_API
+struct aws_string *aws_get_config_file_path(struct aws_allocator *allocator, const struct aws_string *override_path);
 
 /**
  * Computes the profile to use for credentials lookups based on profile resolution rules
  */
 AWS_AUTH_API
-struct aws_string *get_profile_name(struct aws_allocator *allocator, const struct aws_string *override_name);
+struct aws_string *aws_get_profile_name(struct aws_allocator *allocator, const struct aws_string *override_name);
 
 AWS_EXTERN_C_END
 

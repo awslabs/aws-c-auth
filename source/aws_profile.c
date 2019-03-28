@@ -1323,93 +1323,6 @@ struct aws_credentials *aws_credentials_new_from_profile(
         allocator, access_key, secret_key, s_profile_get_property_value(profile, s_session_token_profile_var));
 }
 
-/*
- * Config file path resolution helpers; eventually some things should be factored
- * until generic file utilities
- */
-static bool s_is_directory_separator(char value) {
-    return value == '\\' || value == '/';
-}
-
-static char s_get_local_platform_directory_separator(void) {
-#ifdef _WIN32
-    return '\\';
-#else
-    return '/';
-#endif /* _WIN32 */
-}
-
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
-
-#ifdef _WIN32
-AWS_STATIC_STRING_FROM_LITERAL(s_userprofile_env_var, "USERPROFILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_homedrive_env_var, "HOMEDRIVE");
-AWS_STATIC_STRING_FROM_LITERAL(s_homepath_env_var, "HOMEPATH");
-#endif /* _WIN32 */
-
-static struct aws_string *s_get_home_directory(struct aws_allocator *allocator) {
-
-    /*
-     * 1. Check HOME
-     */
-    struct aws_string *home_env_var_value = NULL;
-    if (aws_get_environment_value(allocator, s_home_env_var, &home_env_var_value) == 0 && home_env_var_value != NULL) {
-        return home_env_var_value;
-    }
-
-#ifdef _WIN32
-
-    /*
-     * 2. (Windows) Check USERPROFILE
-     */
-    struct aws_string *userprofile_env_var_value = NULL;
-    if (aws_get_environment_value(allocator, s_userprofile_env_var, &userprofile_env_var_value) == 0 &&
-        userprofile_env_var_value != NULL) {
-        return userprofile_env_var_value;
-    }
-
-    /*
-     * 3. (Windows) Check HOMEDRIVE ++ HOMEPATH
-     */
-    struct aws_string *final_path = NULL;
-    struct aws_string *homedrive_env_var_value = NULL;
-    if (aws_get_environment_value(allocator, s_homedrive_env_var, &homedrive_env_var_value) == 0 &&
-        homedrive_env_var_value != NULL) {
-        struct aws_string *homepath_env_var_value = NULL;
-        if (aws_get_environment_value(allocator, s_homepath_env_var, &homepath_env_var_value) == 0 &&
-            homepath_env_var_value != NULL) {
-            struct aws_byte_buf concatenated_dir;
-            aws_byte_buf_init(
-                &concatenated_dir, allocator, homedrive_env_var_value->len + homepath_env_var_value->len + 1);
-
-            struct aws_byte_cursor drive_cursor = aws_byte_cursor_from_string(homedrive_env_var_value);
-            struct aws_byte_cursor path_cursor = aws_byte_cursor_from_string(homepath_env_var_value);
-
-            aws_byte_buf_append(&concatenated_dir, &drive_cursor);
-            aws_byte_buf_append(&concatenated_dir, &path_cursor);
-
-            final_path = aws_string_new_from_array(allocator, concatenated_dir.buffer, concatenated_dir.len);
-
-            aws_byte_buf_clean_up(&concatenated_dir);
-            aws_string_destroy(homepath_env_var_value);
-        }
-
-        aws_string_destroy(homedrive_env_var_value);
-    }
-
-    if (final_path != NULL) {
-        return final_path;
-    }
-
-#endif /* _WIN32 */
-
-    AWS_LOGF_WARN(
-        AWS_LS_AUTH_PROFILE,
-        "Unable to determine current user home directory.  Profile file path resolution may be affected.");
-
-    return NULL;
-}
-
 static struct aws_string *s_process_profile_file_path(struct aws_allocator *allocator, const struct aws_string *path) {
     struct aws_string *final_path = NULL;
 
@@ -1426,7 +1339,7 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
     /*
      * Fake directory cursor for final directory construction
      */
-    char local_platform_separator = s_get_local_platform_directory_separator();
+    char local_platform_separator = aws_get_platform_directory_separator();
     struct aws_byte_cursor separator_cursor;
     AWS_ZERO_STRUCT(separator_cursor);
     separator_cursor.ptr = (uint8_t *)&local_platform_separator;
@@ -1434,7 +1347,7 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
 
     for (size_t i = 0; i < path_copy->len; ++i) {
         char value = path_copy->bytes[i];
-        if (s_is_directory_separator(value)) {
+        if (aws_is_any_directory_separator(value)) {
             ((char *)(path_copy->bytes))[i] = local_platform_separator;
         }
     }
@@ -1473,7 +1386,7 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
          */
         if (i == 0 && segment_cursor.len == 1 && *segment_cursor.ptr == '~') {
             if (home_directory == NULL) {
-                home_directory = s_get_home_directory(allocator);
+                home_directory = aws_get_home_directory(allocator);
             }
 
             final_string_length += home_directory->len;
@@ -1576,10 +1489,12 @@ static struct aws_string *s_get_raw_file_path(
     return aws_string_new_from_string(allocator, default_path);
 }
 
-struct aws_string *get_final_credentials_path(struct aws_allocator *allocator, const struct aws_string *override_name) {
+struct aws_string *aws_get_credentials_file_path(
+    struct aws_allocator *allocator,
+    const struct aws_string *override_path) {
 
     struct aws_string *raw_path = s_get_raw_file_path(
-        allocator, override_name, s_credentials_file_path_env_variable_name, s_default_credentials_path);
+        allocator, override_path, s_credentials_file_path_env_variable_name, s_default_credentials_path);
 
     struct aws_string *final_path = s_process_profile_file_path(allocator, raw_path);
 
@@ -1588,10 +1503,10 @@ struct aws_string *get_final_credentials_path(struct aws_allocator *allocator, c
     return final_path;
 }
 
-struct aws_string *get_final_config_path(struct aws_allocator *allocator, const struct aws_string *override_name) {
+struct aws_string *aws_get_config_file_path(struct aws_allocator *allocator, const struct aws_string *override_path) {
 
     struct aws_string *raw_path =
-        s_get_raw_file_path(allocator, override_name, s_config_file_path_env_variable_name, s_default_config_path);
+        s_get_raw_file_path(allocator, override_path, s_config_file_path_env_variable_name, s_default_config_path);
 
     struct aws_string *final_path = s_process_profile_file_path(allocator, raw_path);
 
@@ -1602,7 +1517,7 @@ struct aws_string *get_final_config_path(struct aws_allocator *allocator, const 
 
 AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
 
-struct aws_string *get_profile_name(struct aws_allocator *allocator, const struct aws_string *override_name) {
+struct aws_string *aws_get_profile_name(struct aws_allocator *allocator, const struct aws_string *override_name) {
 
     struct aws_string *profile_name = NULL;
 

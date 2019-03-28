@@ -1,3 +1,4 @@
+include(AwsLibFuzzer)
 include(AwsTestHarness)
 enable_testing()
 
@@ -61,8 +62,16 @@ add_test_case(aws_profile_override_duplicate_merge_test)
 add_test_case(aws_profile_no_prefix_nondefault_test)
 add_test_case(aws_profile_prefix_credentials_test)
 
+add_test_case(config_file_path_override_test)
+add_test_case(config_file_path_environment_test)
+add_test_case(credentials_file_path_override_test)
+add_test_case(credentials_file_path_environment_test)
+add_test_case(profile_override_test)
+add_test_case(profile_environment_test)
+
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
-
+file(GLOB FUZZ_TESTS "fuzz/*.c")
+aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")
 
