@@ -1218,11 +1218,17 @@ AWS_TEST_CASE(aws_profile_prefix_credentials_test, s_aws_profile_prefix_credenti
 
 AWS_STATIC_STRING_FROM_LITERAL(s_config_override_path, "/tmp/.aws/config");
 
+#ifdef _WIN32
+AWS_STATIC_STRING_FROM_LITERAL(s_config_override_path_result, "\\tmp\\.aws\\config");
+#else
+AWS_STATIC_STRING_FROM_LITERAL(s_config_override_path_result, "/tmp/.aws/config");
+#endif /* _WIN32 */
+
 static int s_config_file_path_override_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     struct aws_string *path = aws_get_config_file_path(allocator, s_config_override_path);
-    ASSERT_TRUE(aws_string_compare(path, s_config_override_path) == 0);
+    ASSERT_TRUE(aws_string_compare(path, s_config_override_path_result) == 0);
 
     aws_string_destroy(path);
 
@@ -1239,7 +1245,7 @@ static int s_config_file_path_environment_test(struct aws_allocator *allocator, 
     aws_set_environment_value(s_config_env_var, s_config_override_path);
 
     struct aws_string *path = aws_get_config_file_path(allocator, NULL);
-    ASSERT_TRUE(aws_string_compare(path, s_config_override_path) == 0);
+    ASSERT_TRUE(aws_string_compare(path, s_config_override_path_result) == 0);
 
     aws_string_destroy(path);
 
@@ -1250,11 +1256,17 @@ AWS_TEST_CASE(config_file_path_environment_test, s_config_file_path_environment_
 
 AWS_STATIC_STRING_FROM_LITERAL(s_credentials_override_path, "/tmp/.aws/credentials");
 
+#ifdef _WIN32
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_override_path_result, "\\tmp\\.aws\\credentials");
+#else
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_override_path_result, "/tmp/.aws/credentials");
+#endif /* _WIN32 */
+
 static int s_credentials_file_path_override_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     struct aws_string *path = aws_get_credentials_file_path(allocator, s_credentials_override_path);
-    ASSERT_TRUE(aws_string_compare(path, s_credentials_override_path) == 0);
+    ASSERT_TRUE(aws_string_compare(path, s_credentials_override_path_result) == 0);
 
     aws_string_destroy(path);
 
@@ -1271,7 +1283,7 @@ static int s_credentials_file_path_environment_test(struct aws_allocator *alloca
     aws_set_environment_value(s_credentials_env_var, s_credentials_override_path);
 
     struct aws_string *path = aws_get_credentials_file_path(allocator, NULL);
-    ASSERT_TRUE(aws_string_compare(path, s_credentials_override_path) == 0);
+    ASSERT_TRUE(aws_string_compare(path, s_credentials_override_path_result) == 0);
 
     aws_string_destroy(path);
 
@@ -1279,11 +1291,6 @@ static int s_credentials_file_path_environment_test(struct aws_allocator *alloca
 }
 
 AWS_TEST_CASE(credentials_file_path_environment_test, s_credentials_file_path_environment_test);
-
-/*
-
-struct aws_string *aws_get_profile_name(struct aws_allocator *allocator, const struct aws_string *override_name);
- */
 
 AWS_STATIC_STRING_FROM_LITERAL(s_profile_override, "NotTheDefault");
 
