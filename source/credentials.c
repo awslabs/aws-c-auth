@@ -15,17 +15,9 @@
 
 #include <aws/auth/credentials.h>
 
-#include <aws/auth/private/aws_profile.h>
-
-#include <aws/common/clock.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/io/logging.h>
-
-#include <inttypes.h>
-
-#define INITIAL_PENDING_QUERY_LIST_SIZE 10
-#define DEFAULT_CREDENTIALS_CACHE_REFRESH_TIME_MS (15 * 60 * 1000)
 
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
