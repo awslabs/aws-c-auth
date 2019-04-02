@@ -16,8 +16,17 @@
 #include <aws/testing/aws_test_harness.h>
 
 #include <aws/auth/credentials.h>
-
+#include <aws/common/clock.h>
+#include <aws/common/condition_variable.h>
+#include <aws/common/environment.h>
+#include <aws/common/mutex.h>
 #include <aws/common/string.h>
+#include <aws/common/thread.h>
+#include <aws/io/file_utils.h>
+
+#include <credentials_provider_utils.h>
+
+#include <errno.h>
 
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_test_value, "My Access Key");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_test_value, "SekritKey");
@@ -65,3 +74,669 @@ static int s_credentials_copy_test(struct aws_allocator *allocator, void *ctx) {
 }
 
 AWS_TEST_CASE(credentials_copy_test, s_credentials_copy_test);
+
+static int s_static_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_static_new(
+        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+
+    aws_wait_on_credentials_callback(&callback_results);
+
+    ASSERT_TRUE(callback_results.count == 1);
+    ASSERT_TRUE(aws_string_compare(callback_results.credentials->access_key_id, s_access_key_id_test_value) == 0);
+    ASSERT_TRUE(
+        aws_string_compare(callback_results.credentials->secret_access_key, s_secret_access_key_test_value) == 0);
+    ASSERT_TRUE(aws_string_compare(callback_results.credentials->session_token, s_session_token_test_value) == 0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(static_credentials_provider_basic_test, s_static_credentials_provider_basic_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
+
+static int s_environment_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_environment(allocator);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+
+    aws_wait_on_credentials_callback(&callback_results);
+
+    ASSERT_TRUE(callback_results.count == 1);
+    ASSERT_TRUE(aws_string_compare(callback_results.credentials->access_key_id, s_access_key_id_test_value) == 0);
+    ASSERT_TRUE(
+        aws_string_compare(callback_results.credentials->secret_access_key, s_secret_access_key_test_value) == 0);
+    ASSERT_TRUE(aws_string_compare(callback_results.credentials->session_token, s_session_token_test_value) == 0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(environment_credentials_provider_basic_test, s_environment_credentials_provider_basic_test);
+
+static int s_do_environment_credentials_provider_failure(struct aws_allocator *allocator) {
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_environment(allocator);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+
+    aws_wait_on_credentials_callback(&callback_results);
+
+    ASSERT_TRUE(callback_results.count == 1);
+    ASSERT_TRUE(callback_results.credentials == NULL);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+static int s_environment_credentials_provider_negative_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    ASSERT_TRUE(s_do_environment_credentials_provider_failure(allocator) == 0);
+
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    ASSERT_TRUE(s_do_environment_credentials_provider_failure(allocator) == 0);
+
+    aws_unset_environment_value(s_access_key_id_env_var);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    ASSERT_TRUE(s_do_environment_credentials_provider_failure(allocator) == 0);
+
+    return 0;
+}
+
+AWS_TEST_CASE(environment_credentials_provider_negative_test, s_environment_credentials_provider_negative_test);
+
+#define TEST_CACHE_REFRESH_TIME_MS 10000
+
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_1, "AccessKey1");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_1, "SecretKey1");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_1, "SessionToken1");
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_2, "AccessKey2");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_2, "SecretKey2");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_2, "SessionToken2");
+
+int s_wait_for_get_credentials(struct aws_get_credentials_test_callback_result *callback_results) {
+    aws_wait_on_credentials_callback(callback_results);
+
+    return 0;
+}
+
+int s_invoke_get_credentials(
+    struct aws_credentials_provider *provider,
+    struct aws_get_credentials_test_callback_result *callback_results,
+    int call_count) {
+    aws_get_credentials_test_callback_result_init(callback_results, call_count);
+
+    for (int i = 0; i < call_count; ++i) {
+        int get_async_result = aws_credentials_provider_get_credentials(
+            provider, aws_test_get_credentials_async_callback, callback_results);
+        ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+    }
+
+    return 0;
+}
+
+#define ASYNC_TEST_DELAY_NS 1000000
+
+int s_wait_for_get_credentials_with_async_controller(
+    struct aws_get_credentials_test_callback_result *callback_results,
+    struct aws_credentials_provider_mock_async_controller *controller) {
+
+    aws_thread_current_sleep(ASYNC_TEST_DELAY_NS);
+
+    aws_mutex_lock(&controller->sync);
+    controller->should_fire_callback = true;
+    aws_condition_variable_notify_one(&controller->signal);
+    aws_mutex_unlock(&controller->sync);
+
+    aws_wait_on_credentials_callback(callback_results);
+
+    return 0;
+}
+
+static int s_verify_callback_status(
+    struct aws_get_credentials_test_callback_result *results,
+    int expected_call_count,
+    const struct aws_string *expected_access_key_id,
+    const struct aws_string *expected_secret_access_key,
+    const struct aws_string *expected_session_token) {
+
+    aws_mutex_lock(&results->sync);
+    ASSERT_TRUE(results->count == expected_call_count);
+
+    if (expected_access_key_id != NULL) {
+        ASSERT_TRUE(aws_string_compare(results->credentials->access_key_id, expected_access_key_id) == 0);
+    } else {
+        ASSERT_TRUE(results->credentials == NULL || results->credentials->access_key_id == NULL);
+    }
+
+    if (expected_secret_access_key != NULL) {
+        ASSERT_TRUE(aws_string_compare(results->credentials->secret_access_key, expected_secret_access_key) == 0);
+    } else {
+        ASSERT_TRUE(results->credentials == NULL || results->credentials->secret_access_key == NULL);
+    }
+
+    if (expected_session_token != NULL) {
+        ASSERT_TRUE(aws_string_compare(results->credentials->session_token, expected_session_token) == 0);
+    } else {
+        ASSERT_TRUE(results->credentials == NULL || results->credentials->session_token == NULL);
+    }
+
+    aws_mutex_unlock(&results->sync);
+
+    return 0;
+}
+
+static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    mock_aws_set_time(0);
+
+    struct aws_credentials *first_creds =
+        aws_credentials_new(allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1);
+    struct aws_credentials *second_creds =
+        aws_credentials_new(allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2);
+
+    struct get_credentials_mock_result mock_results[] = {{.error_code = 0, .credentials = first_creds},
+                                                         {.error_code = 0, .credentials = second_creds}};
+
+    struct aws_credentials_provider *mock_provider = aws_credentials_provider_new_mock(allocator, mock_results, 2);
+
+    struct aws_credentials_provider_cached_options options;
+    AWS_ZERO_STRUCT(options);
+    options.source = mock_provider;
+    options.refresh_time_in_milliseconds = TEST_CACHE_REFRESH_TIME_MS;
+    options.clock_fn = mock_aws_get_time;
+
+    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &options);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Invoke a couple more times to verify the mock isn't getting called
+     */
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Advance time, but not enough to cause a cache expiration, verify everything's the same
+     */
+    uint64_t refresh_in_ns =
+        aws_timestamp_convert(TEST_CACHE_REFRESH_TIME_MS, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
+    uint64_t now = 0;
+    mock_aws_get_time(&now);
+    mock_aws_set_time(now + refresh_in_ns - 1);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Advance time enough to cause cache expiration, verify we get the second set of mocked credentials
+     */
+    mock_aws_set_time(now + refresh_in_ns);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_2, s_secret_access_key_2, s_session_token_2) ==
+        0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    aws_credentials_provider_destroy(cached_provider);
+    aws_credentials_destroy(second_creds);
+    aws_credentials_destroy(first_creds);
+
+    return 0;
+}
+
+AWS_TEST_CASE(cached_credentials_provider_elapsed_test, s_cached_credentials_provider_elapsed_test);
+
+static int s_cached_credentials_provider_queued_async_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    mock_aws_set_time(0);
+
+    struct aws_credentials *first_creds =
+        aws_credentials_new(allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1);
+    struct aws_credentials *second_creds =
+        aws_credentials_new(allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2);
+
+    struct get_credentials_mock_result mock_results[] = {{.error_code = 0, .credentials = first_creds},
+                                                         {.error_code = 0, .credentials = second_creds}};
+
+    struct aws_credentials_provider_mock_async_controller controller;
+    aws_credentials_provider_mock_async_controller_init(&controller);
+    struct aws_credentials_provider *mock_provider =
+        aws_credentials_provider_new_mock_async(allocator, mock_results, 2, &controller);
+
+    struct aws_credentials_provider_cached_options options;
+    AWS_ZERO_STRUCT(options);
+    options.source = mock_provider;
+    options.refresh_time_in_milliseconds = TEST_CACHE_REFRESH_TIME_MS;
+    options.clock_fn = mock_aws_get_time;
+
+    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &options);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Invoke a couple more times to verify the mock isn't getting called
+     */
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Advance time, but not enough to cause a cache expiration, verify everything's the same
+     */
+    uint64_t refresh_in_ns =
+        aws_timestamp_convert(TEST_CACHE_REFRESH_TIME_MS, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
+    uint64_t now = 0;
+    mock_aws_get_time(&now);
+    mock_aws_set_time(now + refresh_in_ns - 1);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Advance time enough to cause cache expiration, verify we get the second set of mocked credentials
+     */
+    mock_aws_set_time(now + refresh_in_ns);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 2, s_access_key_id_2, s_secret_access_key_2, s_session_token_2) ==
+        0);
+
+    aws_credentials_provider_destroy(cached_provider);
+    aws_credentials_provider_mock_async_controller_clean_up(&controller);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_destroy(second_creds);
+    aws_credentials_destroy(first_creds);
+
+    return 0;
+}
+
+AWS_TEST_CASE(cached_credentials_provider_queued_async_test, s_cached_credentials_provider_queued_async_test);
+
+static int s_config_file_credentials_provider_new_destroy_defaults_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+    struct aws_credentials_provider_profile_options options;
+    AWS_ZERO_STRUCT(options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    config_file_credentials_provider_new_destroy_defaults_test,
+    s_config_file_credentials_provider_new_destroy_defaults_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_config_file_path, "~derp/.aws/config");
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_path, "/Ithink/globalpaths/arebroken/.aws/credentials");
+AWS_STATIC_STRING_FROM_LITERAL(s_profile_name, "notdefault");
+
+static int s_config_file_credentials_provider_new_destroy_overrides_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+    struct aws_credentials_provider_profile_options options;
+    AWS_ZERO_STRUCT(options);
+    options.config_file_name_override = s_config_file_path;
+    options.credentials_file_name_override = s_credentials_file_path;
+    options.profile_name_override = s_profile_name;
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    config_file_credentials_provider_new_destroy_overrides_test,
+    s_config_file_credentials_provider_new_destroy_overrides_test);
+
+int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
+    FILE *fp = fopen((const char *)file_name->bytes, "w");
+    if (fp == NULL) {
+        return aws_io_translate_and_raise_file_open_error(errno);
+    }
+
+    int result = fprintf(fp, "%s", (const char *)file_contents->bytes);
+    fclose(fp);
+
+    if (result < 0) {
+        return aws_io_translate_and_raise_file_write_error(errno);
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(s_config_file_name, "./.config_test");
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_name, "./.credentials_test");
+
+typedef int(s_verify_credentials_callback_fn)(struct aws_get_credentials_test_callback_result *callback_results);
+
+static int s_do_credentials_provider_profile_test(
+    struct aws_allocator *allocator,
+    const struct aws_string *config_contents,
+    const struct aws_string *credentials_contents,
+    struct aws_credentials_provider_profile_options *options,
+    s_verify_credentials_callback_fn verifier) {
+
+    int result = AWS_OP_ERR;
+
+    if (aws_create_profile_file(s_config_file_name, config_contents) ||
+        aws_create_profile_file(s_credentials_file_name, credentials_contents)) {
+        goto on_file_failure;
+    }
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, options);
+    if (provider == NULL) {
+        goto on_file_failure;
+    }
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+
+    if (get_async_result == AWS_OP_SUCCESS) {
+        aws_wait_on_credentials_callback(&callback_results);
+
+        result = verifier(&callback_results);
+    }
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_destroy(provider);
+
+on_file_failure:
+    remove((const char *)s_config_file_name->bytes);
+    remove((const char *)s_credentials_file_name->bytes);
+
+    return result;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_config_contents,
+    "[profile default]\naccess_key_id=fake_access_key\nsecret_access_key=fake_secret_key\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_credentials_contents,
+    "[foo]\naccess_key_id=foo_access\nsecret_access_key=foo_secret\nsession_token=foo_session\n");
+
+int s_verify_default_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "fake_access_key") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "fake_secret_key") == 0);
+    ASSERT_TRUE(callback_results->credentials->session_token == NULL);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_profile_credentials_provider_default_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials_provider_profile_options options = {.config_file_name_override = s_config_file_name,
+                                                               .credentials_file_name_override =
+                                                                   s_credentials_file_name,
+                                                               .profile_name_override = NULL};
+
+    return s_do_credentials_provider_profile_test(
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_default_credentials_callback);
+}
+
+AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_provider_default_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_foo_profile, "foo");
+
+int s_verify_nondefault_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "foo_access") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "foo_secret") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "foo_session") == 0);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_profile_credentials_provider_nondefault_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials_provider_profile_options options = {.config_file_name_override = s_config_file_name,
+                                                               .credentials_file_name_override =
+                                                                   s_credentials_file_name,
+                                                               .profile_name_override = s_foo_profile};
+
+    return s_do_credentials_provider_profile_test(
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
+}
+
+AWS_TEST_CASE(profile_credentials_provider_nondefault_test, s_profile_credentials_provider_nondefault_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
+
+static int s_profile_credentials_provider_environment_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    /*
+     * Force a profile switch via environment
+     */
+    aws_set_environment_value(s_default_profile_env_variable_name, s_foo_profile);
+
+    /*
+     * Redirect config and credentials files by environment
+     */
+    aws_set_environment_value(s_default_config_path_env_variable_name, s_config_file_name);
+    aws_set_environment_value(s_default_credentials_path_env_variable_name, s_credentials_file_name);
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = NULL, .credentials_file_name_override = NULL, .profile_name_override = NULL};
+
+    return s_do_credentials_provider_profile_test(
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
+}
+
+AWS_TEST_CASE(profile_credentials_provider_environment_test, s_profile_credentials_provider_environment_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_value1, "Access1");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_value1, "Secret1");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_value1, "Session1");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_value2, "Access2");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_value2, "Secret2");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_value2, "Session2");
+
+static int s_do_provider_chain_test(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *provider1,
+    struct aws_credentials_provider *provider2,
+    s_verify_credentials_callback_fn verifier) {
+
+    struct aws_credentials_provider *providers[2] = {provider1, provider2};
+
+    struct aws_credentials_provider_chain_options options;
+    AWS_ZERO_STRUCT(options);
+    options.providers = providers;
+    options.provider_count = 2;
+
+    struct aws_credentials_provider *provider_chain = aws_credentials_provider_new_chain(allocator, &options);
+    if (provider_chain == NULL) {
+        aws_credentials_provider_destroy(provider1);
+        aws_credentials_provider_destroy(provider2);
+        return 0;
+    }
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result = aws_credentials_provider_get_credentials(
+        provider_chain, aws_test_get_credentials_async_callback, &callback_results);
+
+    int verification_result = AWS_OP_ERR;
+    if (get_async_result == AWS_OP_SUCCESS) {
+        aws_wait_on_credentials_callback(&callback_results);
+
+        verification_result = verifier(&callback_results);
+    }
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_destroy(provider_chain);
+
+    return verification_result;
+}
+
+int s_verify_first_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "Access1") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "Secret1") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "Session1") == 0);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_first_in_chain_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    return s_do_provider_chain_test(
+        allocator,
+        aws_credentials_provider_static_new(
+            allocator, s_access_key_id_value1, s_secret_access_key_value1, s_session_token_value1),
+        aws_credentials_provider_static_new(
+            allocator, s_access_key_id_value2, s_secret_access_key_value2, s_session_token_value2),
+        s_verify_first_credentials_callback);
+}
+
+AWS_TEST_CASE(credentials_provider_first_in_chain_test, s_credentials_provider_first_in_chain_test);
+
+int s_verify_second_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "Access2") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "Secret2") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "Session2") == 0);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_second_in_chain_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    return s_do_provider_chain_test(
+        allocator,
+        aws_credentials_provider_new_null(allocator),
+        aws_credentials_provider_static_new(
+            allocator, s_access_key_id_value2, s_secret_access_key_value2, s_session_token_value2),
+        s_verify_second_credentials_callback);
+}
+
+AWS_TEST_CASE(credentials_provider_second_in_chain_test, s_credentials_provider_second_in_chain_test);
+
+int s_verify_null_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials == NULL);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_null_chain_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    return s_do_provider_chain_test(
+        allocator,
+        aws_credentials_provider_new_null(allocator),
+        aws_credentials_provider_new_null(allocator),
+        s_verify_null_credentials_callback);
+}
+
+AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_chain_test);
