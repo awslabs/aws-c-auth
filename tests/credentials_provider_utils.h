@@ -26,7 +26,19 @@ struct aws_credentials_provider;
 struct aws_string;
 
 /*
- * test helper struct to correctly wait on credentials callbacks
+ * This file contains a number of helper functions and data structures
+ * that let us verify async behavior within the credentials provider.
+ *
+ * It includes multiple provider mocks (one synchronous, one background-thread
+ * based and externally controllable), a synchronizing controller that uses
+ * concurrency primitives to ensure we can perform operations at troublesome
+ * time points (freeze the cached background query so that we can queue up
+ * multiple pending queries, for example), and misc supporting functions like
+ * time function mocks.
+ */
+
+/*
+ * test helper struct to correctly wait on async credentials callbacks
  */
 struct aws_get_credentials_test_callback_result {
     struct aws_mutex sync;
@@ -62,7 +74,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
  * Credentials provider that puts a mock provider in a background thread and uses signalling to control callback
  * invocation.  Useful to properly test query queuing during expiration
  */
-
 struct aws_credentials_provider_mock_async_controller {
     struct aws_mutex sync;
     struct aws_condition_variable signal;

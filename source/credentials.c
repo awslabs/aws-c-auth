@@ -76,7 +76,7 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
  * provider API via vtable
  */
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
-    assert(provider && provider->vtable->clean_up);
+    assert(provider->vtable->clean_up);
 
     provider->vtable->clean_up(provider);
 
@@ -96,7 +96,6 @@ int aws_credentials_provider_get_credentials(
 /*
  * Static provider implementation
  */
-
 struct aws_credentials_provider_static_impl {
     struct aws_credentials *credentials;
 };
@@ -174,9 +173,8 @@ on_allocate_provider_failure:
 }
 
 /*
- *  Environment provider implementation.  Ends up a variant of the static implementation
+ *  Environment provider implementation.
  */
-
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
