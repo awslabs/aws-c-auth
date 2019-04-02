@@ -95,35 +95,31 @@ int aws_credentials_provider_get_credentials(
 
 /*
  * Static provider implementation
+ *
+ * Just stuff the credentials in the impl member, and don't bother wrapping them
  */
-struct aws_credentials_provider_static_impl {
-    struct aws_credentials *credentials;
-};
-
 static int s_static_credentials_provider_get_credentials_async(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
-    struct aws_credentials_provider_static_impl *impl = (struct aws_credentials_provider_static_impl *)provider->impl;
+    struct aws_credentials *credentials = (struct aws_credentials *)provider->impl;
 
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "Static credentials provider (%p) successfully sourced credentials",
         (void *)provider);
-    callback(impl->credentials, user_data);
+    callback(credentials, user_data);
 
     return AWS_OP_SUCCESS;
 }
 
 static void s_static_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
-    struct aws_credentials_provider_static_impl *impl = (struct aws_credentials_provider_static_impl *)provider->impl;
+    struct aws_credentials *credentials = (struct aws_credentials *)provider->impl;
 
-    if (impl->credentials != NULL) {
-        aws_credentials_destroy(impl->credentials);
+    if (credentials != NULL) {
+        aws_credentials_destroy(credentials);
     }
-
-    aws_mem_release(provider->allocator, impl);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_static_vtable = {
@@ -136,38 +132,28 @@ struct aws_credentials_provider *aws_credentials_provider_static_new(
     const struct aws_string *secret_access_key,
     const struct aws_string *session_token) {
 
-    struct aws_credentials_provider_static_impl *impl = (struct aws_credentials_provider_static_impl *)aws_mem_acquire(
-        allocator, sizeof(struct aws_credentials_provider_static_impl));
-    if (impl == NULL) {
-        return NULL;
-    }
-
-    AWS_ZERO_STRUCT(*impl);
-
     struct aws_credentials_provider *provider =
         (struct aws_credentials_provider *)aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
-        goto on_allocate_provider_failure;
+        return NULL;
     }
 
     AWS_ZERO_STRUCT(*provider);
 
-    impl->credentials = aws_credentials_new(allocator, access_key_id, secret_access_key, session_token);
-    if (impl->credentials == NULL) {
+    struct aws_credentials *credentials =
+        aws_credentials_new(allocator, access_key_id, secret_access_key, session_token);
+    if (credentials == NULL) {
         goto on_new_credentials_failure;
     }
 
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_static_vtable;
-    provider->impl = impl;
+    provider->impl = credentials;
 
     return provider;
 
 on_new_credentials_failure:
     aws_mem_release(allocator, provider);
-
-on_allocate_provider_failure:
-    aws_mem_release(allocator, impl);
 
     return NULL;
 }
