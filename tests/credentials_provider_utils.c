@@ -101,8 +101,11 @@ static int s_mock_credentials_provider_get_credentials_async(
 
     if (impl->next_result < aws_array_list_length(&impl->results)) {
         struct get_credentials_mock_result result;
-        aws_array_list_get_at(&impl->results, &result, impl->next_result);
-        callback(result.credentials, user_data);
+        if (aws_array_list_get_at(&impl->results, &result, impl->next_result)) {
+            AWS_FATAL_ASSERT(false);
+        } else {
+            callback(result.credentials, user_data);
+        }
         impl->next_result++;
     } else {
         AWS_FATAL_ASSERT(false);
@@ -392,6 +395,7 @@ static int s_credentials_provider_null_get_credentials_async(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
+    (void)provider;
     callback(NULL, user_data);
 
     return AWS_OP_SUCCESS;
