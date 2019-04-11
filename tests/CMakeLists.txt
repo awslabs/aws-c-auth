@@ -8,6 +8,9 @@ file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC})
 
 add_test_case(credentials_create_destroy_test)
 add_test_case(credentials_copy_test)
+add_test_case(static_credentials_provider_basic_test)
+add_test_case(environment_credentials_provider_basic_test)
+add_test_case(environment_credentials_provider_negative_test)
 
 add_test_case(aws_profile_early_property_parse_failure_test)
 add_test_case(aws_profile_missing_bracket_parse_failure_test)
