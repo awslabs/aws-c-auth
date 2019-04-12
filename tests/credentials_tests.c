@@ -263,22 +263,28 @@ static int s_verify_callback_status(
     aws_mutex_lock(&results->sync);
     ASSERT_TRUE(results->count == expected_call_count);
 
-    if (expected_access_key_id != NULL) {
-        ASSERT_TRUE(aws_string_compare(results->credentials->access_key_id, expected_access_key_id) == 0);
+    if (results->credentials == NULL || results->credentials->access_key_id == NULL) {
+        ASSERT_TRUE(expected_access_key_id == NULL);
     } else {
-        ASSERT_TRUE(results->credentials == NULL || results->credentials->access_key_id == NULL);
+        ASSERT_TRUE(
+            expected_access_key_id != NULL &&
+            aws_string_compare(results->credentials->access_key_id, expected_access_key_id) == 0);
     }
 
-    if (expected_secret_access_key != NULL) {
-        ASSERT_TRUE(aws_string_compare(results->credentials->secret_access_key, expected_secret_access_key) == 0);
+    if (results->credentials == NULL || results->credentials->secret_access_key == NULL) {
+        ASSERT_TRUE(expected_secret_access_key == NULL);
     } else {
-        ASSERT_TRUE(results->credentials == NULL || results->credentials->secret_access_key == NULL);
+        ASSERT_TRUE(
+            expected_secret_access_key != NULL &&
+            aws_string_compare(results->credentials->secret_access_key, expected_secret_access_key) == 0);
     }
 
-    if (expected_session_token != NULL) {
-        ASSERT_TRUE(aws_string_compare(results->credentials->session_token, expected_session_token) == 0);
+    if (results->credentials == NULL || results->credentials->session_token == NULL) {
+        ASSERT_TRUE(expected_session_token == NULL);
     } else {
-        ASSERT_TRUE(results->credentials == NULL || results->credentials->session_token == NULL);
+        ASSERT_TRUE(
+            expected_session_token != NULL &&
+            aws_string_compare(results->credentials->session_token, expected_session_token) == 0);
     }
 
     aws_mutex_unlock(&results->sync);
