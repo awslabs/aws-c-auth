@@ -28,6 +28,10 @@
 
 #include <errno.h>
 
+#ifdef _MSC_VER
+#    pragma warning(disable : 4996)
+#endif
+
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_test_value, "My Access Key");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_test_value, "SekritKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_test_value, "Some Session Token");
