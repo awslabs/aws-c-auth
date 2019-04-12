@@ -15,9 +15,14 @@
 
 #include <aws/auth/credentials.h>
 
+#include <aws/common/clock.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/io/logging.h>
+
+#include <inttypes.h>
+
+#define INITIAL_PENDING_QUERY_LIST_SIZE 10
 
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
@@ -228,4 +233,222 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(struct
     provider->impl = NULL;
 
     return provider;
+}
+
+/*
+ * Cached provider implementation
+ */
+
+/*
+
+ ToDo: credentials expiration environment overrides
+
+AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_EXPIRATION");
+
+*/
+
+struct aws_credentials_provider_cached {
+    struct aws_credentials_provider *source;
+    struct aws_credentials *cached_credentials;
+    uint64_t refresh_interval_in_ns;
+    uint64_t next_refresh_time;
+    aws_io_clock_fn *clock_fn;
+    struct aws_array_list pending_queries;
+};
+
+static void s_cached_credentials_provider_get_credentials_async_callback(
+    struct aws_credentials *credentials,
+    void *user_data) {
+
+    struct aws_credentials_provider *provider = (struct aws_credentials_provider *)user_data;
+    struct aws_credentials_provider_cached *impl = (struct aws_credentials_provider_cached *)provider->impl;
+
+    if (impl->refresh_interval_in_ns > 0) {
+        uint64_t now = 0;
+        if (!impl->clock_fn(&now)) {
+            impl->next_refresh_time = now + impl->refresh_interval_in_ns;
+        }
+    } else {
+        impl->next_refresh_time = UINT64_MAX;
+    }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "Cached credentials provider (%p) next refresh time set to %" PRIu64,
+        (void *)provider,
+        impl->next_refresh_time);
+
+    if (impl->cached_credentials != NULL) {
+        aws_credentials_destroy(impl->cached_credentials);
+    }
+
+    if (credentials != NULL) {
+        impl->cached_credentials = aws_credentials_new_copy(provider->allocator, credentials);
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Cached credentials provider (%p) succesfully sourced credentials on refresh",
+            (void *)provider);
+    } else {
+        impl->cached_credentials = NULL;
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Cached credentials provider (%p) was unable to source credentials on refresh",
+            (void *)provider);
+    }
+
+    size_t pending_query_count = aws_array_list_length(&impl->pending_queries);
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "Cached credentials provider (%p) notifying %zu queries of new credentials",
+        (void *)provider,
+        pending_query_count);
+
+    for (size_t i = 0; i < pending_query_count; ++i) {
+        struct aws_credentials_query query;
+        if (aws_array_list_get_at(&impl->pending_queries, &query, i)) {
+            continue;
+        }
+
+        query.callback(credentials, query.user_data);
+    }
+
+    aws_array_list_clear(&impl->pending_queries);
+}
+
+static int s_cached_credentials_provider_get_credentials_async(
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+    struct aws_credentials_provider_cached *impl = (struct aws_credentials_provider_cached *)provider->impl;
+
+    uint64_t current_time = 0;
+    if (impl->clock_fn(&current_time)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Cached credentials provider (%p) failed to get current time",
+            (void *)provider);
+        return AWS_OP_ERR;
+    }
+
+    if (current_time < impl->next_refresh_time) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Cached credentials provider (%p) successfully sourced from cache",
+            (void *)provider);
+        callback(impl->cached_credentials, user_data);
+    } else {
+        struct aws_credentials_query query;
+        AWS_ZERO_STRUCT(query);
+        query.callback = callback;
+        query.provider = provider;
+        query.user_data = user_data;
+
+        aws_array_list_push_back(&impl->pending_queries, &query);
+
+        if (aws_array_list_length(&impl->pending_queries) == 1) {
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Cached credentials provider (%p) has expired credentials.  Requerying.",
+                (void *)provider);
+            aws_credentials_provider_get_credentials(
+                impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
+        } else {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Cached credentials provider (%p) has expired credentials.  Waiting on existing query.",
+                (void *)provider);
+        }
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+static void s_cache_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+    struct aws_credentials_provider_cached *impl = (struct aws_credentials_provider_cached *)provider->impl;
+
+    size_t pending_query_count = aws_array_list_length(&impl->pending_queries);
+    for (size_t i = 0; i < pending_query_count; ++i) {
+        struct aws_credentials_query query;
+        if (aws_array_list_get_at(&impl->pending_queries, &query, i)) {
+            continue;
+        }
+
+        query.callback(impl->cached_credentials, query.user_data);
+    }
+
+    aws_array_list_clean_up(&impl->pending_queries);
+
+    aws_credentials_provider_destroy(impl->source);
+
+    if (impl->cached_credentials != NULL) {
+        aws_credentials_destroy(impl->cached_credentials);
+    }
+
+    aws_mem_release(provider->allocator, impl);
+}
+
+static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_vtable = {
+    .get_credentials = s_cached_credentials_provider_get_credentials_async,
+    .clean_up = s_cache_credentials_provider_clean_up};
+
+struct aws_credentials_provider *aws_credentials_provider_new_cached(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_cached_options *options) {
+    assert(options->source != NULL);
+
+    struct aws_credentials_provider_cached *impl =
+        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_cached));
+    if (impl == NULL) {
+        return NULL;
+    }
+
+    AWS_ZERO_STRUCT(*impl);
+
+    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
+    if (provider == NULL) {
+        goto on_allocate_provider_failure;
+    }
+
+    AWS_ZERO_STRUCT(*provider);
+
+    if (aws_array_list_init_dynamic(
+            &impl->pending_queries, allocator, INITIAL_PENDING_QUERY_LIST_SIZE, sizeof(struct aws_credentials_query))) {
+        goto on_array_list_init_failure;
+    }
+
+    impl->source = options->source;
+
+    if (options->refresh_time_in_milliseconds > 0) {
+        impl->refresh_interval_in_ns = aws_timestamp_convert(
+            options->refresh_time_in_milliseconds, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
+    } else {
+        /*
+         * TODO: query AWS_CREDENTIAL_EXPIRATION for a refresh override
+         *
+         * This must be an ISO 8601 time interval which we don't have a parser for yet (one could be cobbled
+         * together from the existing timestamp parser).  Does not seem important enough to get bogged down in atm.
+         * Punting for now.
+         */
+        impl->refresh_interval_in_ns = 0;
+    }
+
+    if (options->clock_fn != NULL) {
+        impl->clock_fn = options->clock_fn;
+    } else {
+        impl->clock_fn = &aws_high_res_clock_get_ticks;
+    }
+
+    provider->impl = impl;
+    provider->allocator = allocator;
+    provider->vtable = &s_aws_credentials_provider_cached_vtable;
+
+    return provider;
+
+on_array_list_init_failure:
+    aws_mem_release(allocator, provider);
+
+on_allocate_provider_failure:
+    aws_mem_release(allocator, impl);
+
+    return NULL;
 }
