@@ -467,3 +467,192 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
 }
 
 AWS_TEST_CASE(cached_credentials_provider_queued_async_test, s_cached_credentials_provider_queued_async_test);
+
+static int s_profile_credentials_provider_new_destroy_defaults_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+    struct aws_credentials_provider_profile_options options;
+    AWS_ZERO_STRUCT(options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    profile_credentials_provider_new_destroy_defaults_test,
+    s_profile_credentials_provider_new_destroy_defaults_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_config_file_path, "~derp/.aws/config");
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_path, "/Ithink/globalpaths/arebroken/.aws/credentials");
+AWS_STATIC_STRING_FROM_LITERAL(s_profile_name, "notdefault");
+
+static int s_profile_credentials_provider_new_destroy_overrides_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+    struct aws_credentials_provider_profile_options options;
+    AWS_ZERO_STRUCT(options);
+    options.config_file_name_override = s_config_file_path;
+    options.credentials_file_name_override = s_credentials_file_path;
+    options.profile_name_override = s_profile_name;
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    profile_credentials_provider_new_destroy_overrides_test,
+    s_profile_credentials_provider_new_destroy_overrides_test);
+
+int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
+    FILE *fp = fopen((const char *)file_name->bytes, "w");
+    if (fp == NULL) {
+        return aws_io_translate_and_raise_file_open_error(errno);
+    }
+
+    int result = fprintf(fp, "%s", (const char *)file_contents->bytes);
+    fclose(fp);
+
+    if (result < 0) {
+        return aws_io_translate_and_raise_file_write_error(errno);
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(s_config_file_name, "./.config_test");
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_name, "./.credentials_test");
+
+typedef int(s_verify_credentials_callback_fn)(struct aws_get_credentials_test_callback_result *callback_results);
+
+static int s_do_credentials_provider_profile_test(
+    struct aws_allocator *allocator,
+    const struct aws_string *config_contents,
+    const struct aws_string *credentials_contents,
+    struct aws_credentials_provider_profile_options *options,
+    s_verify_credentials_callback_fn verifier) {
+
+    int result = AWS_OP_ERR;
+
+    if (aws_create_profile_file(s_config_file_name, config_contents) ||
+        aws_create_profile_file(s_credentials_file_name, credentials_contents)) {
+        goto on_file_failure;
+    }
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, options);
+    if (provider == NULL) {
+        goto on_file_failure;
+    }
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+
+    if (get_async_result == AWS_OP_SUCCESS) {
+        aws_wait_on_credentials_callback(&callback_results);
+
+        result = verifier(&callback_results);
+    }
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_destroy(provider);
+
+on_file_failure:
+    remove((const char *)s_config_file_name->bytes);
+    remove((const char *)s_credentials_file_name->bytes);
+
+    return result;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_config_contents,
+    "[profile default]\naccess_key_id=fake_access_key\nsecret_access_key=fake_secret_key\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_credentials_contents,
+    "[foo]\naccess_key_id=foo_access\nsecret_access_key=foo_secret\nsession_token=foo_session\n");
+
+int s_verify_default_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "fake_access_key") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "fake_secret_key") == 0);
+    ASSERT_TRUE(callback_results->credentials->session_token == NULL);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_profile_credentials_provider_default_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials_provider_profile_options options = {.config_file_name_override = s_config_file_name,
+                                                               .credentials_file_name_override =
+                                                                   s_credentials_file_name,
+                                                               .profile_name_override = NULL};
+
+    return s_do_credentials_provider_profile_test(
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_default_credentials_callback);
+}
+
+AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_provider_default_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_foo_profile, "foo");
+
+int s_verify_nondefault_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "foo_access") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "foo_secret") == 0);
+    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "foo_session") == 0);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_profile_credentials_provider_nondefault_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials_provider_profile_options options = {.config_file_name_override = s_config_file_name,
+                                                               .credentials_file_name_override =
+                                                                   s_credentials_file_name,
+                                                               .profile_name_override = s_foo_profile};
+
+    return s_do_credentials_provider_profile_test(
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
+}
+
+AWS_TEST_CASE(profile_credentials_provider_nondefault_test, s_profile_credentials_provider_nondefault_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
+
+static int s_profile_credentials_provider_environment_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    /*
+     * Force a profile switch via environment
+     */
+    aws_set_environment_value(s_default_profile_env_variable_name, s_foo_profile);
+
+    /*
+     * Redirect config and credentials files by environment
+     */
+    aws_set_environment_value(s_default_config_path_env_variable_name, s_config_file_name);
+    aws_set_environment_value(s_default_credentials_path_env_variable_name, s_credentials_file_name);
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = NULL, .credentials_file_name_override = NULL, .profile_name_override = NULL};
+
+    return s_do_credentials_provider_profile_test(
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
+}
+
+AWS_TEST_CASE(profile_credentials_provider_environment_test, s_profile_credentials_provider_environment_test);
