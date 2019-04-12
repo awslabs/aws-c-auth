@@ -368,12 +368,12 @@ static void s_cache_credentials_provider_clean_up(struct aws_credentials_provide
 
     size_t pending_query_count = aws_array_list_length(&impl->pending_queries);
     for (size_t i = 0; i < pending_query_count; ++i) {
-        struct aws_credentials_query *query = NULL;
-        if (aws_array_list_get_at(&impl->pending_queries, query, i)) {
+        struct aws_credentials_query query;
+        if (aws_array_list_get_at(&impl->pending_queries, &query, i)) {
             continue;
         }
 
-        query->callback(impl->cached_credentials, query->user_data);
+        query.callback(impl->cached_credentials, query.user_data);
     }
 
     aws_array_list_clean_up(&impl->pending_queries);
@@ -396,16 +396,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_credentials_provider_cached_options *options) {
     assert(options->source != NULL);
 
-    struct aws_credentials_provider_cached *impl = (struct aws_credentials_provider_cached *)aws_mem_acquire(
-        allocator, sizeof(struct aws_credentials_provider_cached));
+    struct aws_credentials_provider_cached *impl =
+        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_cached));
     if (impl == NULL) {
         return NULL;
     }
 
     AWS_ZERO_STRUCT(*impl);
 
-    struct aws_credentials_provider *provider =
-        (struct aws_credentials_provider *)aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
+    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
         goto on_allocate_provider_failure;
     }
