@@ -22,6 +22,7 @@
 #include <aws/common/array_list.h>
 #include <aws/io/io.h>
 
+struct aws_client_bootstrap;
 struct aws_string;
 
 struct aws_credentials {
@@ -73,6 +74,10 @@ struct aws_credentials_provider_cached_options {
 struct aws_credentials_provider_chain_options {
     struct aws_credentials_provider **providers;
     size_t provider_count;
+};
+
+struct aws_credentials_provider_imds_options {
+    struct aws_client_bootstrap *bootstrap;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -161,6 +166,14 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_chain_options *options);
+
+/*
+ * A provider that sources credentials from the ec2 instance metadata service
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_imds(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_imds_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
