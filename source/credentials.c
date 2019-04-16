@@ -18,7 +18,9 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/common/clock.h>
 #include <aws/common/environment.h>
+#include <aws/common/mutex.h>
 #include <aws/common/string.h>
+#include <aws/common/weak_ref.h>
 #include <aws/io/logging.h>
 
 #include <inttypes.h>
@@ -254,6 +256,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
     struct aws_credentials *cached_credentials;
+    struct aws_weak_ref *weak_provider;
     uint64_t refresh_interval_in_ns;
     uint64_t next_refresh_time;
     aws_io_clock_fn *clock_fn;
@@ -264,7 +267,12 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
     struct aws_credentials *credentials,
     void *user_data) {
 
-    struct aws_credentials_provider *provider = (struct aws_credentials_provider *)user_data;
+    struct aws_weak_ref *provider_ref = user_data;
+    struct aws_credentials_provider *provider = aws_weak_ref_lock(provider_ref);
+    if (provider == NULL) {
+        goto on_done;
+    }
+
     struct aws_credentials_provider_cached *impl = (struct aws_credentials_provider_cached *)provider->impl;
 
     if (impl->refresh_interval_in_ns > 0) {
@@ -317,6 +325,11 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
     }
 
     aws_array_list_clear(&impl->pending_queries);
+
+on_done:
+
+    aws_weak_ref_unlock(provider_ref);
+    aws_weak_ref_release(provider_ref);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(
@@ -333,6 +346,9 @@ static int s_cached_credentials_provider_get_credentials_async(
             (void *)provider);
         return AWS_OP_ERR;
     }
+
+    bool submit_query = false;
+    aws_weak_ref_lock(impl->weak_provider);
 
     if (current_time < impl->next_refresh_time) {
         AWS_LOGF_DEBUG(
@@ -354,8 +370,7 @@ static int s_cached_credentials_provider_get_credentials_async(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "Cached credentials provider (%p) has expired credentials.  Requerying.",
                 (void *)provider);
-            aws_credentials_provider_get_credentials(
-                impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
+            submit_query = true;
         } else {
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -364,11 +379,22 @@ static int s_cached_credentials_provider_get_credentials_async(
         }
     }
 
+    aws_weak_ref_unlock(impl->weak_provider);
+
+    if (submit_query) {
+        aws_weak_ref_acquire(impl->weak_provider);
+        aws_credentials_provider_get_credentials(
+            impl->source, s_cached_credentials_provider_get_credentials_async_callback, impl->weak_provider);
+    }
+
     return AWS_OP_SUCCESS;
 }
 
 static void s_cache_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_cached *impl = (struct aws_credentials_provider_cached *)provider->impl;
+    if (impl == NULL) {
+        return;
+    }
 
     size_t pending_query_count = aws_array_list_length(&impl->pending_queries);
     for (size_t i = 0; i < pending_query_count; ++i) {
@@ -388,6 +414,11 @@ static void s_cache_credentials_provider_clean_up(struct aws_credentials_provide
         aws_credentials_destroy(impl->cached_credentials);
     }
 
+    if (impl->weak_provider != NULL) {
+        aws_weak_ref_set(impl->weak_provider, NULL);
+        aws_weak_ref_release(impl->weak_provider);
+    }
+
     aws_mem_release(provider->allocator, impl);
 }
 
@@ -400,24 +431,31 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_credentials_provider_cached_options *options) {
     assert(options->source != NULL);
 
-    struct aws_credentials_provider_cached *impl =
-        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_cached));
-    if (impl == NULL) {
+    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
+    if (provider == NULL) {
         return NULL;
     }
 
-    AWS_ZERO_STRUCT(*impl);
-
-    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
-        goto on_allocate_provider_failure;
+    AWS_ZERO_STRUCT(*provider);
+    provider->allocator = allocator;
+    provider->vtable = &s_aws_credentials_provider_cached_vtable;
+    struct aws_credentials_provider_cached *impl =
+        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_cached));
+    if (impl == NULL) {
+        goto on_error;
     }
 
-    AWS_ZERO_STRUCT(*provider);
+    AWS_ZERO_STRUCT(*impl);
+    provider->impl = impl;
+
+    impl->weak_provider = aws_weak_ref_new(allocator, provider);
+    if (impl->weak_provider == NULL) {
+        goto on_error;
+    }
 
     if (aws_array_list_init_dynamic(
             &impl->pending_queries, allocator, INITIAL_PENDING_QUERY_LIST_SIZE, sizeof(struct aws_credentials_query))) {
-        goto on_array_list_init_failure;
+        goto on_error;
     }
 
     impl->source = options->source;
@@ -442,17 +480,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
         impl->clock_fn = &aws_high_res_clock_get_ticks;
     }
 
-    provider->impl = impl;
-    provider->allocator = allocator;
-    provider->vtable = &s_aws_credentials_provider_cached_vtable;
-
     return provider;
 
-on_array_list_init_failure:
-    aws_mem_release(allocator, provider);
-
-on_allocate_provider_failure:
-    aws_mem_release(allocator, impl);
+on_error:
+    aws_credentials_provider_destroy(provider);
 
     return NULL;
 }
@@ -636,10 +667,12 @@ on_error:
 
 struct aws_credentials_provider_chain_impl {
     struct aws_array_list providers;
+    struct aws_weak_ref *weak_provider;
 };
 
 struct aws_credentials_provider_chain_user_data {
-    struct aws_credentials_provider *provider_chain;
+    struct aws_allocator *allocator;
+    struct aws_weak_ref *weak_provider_chain;
     size_t current_provider_index;
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
@@ -648,8 +681,13 @@ struct aws_credentials_provider_chain_user_data {
 void aws_provider_chain_member_callback(struct aws_credentials *credentials, void *user_data) {
     struct aws_credentials_provider_chain_user_data *wrapped_user_data =
         (struct aws_credentials_provider_chain_user_data *)user_data;
-    struct aws_credentials_provider_chain_impl *impl =
-        (struct aws_credentials_provider_chain_impl *)wrapped_user_data->provider_chain->impl;
+
+    struct aws_credentials_provider *provider = aws_weak_ref_lock(wrapped_user_data->weak_provider_chain);
+    if (provider == NULL) {
+        goto on_terminate_chain;
+    }
+
+    struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
     size_t provider_count = aws_array_list_length(&impl->providers);
 
@@ -657,31 +695,41 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Credentials provider chain (%p) ending query on chain member %zu with %s credentials",
-            (void *)wrapped_user_data->provider_chain,
+            (void *)wrapped_user_data->weak_provider_chain,
             wrapped_user_data->current_provider_index + 1,
             (credentials != NULL) ? "valid" : "invalid");
 
-        wrapped_user_data->original_callback(credentials, wrapped_user_data->original_user_data);
-        aws_mem_release(wrapped_user_data->provider_chain->allocator, wrapped_user_data);
-        return;
+        goto on_terminate_chain;
     }
 
     wrapped_user_data->current_provider_index++;
 
     struct aws_credentials_provider *next_provider = NULL;
     if (aws_array_list_get_at(&impl->providers, &next_provider, wrapped_user_data->current_provider_index)) {
-        wrapped_user_data->original_callback(NULL, wrapped_user_data->original_user_data);
-        aws_mem_release(wrapped_user_data->provider_chain->allocator, wrapped_user_data);
-        return;
+        goto on_terminate_chain;
     }
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "Credentials provider chain (%p) invoking chain member #%zu",
-        (void *)wrapped_user_data->provider_chain,
-        wrapped_user_data->current_provider_index + 1);
+        (void *)wrapped_user_data->weak_provider_chain,
+        wrapped_user_data->current_provider_index);
+
+    aws_weak_ref_unlock(wrapped_user_data->weak_provider_chain);
 
     aws_credentials_provider_get_credentials(next_provider, aws_provider_chain_member_callback, wrapped_user_data);
+
+    return;
+
+on_terminate_chain:
+
+    aws_weak_ref_unlock(wrapped_user_data->weak_provider_chain);
+    aws_weak_ref_release(wrapped_user_data->weak_provider_chain);
+
+    wrapped_user_data->original_callback(credentials, wrapped_user_data->original_user_data);
+    aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+
+    return;
 }
 
 static int s_credentials_provider_chain_get_credentials_async(
@@ -704,10 +752,13 @@ static int s_credentials_provider_chain_get_credentials_async(
 
     AWS_ZERO_STRUCT(*wrapped_user_data);
 
-    wrapped_user_data->provider_chain = provider;
+    wrapped_user_data->allocator = provider->allocator;
+    wrapped_user_data->weak_provider_chain = impl->weak_provider;
     wrapped_user_data->current_provider_index = 0;
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
+
+    aws_weak_ref_acquire(impl->weak_provider);
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Credentials provider chain (%p) get credentials dispatch", (void *)provider);
@@ -734,6 +785,10 @@ static void s_credentials_provider_chain_clean_up(struct aws_credentials_provide
     }
 
     aws_array_list_clean_up(&impl->providers);
+
+    if (impl->weak_provider) {
+        aws_weak_ref_release(impl->weak_provider);
+    }
 
     aws_mem_release(provider->allocator, impl);
 }
@@ -778,6 +833,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
         if (aws_array_list_push_back(&impl->providers, &options->providers[i])) {
             goto on_error;
         }
+    }
+
+    impl->weak_provider = aws_weak_ref_new(allocator, provider);
+    if (impl->weak_provider == NULL) {
+        goto on_error;
     }
 
     return provider;
