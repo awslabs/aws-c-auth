@@ -26,6 +26,7 @@
 #include <inttypes.h>
 
 #define INITIAL_PENDING_QUERY_LIST_SIZE 10
+#define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
 
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
@@ -852,7 +853,64 @@ on_error:
  * Default provider chain implementation
  */
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(struct aws_allocator *allocator) {
-    (void)allocator;
+    struct aws_credentials_provider *environment_provider = NULL;
+    struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *chain_provider = NULL;
+    struct aws_credentials_provider *cached_provider = NULL;
+
+    environment_provider = aws_credentials_provider_new_environment(allocator);
+    if (environment_provider == NULL) {
+        goto on_error;
+    }
+
+    struct aws_credentials_provider_profile_options profile_options;
+    AWS_ZERO_STRUCT(profile_options);
+    profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
+    if (profile_provider == NULL) {
+        goto on_error;
+    }
+
+    struct aws_credentials_provider *providers[] = {environment_provider, profile_provider};
+    struct aws_credentials_provider_chain_options chain_options;
+    AWS_ZERO_STRUCT(chain_options);
+    chain_options.provider_count = 2;
+    chain_options.providers = providers;
+
+    chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);
+    if (chain_provider == NULL) {
+        goto on_error;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options;
+    AWS_ZERO_STRUCT(cached_options);
+
+    cached_options.source = chain_provider;
+    cached_options.refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS;
+
+    cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
+    if (cached_provider == NULL) {
+        goto on_error;
+    }
+
+    return cached_provider;
+
+on_error:
+
+    /*
+     * Have to be a bit more careful than normal with this clean up pattern since the chain/cache will
+     * recursively destroy the other providers.
+     *
+     * Technically, the cached_provider can never be non-null here, but let's handle it anyways
+     * in case someone does something weird in the future.
+     */
+    if (cached_provider) {
+        aws_credentials_provider_destroy(cached_provider);
+    } else if (chain_provider) {
+        aws_credentials_provider_destroy(chain_provider);
+    } else {
+        aws_credentials_provider_destroy(profile_provider);
+        aws_credentials_provider_destroy(environment_provider);
+    }
 
     return NULL;
 }

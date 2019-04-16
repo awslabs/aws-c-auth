@@ -774,3 +774,40 @@ static int s_credentials_provider_null_chain_test(struct aws_allocator *allocato
 }
 
 AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_chain_test);
+
+static int s_credentials_provider_default_basic_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    /*
+     * Do a basic environment provider test, but use the default provider chain
+     */
+
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_chain_default(allocator);
+
+    ASSERT_TRUE(
+        s_do_basic_provider_test(
+            provider, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value) ==
+        AWS_OP_SUCCESS);
+
+    /*
+     * Verify that there's some caching before the environment by modifying the environment and requerying
+     */
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_1);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_1);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_1);
+
+    ASSERT_TRUE(
+        s_do_basic_provider_test(
+            provider, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value) ==
+        AWS_OP_SUCCESS);
+
+    aws_credentials_provider_destroy(provider);
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_default_basic_test);
