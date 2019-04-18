@@ -84,9 +84,35 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
 }
 
 /*
+ * credentials query new/destroy
+ */
+
+struct aws_credentials_query *aws_credentials_query_new(struct aws_allocator *allocator, struct aws_credentials_provider *provider, aws_on_get_credentials_callback_fn *callback, void *user_data) {
+    struct aws_credentials_query *query = aws_mem_acquire(allocator, sizeof(struct aws_credentials_query));
+    if (query == NULL) {
+        return NULL;
+    }
+
+    AWS_ZERO_STRUCT(*query);
+
+    query->allocator = allocator;
+    query->provider = provider;
+    query->user_data = user_data;
+    query->callback = callback;
+
+    return query;
+}
+
+void aws_credentials_query_destroy(struct aws_credentials_query *query) {
+    if (query != NULL) {
+        aws_mem_release(query->allocator, query);
+    }
+}
+
+/*
  * provider API via vtable
  */
-void aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
+static void s_aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     if (provider != NULL) {
         assert(provider->vtable->clean_up);
 
@@ -96,12 +122,34 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
     }
 }
 
+void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
+    aws_atomic_store_int(&provider->shutting_down, 1);
+
+    assert(provider->vtable->shutdown);
+    provider->vtable->shutdown(provider);
+
+    aws_credentials_provider_release(provider);
+}
+
+void aws_credentials_provider_release(struct aws_credentials_provider *provider) {
+    size_t old_value = aws_atomic_fetch_sub(&provider->ref_count, 1);
+    if (old_value == 1) {
+        s_aws_credentials_provider_destroy(provider);
+    }
+}
+
 int aws_credentials_provider_get_credentials(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
     assert(provider->vtable->get_credentials);
+
+    /*
+     * Callback functions are contractually obligated to dec the ref count
+     * on the provider they are returning an answer to
+     */
+    aws_atomic_fetch_sub(&provider->ref_count, 1);
 
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
@@ -255,24 +303,38 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
     struct aws_credentials *cached_credentials;
-    struct aws_weak_ref *weak_provider;
+    struct aws_mutex lock;
     uint64_t refresh_interval_in_ns;
     uint64_t next_refresh_time;
     aws_io_clock_fn *clock_fn;
-    struct aws_array_list pending_queries;
+    struct aws_linked_list pending_queries;
 };
+
+static void s_aws_credentials_query_list_notify_and_clean_up(struct aws_linked_list *query_list, struct aws_credentials *credentials) {
+    while (!aws_linked_list_empty(query_list)) {
+        struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
+        struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
+        query->callback(credentials, query->user_data);
+        aws_credentials_query_destroy(query);
+    }
+}
 
 static void s_cached_credentials_provider_get_credentials_async_callback(
     struct aws_credentials *credentials,
     void *user_data) {
 
-    struct aws_weak_ref *provider_ref = user_data;
-    struct aws_credentials_provider *provider = aws_weak_ref_lock(provider_ref);
-    if (provider == NULL) {
-        goto on_done;
-    }
-
+    struct aws_credentials_provider *provider = user_data;
     struct aws_credentials_provider_cached *impl = provider->impl;
+
+    aws_mutex_lock(&impl->lock);
+
+    /*
+     * Move pending queries so that we can do notifications outside the lock
+     */
+    struct aws_linked_list pending_queries;
+    aws_linked_list_init(&pending_queries);
+
+    aws_linked_list_swap_contents(&pending_queries, &impl->pending_queries);
 
     if (impl->refresh_interval_in_ns > 0) {
         uint64_t now = 0;
@@ -307,28 +369,14 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
             (void *)provider);
     }
 
-    size_t pending_query_count = aws_array_list_length(&impl->pending_queries);
+    aws_mutex_unlock(&impl->lock);
+
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Cached credentials provider (id=%p) notifying %zu queries of new credentials",
-        (void *)provider,
-        pending_query_count);
+        "Cached credentials provider (id=%p) notifying pending queries of new credentials",
+        (void *)provider);
 
-    for (size_t i = 0; i < pending_query_count; ++i) {
-        struct aws_credentials_query query;
-        if (aws_array_list_get_at(&impl->pending_queries, &query, i)) {
-            continue;
-        }
-
-        query.callback(credentials, query.user_data);
-    }
-
-    aws_array_list_clear(&impl->pending_queries);
-
-on_done:
-
-    aws_weak_ref_unlock(provider_ref);
-    aws_weak_ref_release(provider_ref);
+    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, credentials);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(
@@ -346,84 +394,90 @@ static int s_cached_credentials_provider_get_credentials_async(
         return AWS_OP_ERR;
     }
 
-    bool submit_query = false;
-    aws_weak_ref_lock(impl->weak_provider);
+    bool should_submit_query = false;
+    bool perform_callback = false;
+    struct aws_credentials *credentials = NULL;
+
+    aws_mutex_lock(&impl->lock);
 
     if (current_time < impl->next_refresh_time) {
+        perform_callback = true;
+        credentials = aws_credentials_new_copy(provider->allocator, impl->cached_credentials);
+    } else {
+        struct aws_credentials_query *query = aws_credentials_query_new(provider->allocator, provider, callback, user_data);
+        if (query != NULL) {
+            should_submit_query = aws_linked_list_empty(&impl->pending_queries);
+            aws_linked_list_push_back(&impl->pending_queries, &query->node);
+        } else {
+            perform_callback = true;
+        }
+    }
+
+    aws_mutex_unlock(&impl->lock);
+
+    if (should_submit_query) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Cached credentials provider (id=%p) has expired credentials.  Requerying.",
+            (void *)provider);
+
+        aws_credentials_provider_get_credentials(
+            impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
+    } else {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Cached credentials provider (id=%p) has expired credentials.  Waiting on existing query.",
+            (void *)provider);
+    }
+
+    if (perform_callback) {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Cached credentials provider (id=%p) successfully sourced from cache",
             (void *)provider);
-        callback(impl->cached_credentials, user_data);
-    } else {
-        struct aws_credentials_query query;
-        AWS_ZERO_STRUCT(query);
-        query.callback = callback;
-        query.provider = provider;
-        query.user_data = user_data;
-
-        aws_array_list_push_back(&impl->pending_queries, &query);
-
-        if (aws_array_list_length(&impl->pending_queries) == 1) {
-            AWS_LOGF_INFO(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Cached credentials provider (id=%p) has expired credentials.  Requerying.",
-                (void *)provider);
-            submit_query = true;
-        } else {
-            AWS_LOGF_DEBUG(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Cached credentials provider (id=%p) has expired credentials.  Waiting on existing query.",
-                (void *)provider);
-        }
-    }
-
-    aws_weak_ref_unlock(impl->weak_provider);
-
-    if (submit_query) {
-        aws_weak_ref_acquire(impl->weak_provider);
-        aws_credentials_provider_get_credentials(
-            impl->source, s_cached_credentials_provider_get_credentials_async_callback, impl->weak_provider);
+        callback(credentials, user_data);
+        aws_credentials_destroy(credentials);
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static void s_cache_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_cached_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_cached *impl = provider->impl;
     if (impl == NULL) {
         return;
     }
 
-    size_t pending_query_count = aws_array_list_length(&impl->pending_queries);
-    for (size_t i = 0; i < pending_query_count; ++i) {
-        struct aws_credentials_query query;
-        if (aws_array_list_get_at(&impl->pending_queries, &query, i)) {
-            continue;
-        }
-
-        query.callback(impl->cached_credentials, query.user_data);
-    }
-
-    aws_array_list_clean_up(&impl->pending_queries);
-
     aws_credentials_provider_destroy(impl->source);
+
+    /*
+     * The basic provider destruction contract is that destroying a provider should cause all
+     * pending queries on it to receive their callbacks.  So we expect that after destroying
+     * the linked provider, all of our pending queries should have been cleared by one or more
+     * callback invocations.
+     *
+     * Applying this contract transitively, it should be 100% safe to access internals without the lock
+     * because everything that might want access has been torn down.
+     */
+    assert(aws_linked_list_empty(&impl->pending_queries));
+
+    /*
+     * Unnecessary but paranoid
+     */
+    s_aws_credentials_query_list_notify_and_clean_up(&impl->pending_queries, impl->cached_credentials);
 
     if (impl->cached_credentials != NULL) {
         aws_credentials_destroy(impl->cached_credentials);
     }
 
-    if (impl->weak_provider != NULL) {
-        aws_weak_ref_set(impl->weak_provider, NULL);
-        aws_weak_ref_release(impl->weak_provider);
-    }
+    aws_mutex_clean_up(&impl->lock);
 
     aws_mem_release(provider->allocator, impl);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_vtable = {
     .get_credentials = s_cached_credentials_provider_get_credentials_async,
-    .clean_up = s_cache_credentials_provider_clean_up};
+    .clean_up = s_cached_credentials_provider_clean_up};
 
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
@@ -447,15 +501,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     AWS_ZERO_STRUCT(*impl);
     provider->impl = impl;
 
-    impl->weak_provider = aws_weak_ref_new(allocator, provider);
-    if (impl->weak_provider == NULL) {
+    if (aws_mutex_init(&impl->lock)) {
         goto on_error;
     }
 
-    if (aws_array_list_init_dynamic(
-            &impl->pending_queries, allocator, INITIAL_PENDING_QUERY_LIST_SIZE, sizeof(struct aws_credentials_query))) {
-        goto on_error;
-    }
+    aws_linked_list_init(&impl->pending_queries);
 
     impl->source = options->source;
 
@@ -679,12 +729,7 @@ struct aws_credentials_provider_chain_user_data {
 
 void aws_provider_chain_member_callback(struct aws_credentials *credentials, void *user_data) {
     struct aws_credentials_provider_chain_user_data *wrapped_user_data = user_data;
-
     struct aws_credentials_provider *provider = aws_weak_ref_lock(wrapped_user_data->weak_provider_chain);
-    if (provider == NULL) {
-        goto on_terminate_chain;
-    }
-
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
     size_t provider_count = aws_array_list_length(&impl->providers);
@@ -693,7 +738,7 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Credentials provider chain (id=%p) ending query on chain member %zu with %s credentials",
-            (void *)wrapped_user_data->weak_provider_chain,
+            (void *)provider,
             wrapped_user_data->current_provider_index + 1,
             (credentials != NULL) ? "valid" : "invalid");
 
@@ -702,6 +747,9 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
 
     wrapped_user_data->current_provider_index++;
 
+    /*
+     * TODO: Immutable data, shouldn't need a lock, but we probably need a fence and we don't have one atm
+     */
     struct aws_credentials_provider *next_provider = NULL;
     if (aws_array_list_get_at(&impl->providers, &next_provider, wrapped_user_data->current_provider_index)) {
         goto on_terminate_chain;
@@ -710,19 +758,14 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "Credentials provider chain (id=%p) invoking chain member #%zu",
-        (void *)wrapped_user_data->weak_provider_chain,
+        (void *)provider,
         wrapped_user_data->current_provider_index);
-
-    aws_weak_ref_unlock(wrapped_user_data->weak_provider_chain);
 
     aws_credentials_provider_get_credentials(next_provider, aws_provider_chain_member_callback, wrapped_user_data);
 
     return;
 
 on_terminate_chain:
-
-    aws_weak_ref_unlock(wrapped_user_data->weak_provider_chain);
-    aws_weak_ref_release(wrapped_user_data->weak_provider_chain);
 
     wrapped_user_data->original_callback(credentials, wrapped_user_data->original_user_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);

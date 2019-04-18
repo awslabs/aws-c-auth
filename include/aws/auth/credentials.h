@@ -20,6 +20,8 @@
 #include <aws/auth/auth.h>
 
 #include <aws/common/array_list.h>
+#include <aws/common/atomics.h>
+#include <aws/common/linked_list.h>
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
@@ -41,19 +43,25 @@ typedef int(aws_credentials_provider_get_credentials_fn)(
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
 typedef void(aws_credentials_provider_clean_up_fn)(struct aws_credentials_provider *provider);
+typedef void(aws_credentials_provider_shutdown_fn)(struct aws_credentials_provider *provider);
 
 struct aws_credentials_provider_vtable {
     aws_credentials_provider_get_credentials_fn *get_credentials;
     aws_credentials_provider_clean_up_fn *clean_up;
+    aws_credentials_provider_shutdown_fn *shutdown;
 };
 
 struct aws_credentials_provider {
     struct aws_credentials_provider_vtable *vtable;
     struct aws_allocator *allocator;
     void *impl;
+    struct aws_atomic_var shutting_down;
+    struct aws_atomic_var ref_count;
 };
 
 struct aws_credentials_query {
+    struct aws_linked_list_node node;
+    struct aws_allocator *allocator;
     struct aws_credentials_provider *provider;
     aws_on_get_credentials_callback_fn *callback;
     void *user_data;
@@ -99,12 +107,21 @@ struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator
 AWS_AUTH_API
 void aws_credentials_destroy(struct aws_credentials *credentials);
 
+AWS_AUTH_API
+struct aws_credentials_query *aws_credentials_query_new(struct aws_allocator *allocator, struct aws_credentials_provider *provider, aws_on_get_credentials_callback_fn *callback, void *user_data);
+
+AWS_AUTH_API
+void aws_credentials_query_destroy(struct aws_credentials_query *query);
+
 /*
  * Credentials provider APIs
  */
 
 AWS_AUTH_API
-void aws_credentials_provider_destroy(struct aws_credentials_provider *provider);
+void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider);
+
+AWS_AUTH_API
+void aws_credentials_provider_release(struct aws_credentials_provider *provider);
 
 AWS_AUTH_API
 int aws_credentials_provider_get_credentials(
