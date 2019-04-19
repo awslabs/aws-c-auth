@@ -714,9 +714,9 @@ static int s_do_provider_chain_test(
 int s_verify_first_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "Access1") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "Secret1") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "Session1") == 0);
+    ASSERT_TRUE(aws_string_eq(callback_results->credentials->access_key_id, s_access_key_id_value1));
+    ASSERT_TRUE(aws_string_eq(callback_results->credentials->secret_access_key, s_secret_access_key_value1));
+    ASSERT_TRUE(aws_string_eq(callback_results->credentials->session_token, s_session_token_value1));
 
     return AWS_OP_SUCCESS;
 }
