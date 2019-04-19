@@ -142,7 +142,7 @@ static int s_static_credentials_provider_basic_test(struct aws_allocator *alloca
             provider, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value) ==
         AWS_OP_SUCCESS);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return 0;
 }
@@ -167,7 +167,7 @@ static int s_environment_credentials_provider_basic_test(struct aws_allocator *a
             provider, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value) ==
         AWS_OP_SUCCESS);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return 0;
 }
@@ -179,7 +179,7 @@ static int s_do_environment_credentials_provider_failure(struct aws_allocator *a
 
     ASSERT_TRUE(s_do_basic_provider_test(provider, 1, NULL, NULL, NULL) == AWS_OP_SUCCESS);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return 0;
 }
@@ -372,7 +372,7 @@ static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allo
         0);
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
-    aws_credentials_provider_destroy(cached_provider);
+    aws_credentials_provider_release(cached_provider);
     aws_credentials_destroy(second_creds);
     aws_credentials_destroy(first_creds);
 
@@ -460,7 +460,7 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
         s_verify_callback_status(&callback_results, 2, s_access_key_id_2, s_secret_access_key_2, s_session_token_2) ==
         0);
 
-    aws_credentials_provider_destroy(cached_provider);
+    aws_credentials_provider_release(cached_provider);
     aws_credentials_provider_mock_async_controller_clean_up(&controller);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
@@ -480,7 +480,7 @@ static int s_profile_credentials_provider_new_destroy_defaults_test(struct aws_a
     AWS_ZERO_STRUCT(options);
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return 0;
 }
@@ -505,7 +505,7 @@ static int s_profile_credentials_provider_new_destroy_overrides_test(struct aws_
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return 0;
 }
@@ -568,7 +568,7 @@ static int s_do_credentials_provider_profile_test(
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
 on_file_failure:
     remove((const char *)s_config_file_name->bytes);
@@ -684,8 +684,8 @@ static int s_do_provider_chain_test(
 
     struct aws_credentials_provider *provider_chain = aws_credentials_provider_new_chain(allocator, &options);
     if (provider_chain == NULL) {
-        aws_credentials_provider_destroy(provider1);
-        aws_credentials_provider_destroy(provider2);
+        aws_credentials_provider_release(provider1);
+        aws_credentials_provider_release(provider2);
         return 0;
     }
 
@@ -704,7 +704,7 @@ static int s_do_provider_chain_test(
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
-    aws_credentials_provider_destroy(provider_chain);
+    aws_credentials_provider_release(provider_chain);
 
     return verification_result;
 }
@@ -805,7 +805,7 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
             provider, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value) ==
         AWS_OP_SUCCESS);
 
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return 0;
 }

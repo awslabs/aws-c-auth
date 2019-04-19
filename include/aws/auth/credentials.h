@@ -124,6 +124,9 @@ AWS_AUTH_API
 void aws_credentials_provider_release(struct aws_credentials_provider *provider);
 
 AWS_AUTH_API
+void aws_credentials_provider_acquire(struct aws_credentials_provider *provider);
+
+AWS_AUTH_API
 int aws_credentials_provider_get_credentials(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
