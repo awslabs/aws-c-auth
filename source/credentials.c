@@ -16,6 +16,7 @@
 #include <aws/auth/credentials.h>
 
 #include <aws/auth/private/aws_profile.h>
+#include <aws/auth/private/credentials_query.h>
 #include <aws/common/clock.h>
 #include <aws/common/environment.h>
 #include <aws/common/mutex.h>
@@ -25,6 +26,10 @@
 #include <inttypes.h>
 
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
+
+/*
+ * Credentials API implementations
+ */
 
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
@@ -86,36 +91,12 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
 }
 
 /*
- * credentials query new/destroy
+ * global provider APIs
  */
 
-struct aws_credentials_query *aws_credentials_query_new(struct aws_allocator *allocator, struct aws_credentials_provider *provider, aws_on_get_credentials_callback_fn *callback, void *user_data) {
-    struct aws_credentials_query *query = aws_mem_acquire(allocator, sizeof(struct aws_credentials_query));
-    if (query == NULL) {
-        return NULL;
-    }
-
-    AWS_ZERO_STRUCT(*query);
-
-    query->allocator = allocator;
-    query->provider = provider;
-    query->user_data = user_data;
-    query->callback = callback;
-
-    return query;
-}
-
-void aws_credentials_query_destroy(struct aws_credentials_query *query) {
-    if (query != NULL) {
-        aws_mem_release(query->allocator, query);
-    }
-}
-
-/*
- * provider API via vtable
- */
 static void s_aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     if (provider != NULL) {
+        /* allow this to be null to support partial construction cleanup */
         if (provider->vtable->clean_up) {
             provider->vtable->clean_up(provider);
         }
@@ -149,18 +130,14 @@ int aws_credentials_provider_get_credentials(
 
     assert(provider->vtable->get_credentials);
 
-    /*
-     * Bump up the ref count.
-     *
-     * In return, callback functions are contractually obligated to dec the ref count
-     * on the provider they return an answer to
-     */
-    aws_credentials_provider_acquire(provider);
-
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
 
-static void s_credentials_provider_init_base(struct aws_credentials_provider *provider, struct aws_allocator *allocator, struct aws_credentials_provider_vtable *vtable, void *impl) {
+static void s_credentials_provider_init_base(
+    struct aws_credentials_provider *provider,
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_vtable *vtable,
+    void *impl) {
     provider->allocator = allocator;
     provider->vtable = vtable;
     provider->impl = impl;
@@ -182,10 +159,9 @@ static int s_static_credentials_provider_get_credentials_async(
 
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Static credentials provider (id=%p) successfully sourced credentials",
+        "(id=%p) Static credentials provider successfully sourced credentials",
         (void *)provider);
     callback(credentials, user_data);
-    aws_credentials_provider_release(provider);
 
     return AWS_OP_SUCCESS;
 }
@@ -198,6 +174,9 @@ static void s_static_credentials_provider_clean_up(struct aws_credentials_provid
     }
 }
 
+/*
+ * shared across all providers that do not need to do anything special on shutdown
+ */
 static void s_sync_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
     (void)provider;
 }
@@ -231,6 +210,7 @@ struct aws_credentials_provider *aws_credentials_provider_static_new(
     return provider;
 
 on_new_credentials_failure:
+
     aws_mem_release(allocator, provider);
 
     return NULL;
@@ -264,13 +244,13 @@ static int s_credentials_provider_environment_get_credentials_async(
         credentials->access_key_id == NULL || credentials->secret_access_key == NULL) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Environment credentials provider (id=%p) was unable to source credentials",
+            "(id=%p) Environment credentials provider was unable to source credentials",
             (void *)provider);
         callback(NULL, user_data);
     } else {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Environment credentials provider (id=%p) successfully sourced credentials",
+            "(id=%p) Environment credentials provider successfully sourced credentials",
             (void *)provider);
         aws_get_environment_value(allocator, s_session_token_env_var, &credentials->session_token);
         callback(credentials, user_data);
@@ -279,8 +259,6 @@ static int s_credentials_provider_environment_get_credentials_async(
     if (credentials != NULL) {
         aws_credentials_destroy(credentials);
     }
-
-    aws_credentials_provider_release(provider);
 
     return AWS_OP_SUCCESS;
 }
@@ -329,13 +307,16 @@ struct aws_credentials_provider_cached {
     struct aws_linked_list pending_queries;
 };
 
-static void s_aws_credentials_query_list_notify_and_clean_up(struct aws_linked_list *query_list, struct aws_credentials *credentials) {
+static void s_aws_credentials_query_list_notify_and_clean_up(
+    struct aws_linked_list *query_list,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials) {
     while (!aws_linked_list_empty(query_list)) {
         struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
         struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
         query->callback(credentials, query->user_data);
-        aws_credentials_provider_release(query->provider);
-        aws_credentials_query_destroy(query);
+        aws_credentials_query_clean_up(query);
+        aws_mem_release(allocator, query);
     }
 }
 
@@ -367,7 +348,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Cached credentials provider (id=%p) next refresh time set to %" PRIu64,
+        "(id=%p) Cached credentials provider next refresh time set to %" PRIu64,
         (void *)provider,
         impl->next_refresh_time);
 
@@ -379,13 +360,13 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         impl->cached_credentials = aws_credentials_new_copy(provider->allocator, credentials);
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Cached credentials provider (id=%p) succesfully sourced credentials on refresh",
+            "(id=%p) Cached credentials provider succesfully sourced credentials on refresh",
             (void *)provider);
     } else {
         impl->cached_credentials = NULL;
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Cached credentials provider (id=%p) was unable to source credentials on refresh",
+            "(id=%p) Cached credentials provider was unable to source credentials on refresh",
             (void *)provider);
     }
 
@@ -393,10 +374,10 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Cached credentials provider (id=%p) notifying pending queries of new credentials",
+        "(id=%p) Cached credentials provider notifying pending queries of new credentials",
         (void *)provider);
 
-    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, credentials);
+    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(
@@ -415,14 +396,14 @@ static int s_cached_credentials_provider_get_credentials_async(
 
     aws_mutex_lock(&impl->lock);
 
-    if (current_time == 0 || is_shutting_down) {
-        perform_callback = true;
-    } else if (current_time < impl->next_refresh_time) {
+    if (current_time < impl->next_refresh_time || is_shutting_down) {
         perform_callback = true;
         credentials = aws_credentials_new_copy(provider->allocator, impl->cached_credentials);
     } else {
-        struct aws_credentials_query *query = aws_credentials_query_new(provider->allocator, provider, callback, user_data);
+        struct aws_credentials_query *query =
+            aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_query));
         if (query != NULL) {
+            aws_credentials_query_init(query, provider, callback, user_data);
             should_submit_query = aws_linked_list_empty(&impl->pending_queries);
             aws_linked_list_push_back(&impl->pending_queries, &query->node);
         } else {
@@ -435,26 +416,33 @@ static int s_cached_credentials_provider_get_credentials_async(
     if (should_submit_query) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Cached credentials provider (id=%p) has expired credentials.  Requerying.",
+            "(id=%p) Cached credentials provider has expired credentials.  Requerying.",
             (void *)provider);
 
         aws_credentials_provider_get_credentials(
             impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
+
     } else {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Cached credentials provider (id=%p) has expired credentials.  Waiting on existing query.",
+            "(id=%p) Cached credentials provider has expired credentials.  Waiting on existing query.",
             (void *)provider);
     }
 
     if (perform_callback) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Cached credentials provider (id=%p) successfully sourced from cache",
-            (void *)provider);
+        if (credentials != NULL) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Cached credentials provider successfully sourced from cache",
+                (void *)provider);
+        } else {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Cached credentials provider failed to source credentials while skipping requery",
+                (void *)provider);
+        }
         callback(credentials, user_data);
         aws_credentials_destroy(credentials);
-        aws_credentials_provider_release(provider);
     }
 
     return AWS_OP_SUCCESS;
@@ -572,13 +560,13 @@ static int s_profile_file_credentials_provider_get_credentials_async(
     if (config_profiles != NULL) {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) successfully built config profile collection from file at (%s)",
+            "(id=%p) Profile credentials provider successfully built config profile collection from file at (%s)",
             (void *)provider,
             (const char *)impl->config_file_path->bytes);
     } else {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) failed to build config profile collection from file at (%s)",
+            "(id=%p) Profile credentials provider failed to build config profile collection from file at (%s)",
             (void *)provider,
             (const char *)impl->config_file_path->bytes);
     }
@@ -592,13 +580,13 @@ static int s_profile_file_credentials_provider_get_credentials_async(
     if (credentials_profiles != NULL) {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) successfully built credentials profile collection from file at (%s)",
+            "(id=%p) Profile credentials provider successfully built credentials profile collection from file at (%s)",
             (void *)provider,
             (const char *)impl->credentials_file_path->bytes);
     } else {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) failed to build credentials profile collection from file at (%s)",
+            "(id=%p) Profile credentials provider failed to build credentials profile collection from file at (%s)",
             (void *)provider,
             (const char *)impl->credentials_file_path->bytes);
     }
@@ -613,21 +601,21 @@ static int s_profile_file_credentials_provider_get_credentials_async(
         if (profile != NULL) {
             AWS_LOGF_INFO(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Profile credentials provider (id=%p) attempting to pull credentials from profile \"%s\"",
+                "(id=%p) Profile credentials provider attempting to pull credentials from profile \"%s\"",
                 (void *)provider,
                 (const char *)impl->profile_name->bytes);
             credentials = aws_credentials_new_from_profile(provider->allocator, profile);
         } else {
             AWS_LOGF_INFO(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Profile credentials provider (id=%p) could not find a profile named \"%s\"",
+                "(id=%p) Profile credentials provider could not find a profile named \"%s\"",
                 (void *)provider,
                 (const char *)impl->profile_name->bytes);
         }
     } else {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) failed to merge config and credentials profile collections",
+            "(id=%p) Profile credentials provider failed to merge config and credentials profile collections",
             (void *)provider);
     }
 
@@ -640,8 +628,6 @@ static int s_profile_file_credentials_provider_get_credentials_async(
     aws_profile_collection_destroy(merged_profiles);
     aws_profile_collection_destroy(config_profiles);
     aws_profile_collection_destroy(credentials_profiles);
-
-    aws_credentials_provider_release(provider);
 
     return AWS_OP_SUCCESS;
 }
@@ -687,7 +673,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     if (impl->credentials_file_path == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) failed resolve credentials file path",
+            "(id=%p) Profile credentials provider failed resolve credentials file path",
             (void *)provider);
         goto on_error;
     }
@@ -696,7 +682,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     if (impl->config_file_path == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) failed resolve config file path",
+            "(id=%p) Profile credentials provider failed resolve config file path",
             (void *)provider);
         goto on_error;
     }
@@ -705,7 +691,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     if (impl->profile_name == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Profile credentials provider (id=%p) failed to resolve profile name",
+            "(id=%p) Profile credentials provider failed to resolve profile name",
             (void *)provider);
         goto on_error;
     }
@@ -745,7 +731,7 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
     if (credentials != NULL || wrapped_user_data->current_provider_index + 1 >= provider_count || is_shutting_down) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Credentials provider chain (id=%p) ending query on chain member %zu with %s credentials",
+            "(id=%p) Credentials provider chain ending query on chain member %zu with %s credentials",
             (void *)provider,
             wrapped_user_data->current_provider_index + 1,
             (credentials != NULL) ? "valid" : "invalid");
@@ -756,7 +742,7 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
     wrapped_user_data->current_provider_index++;
 
     /*
-     * TODO: Immutable data, shouldn't need a lock, but we probably need a fence and we don't have one atm
+     * TODO: Immutable data, shouldn't need a lock, but we might need a fence and we don't have one atm
      */
     struct aws_credentials_provider *next_provider = NULL;
     if (aws_array_list_get_at(&impl->providers, &next_provider, wrapped_user_data->current_provider_index)) {
@@ -765,7 +751,7 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Credentials provider chain (id=%p) invoking chain member #%zu",
+        "(id=%p) Credentials provider chain invoking chain member #%zu",
         (void *)provider,
         wrapped_user_data->current_provider_index);
 
@@ -807,9 +793,11 @@ static int s_credentials_provider_chain_get_credentials_async(
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
+    aws_credentials_provider_acquire(provider);
+
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Credentials provider chain (id=%p) get credentials dispatch",
+        "(id=%p) Credentials provider chain get credentials dispatch",
         (void *)provider);
 
     aws_credentials_provider_get_credentials(first_provider, aws_provider_chain_member_callback, wrapped_user_data);
@@ -886,11 +874,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
     }
 
     for (size_t i = 0; i < options->provider_count; ++i) {
-        if (aws_array_list_push_back(&impl->providers, &options->providers[i])) {
+        struct aws_credentials_provider *sub_provider = options->providers[i];
+        if (aws_array_list_push_back(&impl->providers, &sub_provider)) {
             goto on_error;
         }
 
-        aws_credentials_provider_acquire(options->providers[i]);
+        aws_credentials_provider_acquire(sub_provider);
     }
 
     return provider;
@@ -933,6 +922,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
         goto on_error;
     }
 
+    /*
+     * Transfer ownership
+     */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
 
@@ -947,6 +939,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
         goto on_error;
     }
 
+    /*
+     * Transfer ownership
+     */
     aws_credentials_provider_release(chain_provider);
 
     return cached_provider;
@@ -955,7 +950,7 @@ on_error:
 
     /*
      * Have to be a bit more careful than normal with this clean up pattern since the chain/cache will
-     * recursively destroy the other providers.
+     * recursively destroy the other providers via ref release.
      *
      * Technically, the cached_provider can never be non-null here, but let's handle it anyways
      * in case someone does something weird in the future.

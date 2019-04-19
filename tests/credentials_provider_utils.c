@@ -16,6 +16,7 @@
 #include "credentials_provider_utils.h"
 
 #include <aws/auth/credentials.h>
+#include <aws/auth/private/credentials_query.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/io/file_utils.h>
@@ -110,8 +111,6 @@ static int s_mock_credentials_provider_get_credentials_async(
     } else {
         AWS_FATAL_ASSERT(false);
     }
-
-    aws_credentials_provider_release(provider);
 
     return AWS_OP_SUCCESS;
 }
@@ -209,9 +208,8 @@ static int s_async_mock_credentials_provider_get_credentials_async(
 
     struct aws_credentials_query query;
     AWS_ZERO_STRUCT(query);
-    query.provider = provider;
-    query.callback = callback;
-    query.user_data = user_data;
+
+    aws_credentials_query_init(&query, provider, callback, user_data);
 
     aws_array_list_push_back(&impl->queries, &query);
 
@@ -283,7 +281,7 @@ static void mock_async_background_thread_function(void *arg) {
                 }
 
                 query.callback(result.credentials, query.user_data);
-                aws_credentials_provider_release(query.provider);
+                aws_credentials_query_clean_up(&query);
             }
 
             impl->next_result++;
@@ -404,7 +402,6 @@ static int s_credentials_provider_null_get_credentials_async(
     void *user_data) {
     (void)provider;
     callback(NULL, user_data);
-    aws_credentials_provider_release(provider);
 
     return AWS_OP_SUCCESS;
 }
