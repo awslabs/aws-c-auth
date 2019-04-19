@@ -334,8 +334,8 @@ static void s_aws_credentials_query_list_notify_and_clean_up(struct aws_linked_l
         struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
         struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
         query->callback(credentials, query->user_data);
-        aws_credentials_query_destroy(query);
         aws_credentials_provider_release(query->provider);
+        aws_credentials_query_destroy(query);
     }
 }
 
@@ -467,22 +467,6 @@ static void s_cached_credentials_provider_clean_up(struct aws_credentials_provid
     }
 
     aws_credentials_provider_release(impl->source);
-
-    /*
-     * The basic provider destruction contract is that destroying a provider should cause all
-     * pending queries on it to receive their callbacks.  So we expect that after destroying
-     * the linked provider, all of our pending queries should have been cleared by one or more
-     * callback invocations.
-     *
-     * Applying this contract transitively, it should be 100% safe to access internals without the lock
-     * because everything that might want access has been torn down.
-     */
-    assert(aws_linked_list_empty(&impl->pending_queries));
-
-    /*
-     * Unnecessary but paranoid
-     */
-    s_aws_credentials_query_list_notify_and_clean_up(&impl->pending_queries, impl->cached_credentials);
 
     if (impl->cached_credentials != NULL) {
         aws_credentials_destroy(impl->cached_credentials);

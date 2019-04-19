@@ -299,7 +299,7 @@ static int s_verify_callback_status(
 static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    mock_aws_set_time(0);
+    mock_aws_set_time(1);
 
     struct aws_credentials *first_creds =
         aws_credentials_new(allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1);
@@ -318,6 +318,7 @@ static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allo
     options.clock_fn = mock_aws_get_time;
 
     struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &options);
+    aws_credentials_provider_release(mock_provider);
 
     struct aws_get_credentials_test_callback_result callback_results;
     ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
@@ -384,7 +385,7 @@ AWS_TEST_CASE(cached_credentials_provider_elapsed_test, s_cached_credentials_pro
 static int s_cached_credentials_provider_queued_async_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    mock_aws_set_time(0);
+    mock_aws_set_time(1);
 
     struct aws_credentials *first_creds =
         aws_credentials_new(allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1);
@@ -406,6 +407,7 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     options.clock_fn = mock_aws_get_time;
 
     struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &options);
+    aws_credentials_provider_release(mock_provider);
 
     struct aws_get_credentials_test_callback_result callback_results;
 
@@ -683,9 +685,9 @@ static int s_do_provider_chain_test(
     options.provider_count = 2;
 
     struct aws_credentials_provider *provider_chain = aws_credentials_provider_new_chain(allocator, &options);
+    aws_credentials_provider_release(provider1);
+    aws_credentials_provider_release(provider2);
     if (provider_chain == NULL) {
-        aws_credentials_provider_release(provider1);
-        aws_credentials_provider_release(provider2);
         return 0;
     }
 
