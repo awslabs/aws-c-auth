@@ -69,9 +69,9 @@ struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator
     if (credentials != NULL) {
         return aws_credentials_new(
             allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
-    } else {
-        return NULL;
     }
+
+    return NULL;
 }
 
 void aws_credentials_destroy(struct aws_credentials *credentials) {
@@ -768,8 +768,6 @@ on_terminate_chain:
     wrapped_user_data->original_callback(credentials, wrapped_user_data->original_user_data);
     aws_credentials_provider_release(provider);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
-
-    return;
 }
 
 static int s_credentials_provider_chain_get_credentials_async(
