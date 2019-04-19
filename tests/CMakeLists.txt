@@ -83,8 +83,47 @@ add_test_case(credentials_file_path_environment_test)
 add_test_case(profile_override_test)
 add_test_case(profile_environment_test)
 
+add_test_case(sigv4_get_header_key_duplicate_test)
+add_test_case(sigv4_get_header_value_multiline_test)
+add_test_case(sigv4_get_header_value_order_test)
+add_test_case(sigv4_get_header_value_trim_test)
+add_test_case(sigv4_get_unreserved_test)
+add_test_case(sigv4_get_utf8_test)
+add_test_case(sigv4_get_vanilla_test)
+add_test_case(sigv4_get_vanilla_empty_query_key_test)
+add_test_case(sigv4_get_vanilla_query_test)
+add_test_case(sigv4_get_vanilla_query_order_key_case_test)
+add_test_case(sigv4_get_vanilla_unreserved_test)
+add_test_case(sigv4_get_vanilla_utf8_query_test)
+add_test_case(sigv4_post_header_key_case_test)
+add_test_case(sigv4_post_header_key_sort_test)
+add_test_case(sigv4_post_header_value_case_test)
+add_test_case(sigv4_post_vanilla_test)
+add_test_case(sigv4_post_vanilla_empty_query_value_test)
+add_test_case(sigv4_post_vanilla_query_test)
+
+# These tests contain invalid validation data (string to sign's canonical request hash is not correct)
+#add_test_case(sigv4_post_x_www_form_urlencoded_test)
+#add_test_case(sigv4_post_x_www_form_urlencoded_parameters_test)
+
+add_test_case(sigv4_get_relative_test)
+add_test_case(sigv4_get_relative_relative_test)
+add_test_case(sigv4_get_slash_test)
+add_test_case(sigv4_get_slash_dot_slash_test)
+add_test_case(sigv4_get_slash_pointless_dot_test)
+add_test_case(sigv4_get_slashes_test)
+add_test_case(sigv4_get_space_test)
+
+add_test_case(sigv4_post_sts_header_after_test)
+add_test_case(sigv4_post_sts_header_before_test)
+
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
+
+# sigv4 test suite files
+add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources ${CMAKE_CURRENT_BINARY_DIR})
 
 file(GLOB FUZZ_TESTS "fuzz/*.c")
 aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")
