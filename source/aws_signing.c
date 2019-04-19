@@ -134,15 +134,15 @@ void aws_signing_state_clean_up(struct aws_signing_state_aws *state) {
 static int s_append_character_to_byte_buf(uint8_t value, struct aws_byte_buf *buffer) {
 
 #if defined(_MSC_VER)
-    #pragma warning( push )
-#    pragma warning(disable : 4204)
+#    pragma warning(push)
+#    pragma warning(disable : 4221)
 #endif /* _MSC_VER */
 
     /* msvc isn't a fan of this pointer assignment */
     struct aws_byte_cursor eq_cursor = {.len = 1, .ptr = &value};
 
 #if defined(_MSC_VER)
-    #pragma warning( pop )
+#    pragma warning(pop)
 #endif /* _MSC_VER */
 
     return aws_byte_buf_append_dynamic(buffer, &eq_cursor);
@@ -517,9 +517,12 @@ static int s_byte_cursor_lookup_comparator(
     while (lhs_curr < lhs_end && rhs_curr < rhs_end) {
         uint8_t lhc = lookup_table[*lhs_curr];
         uint8_t rhc = lookup_table[*rhs_curr];
+
         if (lhc < rhc) {
             return -1;
-        } else if (lhc > rhc) {
+        }
+
+        if (lhc > rhc) {
             return 1;
         }
 
@@ -529,11 +532,13 @@ static int s_byte_cursor_lookup_comparator(
 
     if (lhs_curr < lhs_end) {
         return 1;
-    } else if (rhs_curr < rhs_end) {
-        return -1;
-    } else {
-        return 0;
     }
+
+    if (rhs_curr < rhs_end) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
