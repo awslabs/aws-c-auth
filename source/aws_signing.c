@@ -26,6 +26,10 @@
 
 #include <ctype.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4204)
+#endif /* _MSC_VER */
+
 /*
  * A bunch of initial size values for various buffers used throughout the signing process
  *
@@ -128,7 +132,19 @@ void aws_signing_state_clean_up(struct aws_signing_state_aws *state) {
  */
 
 static int s_append_character_to_byte_buf(uint8_t value, struct aws_byte_buf *buffer) {
+
+#if defined(_MSC_VER)
+    #pragma warning( push )
+#    pragma warning(disable : 4204)
+#endif /* _MSC_VER */
+
+    /* msvc isn't a fan of this pointer assignment */
     struct aws_byte_cursor eq_cursor = {.len = 1, .ptr = &value};
+
+#if defined(_MSC_VER)
+    #pragma warning( pop )
+#endif /* _MSC_VER */
+
     return aws_byte_buf_append_dynamic(buffer, &eq_cursor);
 }
 
@@ -152,9 +168,9 @@ static uint8_t s_to_uppercase_hex(uint8_t value) {
 
     if (value < 10) {
         return (uint8_t)('0' + value);
-    } else {
-        return (uint8_t)('A' + value - 10);
     }
+
+    return (uint8_t)('A' + value - 10);
 }
 
 static uint8_t s_to_lowercase_hex(uint8_t value) {
@@ -162,9 +178,9 @@ static uint8_t s_to_lowercase_hex(uint8_t value) {
 
     if (value < 10) {
         return (uint8_t)('0' + value);
-    } else {
-        return (uint8_t)('a' + value - 10);
     }
+
+    return (uint8_t)('a' + value - 10);
 }
 
 typedef void(unchecked_append_canonicalized_character_fn)(uint8_t value, struct aws_byte_buf *buffer);
@@ -322,7 +338,9 @@ static int s_append_normalized_path(
         if (path_component.len == 0 || (path_component.len == 1 && *path_component.ptr == '.')) {
             /* '.' and '' contribute nothing to a normalized path */
             continue;
-        } else if (path_component.len == 2 && *path_component.ptr == '.' && *(path_component.ptr + 1) == '.') {
+        }
+
+        if (path_component.len == 2 && *path_component.ptr == '.' && *(path_component.ptr + 1) == '.') {
             /* '..' causes us to remove the last valid path component */
             aws_array_list_pop_back(&normalized_split);
         } else {
@@ -457,9 +475,12 @@ static int s_byte_cursor_lex_comparator(const struct aws_byte_cursor *lhs, const
     while (lhs_curr < lhs_end && rhs_curr < rhs_end) {
         uint8_t lhc = *lhs_curr;
         uint8_t rhc = *rhs_curr;
+
         if (lhc < rhc) {
             return -1;
-        } else if (lhc > rhc) {
+        }
+
+        if (lhc > rhc) {
             return 1;
         }
 
@@ -469,11 +490,13 @@ static int s_byte_cursor_lex_comparator(const struct aws_byte_cursor *lhs, const
 
     if (lhs_curr < lhs_end) {
         return 1;
-    } else if (rhs_curr < rhs_end) {
-        return -1;
-    } else {
-        return 0;
     }
+
+    if (rhs_curr < rhs_end) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -554,12 +577,12 @@ int s_canonical_header_comparator(const void *lhs, const void *rhs) {
     /* they're the same header, use the original index to keep the sort stable */
     if (left_header->original_index < right_header->original_index) {
         return -1;
-    } else {
-        /* equality should never happen */
-        assert(left_header->original_index > right_header->original_index);
-
-        return 1;
     }
+
+    /* equality should never happen */
+    assert(left_header->original_index > right_header->original_index);
+
+    return 1;
 }
 
 static int s_append_canonical_query_param(struct aws_uri_param *param, struct aws_byte_buf *buffer) {

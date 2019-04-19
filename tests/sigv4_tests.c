@@ -98,6 +98,7 @@ enum aws_http_outgoing_body_state s_sigv4_test_suite_body_streamer(
     struct aws_http_stream *stream,
     struct aws_byte_buf *buf,
     void *user_data) {
+    (void)stream;
     struct aws_byte_cursor *body_cursor = user_data;
 
     size_t space = buf->capacity - buf->len;
@@ -175,7 +176,9 @@ static int s_initialize_test_from_contents(
         if (current_line.len == 0) {
             /* empty line = end of headers */
             break;
-        } else if (isspace(*current_line.ptr)) {
+        }
+
+        if (isspace(*current_line.ptr)) {
             /* multi-line header, append the entire line to the most recent header's value */
             size_t current_header_count = aws_array_list_length(&contents->header_set);
             AWS_FATAL_ASSERT(current_header_count > 0);
