@@ -329,7 +329,7 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_TRUE(aws_byte_cursor_eq(&auth_header_value, &expected_auth_header));
 
     /* 2 - validate the public API */
-    struct aws_signer *signer = aws_signer_new_sigv4(allocator);
+    struct aws_signer *signer = aws_signer_new_aws(allocator);
 
     aws_signing_result_clean_up(&result);
     if (aws_signing_result_init(&result, allocator)) {

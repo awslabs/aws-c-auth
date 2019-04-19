@@ -42,10 +42,10 @@ int aws_signer_sign_request(
 }
 
 /*
- * Sig v4 implementation
+ * Aws signing implementation
  */
 
-static int s_aws_signer_sigv4_sign_request(
+static int s_aws_signer_aws_sign_request(
     struct aws_signer *signer,
     const struct aws_http_request_options *request,
     const struct aws_signing_config_base *base_config,
@@ -115,14 +115,14 @@ cleanup:
     return signing_result;
 }
 
-static void s_aws_signer_sigv4_clean_up(struct aws_signer *signer) {
+static void s_aws_signer_aws_clean_up(struct aws_signer *signer) {
     (void)signer;
 }
 
-static struct aws_signer_vtable s_aws_signer_sigv4_vtable = {.sign_request = s_aws_signer_sigv4_sign_request,
-                                                             .clean_up = s_aws_signer_sigv4_clean_up};
+static struct aws_signer_vtable s_aws_signer_aws_vtable = {.sign_request = s_aws_signer_aws_sign_request,
+                                                           .clean_up = s_aws_signer_aws_clean_up};
 
-struct aws_signer *aws_signer_new_sigv4(struct aws_allocator *allocator) {
+struct aws_signer *aws_signer_new_aws(struct aws_allocator *allocator) {
     struct aws_signer *signer = aws_mem_acquire(allocator, sizeof(struct aws_signer));
     if (signer == NULL) {
         return NULL;
@@ -131,7 +131,7 @@ struct aws_signer *aws_signer_new_sigv4(struct aws_allocator *allocator) {
     AWS_ZERO_STRUCT(*signer);
 
     signer->allocator = allocator;
-    signer->vtable = &s_aws_signer_sigv4_vtable;
+    signer->vtable = &s_aws_signer_aws_vtable;
     signer->impl = NULL;
 
     return signer;

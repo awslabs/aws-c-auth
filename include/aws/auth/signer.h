@@ -66,8 +66,10 @@ int aws_signer_sign_request(
     struct aws_signing_result *result);
 
 /*
- * Creates a new signer that performs AWS sigv4 http request signing.  Requires an instance of
+ * Creates a new signer that performs AWS http request signing.  Requires an instance of
  * the aws_signing_config_aws struct when signing.
+ *
+ * This signer currently supports only the sigv4 algorithm.
  *
  * When using this signer to sign AWS http requests:
  *
@@ -90,7 +92,7 @@ int aws_signer_sign_request(
  * relaxing them adds non-trivial complexity.
  */
 AWS_AUTH_API
-struct aws_signer *aws_signer_new_sigv4(struct aws_allocator *allocator);
+struct aws_signer *aws_signer_new_aws(struct aws_allocator *allocator);
 
 AWS_EXTERN_C_END
 
