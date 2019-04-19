@@ -16,6 +16,7 @@
 #include "credentials_provider_utils.h"
 
 #include <aws/auth/credentials.h>
+#include <aws/auth/private/credentials_query.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/io/file_utils.h>
@@ -157,6 +158,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_vtable;
     provider->impl = impl;
+    aws_atomic_store_int(&provider->ref_count, 1);
+    aws_atomic_store_int(&provider->shutting_down, 0);
 
     return provider;
 
@@ -205,9 +208,8 @@ static int s_async_mock_credentials_provider_get_credentials_async(
 
     struct aws_credentials_query query;
     AWS_ZERO_STRUCT(query);
-    query.provider = provider;
-    query.callback = callback;
-    query.user_data = user_data;
+
+    aws_credentials_query_init(&query, provider, callback, user_data);
 
     aws_array_list_push_back(&impl->queries, &query);
 
@@ -279,6 +281,7 @@ static void mock_async_background_thread_function(void *arg) {
                 }
 
                 query.callback(result.credentials, query.user_data);
+                aws_credentials_query_clean_up(&query);
             }
 
             impl->next_result++;
@@ -341,6 +344,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_async_vtable;
     provider->impl = impl;
+    aws_atomic_store_int(&provider->ref_count, 1);
+    aws_atomic_store_int(&provider->shutting_down, 0);
 
     return provider;
 
@@ -421,6 +426,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(struct aws_al
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_null_vtable;
     provider->impl = NULL;
+    aws_atomic_store_int(&provider->ref_count, 1);
+    aws_atomic_store_int(&provider->shutting_down, 0);
 
     return provider;
 }

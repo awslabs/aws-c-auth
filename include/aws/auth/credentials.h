@@ -20,10 +20,16 @@
 #include <aws/auth/auth.h>
 
 #include <aws/common/array_list.h>
+#include <aws/common/atomics.h>
+#include <aws/common/linked_list.h>
 #include <aws/io/io.h>
 
+struct aws_client_bootstrap;
 struct aws_string;
 
+/*
+ * A structure that wraps the public/private data needed to sign an authenticated AWS request
+ */
 struct aws_credentials {
     struct aws_allocator *allocator;
     struct aws_string *access_key_id;
@@ -40,23 +46,29 @@ typedef int(aws_credentials_provider_get_credentials_fn)(
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
 typedef void(aws_credentials_provider_clean_up_fn)(struct aws_credentials_provider *provider);
+typedef void(aws_credentials_provider_shutdown_fn)(struct aws_credentials_provider *provider);
 
 struct aws_credentials_provider_vtable {
     aws_credentials_provider_get_credentials_fn *get_credentials;
     aws_credentials_provider_clean_up_fn *clean_up;
+    aws_credentials_provider_shutdown_fn *shutdown;
 };
 
+/*
+ * An interface for a variety of different methods for sourcing credentials.
+ * Ref-counted.  Thread-safe.
+ */
 struct aws_credentials_provider {
     struct aws_credentials_provider_vtable *vtable;
     struct aws_allocator *allocator;
     void *impl;
+    struct aws_atomic_var shutting_down;
+    struct aws_atomic_var ref_count;
 };
 
-struct aws_credentials_query {
-    struct aws_credentials_provider *provider;
-    aws_on_get_credentials_callback_fn *callback;
-    void *user_data;
-};
+/*
+ * Config structs for creating all the different credentials providers
+ */
 
 struct aws_credentials_provider_profile_options {
     const struct aws_string *profile_name_override;
@@ -73,6 +85,10 @@ struct aws_credentials_provider_cached_options {
 struct aws_credentials_provider_chain_options {
     struct aws_credentials_provider **providers;
     size_t provider_count;
+};
+
+struct aws_credentials_provider_imds_options {
+    struct aws_client_bootstrap *bootstrap;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -98,9 +114,29 @@ void aws_credentials_destroy(struct aws_credentials *credentials);
  * Credentials provider APIs
  */
 
+/*
+ * Signal a provider (and all linked providers) to cancel pending queries and
+ * stop accepting new ones.  Useful to hasten shutdown time if you know the provider
+ * is going away.
+ */
 AWS_AUTH_API
-void aws_credentials_provider_destroy(struct aws_credentials_provider *provider);
+void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider);
 
+/*
+ * Release a reference to a credentials provider
+ */
+AWS_AUTH_API
+void aws_credentials_provider_release(struct aws_credentials_provider *provider);
+
+/*
+ * Add a reference to a credentials provider
+ */
+AWS_AUTH_API
+void aws_credentials_provider_acquire(struct aws_credentials_provider *provider);
+
+/*
+ * Async function for retrieving credentials from a provider
+ */
 AWS_AUTH_API
 int aws_credentials_provider_get_credentials(
     struct aws_credentials_provider *provider,
@@ -137,6 +173,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(struct
  * For example, the default chain is implemented as:
  *
  * CachedProvider -> ProviderChain(EnvironmentProvider -> ProfileProvider -> ECS/EC2IMD etc...)
+ *
+ * A reference is taken on the target provider
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
@@ -156,11 +194,21 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 /*
  * A provider that sources credentials from an ordered sequence of providers, with the overall result
  * being from the first provider to return a valid set of credentials
+ *
+ * References are taken on all supplied providers
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_chain_options *options);
+
+/*
+ * A provider that sources credentials from the ec2 instance metadata service
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_imds(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_imds_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
