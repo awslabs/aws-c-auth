@@ -851,6 +851,9 @@ static int s_build_canonical_stable_header_list(
     struct aws_signing_state_aws *state,
     struct aws_array_list *stable_header_list,
     size_t *out_required_capacity) {
+
+    assert(aws_array_list_length(stable_header_list) == 0);
+
     *out_required_capacity = 0;
     const struct aws_http_request_options *request = state->request;
 
@@ -913,6 +916,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     struct aws_byte_buf *header_buffer = &state->canonical_header_block;
     struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
 
+    assert(header_buffer->len == 0);
     assert(signed_headers_buffer->len == 0);
 
     int result = AWS_OP_ERR;
@@ -1021,6 +1025,8 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
     const struct aws_http_request_options *request = state->request;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
+
+    assert(payload_hash_buffer->len == 0);
 
     int result = AWS_OP_ERR;
 
