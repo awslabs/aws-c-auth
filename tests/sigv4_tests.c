@@ -285,66 +285,60 @@ static int s_do_sigv4_test_suite_test(
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
 
-    if (s_initialize_test_from_contents(&request, &config, allocator, &test_contents, test_name, parent_folder)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(
+        s_initialize_test_from_contents(&request, &config, allocator, &test_contents, test_name, parent_folder) ==
+        AWS_OP_SUCCESS);
 
     struct aws_signing_result result;
-    if (aws_signing_result_init(&result, allocator)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);
 
     struct aws_signing_state_aws signing_state;
-    if (aws_signing_state_init(&signing_state, allocator, &config, &request, &result)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signing_state_init(&signing_state, allocator, &config, &request, &result) == AWS_OP_SUCCESS);
 
     struct aws_credentials *credentials =
         aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
-    if (credentials == NULL) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(credentials != NULL);
 
     config.credentials = credentials;
 
-    if (aws_signing_build_canonical_request(&signing_state)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signing_build_canonical_request(&signing_state) == AWS_OP_SUCCESS);
 
     /* 1a - validate canonical request */
-    ASSERT_TRUE(aws_byte_buf_eq(&signing_state.canonical_request, &test_contents.expected_canonical_request));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        test_contents.expected_canonical_request.buffer,
+        test_contents.expected_canonical_request.len,
+        signing_state.canonical_request.buffer,
+        signing_state.canonical_request.len);
 
-    if (aws_signing_build_string_to_sign(&signing_state)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signing_build_string_to_sign(&signing_state) == AWS_OP_SUCCESS);
 
     /* 1b - validate string to sign */
-    ASSERT_TRUE(aws_byte_buf_eq(&signing_state.string_to_sign, &test_contents.expected_string_to_sign));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        test_contents.expected_string_to_sign.buffer,
+        test_contents.expected_string_to_sign.len,
+        signing_state.string_to_sign.buffer,
+        signing_state.string_to_sign.len);
 
-    if (aws_signing_build_authorization_value(&signing_state)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signing_build_authorization_value(&signing_state) == AWS_OP_SUCCESS);
 
     /* 1c - validate authorization value */
     struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(s_auth_header_name);
     struct aws_byte_cursor auth_header_value = s_get_value_from_result(&result.headers, &auth_header_name);
     struct aws_byte_cursor expected_auth_header = aws_byte_cursor_from_buf(&test_contents.expected_auth_header);
-    ASSERT_TRUE(aws_byte_cursor_eq(&auth_header_value, &expected_auth_header));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_auth_header.ptr, expected_auth_header.len, auth_header_value.ptr, auth_header_value.len);
 
     /* 2 - validate the public API */
     struct aws_signer *signer = aws_signer_new_aws(allocator);
 
     aws_signing_result_clean_up(&result);
-    if (aws_signing_result_init(&result, allocator)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);
 
-    if (aws_signer_sign_request(signer, &request, (void *)&config, &result)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_TRUE(aws_signer_sign_request(signer, &request, (void *)&config, &result) == AWS_OP_SUCCESS);
 
     struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(&result.headers, &auth_header_name);
-    ASSERT_TRUE(aws_byte_cursor_eq(&auth_header_value2, &expected_auth_header));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
 
     aws_signing_state_clean_up(&signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);

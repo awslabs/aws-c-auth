@@ -37,14 +37,13 @@
  * requests.  The body read buffer is an exception since it will just be holding windows rather than
  * the entire thing.
  */
-#define BODY_READ_BUFFER_SIZE 2048 /* maybe 4k?, maybe tunable? */
-#define SHA_256_DIGEST_SIZE 32
+#define BODY_READ_BUFFER_SIZE 4096
 #define CANONICAL_REQUEST_STARTING_SIZE 1024
 #define STRING_TO_SIGN_STARTING_SIZE 256
 #define SIGNED_HEADERS_STARTING_SIZE 256
 #define CANONICAL_HEADER_BLOCK_STARTING_SIZE 1024
 #define AUTHORIZATION_VALUE_STARTING_SIZE 512
-#define PAYLOAD_HASH_STARTING_SIZE (SHA_256_DIGEST_SIZE * 2)
+#define PAYLOAD_HASH_STARTING_SIZE (AWS_SHA256_LEN * 2)
 #define CREDENTIAL_SCOPE_STARTING_SIZE 128
 #define INITIAL_QUERY_FRAGMENT_COUNT 5
 #define DEFAULT_PATH_COMPONENT_COUNT 10
@@ -131,14 +130,14 @@ void aws_signing_state_clean_up(struct aws_signing_state_aws *state) {
  *
  */
 
-static int s_append_character_to_byte_buf(uint8_t value, struct aws_byte_buf *buffer) {
+static int s_append_character_to_byte_buf(struct aws_byte_buf *buffer, uint8_t value) {
 
 #if defined(_MSC_VER)
 #    pragma warning(push)
 #    pragma warning(disable : 4221)
 #endif /* _MSC_VER */
 
-    /* msvc isn't a fan of this pointer assignment */
+    /* msvc isn't a fan of this pointer-to-local assignment */
     struct aws_byte_cursor eq_cursor = {.len = 1, .ptr = &value};
 
 #if defined(_MSC_VER)
@@ -156,7 +155,7 @@ static int s_append_canonical_method(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('\n', buffer)) {
+    if (s_append_character_to_byte_buf(buffer, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -356,7 +355,7 @@ static int s_append_normalized_path(
     /*
      * Paths always start with a single '/'
      */
-    if (s_append_character_to_byte_buf('/', dest)) {
+    if (s_append_character_to_byte_buf(dest, '/')) {
         goto cleanup;
     }
 
@@ -376,7 +375,7 @@ static int s_append_normalized_path(
         }
 
         if (i + 1 < normalized_split_count || ends_with_slash) {
-            if (s_append_character_to_byte_buf('/', dest)) {
+            if (s_append_character_to_byte_buf(dest, '/')) {
                 goto cleanup;
             }
         }
@@ -445,7 +444,7 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
         }
     }
 
-    if (s_append_character_to_byte_buf('\n', canonical_request_buffer)) {
+    if (s_append_character_to_byte_buf(canonical_request_buffer, '\n')) {
         goto cleanup;
     }
 
@@ -595,7 +594,7 @@ static int s_append_canonical_query_param(struct aws_uri_param *param, struct aw
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('=', buffer)) {
+    if (s_append_character_to_byte_buf(buffer, '=')) {
         return AWS_OP_ERR;
     }
 
@@ -700,13 +699,13 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
         }
 
         if (i + 1 < param_count) {
-            if (s_append_character_to_byte_buf('&', canonical_request_buffer)) {
+            if (s_append_character_to_byte_buf(canonical_request_buffer, '&')) {
                 goto cleanup;
             }
         }
     }
 
-    if (s_append_character_to_byte_buf('\n', canonical_request_buffer)) {
+    if (s_append_character_to_byte_buf(canonical_request_buffer, '\n')) {
         goto cleanup;
     }
 
@@ -766,11 +765,11 @@ static int s_append_canonical_header(
              * there's a previous header, add appropriate separator in both canonical header buffer
              * and signed headers buffer
              */
-            if (s_append_character_to_byte_buf('\n', canonical_header_buffer)) {
+            if (s_append_character_to_byte_buf(canonical_header_buffer, '\n')) {
                 return AWS_OP_ERR;
             }
 
-            if (s_append_character_to_byte_buf(';', signed_headers_buffer)) {
+            if (s_append_character_to_byte_buf(signed_headers_buffer, ';')) {
                 return AWS_OP_ERR;
             }
         }
@@ -785,7 +784,7 @@ static int s_append_canonical_header(
             return AWS_OP_ERR;
         }
 
-        if (s_append_character_to_byte_buf(':', canonical_header_buffer)) {
+        if (s_append_character_to_byte_buf(canonical_header_buffer, ':')) {
             return AWS_OP_ERR;
         }
     } else {
@@ -810,7 +809,7 @@ static int s_append_canonical_header(
             continue;
         }
 
-        if (prepend_comma && s_append_character_to_byte_buf(',', canonical_header_buffer)) {
+        if (prepend_comma && s_append_character_to_byte_buf(canonical_header_buffer, ',')) {
             return AWS_OP_ERR;
         }
 
@@ -961,11 +960,11 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     }
 
     /* There's always at least one header entry (X-Amz-Date), end the last one */
-    if (s_append_character_to_byte_buf('\n', header_buffer)) {
+    if (s_append_character_to_byte_buf(header_buffer, '\n')) {
         goto on_cleanup;
     }
 
-    if (s_append_character_to_byte_buf('\n', header_buffer)) {
+    if (s_append_character_to_byte_buf(header_buffer, '\n')) {
         goto on_cleanup;
     }
 
@@ -974,7 +973,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         goto on_cleanup;
     }
 
-    if (s_append_character_to_byte_buf('\n', header_buffer)) {
+    if (s_append_character_to_byte_buf(header_buffer, '\n')) {
         goto on_cleanup;
     }
 
@@ -1005,7 +1004,7 @@ static int s_aws_byte_buf_append_hex_encoding(struct aws_byte_buf *dest, const s
         uint8_t value = source->ptr[i];
         uint8_t upper_nibble = s_to_lowercase_hex((value >> 4) & 0x0F);
         uint8_t lower_nibble = s_to_lowercase_hex(value & 0x0F);
-        if (s_append_character_to_byte_buf(upper_nibble, dest) || s_append_character_to_byte_buf(lower_nibble, dest)) {
+        if (s_append_character_to_byte_buf(dest, upper_nibble) || s_append_character_to_byte_buf(dest, lower_nibble)) {
             return AWS_OP_ERR;
         }
     }
@@ -1037,7 +1036,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
     AWS_ZERO_STRUCT(digest_buffer);
 
     if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
-        aws_byte_buf_init(&digest_buffer, allocator, SHA_256_DIGEST_SIZE)) {
+        aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
         goto on_cleanup;
     }
 
@@ -1194,7 +1193,7 @@ static int s_append_canonical_request_hash(struct aws_signing_state_aws *state) 
     struct aws_byte_buf digest_buffer;
     AWS_ZERO_STRUCT(digest_buffer);
 
-    if (aws_byte_buf_init(&digest_buffer, allocator, SHA_256_DIGEST_SIZE)) {
+    if (aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
         goto cleanup;
     }
 
@@ -1254,7 +1253,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('/', dest)) {
+    if (s_append_character_to_byte_buf(dest, '/')) {
         return AWS_OP_ERR;
     }
 
@@ -1262,7 +1261,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('/', dest)) {
+    if (s_append_character_to_byte_buf(dest, '/')) {
         return AWS_OP_ERR;
     }
 
@@ -1270,7 +1269,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('/', dest)) {
+    if (s_append_character_to_byte_buf(dest, '/')) {
         return AWS_OP_ERR;
     }
 
@@ -1300,7 +1299,7 @@ static int s_build_string_to_sign_4(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('\n', dest)) {
+    if (s_append_character_to_byte_buf(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1314,7 +1313,7 @@ static int s_build_string_to_sign_4(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('\n', dest)) {
+    if (s_append_character_to_byte_buf(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1323,7 +1322,7 @@ static int s_build_string_to_sign_4(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('\n', dest)) {
+    if (s_append_character_to_byte_buf(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1377,7 +1376,7 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
 
     if (aws_byte_buf_init(
             &secret_key, allocator, s_secret_key_prefix->len + config->credentials->secret_access_key->len) ||
-        aws_byte_buf_init(&output, allocator, SHA_256_DIGEST_SIZE) ||
+        aws_byte_buf_init(&output, allocator, AWS_SHA256_LEN) ||
         aws_byte_buf_init(&date_buf, allocator, AWS_DATE_TIME_STR_MAX_LEN)) {
         goto cleanup;
     }
@@ -1447,8 +1446,7 @@ static int s_append_sigv4_signature_value(struct aws_signing_state_aws *state, s
     struct aws_byte_buf digest;
     AWS_ZERO_STRUCT(digest);
 
-    if (aws_byte_buf_init(&key, allocator, SHA_256_DIGEST_SIZE) ||
-        aws_byte_buf_init(&digest, allocator, SHA_256_DIGEST_SIZE)) {
+    if (aws_byte_buf_init(&key, allocator, AWS_SHA256_LEN) || aws_byte_buf_init(&digest, allocator, AWS_SHA256_LEN)) {
         goto cleanup;
     }
 
@@ -1548,7 +1546,7 @@ static int s_append_authorization_header_preamble(struct aws_signing_state_aws *
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf('/', dest)) {
+    if (s_append_character_to_byte_buf(dest, '/')) {
         return AWS_OP_ERR;
     }
 
