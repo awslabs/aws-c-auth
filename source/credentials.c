@@ -80,15 +80,15 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
     }
 
     if (credentials->access_key_id != NULL) {
-        aws_string_destroy(credentials->access_key_id);
+        aws_string_destroy_secure(credentials->access_key_id);
     }
 
     if (credentials->secret_access_key != NULL) {
-        aws_string_destroy(credentials->secret_access_key);
+        aws_string_destroy_secure(credentials->secret_access_key);
     }
 
     if (credentials->session_token != NULL) {
-        aws_string_destroy(credentials->session_token);
+        aws_string_destroy_secure(credentials->session_token);
     }
 
     aws_mem_release(credentials->allocator, credentials);

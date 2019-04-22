@@ -1425,7 +1425,7 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
     result = AWS_OP_SUCCESS;
 
 cleanup:
-    aws_byte_buf_clean_up(&secret_key);
+    aws_byte_buf_clean_up_secure(&secret_key);
     aws_byte_buf_clean_up(&output);
     aws_byte_buf_clean_up(&date_buf);
 
