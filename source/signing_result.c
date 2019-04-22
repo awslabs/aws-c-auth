@@ -56,22 +56,22 @@ void aws_signing_result_clean_up(struct aws_signing_result *result) {
 
     size_t header_count = aws_array_list_length(&result->headers);
     for (size_t i = 0; i < header_count; ++i) {
-        struct aws_signing_result_name_value_pair header;
-        if (aws_array_list_get_at(&result->headers, &header, i)) {
+        struct aws_signing_result_name_value_pair *header;
+        if (aws_array_list_get_at_ptr(&result->headers, (void **)&header, i)) {
             continue;
         }
 
-        s_aws_signing_result_name_value_pair_clean_up(&header);
+        s_aws_signing_result_name_value_pair_clean_up(header);
     }
 
     size_t query_param_count = aws_array_list_length(&result->query_params);
     for (size_t i = 0; i < query_param_count; ++i) {
-        struct aws_signing_result_name_value_pair query_param;
-        if (aws_array_list_get_at(&result->query_params, &query_param, i)) {
+        struct aws_signing_result_name_value_pair *query_param;
+        if (aws_array_list_get_at_ptr(&result->query_params, (void **)&query_param, i)) {
             continue;
         }
 
-        s_aws_signing_result_name_value_pair_clean_up(&query_param);
+        s_aws_signing_result_name_value_pair_clean_up(query_param);
     }
 
     aws_array_list_clean_up(&result->headers);
