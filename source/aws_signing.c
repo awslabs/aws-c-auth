@@ -91,7 +91,7 @@ int aws_signing_state_init(
 
     state->allocator = allocator;
     state->config = context;
-    state->request = request;
+    state->signable = request;
     state->result = result;
 
     if (aws_byte_buf_init(&state->canonical_request, allocator, CANONICAL_REQUEST_STARTING_SIZE) ||
@@ -148,7 +148,7 @@ static int s_append_character_to_byte_buf(struct aws_byte_buf *buffer, uint8_t v
 }
 
 static int s_append_canonical_method(struct aws_signing_state_aws *state) {
-    const struct aws_http_request_options *request = state->request;
+    const struct aws_http_request_options *request = state->signable;
     struct aws_byte_buf *buffer = &state->canonical_request;
 
     if (aws_byte_buf_append_dynamic(buffer, &request->method)) {
@@ -855,7 +855,7 @@ static int s_build_canonical_stable_header_list(
     assert(aws_array_list_length(stable_header_list) == 0);
 
     *out_required_capacity = 0;
-    const struct aws_http_request_options *request = state->request;
+    const struct aws_http_request_options *request = state->signable;
 
     /*
      * request headers
@@ -911,7 +911,7 @@ static int s_build_canonical_stable_header_list(
  * query params processing has the signed header names available to it.
  */
 static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
-    const struct aws_http_request_options *request = state->request;
+    const struct aws_http_request_options *request = state->signable;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *header_buffer = &state->canonical_header_block;
     struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
@@ -1022,7 +1022,7 @@ static int s_aws_byte_buf_append_hex_encoding(struct aws_byte_buf *dest, const s
  * that manually.
  */
 static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
-    const struct aws_http_request_options *request = state->request;
+    const struct aws_http_request_options *request = state->signable;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
 
@@ -1122,7 +1122,7 @@ static int s_build_canonical_request_sigv4(struct aws_signing_state_aws *state) 
     struct aws_uri uri;
     AWS_ZERO_STRUCT(uri);
 
-    if (aws_uri_init_parse(&uri, state->allocator, &state->request->uri)) {
+    if (aws_uri_init_parse(&uri, state->allocator, &state->signable->uri)) {
         goto cleanup;
     }
 
@@ -1611,7 +1611,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         AWS_LS_AUTH_SIGNING,
         "(id=%p) Http request successfully built final authorization value via algorithm %s, with contents \"" PRInSTR
         "\"",
-        (void *)state->request,
+        (void *)state->signable,
         aws_signing_algorithm_to_string(state->config->algorithm),
         AWS_BYTE_BUF_PRI(authorization_value));
 

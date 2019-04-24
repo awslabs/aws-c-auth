@@ -21,7 +21,7 @@
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
 
-struct aws_http_request_options;
+struct aws_signable;
 struct aws_signing_config_aws;
 struct aws_signing_result;
 
@@ -39,7 +39,7 @@ struct aws_signing_result;
 struct aws_signing_state_aws {
     struct aws_allocator *allocator;
 
-    const struct aws_http_request_options *request;
+    const struct aws_http_request_options *signable;
     const struct aws_signing_config_aws *config;
     struct aws_signing_result *result;
 
