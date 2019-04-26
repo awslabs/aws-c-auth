@@ -40,9 +40,10 @@ static void s_aws_hash_callback_property_list_destroy(void *value) {
         s_aws_signing_result_property_clean_up(&property);
     }
 
+    struct aws_allocator *allocator = property_list->alloc;
     aws_array_list_clean_up(property_list);
 
-  //  aws_mem_release(property_list->alloc, property_list);
+    aws_mem_release(allocator, property_list);
 }
 
 int aws_signing_result_init(struct aws_signing_result *result, struct aws_allocator *allocator) {
@@ -110,7 +111,6 @@ on_error:
     return AWS_OP_ERR;
 }
 
-
 int aws_signing_result_get_property(
     struct aws_signing_result *result,
     const struct aws_string *property_name,
@@ -127,9 +127,11 @@ int aws_signing_result_get_property(
     return AWS_OP_SUCCESS;
 }
 
-static struct aws_array_list *s_get_or_create_property_list(struct aws_signing_result *result, const struct aws_string *list_name) {
+static struct aws_array_list *s_get_or_create_property_list(
+    struct aws_signing_result *result,
+    const struct aws_string *list_name) {
     struct aws_hash_element *element = NULL;
-    aws_hash_table_find(&result->properties, list_name, &element);
+    aws_hash_table_find(&result->property_lists, list_name, &element);
 
     if (element != NULL) {
         return element->value;
@@ -146,7 +148,11 @@ static struct aws_array_list *s_get_or_create_property_list(struct aws_signing_r
         goto on_error;
     }
 
-    if (aws_array_list_init_dynamic(properties, result->allocator, INITIAL_SIGNING_RESULT_PROPERTY_LIST_SIZE, sizeof(struct aws_signing_result_property))) {
+    if (aws_array_list_init_dynamic(
+            properties,
+            result->allocator,
+            INITIAL_SIGNING_RESULT_PROPERTY_LIST_SIZE,
+            sizeof(struct aws_signing_result_property))) {
         goto on_error;
     }
 
@@ -198,7 +204,6 @@ on_error:
     aws_string_destroy(value);
 
     return AWS_OP_ERR;
-
 }
 
 int aws_signing_result_get_property_list(
@@ -209,7 +214,7 @@ int aws_signing_result_get_property_list(
     *out_list = NULL;
 
     struct aws_hash_element *element = NULL;
-    aws_hash_table_find(&result->properties, list_name, &element);
+    aws_hash_table_find(&result->property_lists, list_name, &element);
 
     if (element != NULL) {
         *out_list = element->value;

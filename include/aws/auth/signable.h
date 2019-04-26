@@ -15,10 +15,17 @@ struct aws_signable_property_list_pair {
     struct aws_byte_cursor value;
 };
 
-typedef int (aws_signable_get_property_fn)(struct aws_signable *signable, const struct aws_string *name, struct aws_byte_cursor *out_value);
-typedef int (aws_signable_get_property_list_fn)(struct aws_signable *signable, const struct aws_string *name, struct aws_array_list **out_list);
-typedef int (aws_signable_get_payload_stream_fn)(struct aws_signable *signable, struct aws_input_stream **out_input_stream);
-typedef void (aws_signable_clean_up_fn)(struct aws_signable *signable);
+typedef int(aws_signable_get_property_fn)(
+    struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_byte_cursor *out_value);
+typedef int(aws_signable_get_property_list_fn)(
+    struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_array_list **out_list);
+typedef int(
+    aws_signable_get_payload_stream_fn)(struct aws_signable *signable, struct aws_input_stream **out_input_stream);
+typedef void(aws_signable_clean_up_fn)(struct aws_signable *signable);
 
 struct aws_signable_vtable {
     aws_signable_get_property_fn *get_property;

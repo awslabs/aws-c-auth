@@ -627,7 +627,8 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         return AWS_OP_ERR;
     }
 
-    if (aws_signing_result_append_property_list(state->result, g_aws_http_query_params_property_list_name, &algorithm_param.key, &algorithm_param.value) ||
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_query_params_property_list_name, &algorithm_param.key, &algorithm_param.value) ||
         aws_array_list_push_back(query_params, &algorithm_param)) {
         return AWS_OP_ERR;
     }
@@ -636,7 +637,11 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     struct aws_uri_param credential_param = {.key = aws_byte_cursor_from_string(s_sigv4_credential_query_param),
                                              .value = aws_byte_cursor_from_buf(&state->credential_scope)};
 
-    if (aws_signing_result_append_property_list(state->result, g_aws_http_query_params_property_list_name, &credential_param.key, &credential_param.value) ||
+    if (aws_signing_result_append_property_list(
+            state->result,
+            g_aws_http_query_params_property_list_name,
+            &credential_param.key,
+            &credential_param.value) ||
         aws_array_list_push_back(query_params, &credential_param)) {
         return AWS_OP_ERR;
     }
@@ -645,7 +650,8 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     struct aws_uri_param date_param = {.key = aws_byte_cursor_from_string(s_sigv4_date_name),
                                        .value = aws_byte_cursor_from_buf(&state->date)};
 
-    if (aws_signing_result_append_property_list(state->result, g_aws_http_query_params_property_list_name, &date_param.key, &date_param.value) ||
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_query_params_property_list_name, &date_param.key, &date_param.value) ||
         aws_array_list_push_back(query_params, &date_param)) {
         return AWS_OP_ERR;
     }
@@ -654,7 +660,11 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     struct aws_uri_param signed_headers_param = {.key = aws_byte_cursor_from_string(s_sigv4_signed_headers_query_param),
                                                  .value = aws_byte_cursor_from_buf(&state->signed_headers)};
 
-    if (aws_signing_result_append_property_list(state->result, g_aws_http_query_params_property_list_name, &signed_headers_param.key, &signed_headers_param.value) ||
+    if (aws_signing_result_append_property_list(
+            state->result,
+            g_aws_http_query_params_property_list_name,
+            &signed_headers_param.key,
+            &signed_headers_param.value) ||
         aws_array_list_push_back(query_params, &signed_headers_param)) {
         return AWS_OP_ERR;
     }
@@ -987,7 +997,8 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
      */
     struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(s_sigv4_date_name);
     struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
-    if (aws_signing_result_append_property_list(state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
         return AWS_OP_ERR;
     }
 
@@ -1102,7 +1113,8 @@ static int s_append_canonical_payload_hash(struct aws_signing_state_aws *state) 
      */
     if (state->config->auth_type == AWS_SIGN_AUTH_HEADER) {
         struct aws_byte_cursor hashed_body_header_name = aws_byte_cursor_from_string(s_amz_content_sha256_header_name);
-        if (aws_signing_result_append_property_list(state->result, g_aws_http_headers_property_list_name, &hashed_body_header_name, &payload_hash_cursor)) {
+        if (aws_signing_result_append_property_list(
+                state->result, g_aws_http_headers_property_list_name, &hashed_body_header_name, &payload_hash_cursor)) {
             return AWS_OP_ERR;
         }
     }
@@ -1510,12 +1522,14 @@ static int s_add_authorization_to_result(
     switch (state->config->auth_type) {
         case AWS_SIGN_AUTH_HEADER:
             name = aws_byte_cursor_from_string(s_authorization_header);
-            return aws_signing_result_append_property_list(state->result, g_aws_http_headers_property_list_name, &name, &value);
+            return aws_signing_result_append_property_list(
+                state->result, g_aws_http_headers_property_list_name, &name, &value);
             break;
 
         case AWS_SIGN_AUTH_QUERY_PARAM:
             name = aws_byte_cursor_from_string(s_authorization_query_param);
-            return aws_signing_result_append_property_list(state->result, g_aws_http_query_params_property_list_name, &name, &value);
+            return aws_signing_result_append_property_list(
+                state->result, g_aws_http_query_params_property_list_name, &name, &value);
             break;
 
         default:
