@@ -16,7 +16,6 @@
 #include <aws/auth/signer.h>
 
 #include <aws/auth/private/aws_signing.h>
-#include <aws/http/request_response.h>
 #include <aws/io/uri.h>
 
 void aws_signer_destroy(struct aws_signer *signer) {
@@ -32,13 +31,13 @@ void aws_signer_destroy(struct aws_signer *signer) {
 
 int aws_signer_sign_request(
     struct aws_signer *signer,
-    const struct aws_http_request_options *request,
+    const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_signing_result *result) {
-    assert(signer && request);
+    assert(signer && signable);
     assert(signer->vtable && signer->vtable->sign_request);
 
-    return signer->vtable->sign_request(signer, request, base_config, result);
+    return signer->vtable->sign_request(signer, signable, base_config, result);
 }
 
 /*
@@ -47,7 +46,7 @@ int aws_signer_sign_request(
 
 static int s_aws_signer_aws_sign_request(
     struct aws_signer *signer,
-    const struct aws_http_request_options *request,
+    const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_signing_result *result) {
     if (base_config->config_type != AWS_SIGNING_CONFIG_AWS) {
@@ -61,7 +60,7 @@ static int s_aws_signer_aws_sign_request(
     struct aws_signing_state_aws signing_state;
     AWS_ZERO_STRUCT(signing_state);
 
-    if (aws_signing_state_init(&signing_state, signer->allocator, config, request, result)) {
+    if (aws_signing_state_init(&signing_state, signer->allocator, config, signable, result)) {
         goto cleanup;
     }
 
@@ -69,7 +68,7 @@ static int s_aws_signer_aws_sign_request(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING,
             "(id=%p) Http request failed to build canonical request via algorithm %s",
-            (void *)request,
+            (void *)signable,
             aws_signing_algorithm_to_string(config->algorithm));
         goto cleanup;
     }
@@ -77,7 +76,7 @@ static int s_aws_signer_aws_sign_request(
     AWS_LOGF_INFO(
         AWS_LS_AUTH_SIGNING,
         "(id=%p) Http request successfully built canonical request for algorithm %s, with contents \"" PRInSTR "\"",
-        (void *)request,
+        (void *)signable,
         aws_signing_algorithm_to_string(config->algorithm),
         AWS_BYTE_BUF_PRI(signing_state.canonical_request));
 
@@ -85,7 +84,7 @@ static int s_aws_signer_aws_sign_request(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING,
             "(id=%p) Http request failed to build string-to-sign via algorithm %s",
-            (void *)request,
+            (void *)signable,
             aws_signing_algorithm_to_string(config->algorithm));
         goto cleanup;
     }
@@ -93,7 +92,7 @@ static int s_aws_signer_aws_sign_request(
     AWS_LOGF_INFO(
         AWS_LS_AUTH_SIGNING,
         "(id=%p) Http request successfully built string-to-sign via algorithm %s, with contents \"" PRInSTR "\"",
-        (void *)request,
+        (void *)signable,
         aws_signing_algorithm_to_string(config->algorithm),
         AWS_BYTE_BUF_PRI(signing_state.string_to_sign));
 
@@ -101,7 +100,7 @@ static int s_aws_signer_aws_sign_request(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING,
             "(id=%p) Http request failed to build final authorization value via algorithm %s",
-            (void *)request,
+            (void *)signable,
             aws_signing_algorithm_to_string(config->algorithm));
         goto cleanup;
     }

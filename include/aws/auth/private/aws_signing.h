@@ -39,7 +39,7 @@ struct aws_signing_result;
 struct aws_signing_state_aws {
     struct aws_allocator *allocator;
 
-    const struct aws_http_request_options *signable;
+    const struct aws_signable *signable;
     const struct aws_signing_config_aws *config;
     struct aws_signing_result *result;
 
@@ -63,7 +63,7 @@ int aws_signing_state_init(
     struct aws_signing_state_aws *state,
     struct aws_allocator *allocator,
     const struct aws_signing_config_aws *context,
-    const struct aws_http_request_options *request,
+    const struct aws_signable *signable,
     struct aws_signing_result *result);
 
 AWS_AUTH_API
@@ -88,6 +88,14 @@ int aws_signing_build_string_to_sign(struct aws_signing_state_aws *state);
 
 AWS_AUTH_API
 int aws_signing_build_authorization_value(struct aws_signing_state_aws *state);
+
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_content_header_name;
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_algorithm_query_param_name;
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_credential_query_param_name;
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_date_name;
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_signed_headers_query_param_name;
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_authorization_header_name;
+AWS_COMMON_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
 
 AWS_EXTERN_C_END
 

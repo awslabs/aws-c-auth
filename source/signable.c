@@ -31,6 +31,35 @@ void aws_signable_destroy(struct aws_signable *signable) {
     aws_mem_release(signable->allocator, signable);
 }
 
+int aws_signable_get_property(
+    const struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_byte_cursor *out_value) {
+
+    assert(signable && signable->vtable && signable->vtable->get_property);
+
+    return signable->vtable->get_property(signable, name, out_value);
+}
+
+int aws_signable_get_property_list(
+    const struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_array_list **out_property_list) {
+
+    assert(signable && signable->vtable && signable->vtable->get_property_list);
+
+    return signable->vtable->get_property_list(signable, name, out_property_list);
+}
+
+int aws_signable_get_payload_stream(
+    const struct aws_signable *signable,
+    struct aws_input_stream **input_stream) {
+
+    assert(signable && signable->vtable && signable->vtable->get_payload_stream);
+
+    return signable->vtable->get_payload_stream(signable, input_stream);
+}
+
 AWS_STRING_FROM_LITERAL(g_aws_http_headers_property_list_name, "headers");
 AWS_STRING_FROM_LITERAL(g_aws_http_query_params_property_list_name, "params");
 AWS_STRING_FROM_LITERAL(g_aws_http_method_property_name, "method");

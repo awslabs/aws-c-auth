@@ -21,12 +21,12 @@
 #include <aws/auth/signing_config.h>
 #include <aws/auth/signing_result.h>
 
-struct aws_http_request_options;
+struct aws_signable;
 struct aws_signer;
 
 typedef int(aws_signer_sign_request_fn)(
     struct aws_signer *signer,
-    const struct aws_http_request_options *request,
+    const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_signing_result *result);
 typedef void(aws_signer_clean_up_fn)(struct aws_signer *signer);
@@ -61,7 +61,7 @@ void aws_signer_destroy(struct aws_signer *signer);
 AWS_AUTH_API
 int aws_signer_sign_request(
     struct aws_signer *signer,
-    const struct aws_http_request_options *request,
+    const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_signing_result *result);
 

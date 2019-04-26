@@ -20,10 +20,12 @@
 #include <aws/auth/signable.h>
 #include <aws/auth/signer.h>
 #include <aws/common/string.h>
-#include <aws/http/request_response.h>
 #include <aws/io/file_utils.h>
+#include <aws/io/stream.h>
 
 #include <ctype.h>
+
+#include "test_signable.h"
 
 struct sigv4_test_suite_contents {
     struct aws_allocator *allocator;
@@ -32,7 +34,7 @@ struct sigv4_test_suite_contents {
     struct aws_byte_buf expected_string_to_sign;
     struct aws_byte_buf expected_signed_request;
     struct aws_byte_buf expected_auth_header;
-    struct aws_byte_cursor body_cursor;
+    struct aws_input_stream *payload_stream;
     struct aws_array_list header_set;
 };
 
@@ -72,9 +74,7 @@ static int s_sigv4_test_suite_contents_init(
         return AWS_OP_ERR;
     }
 
-    AWS_ZERO_STRUCT(contents->body_cursor);
-
-    if (aws_array_list_init_dynamic(&contents->header_set, allocator, 10, sizeof(struct aws_http_header))) {
+    if (aws_array_list_init_dynamic(&contents->header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
         return AWS_OP_ERR;
     }
 
@@ -91,29 +91,10 @@ static void s_sigv4_test_suite_contents_clean_up(struct sigv4_test_suite_content
 
         aws_array_list_clean_up(&contents->header_set);
 
+        aws_input_stream_destroy(contents->payload_stream);
+
         contents->allocator = NULL;
     }
-}
-
-enum aws_http_outgoing_body_state s_sigv4_test_suite_body_streamer(
-    struct aws_http_stream *stream,
-    struct aws_byte_buf *buf,
-    void *user_data) {
-    (void)stream;
-    struct aws_byte_cursor *body_cursor = user_data;
-
-    size_t space = buf->capacity - buf->len;
-    struct aws_byte_cursor write_cursor = *body_cursor;
-    if (write_cursor.len > space) {
-        write_cursor.len = space;
-    }
-
-    if (write_cursor.len > 0) {
-        aws_byte_buf_append(buf, &write_cursor);
-        aws_byte_cursor_advance(body_cursor, write_cursor.len);
-    }
-
-    return body_cursor->len == 0 ? AWS_HTTP_OUTGOING_BODY_DONE : AWS_HTTP_OUTGOING_BODY_IN_PROGRESS;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_service, "service");
@@ -121,10 +102,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_region, "us-east-1");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_access_key_id, "AKIDEXAMPLE");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_secret_access_key, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_date, "2015-08-30T12:36:00Z");
-AWS_STATIC_STRING_FROM_LITERAL(s_amz_date_header, "X-Amz-Date");
 
 static int s_initialize_test_from_contents(
-    struct aws_http_request_options *request,
+    struct aws_signable **signable,
     struct aws_signing_config_aws *config,
     struct aws_allocator *allocator,
     struct sigv4_test_suite_contents *contents,
@@ -155,16 +135,17 @@ static int s_initialize_test_from_contents(
         return AWS_OP_ERR;
     }
 
-    AWS_ZERO_STRUCT(request->method);
-    if (!aws_byte_cursor_next_split(&first_line, ' ', &request->method)) {
+    struct aws_byte_cursor method_cursor;
+    AWS_ZERO_STRUCT(method_cursor);
+    if (!aws_byte_cursor_next_split(&first_line, ' ', &method_cursor)) {
         return AWS_OP_ERR;
     }
 
-    aws_byte_cursor_advance(&first_line, request->method.len + 1);
+    aws_byte_cursor_advance(&first_line, method_cursor.len + 1);
 
     /* not safe in general, but all test cases end in " HTTP/1.1" */
-    request->uri = first_line;
-    request->uri.len -= 9;
+    struct aws_byte_cursor uri_cursor = first_line;
+    uri_cursor.len -= 9;
 
     /* headers */
     size_t line_index = 1;
@@ -184,7 +165,7 @@ static int s_initialize_test_from_contents(
             size_t current_header_count = aws_array_list_length(&contents->header_set);
             AWS_FATAL_ASSERT(current_header_count > 0);
 
-            struct aws_http_header *current_header;
+            struct aws_signable_property_list_pair *current_header;
             if (aws_array_list_get_at_ptr(&contents->header_set, (void **)&current_header, current_header_count - 1)) {
                 return AWS_OP_ERR;
             }
@@ -192,7 +173,7 @@ static int s_initialize_test_from_contents(
             current_header->value.len = (current_line.ptr + current_line.len) - current_header->value.ptr;
         } else {
             /* new header, parse it and add to the header set */
-            struct aws_http_header current_header;
+            struct aws_signable_property_list_pair current_header;
             AWS_ZERO_STRUCT(current_header.name);
             AWS_ZERO_STRUCT(current_header.value);
             if (!aws_byte_cursor_next_split(&current_line, ':', &current_header.name)) {
@@ -202,7 +183,7 @@ static int s_initialize_test_from_contents(
             aws_byte_cursor_advance(&current_line, current_header.name.len + 1);
             current_header.value = current_line;
 
-            struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(s_amz_date_header);
+            struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(g_aws_signing_date_name);
             if (!aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor)) {
                 aws_array_list_push_back(&contents->header_set, &current_header);
             }
@@ -210,19 +191,20 @@ static int s_initialize_test_from_contents(
     }
 
     /* body */
+    struct aws_byte_cursor body_cursor;
+    AWS_ZERO_STRUCT(body_cursor);
     if (line_index + 1 < line_count) {
-        if (aws_array_list_get_at(&request_lines, &contents->body_cursor, line_index + 1)) {
+        if (aws_array_list_get_at(&request_lines, &body_cursor, line_index + 1)) {
             return AWS_OP_ERR;
         }
 
         /* body length is the end of the whole request (pointer) minus the start of the body pointer */
-        contents->body_cursor.len = (contents->request.buffer + contents->request.len - contents->body_cursor.ptr);
+        body_cursor.len = (contents->request.buffer + contents->request.len - body_cursor.ptr);
     }
 
-    request->num_headers = aws_array_list_length(&contents->header_set);
-    request->header_array = contents->header_set.data;
-    request->user_data = &contents->body_cursor;
-    request->stream_outgoing_body = s_sigv4_test_suite_body_streamer;
+    contents->payload_stream = aws_input_stream_new_from_cursor(allocator, &body_cursor);
+
+    *signable = aws_signable_new_test(allocator, &method_cursor, &uri_cursor, contents->header_set.data, aws_array_list_length(&contents->header_set), contents->payload_stream);
 
     config->config_type = AWS_SIGNING_CONFIG_AWS;
     config->algorithm = AWS_SIGNING_ALGORITHM_SIG_V4;
@@ -265,8 +247,6 @@ struct aws_byte_cursor s_get_value_from_result(
     return result;
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_auth_header_name, "Authorization");
-
 /*
  * For each sig v4 test case:
  *   (1) Validate the expected results (via the private API) at each stage of the signing process:
@@ -282,21 +262,20 @@ static int s_do_sigv4_test_suite_test(
     struct sigv4_test_suite_contents test_contents;
     AWS_ZERO_STRUCT(test_contents);
 
-    struct aws_http_request_options request;
-    AWS_ZERO_STRUCT(request);
+    struct aws_signable *signable = NULL;
 
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
 
     ASSERT_TRUE(
-        s_initialize_test_from_contents(&request, &config, allocator, &test_contents, test_name, parent_folder) ==
+        s_initialize_test_from_contents(&signable, &config, allocator, &test_contents, test_name, parent_folder) ==
         AWS_OP_SUCCESS);
 
     struct aws_signing_result result;
     ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);
 
     struct aws_signing_state_aws signing_state;
-    ASSERT_TRUE(aws_signing_state_init(&signing_state, allocator, &config, &request, &result) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_signing_state_init(&signing_state, allocator, &config, signable, &result) == AWS_OP_SUCCESS);
 
     struct aws_credentials *credentials =
         aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
@@ -325,7 +304,7 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_TRUE(aws_signing_build_authorization_value(&signing_state) == AWS_OP_SUCCESS);
 
     /* 1c - validate authorization value */
-    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(s_auth_header_name);
+    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
 
     struct aws_array_list *headers = NULL;
     ASSERT_TRUE(
@@ -343,7 +322,7 @@ static int s_do_sigv4_test_suite_test(
     aws_signing_result_clean_up(&result);
     ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);
 
-    ASSERT_TRUE(aws_signer_sign_request(signer, &request, (void *)&config, &result) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_signer_sign_request(signer, signable, (void *)&config, &result) == AWS_OP_SUCCESS);
 
     ASSERT_TRUE(
         aws_signing_result_get_property_list(&result, g_aws_http_headers_property_list_name, &headers) ==
