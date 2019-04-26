@@ -59,14 +59,15 @@ static int s_aws_signable_test_get_property_list(
     return AWS_OP_SUCCESS;
 }
 
-static int s_aws_signable_test_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **out_input_stream) {
+static int s_aws_signable_test_get_payload_stream(
+    const struct aws_signable *signable,
+    struct aws_input_stream **out_input_stream) {
     struct aws_signable_test_impl *impl = signable->impl;
 
     *out_input_stream = impl->payload;
 
     return AWS_OP_SUCCESS;
 }
-
 
 static void s_aws_signable_test_clean_up(struct aws_signable *signable) {
     if (signable == NULL) {
@@ -78,22 +79,19 @@ static void s_aws_signable_test_clean_up(struct aws_signable *signable) {
         aws_array_list_clean_up(&impl->headers);
         aws_mem_release(signable->allocator, impl);
     }
-
-    aws_mem_release(signable->allocator, signable);
 }
 
-static struct aws_signable_vtable s_signable_test_vtable = {
-    .get_property = s_aws_signable_test_get_property,
-    .get_property_list = s_aws_signable_test_get_property_list,
-    .get_payload_stream = s_aws_signable_test_get_payload_stream,
-    .clean_up = s_aws_signable_test_clean_up
-};
+static struct aws_signable_vtable s_signable_test_vtable = {.get_property = s_aws_signable_test_get_property,
+                                                            .get_property_list = s_aws_signable_test_get_property_list,
+                                                            .get_payload_stream =
+                                                                s_aws_signable_test_get_payload_stream,
+                                                            .clean_up = s_aws_signable_test_clean_up};
 
 struct aws_signable *aws_signable_new_test(
     struct aws_allocator *allocator,
     struct aws_byte_cursor *method,
     struct aws_byte_cursor *uri,
-    struct aws_signable_property_list_pair **headers,
+    struct aws_signable_property_list_pair *headers,
     size_t header_count,
     struct aws_input_stream *body_stream) {
 
@@ -114,12 +112,13 @@ struct aws_signable *aws_signable_new_test(
     AWS_ZERO_STRUCT(*impl);
     signable->impl = impl;
 
-    if (aws_array_list_init_dynamic(&impl->headers, allocator, header_count, sizeof(struct aws_signable_property_list_pair))) {
+    if (aws_array_list_init_dynamic(
+            &impl->headers, allocator, header_count, sizeof(struct aws_signable_property_list_pair))) {
         goto on_error;
     }
 
     for (size_t i = 0; i < header_count; ++i) {
-        aws_array_list_push_back(&impl->headers, headers[i]);
+        aws_array_list_push_back(&impl->headers, &headers[i]);
     }
 
     impl->payload = body_stream;

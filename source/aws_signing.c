@@ -624,7 +624,8 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     }
 
     /* X-Amz-Algorithm */
-    struct aws_uri_param algorithm_param = {.key = aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name)};
+    struct aws_uri_param algorithm_param = {.key =
+                                                aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name)};
 
     if (s_get_signing_algorithm_cursor(state->config->algorithm, &algorithm_param.value)) {
         return AWS_OP_ERR;
@@ -637,7 +638,8 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     }
 
     /* X-Amz-Credential */
-    struct aws_uri_param credential_param = {.key = aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name),
+    struct aws_uri_param credential_param = {.key =
+                                                 aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name),
                                              .value = aws_byte_cursor_from_buf(&state->credential_scope)};
 
     if (aws_signing_result_append_property_list(
@@ -660,8 +662,9 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     }
 
     /* X-Amz-SignedHeaders */
-    struct aws_uri_param signed_headers_param = {.key = aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name),
-                                                 .value = aws_byte_cursor_from_buf(&state->signed_headers)};
+    struct aws_uri_param signed_headers_param = {
+        .key = aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name),
+        .value = aws_byte_cursor_from_buf(&state->signed_headers)};
 
     if (aws_signing_result_append_property_list(
             state->result,
@@ -1090,7 +1093,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
     struct aws_stream_status payload_status;
     AWS_ZERO_STRUCT(payload_status);
 
-    while(!payload_status.is_end_of_stream) {
+    while (!payload_status.is_end_of_stream) {
         /* reset the temporary body buffer; we can calculate the hash in window chunks */
         body_buffer.len = 0;
         size_t amount_read = 0;

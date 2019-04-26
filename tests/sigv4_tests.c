@@ -74,7 +74,8 @@ static int s_sigv4_test_suite_contents_init(
         return AWS_OP_ERR;
     }
 
-    if (aws_array_list_init_dynamic(&contents->header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
+    if (aws_array_list_init_dynamic(
+            &contents->header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
         return AWS_OP_ERR;
     }
 
@@ -204,7 +205,13 @@ static int s_initialize_test_from_contents(
 
     contents->payload_stream = aws_input_stream_new_from_cursor(allocator, &body_cursor);
 
-    *signable = aws_signable_new_test(allocator, &method_cursor, &uri_cursor, contents->header_set.data, aws_array_list_length(&contents->header_set), contents->payload_stream);
+    *signable = aws_signable_new_test(
+        allocator,
+        &method_cursor,
+        &uri_cursor,
+        (struct aws_signable_property_list_pair *)contents->header_set.data,
+        aws_array_list_length(&contents->header_set),
+        contents->payload_stream);
 
     config->config_type = AWS_SIGNING_CONFIG_AWS;
     config->algorithm = AWS_SIGNING_ALGORITHM_SIG_V4;
@@ -337,6 +344,7 @@ static int s_do_sigv4_test_suite_test(
     aws_credentials_destroy(credentials);
     aws_signing_result_clean_up(&result);
     aws_signer_destroy(signer);
+    aws_signable_destroy(signable);
 
     return AWS_OP_SUCCESS;
 }

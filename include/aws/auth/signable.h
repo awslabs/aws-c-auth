@@ -25,8 +25,9 @@ typedef int(aws_signable_get_property_list_fn)(
     const struct aws_string *name,
     struct aws_array_list **out_list);
 
-typedef int(
-    aws_signable_get_payload_stream_fn)(const struct aws_signable *signable, struct aws_input_stream **out_input_stream);
+typedef int(aws_signable_get_payload_stream_fn)(
+    const struct aws_signable *signable,
+    struct aws_input_stream **out_input_stream);
 
 typedef void(aws_signable_clean_up_fn)(struct aws_signable *signable);
 
@@ -61,10 +62,7 @@ int aws_signable_get_property_list(
     struct aws_array_list **out_property_list);
 
 AWS_AUTH_API
-int aws_signable_get_payload_stream(
-    const struct aws_signable *signable,
-    struct aws_input_stream **input_stream);
-
+int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream);
 
 AWS_COMMON_API extern const struct aws_string *g_aws_http_headers_property_list_name;
 AWS_COMMON_API extern const struct aws_string *g_aws_http_query_params_property_list_name;

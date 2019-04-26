@@ -51,9 +51,7 @@ int aws_signable_get_property_list(
     return signable->vtable->get_property_list(signable, name, out_property_list);
 }
 
-int aws_signable_get_payload_stream(
-    const struct aws_signable *signable,
-    struct aws_input_stream **input_stream) {
+int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream) {
 
     assert(signable && signable->vtable && signable->vtable->get_payload_stream);
 
