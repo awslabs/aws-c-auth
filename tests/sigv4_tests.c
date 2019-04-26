@@ -17,6 +17,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/aws_signing.h>
+#include <aws/auth/signable.h>
 #include <aws/auth/signer.h>
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
@@ -241,13 +242,13 @@ static int s_initialize_test_from_contents(
     return AWS_OP_SUCCESS;
 }
 
-struct aws_byte_cursor s_get_value_from_result(struct aws_array_list *pair_list, struct aws_byte_cursor *name) {
+struct aws_byte_cursor s_get_value_from_result(const struct aws_array_list *pair_list, const struct aws_byte_cursor *name) {
     struct aws_byte_cursor result;
     AWS_ZERO_STRUCT(result);
 
     size_t pair_count = aws_array_list_length(pair_list);
     for (size_t i = 0; i < pair_count; ++i) {
-        struct aws_signing_result_name_value_pair pair;
+        struct aws_signing_result_property pair;
         if (aws_array_list_get_at(pair_list, &pair, i)) {
             continue;
         }
@@ -323,7 +324,11 @@ static int s_do_sigv4_test_suite_test(
 
     /* 1c - validate authorization value */
     struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(s_auth_header_name);
-    struct aws_byte_cursor auth_header_value = s_get_value_from_result(&result.headers, &auth_header_name);
+
+    struct aws_array_list *headers = NULL;
+    ASSERT_TRUE(aws_signing_result_get_property_list(&result, g_aws_http_headers_property_list_name, &headers) == AWS_OP_SUCCESS);
+
+    struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
     struct aws_byte_cursor expected_auth_header = aws_byte_cursor_from_buf(&test_contents.expected_auth_header);
     ASSERT_BIN_ARRAYS_EQUALS(
         expected_auth_header.ptr, expected_auth_header.len, auth_header_value.ptr, auth_header_value.len);
@@ -336,7 +341,9 @@ static int s_do_sigv4_test_suite_test(
 
     ASSERT_TRUE(aws_signer_sign_request(signer, &request, (void *)&config, &result) == AWS_OP_SUCCESS);
 
-    struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(&result.headers, &auth_header_name);
+    ASSERT_TRUE(aws_signing_result_get_property_list(&result, g_aws_http_headers_property_list_name, &headers) == AWS_OP_SUCCESS);
+
+    struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(headers, &auth_header_name);
     ASSERT_BIN_ARRAYS_EQUALS(
         expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
 

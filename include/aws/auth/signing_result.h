@@ -18,24 +18,25 @@
 
 #include <aws/auth/auth.h>
 
-#include <aws/common/array_list.h>
+#include <aws/common/hash_table.h>
 
+struct aws_array_list;
 struct aws_byte_cursor;
 struct aws_string;
 
-struct aws_signing_result_name_value_pair {
+struct aws_signing_result_property {
     struct aws_string *name;
     struct aws_string *value;
 };
 
 /*
- * A structure for tracking all the signer-requested changes to an http request needed to build
- * a properly-signed http request.
+ * A structure for tracking all the signer-requested changes to a signable.  Interpreting
+ * these changes is signing-algorithm specific.
  */
 struct aws_signing_result {
     struct aws_allocator *allocator;
-    struct aws_array_list headers;
-    struct aws_array_list query_params;
+    struct aws_hash_table properties;
+    struct aws_hash_table property_lists;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -47,16 +48,29 @@ AWS_AUTH_API
 void aws_signing_result_clean_up(struct aws_signing_result *result);
 
 AWS_AUTH_API
-int aws_signing_result_add_header(
+int aws_signing_result_set_property(
     struct aws_signing_result *result,
-    struct aws_byte_cursor *name,
-    struct aws_byte_cursor *value);
+    const struct aws_string *property_name,
+    const struct aws_byte_cursor *property_value);
 
 AWS_AUTH_API
-int aws_signing_result_add_query_param(
+int aws_signing_result_get_property(
     struct aws_signing_result *result,
-    struct aws_byte_cursor *name,
-    struct aws_byte_cursor *value);
+    const struct aws_string *property_name,
+    struct aws_string **property_value);
+
+AWS_AUTH_API
+int aws_signing_result_append_property_list(
+    struct aws_signing_result *result,
+    const struct aws_string *list_name,
+    const struct aws_byte_cursor *property_name,
+    const struct aws_byte_cursor *property_value);
+
+AWS_AUTH_API
+int aws_signing_result_get_property_list(
+    struct aws_signing_result *result,
+    const struct aws_string *list_name,
+    struct aws_array_list **out_list);
 
 AWS_EXTERN_C_END
 

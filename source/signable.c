@@ -15,6 +15,8 @@
 
 #include <aws/auth/signable.h>
 
+#include <aws/common/string.h>
+
 void aws_signable_destroy(struct aws_signable *signable) {
     if (signable == NULL) {
         return;
@@ -28,3 +30,8 @@ void aws_signable_destroy(struct aws_signable *signable) {
 
     aws_mem_release(signable->allocator, signable);
 }
+
+AWS_STRING_FROM_LITERAL(g_aws_http_headers_property_list_name, "headers");
+AWS_STRING_FROM_LITERAL(g_aws_http_query_params_property_list_name, "params");
+AWS_STRING_FROM_LITERAL(g_aws_http_method_property_name, "method");
+AWS_STRING_FROM_LITERAL(g_aws_http_uri_property_name, "uri");
