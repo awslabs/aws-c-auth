@@ -57,7 +57,7 @@ AWS_AUTH_API
 int aws_signing_result_get_property(
     struct aws_signing_result *result,
     const struct aws_string *property_name,
-    struct aws_string **property_value);
+    struct aws_string **out_property_value);
 
 AWS_AUTH_API
 int aws_signing_result_append_property_list(

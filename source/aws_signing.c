@@ -1625,7 +1625,9 @@ static int s_add_authorization_to_result(
         name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
         return aws_signing_result_append_property_list(
             state->result, g_aws_http_headers_property_list_name, &name, &value);
-    } else if (s_is_query_param_auth(state->config->algorithm)) {
+    }
+
+    if (s_is_query_param_auth(state->config->algorithm)) {
         name = aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
         return aws_signing_result_append_property_list(
             state->result, g_aws_http_query_params_property_list_name, &name, &value);
