@@ -57,7 +57,7 @@ static int s_load_test_suite_file(
     return aws_byte_buf_init_from_file(file_contents, allocator, path);
 }
 
-static int s_sigv4_test_suite_contents_init(
+static int s_sigv4_test_suite_contents_init_from_file_set(
     struct sigv4_test_suite_contents *contents,
     struct aws_allocator *allocator,
     const char *parent_folder,
@@ -71,6 +71,30 @@ static int s_sigv4_test_suite_contents_init(
         s_load_test_suite_file(allocator, parent_folder, test_name, "sts", &contents->expected_string_to_sign) ||
         s_load_test_suite_file(allocator, parent_folder, test_name, "sreq", &contents->expected_signed_request) ||
         s_load_test_suite_file(allocator, parent_folder, test_name, "authz", &contents->expected_auth_header)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_array_list_init_dynamic(
+            &contents->header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_sigv4_test_suite_contents_init_from_cursor(
+    struct sigv4_test_suite_contents *contents,
+    struct aws_allocator *allocator,
+    const struct aws_byte_cursor *request_cursor,
+    const struct aws_byte_cursor *expected_canonical_request_cursor) {
+
+    AWS_ZERO_STRUCT(*contents);
+    contents->allocator = allocator;
+
+    if ((request_cursor && aws_byte_buf_init_copy_from_cursor(&contents->request, allocator, *request_cursor)) ||
+        (expected_canonical_request_cursor &&
+         aws_byte_buf_init_copy_from_cursor(
+             &contents->expected_canonical_request, allocator, *expected_canonical_request_cursor))) {
         return AWS_OP_ERR;
     }
 
@@ -108,13 +132,7 @@ static int s_initialize_test_from_contents(
     struct aws_signable **signable,
     struct aws_signing_config_aws *config,
     struct aws_allocator *allocator,
-    struct sigv4_test_suite_contents *contents,
-    const char *test_name,
-    const char *parent_folder) {
-
-    if (s_sigv4_test_suite_contents_init(contents, allocator, parent_folder, test_name)) {
-        return AWS_OP_ERR;
-    }
+    struct sigv4_test_suite_contents *contents) {
 
     struct aws_array_list request_lines;
     if (aws_array_list_init_dynamic(&request_lines, allocator, 10, sizeof(struct aws_byte_cursor))) {
@@ -230,6 +248,37 @@ static int s_initialize_test_from_contents(
     return AWS_OP_SUCCESS;
 }
 
+static int s_initialize_test_from_file(
+    struct aws_signable **signable,
+    struct aws_signing_config_aws *config,
+    struct aws_allocator *allocator,
+    struct sigv4_test_suite_contents *contents,
+    const char *test_name,
+    const char *parent_folder) {
+
+    if (s_sigv4_test_suite_contents_init_from_file_set(contents, allocator, parent_folder, test_name)) {
+        return AWS_OP_ERR;
+    }
+
+    return s_initialize_test_from_contents(signable, config, allocator, contents);
+}
+
+static int s_initialize_test_from_cursor(
+    struct aws_signable **signable,
+    struct aws_signing_config_aws *config,
+    struct aws_allocator *allocator,
+    struct sigv4_test_suite_contents *contents,
+    const struct aws_byte_cursor *request_cursor,
+    const struct aws_byte_cursor *expected_canonical_request_cursor) {
+
+    if (s_sigv4_test_suite_contents_init_from_cursor(
+            contents, allocator, request_cursor, expected_canonical_request_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    return s_initialize_test_from_contents(signable, config, allocator, contents);
+}
+
 struct aws_byte_cursor s_get_value_from_result(
     const struct aws_array_list *pair_list,
     const struct aws_byte_cursor *name) {
@@ -277,7 +326,7 @@ static int s_do_sigv4_test_suite_test(
     AWS_ZERO_STRUCT(config);
 
     ASSERT_TRUE(
-        s_initialize_test_from_contents(&signable, &config, allocator, &test_contents, test_name, parent_folder) ==
+        s_initialize_test_from_file(&signable, &config, allocator, &test_contents, test_name, parent_folder) ==
         AWS_OP_SUCCESS);
 
     struct aws_signing_result result;
@@ -400,3 +449,148 @@ DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla_query, "post-vanilla-query");
 
 DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded, "post-x-www-form-urlencoded");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www-form-urlencoded-parameters");
+
+static int s_do_header_skip_test(
+    struct aws_allocator *allocator,
+    aws_should_sign_header_fn *should_sign,
+    const struct aws_string *request_contents,
+    const struct aws_string *expected_canonical_request) {
+
+    aws_auth_library_init(allocator);
+
+    struct sigv4_test_suite_contents test_contents;
+    AWS_ZERO_STRUCT(test_contents);
+
+    struct aws_signable *signable = NULL;
+
+    struct aws_signing_config_aws config;
+    AWS_ZERO_STRUCT(config);
+
+    struct aws_byte_cursor request_cursor = aws_byte_cursor_from_string(request_contents);
+    struct aws_byte_cursor expected_canonical_request_cursor = aws_byte_cursor_from_string(expected_canonical_request);
+
+    ASSERT_TRUE(
+        s_initialize_test_from_cursor(
+            &signable, &config, allocator, &test_contents, &request_cursor, &expected_canonical_request_cursor) ==
+        AWS_OP_SUCCESS);
+
+    config.should_sign_header = should_sign;
+
+    struct aws_signing_result result;
+    ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);
+
+    struct aws_signing_state_aws signing_state;
+    ASSERT_TRUE(aws_signing_state_init(&signing_state, allocator, &config, signable, &result) == AWS_OP_SUCCESS);
+
+    struct aws_credentials *credentials =
+        aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
+    ASSERT_TRUE(credentials != NULL);
+
+    config.credentials = credentials;
+
+    ASSERT_TRUE(aws_signing_build_canonical_request(&signing_state) == AWS_OP_SUCCESS);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        test_contents.expected_canonical_request.buffer,
+        test_contents.expected_canonical_request.len,
+        signing_state.canonical_request.buffer,
+        signing_state.canonical_request.len);
+
+    aws_signing_state_clean_up(&signing_state);
+    s_sigv4_test_suite_contents_clean_up(&test_contents);
+    aws_credentials_destroy(credentials);
+    aws_signing_result_clean_up(&result);
+    aws_signable_destroy(signable);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_xray_header_request,
+    "GET / HTTP/1.1\n"
+    "Host:example.amazonaws.com\n"
+    "x-amzn-trace-id:fsdbofdshfdsjkjhfs"
+    "X-Amz-Date:20150830T123600Z");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_xray_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static int s_sigv4_skip_xray_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator, NULL, s_skip_xray_header_request, s_skip_xray_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_xray_header_test, s_sigv4_skip_xray_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_user_agent_header_request,
+    "GET / HTTP/1.1\n"
+    "Useragent:c sdk v1.0\n"
+    "Host:example.amazonaws.com\n"
+    "X-Amz-Date:20150830T123600Z");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_user_agent_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static int s_sigv4_skip_user_agent_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator, NULL, s_skip_user_agent_header_request, s_skip_user_agent_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_user_agent_header_test, s_sigv4_skip_user_agent_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_custom_header_request,
+    "GET / HTTP/1.1\n"
+    "MyHeader:Blahblah\n"
+    "Host:example.amazonaws.com\n"
+    "AnotherHeader:Oof\n"
+    "X-Amz-Date:20150830T123600Z");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_custom_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static bool s_should_sign_header(const struct aws_byte_cursor *name) {
+    struct aws_byte_cursor my_header_cursor = aws_byte_cursor_from_c_str("myheader");
+    struct aws_byte_cursor another_header_cursor = aws_byte_cursor_from_c_str("anOtherHeader");
+
+    if (aws_byte_cursor_eq_ignore_case(name, &my_header_cursor) ||
+        aws_byte_cursor_eq_ignore_case(name, &another_header_cursor)) {
+        return false;
+    }
+
+    return true;
+}
+
+static int s_sigv4_skip_custom_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator, s_should_sign_header, s_skip_custom_header_request, s_skip_custom_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_custom_header_test, s_sigv4_skip_custom_header_test);

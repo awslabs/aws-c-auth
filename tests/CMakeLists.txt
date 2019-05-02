@@ -117,6 +117,10 @@ add_test_case(sigv4_get_space_test)
 add_test_case(sigv4_post_sts_header_after_test)
 add_test_case(sigv4_post_sts_header_before_test)
 
+add_test_case(sigv4_skip_xray_header_test)
+add_test_case(sigv4_skip_user_agent_header_test)
+add_test_case(sigv4_skip_custom_header_test)
+
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
