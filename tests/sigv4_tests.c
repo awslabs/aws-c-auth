@@ -315,6 +315,7 @@ static int s_do_sigv4_test_suite_test(
     const char *test_name,
     const char *parent_folder) {
 
+    /* Set up everything */
     aws_auth_library_init(allocator);
 
     struct sigv4_test_suite_contents test_contents;
@@ -341,27 +342,25 @@ static int s_do_sigv4_test_suite_test(
 
     config.credentials = credentials;
 
-    ASSERT_TRUE(aws_signing_build_canonical_request(&signing_state) == AWS_OP_SUCCESS);
-
     /* 1a - validate canonical request */
+    ASSERT_TRUE(aws_signing_build_canonical_request(&signing_state) == AWS_OP_SUCCESS);
     ASSERT_BIN_ARRAYS_EQUALS(
         test_contents.expected_canonical_request.buffer,
         test_contents.expected_canonical_request.len,
         signing_state.canonical_request.buffer,
         signing_state.canonical_request.len);
 
-    ASSERT_TRUE(aws_signing_build_string_to_sign(&signing_state) == AWS_OP_SUCCESS);
-
     /* 1b - validate string to sign */
+    ASSERT_TRUE(aws_signing_build_string_to_sign(&signing_state) == AWS_OP_SUCCESS);
     ASSERT_BIN_ARRAYS_EQUALS(
         test_contents.expected_string_to_sign.buffer,
         test_contents.expected_string_to_sign.len,
         signing_state.string_to_sign.buffer,
         signing_state.string_to_sign.len);
 
+    /* 1c - validate authorization value */
     ASSERT_TRUE(aws_signing_build_authorization_value(&signing_state) == AWS_OP_SUCCESS);
 
-    /* 1c - validate authorization value */
     struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
 
     struct aws_array_list *headers = NULL;
@@ -389,6 +388,54 @@ static int s_do_sigv4_test_suite_test(
     struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(headers, &auth_header_name);
     ASSERT_BIN_ARRAYS_EQUALS(
         expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
+
+    /* 3 - sign via query param and check for expected query params.  We don't have an X-Amz-Signature value to check
+     * though so just make sure it exists */
+    aws_signing_result_clean_up(&result);
+    ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);
+
+    config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM;
+
+    ASSERT_TRUE(aws_signer_sign_request(signer, signable, (void *)&config, &result) == AWS_OP_SUCCESS);
+
+    struct aws_array_list *params = NULL;
+    ASSERT_TRUE(
+        aws_signing_result_get_property_list(&result, g_aws_http_query_params_property_list_name, &params) ==
+        AWS_OP_SUCCESS);
+
+    ASSERT_TRUE(params != NULL);
+
+    struct aws_byte_cursor algorithm_query_param_name =
+        aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name);
+    struct aws_byte_cursor credential_query_param_name =
+        aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name);
+    struct aws_byte_cursor signed_headers_query_param_name =
+        aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name);
+    struct aws_byte_cursor auth_query_param_name =
+        aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
+
+    struct aws_byte_cursor param_value;
+
+    /* This validation is fairly weak since we just check for equality against what was cached in the signing
+     * state.  I'm not sure a redundant recalculation of the expected value for credential scope and signed headers
+     * would have much value though.
+     */
+    param_value = s_get_value_from_result(params, &algorithm_query_param_name);
+    struct aws_byte_cursor expected_algorithm = aws_byte_cursor_from_c_str("AWS4-HMAC-SHA256");
+    ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value.ptr, param_value.len);
+
+    param_value = s_get_value_from_result(params, &credential_query_param_name);
+    struct aws_byte_cursor expected_credential_scope = aws_byte_cursor_from_buf(&signing_state.credential_scope);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_credential_scope.ptr, expected_credential_scope.len, param_value.ptr, param_value.len);
+
+    param_value = s_get_value_from_result(params, &signed_headers_query_param_name);
+    struct aws_byte_cursor expected_signed_headers = aws_byte_cursor_from_buf(&signing_state.signed_headers);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_signed_headers.ptr, expected_signed_headers.len, param_value.ptr, param_value.len);
+
+    param_value = s_get_value_from_result(params, &auth_query_param_name);
+    ASSERT_TRUE(param_value.len > 0); /* Is there are least something? */
 
     aws_signing_state_clean_up(&signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
