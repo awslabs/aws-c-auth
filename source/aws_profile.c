@@ -1231,28 +1231,30 @@ static struct aws_profile_collection *s_aws_profile_collection_new_internal(
         goto cleanup;
     }
 
-    struct profile_file_parse_context context;
-    AWS_ZERO_STRUCT(context);
-    context.current_line_number = 1;
-    context.profile_collection = profile_collection;
-    context.source_file_path = path;
-
     struct aws_byte_cursor current_position = aws_byte_cursor_from_buf(buffer);
 
-    struct aws_byte_cursor line_cursor;
-    AWS_ZERO_STRUCT(line_cursor);
+    if (current_position.len > 0) {
+        struct aws_byte_cursor line_cursor;
+        AWS_ZERO_STRUCT(line_cursor);
 
-    while (aws_byte_cursor_next_split(&current_position, '\n', &line_cursor)) {
-        context.current_line = line_cursor;
+        struct profile_file_parse_context context;
+        AWS_ZERO_STRUCT(context);
+        context.current_line_number = 1;
+        context.profile_collection = profile_collection;
+        context.source_file_path = path;
 
-        s_parse_and_apply_line_to_profile_collection(&context, &line_cursor);
-        if (context.parse_error == AWS_AUTH_PROFILE_PARSE_FATAL_ERROR) {
-            AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Fatal error while parsing aws profile collection");
-            goto cleanup;
+        while (aws_byte_cursor_next_split(&current_position, '\n', &line_cursor)) {
+            context.current_line = line_cursor;
+
+            s_parse_and_apply_line_to_profile_collection(&context, &line_cursor);
+            if (context.parse_error == AWS_AUTH_PROFILE_PARSE_FATAL_ERROR) {
+                AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Fatal error while parsing aws profile collection");
+                goto cleanup;
+            }
+
+            aws_byte_cursor_advance(&current_position, line_cursor.len + 1);
+            ++context.current_line_number;
         }
-
-        aws_byte_cursor_advance(&current_position, line_cursor.len + 1);
-        ++context.current_line_number;
     }
 
     return profile_collection;

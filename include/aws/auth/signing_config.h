@@ -23,6 +23,8 @@
 
 struct aws_credentials;
 
+typedef bool(aws_should_sign_header_fn)(const struct aws_byte_cursor *name);
+
 /*
  * A primitive RTTI indicator for signing configuration structs
  *
@@ -40,15 +42,14 @@ struct aws_signing_config_base {
 };
 
 /*
- * Indicates whether authorization should be header-based or query-param-based.
- */
-enum aws_signing_auth_type { AWS_SIGN_AUTH_HEADER, AWS_SIGN_AUTH_QUERY_PARAM };
-
-/*
  * What signing algorithm to use.  Independent of signing config type as some
  * algorithms may share a common configuration struct.
  */
-enum aws_signing_algorithm { AWS_SIGNING_ALGORITHM_SIG_V4, AWS_SIGNING_ALGORITHM_COUNT };
+enum aws_signing_algorithm {
+    AWS_SIGNING_ALGORITHM_SIG_V4_HEADER,
+    AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM,
+    AWS_SIGNING_ALGORITHM_COUNT
+};
 
 /*
  * A configuration structure for use in AWS-related signing.  Currently covers sigv4 only, but is not required to.
@@ -86,7 +87,17 @@ struct aws_signing_config_aws {
     struct aws_date_time date;
 
     /*
-     * We assume the uri has already been encoded once in preparation for transmission.  Certain services
+     * Optional function to control which headers are a part of the canonical request.  Skipping auth-required headers
+     * will result in an unusable signature.  Headers injected by the signing process are not skippable.
+     *
+     * This function does not override the internal check function (x-amzn-trace-id, user-agent), but rather
+     * supplements it.  In particular, a header will get signed if and only if it returns true to both
+     * the internal check (skips x-amzn-trace-id, user-agent) and this function (if defined).
+     */
+    aws_should_sign_header_fn *should_sign_header;
+
+    /*
+     * We assume the uri will be encoded once in preparation for transmission.  Certain services
      * do not decode before checking signature, requiring us to actually double-encode the uri in the canonical request
      * in order to pass a signature check.
      */
@@ -97,11 +108,6 @@ struct aws_signing_config_aws {
      * nothing
      */
     bool sign_body;
-
-    /*
-     * Controls whether the signing result contains request header or query-param auth changes
-     */
-    enum aws_signing_auth_type auth_type;
 };
 
 AWS_EXTERN_C_BEGIN

@@ -21,6 +21,7 @@
 #include <aws/cal/hash.h>
 #include <aws/cal/hmac.h>
 #include <aws/common/date_time.h>
+#include <aws/common/encoding.h>
 #include <aws/common/string.h>
 #include <aws/io/stream.h>
 #include <aws/io/uri.h>
@@ -52,13 +53,62 @@
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 
 /*
+ * Header signing helpers
+ */
+static struct aws_hash_table s_skipped_headers;
+
+static struct aws_byte_cursor s_amzn_trace_id_header_name;
+static struct aws_byte_cursor s_user_agent_header_name;
+
+int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
+    (void)allocator;
+
+    s_amzn_trace_id_header_name = aws_byte_cursor_from_c_str("x-amzn-trace-id");
+    s_user_agent_header_name = aws_byte_cursor_from_c_str("UserAgent");
+
+    if (aws_hash_table_init(
+            &s_skipped_headers,
+            allocator,
+            2,
+            aws_hash_byte_cursor_ptr_ignore_case,
+            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            NULL,
+            NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_amzn_trace_id_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_user_agent_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+void aws_signing_clean_up_skipped_headers(void) {
+    aws_hash_table_clean_up(&s_skipped_headers);
+}
+
+/*
  * Signing algorithm helper functions
  */
 AWS_STATIC_STRING_FROM_LITERAL(s_sigv4_algorithm, "AWS4-HMAC-SHA256");
 
+static bool s_is_header_auth(enum aws_signing_algorithm algorithm) {
+    return algorithm == AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
+}
+
+static bool s_is_query_param_auth(enum aws_signing_algorithm algorithm) {
+    return algorithm == AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM;
+}
+
 static int s_get_signing_algorithm_cursor(enum aws_signing_algorithm algorithm, struct aws_byte_cursor *cursor) {
     switch (algorithm) {
-        case AWS_SIGNING_ALGORITHM_SIG_V4:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_HEADER:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM:
             *cursor = aws_byte_cursor_from_string(s_sigv4_algorithm);
             break;
 
@@ -176,16 +226,6 @@ static uint8_t s_to_uppercase_hex(uint8_t value) {
     return (uint8_t)('A' + value - 10);
 }
 
-static uint8_t s_to_lowercase_hex(uint8_t value) {
-    assert(value < 16);
-
-    if (value < 10) {
-        return (uint8_t)('0' + value);
-    }
-
-    return (uint8_t)('a' + value - 10);
-}
-
 typedef void(unchecked_append_canonicalized_character_fn)(uint8_t value, struct aws_byte_buf *buffer);
 
 /*
@@ -281,7 +321,14 @@ static int s_encode_cursor_to_buffer(
     /*
      * reserve room up front for the worst possible case: everything gets % encoded
      */
-    aws_byte_buf_reserve(buffer, buffer->len + 3 * cursor->len);
+    size_t capacity_needed = 0;
+    if (AWS_UNLIKELY(aws_mul_size_checked(3, cursor->len, &capacity_needed))) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_reserve_relative(buffer, capacity_needed)) {
+        return AWS_OP_ERR;
+    }
 
     while (current_ptr < end_ptr) {
         append_canonicalized_character(*current_ptr, buffer);
@@ -619,7 +666,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-Si
  * exception of X-Amz-Signature (because we're still computing its value)
  */
 static int s_add_authorization_query_params(struct aws_signing_state_aws *state, struct aws_array_list *query_params) {
-    if (state->config->auth_type != AWS_SIGN_AUTH_QUERY_PARAM) {
+    if (!s_is_query_param_auth(state->config->algorithm)) {
         return AWS_OP_SUCCESS;
     }
 
@@ -740,7 +787,7 @@ cleanup:
  * included in the trimming done to headers
  */
 static bool s_is_space(uint8_t value) {
-    return value == ' ';
+    return isspace(value);
 }
 
 /*
@@ -857,6 +904,25 @@ static int s_append_canonical_header(
 }
 
 /*
+ * Checks the header against both an internal skip list as well as an optional user-supplied filter
+ * function.  Only sign the header if both functions allow it.
+ */
+static bool s_should_sign_header(struct aws_signing_state_aws *state, struct aws_byte_cursor *name) {
+    if (state->config->should_sign_header) {
+        if (!state->config->should_sign_header(name)) {
+            return false;
+        }
+    }
+
+    struct aws_hash_element *element = NULL;
+    if (aws_hash_table_find(&s_skipped_headers, name, &element) == AWS_OP_ERR || element != NULL) {
+        return false;
+    }
+
+    return true;
+}
+
+/*
  * Builds the list of header name-value pairs to be added to the canonical request.  The list members are
  * actually the header wrapper structs that allow for stable sorting.
  *
@@ -889,6 +955,11 @@ static int s_build_canonical_stable_header_list(
 
         if (aws_array_list_get_at(signable_header_list, &header_wrapper.header, i)) {
             return AWS_OP_ERR;
+        }
+
+        struct aws_byte_cursor *header_name_cursor = &header_wrapper.header.name;
+        if (!s_should_sign_header(state, header_name_cursor)) {
+            continue;
         }
 
         *out_required_capacity += header_wrapper.header.name.len + header_wrapper.header.value.len;
@@ -1035,23 +1106,6 @@ on_cleanup:
 }
 
 /*
- * Writes a range of bytes to a buffer as two-byte lowercase hex digits
- * Possibly worth making available in aws-c-common
- */
-static int s_aws_byte_buf_append_hex_encoding(struct aws_byte_buf *dest, const struct aws_byte_cursor *source) {
-    for (size_t i = 0; i < source->len; ++i) {
-        uint8_t value = source->ptr[i];
-        uint8_t upper_nibble = s_to_lowercase_hex((value >> 4) & 0x0F);
-        uint8_t lower_nibble = s_to_lowercase_hex(value & 0x0F);
-        if (s_append_character_to_byte_buf(dest, upper_nibble) || s_append_character_to_byte_buf(dest, lower_nibble)) {
-            return AWS_OP_ERR;
-        }
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-/*
  * Computes the payload hash as hex digits.  We currently don't have a way
  * to rewind the stream, so the caller of the signing process will need to do
  * that manually.
@@ -1116,7 +1170,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
      * cache the payload hash into the state
      */
     struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
-    if (s_aws_byte_buf_append_hex_encoding(payload_hash_buffer, &digest_cursor)) {
+    if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
         goto on_cleanup;
     }
 
@@ -1150,7 +1204,7 @@ static int s_append_canonical_payload_hash(struct aws_signing_state_aws *state) 
     /*
      * Add the payload hash header to the result if necessary
      */
-    if (state->config->auth_type == AWS_SIGN_AUTH_HEADER) {
+    if (s_is_header_auth(state->config->algorithm)) {
         struct aws_byte_cursor hashed_body_header_name = aws_byte_cursor_from_string(g_aws_signing_content_header_name);
         if (aws_signing_result_append_property_list(
                 state->result, g_aws_http_headers_property_list_name, &hashed_body_header_name, &payload_hash_cursor)) {
@@ -1231,7 +1285,8 @@ cleanup:
  */
 int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
     switch (state->config->algorithm) {
-        case AWS_SIGNING_ALGORITHM_SIG_V4:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_HEADER:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM:
             return s_build_canonical_request_sigv4(state);
 
         default:
@@ -1266,7 +1321,7 @@ static int s_append_canonical_request_hash(struct aws_signing_state_aws *state) 
     }
 
     struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
-    if (s_aws_byte_buf_append_hex_encoding(dest, &digest_cursor)) {
+    if (aws_hex_encode_append_dynamic(&digest_cursor, dest)) {
         goto cleanup;
     }
 
@@ -1284,7 +1339,8 @@ static int s_append_credential_scope_terminator(enum aws_signing_algorithm algor
     struct aws_byte_cursor terminator_cursor;
 
     switch (algorithm) {
-        case AWS_SIGNING_ALGORITHM_SIG_V4:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_HEADER:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM:
             terminator_cursor = aws_byte_cursor_from_string(s_credential_scope_sigv4_terminator);
             break;
 
@@ -1308,7 +1364,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
     /*
      * date output uses the non-dynamic append, so make sure there's enough room first
      */
-    if (aws_byte_buf_reserve(dest, dest->len + AWS_DATE_TIME_STR_MAX_LEN)) {
+    if (aws_byte_buf_reserve_relative(dest, AWS_DATE_TIME_STR_MAX_LEN)) {
         return AWS_OP_ERR;
     }
 
@@ -1367,7 +1423,7 @@ static int s_build_string_to_sign_4(struct aws_signing_state_aws *state) {
     }
 
     /*  date_time output uses raw array writes, so ensure there's enough room beforehand */
-    if (aws_byte_buf_reserve(dest, dest->len + AWS_DATE_TIME_STR_MAX_LEN)) {
+    if (aws_byte_buf_reserve_relative(dest, AWS_DATE_TIME_STR_MAX_LEN)) {
         return AWS_OP_ERR;
     }
 
@@ -1401,7 +1457,8 @@ static int s_build_string_to_sign_4(struct aws_signing_state_aws *state) {
  */
 int aws_signing_build_string_to_sign(struct aws_signing_state_aws *state) {
     switch (state->config->algorithm) {
-        case AWS_SIGNING_ALGORITHM_SIG_V4:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_HEADER:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM:
             return s_build_string_to_sign_4(state);
 
         default:
@@ -1524,7 +1581,7 @@ static int s_append_sigv4_signature_value(struct aws_signing_state_aws *state, s
     }
 
     struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest);
-    if (s_aws_byte_buf_append_hex_encoding(dest, &digest_cursor)) {
+    if (aws_hex_encode_append_dynamic(&digest_cursor, dest)) {
         goto cleanup;
     }
 
@@ -1543,7 +1600,8 @@ cleanup:
  */
 int s_append_signature_value(struct aws_signing_state_aws *state, struct aws_byte_buf *dest) {
     switch (state->config->algorithm) {
-        case AWS_SIGNING_ALGORITHM_SIG_V4:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_HEADER:
+        case AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM:
             return s_append_sigv4_signature_value(state, dest);
 
         default:
@@ -1563,21 +1621,14 @@ static int s_add_authorization_to_result(
     struct aws_byte_cursor name;
     struct aws_byte_cursor value = aws_byte_cursor_from_buf(authorization_value);
 
-    switch (state->config->auth_type) {
-        case AWS_SIGN_AUTH_HEADER:
-            name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
-            return aws_signing_result_append_property_list(
-                state->result, g_aws_http_headers_property_list_name, &name, &value);
-            break;
-
-        case AWS_SIGN_AUTH_QUERY_PARAM:
-            name = aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
-            return aws_signing_result_append_property_list(
-                state->result, g_aws_http_query_params_property_list_name, &name, &value);
-            break;
-
-        default:
-            break;
+    if (s_is_header_auth(state->config->algorithm)) {
+        name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
+        return aws_signing_result_append_property_list(
+            state->result, g_aws_http_headers_property_list_name, &name, &value);
+    } else if (s_is_query_param_auth(state->config->algorithm)) {
+        name = aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
+        return aws_signing_result_append_property_list(
+            state->result, g_aws_http_query_params_property_list_name, &name, &value);
     }
 
     return AWS_OP_ERR;
@@ -1653,7 +1704,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         goto cleanup;
     }
 
-    if (state->config->auth_type == AWS_SIGN_AUTH_HEADER &&
+    if (s_is_header_auth(state->config->algorithm) &&
         s_append_authorization_header_preamble(state, &authorization_value)) {
         goto cleanup;
     }

@@ -214,12 +214,11 @@ static int s_initialize_test_from_contents(
         contents->payload_stream);
 
     config->config_type = AWS_SIGNING_CONFIG_AWS;
-    config->algorithm = AWS_SIGNING_ALGORITHM_SIG_V4;
+    config->algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
     config->region = aws_byte_cursor_from_string(s_test_suite_region);
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->use_double_uri_encode = true;
     config->sign_body = false;
-    config->auth_type = AWS_SIGN_AUTH_HEADER;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
     if (aws_date_time_init_from_str_cursor(&config->date, &date_cursor, AWS_DATE_FORMAT_ISO_8601)) {
@@ -266,6 +265,9 @@ static int s_do_sigv4_test_suite_test(
     struct aws_allocator *allocator,
     const char *test_name,
     const char *parent_folder) {
+
+    aws_auth_library_init(allocator);
+
     struct sigv4_test_suite_contents test_contents;
     AWS_ZERO_STRUCT(test_contents);
 
@@ -345,6 +347,8 @@ static int s_do_sigv4_test_suite_test(
     aws_signing_result_clean_up(&result);
     aws_signer_destroy(signer);
     aws_signable_destroy(signable);
+
+    aws_auth_library_clean_up();
 
     return AWS_OP_SUCCESS;
 }

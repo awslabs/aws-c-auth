@@ -64,10 +64,10 @@ int aws_signable_get_property_list(
 AWS_AUTH_API
 int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream);
 
-AWS_COMMON_API extern const struct aws_string *g_aws_http_headers_property_list_name;
-AWS_COMMON_API extern const struct aws_string *g_aws_http_query_params_property_list_name;
-AWS_COMMON_API extern const struct aws_string *g_aws_http_method_property_name;
-AWS_COMMON_API extern const struct aws_string *g_aws_http_uri_property_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_http_headers_property_list_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_http_query_params_property_list_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_http_method_property_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_http_uri_property_name;
 
 AWS_EXTERN_C_END
 

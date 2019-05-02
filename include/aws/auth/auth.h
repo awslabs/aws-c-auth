@@ -41,16 +41,18 @@ enum aws_auth_log_subject {
 AWS_EXTERN_C_BEGIN
 
 /**
- * Loads error strings for this library so that aws_last_error_str etc... will return useful debug strings.
+ * Initializes internal datastructures used by aws-c-auth.
+ * Must be called before using any functionality in aws-c-auth.
  */
 AWS_AUTH_API
-void aws_auth_load_error_strings(void);
+void aws_auth_library_init(struct aws_allocator *allocator);
 
 /**
- * Loads log subject info strings for this library.
+ * Clean up internal datastructures used by aws-c-auth.
+ * Must not be called until application is done using functionality in aws-c-auth.
  */
 AWS_AUTH_API
-void aws_auth_load_log_subject_strings(void);
+void aws_auth_library_clean_up(void);
 
 AWS_EXTERN_C_END
 
