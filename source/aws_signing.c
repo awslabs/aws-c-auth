@@ -217,7 +217,7 @@ static int s_append_canonical_method(struct aws_signing_state_aws *state) {
 }
 
 static uint8_t s_to_uppercase_hex(uint8_t value) {
-    assert(value < 16);
+    AWS_ASSERT(value < 16);
 
     if (value < 10) {
         return (uint8_t)('0' + value);
@@ -235,7 +235,7 @@ typedef void(unchecked_append_canonicalized_character_fn)(uint8_t value, struct 
  * This function is for the uri path
  */
 static void s_unchecked_append_canonicalized_path_character(uint8_t value, struct aws_byte_buf *buffer) {
-    assert(buffer->len + 3 <= buffer->capacity);
+    AWS_ASSERT(buffer->len + 3 <= buffer->capacity);
 
     uint8_t *dest_ptr = buffer->buffer + buffer->len;
 
@@ -279,7 +279,7 @@ static void s_unchecked_append_canonicalized_path_character(uint8_t value, struc
  * This function is for query params
  */
 static void s_raw_append_canonicalized_param_character(uint8_t value, struct aws_byte_buf *buffer) {
-    assert(buffer->len + 3 <= buffer->capacity);
+    AWS_ASSERT(buffer->len + 3 <= buffer->capacity);
 
     uint8_t *dest_ptr = buffer->buffer + buffer->len;
 
@@ -463,6 +463,8 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
      * services, we must double encode in our calculation as well.
      */
     if (config->use_double_uri_encode) {
+        struct aws_byte_cursor path_cursor;
+
         /*
          * We need to transform the the normalized path, so we can't just append it into the canonical
          * request.  Instead we append it into a temporary buffer and perform the transformation from
@@ -471,18 +473,22 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
          * All this does is skip the temporary normalized path in the case where we don't need to
          * double encode.
          */
+        if (config->should_normalize_uri_path) {
+            if (aws_byte_buf_init(&normalized_path, state->allocator, uri->path.len)) {
+                goto cleanup;
+            }
 
-        if (aws_byte_buf_init(&normalized_path, state->allocator, uri->path.len)) {
-            goto cleanup;
+            if (s_append_normalized_path(&uri->path, allocator, &normalized_path)) {
+                goto cleanup;
+            }
+
+            path_cursor = aws_byte_cursor_from_buf(&normalized_path);
+        } else {
+            path_cursor = uri->path;
         }
 
-        if (s_append_normalized_path(&uri->path, allocator, &normalized_path)) {
-            goto cleanup;
-        }
-
-        struct aws_byte_cursor normalized_path_cursor = aws_byte_cursor_from_buf(&normalized_path);
         if (s_encode_cursor_to_buffer(
-                &normalized_path_cursor, canonical_request_buffer, s_unchecked_append_canonicalized_path_character)) {
+                &path_cursor, canonical_request_buffer, s_unchecked_append_canonicalized_path_character)) {
             goto cleanup;
         }
     } else {
@@ -490,7 +496,9 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
          * If we don't need to perform any kind of transformation on the normalized path, just append it directly
          * into the canonical request buffer
          */
-        if (s_append_normalized_path(&uri->path, allocator, canonical_request_buffer)) {
+        if (config->should_normalize_uri_path && s_append_normalized_path(&uri->path, allocator, canonical_request_buffer)) {
+            goto cleanup;
+        } else if (!config->should_normalize_uri_path && aws_byte_buf_append_dynamic(canonical_request_buffer, &uri->path)) {
             goto cleanup;
         }
     }
@@ -509,101 +517,18 @@ cleanup:
 }
 
 /*
- * Consider folding these into aws-c-common?
- */
-
-/*
- * Lexical (byte value) comparison of two byte cursors
- */
-static int s_byte_cursor_lex_comparator(const struct aws_byte_cursor *lhs, const struct aws_byte_cursor *rhs) {
-    const uint8_t *lhs_curr = lhs->ptr;
-    const uint8_t *lhs_end = lhs_curr + lhs->len;
-
-    const uint8_t *rhs_curr = rhs->ptr;
-    const uint8_t *rhs_end = rhs_curr + rhs->len;
-
-    while (lhs_curr < lhs_end && rhs_curr < rhs_end) {
-        uint8_t lhc = *lhs_curr;
-        uint8_t rhc = *rhs_curr;
-
-        if (lhc < rhc) {
-            return -1;
-        }
-
-        if (lhc > rhc) {
-            return 1;
-        }
-
-        lhs_curr++;
-        rhs_curr++;
-    }
-
-    if (lhs_curr < lhs_end) {
-        return 1;
-    }
-
-    if (rhs_curr < rhs_end) {
-        return -1;
-    }
-
-    return 0;
-}
-
-/*
- * Lexical (byte value) comparison of two byte cursors where the raw values are sent through a lookup table first
- *
- * Easy way to do case-insensitive comparison given access to aws-c-common's case-insensitive lookup table.
- */
-static int s_byte_cursor_lookup_comparator(
-    const struct aws_byte_cursor *lhs,
-    const struct aws_byte_cursor *rhs,
-    const uint8_t *lookup_table) {
-    const uint8_t *lhs_curr = lhs->ptr;
-    const uint8_t *lhs_end = lhs_curr + lhs->len;
-
-    const uint8_t *rhs_curr = rhs->ptr;
-    const uint8_t *rhs_end = rhs_curr + rhs->len;
-
-    while (lhs_curr < lhs_end && rhs_curr < rhs_end) {
-        uint8_t lhc = lookup_table[*lhs_curr];
-        uint8_t rhc = lookup_table[*rhs_curr];
-
-        if (lhc < rhc) {
-            return -1;
-        }
-
-        if (lhc > rhc) {
-            return 1;
-        }
-
-        lhs_curr++;
-        rhs_curr++;
-    }
-
-    if (lhs_curr < lhs_end) {
-        return 1;
-    }
-
-    if (rhs_curr < rhs_end) {
-        return -1;
-    }
-
-    return 0;
-}
-
-/*
  * Query params are compared first by name, then by value
  */
 int s_canonical_query_param_comparator(const void *lhs, const void *rhs) {
     const struct aws_uri_param *left_param = lhs;
     const struct aws_uri_param *right_param = rhs;
 
-    int key_compare = s_byte_cursor_lex_comparator(&left_param->key, &right_param->key);
+    int key_compare = aws_byte_cursor_compare_lexical(&left_param->key, &right_param->key);
     if (key_compare != 0) {
         return key_compare;
     }
 
-    return s_byte_cursor_lex_comparator(&left_param->value, &right_param->value);
+    return aws_byte_cursor_compare_lexical(&left_param->value, &right_param->value);
 }
 
 /*
@@ -623,8 +548,8 @@ int s_canonical_header_comparator(const void *lhs, const void *rhs) {
     const struct stable_header *left_header = lhs;
     const struct stable_header *right_header = rhs;
 
-    int result = s_byte_cursor_lookup_comparator(
-        &left_header->header.name, &right_header->header.name, aws_lookup_table_to_lower_get());
+    int result = aws_byte_cursor_compare_lookup(
+            &left_header->header.name, &right_header->header.name, aws_lookup_table_to_lower_get());
     if (result != 0) {
         return result;
     }
@@ -635,7 +560,7 @@ int s_canonical_header_comparator(const void *lhs, const void *rhs) {
     }
 
     /* equality should never happen */
-    assert(left_header->original_index > right_header->original_index);
+    AWS_ASSERT(left_header->original_index > right_header->original_index);
 
     return 1;
 }
@@ -820,7 +745,7 @@ static int s_append_canonical_header(
      * to canonical header buffer as well
      */
     if (last_seen_header_name == NULL ||
-        s_byte_cursor_lookup_comparator(last_seen_header_name, &header->name, aws_lookup_table_to_lower_get()) != 0) {
+            aws_byte_cursor_compare_lookup(last_seen_header_name, &header->name, aws_lookup_table_to_lower_get()) != 0) {
         /*
          * The headers arrive in sorted order, so we know we've never seen this header before
          */
@@ -935,7 +860,7 @@ static int s_build_canonical_stable_header_list(
     struct aws_array_list *stable_header_list,
     size_t *out_required_capacity) {
 
-    assert(aws_array_list_length(stable_header_list) == 0);
+    AWS_ASSERT(aws_array_list_length(stable_header_list) == 0);
 
     *out_required_capacity = 0;
     const struct aws_signable *signable = state->signable;
@@ -1014,8 +939,8 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     struct aws_byte_buf *header_buffer = &state->canonical_header_block;
     struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
 
-    assert(header_buffer->len == 0);
-    assert(signed_headers_buffer->len == 0);
+    AWS_ASSERT(header_buffer->len == 0);
+    AWS_ASSERT(signed_headers_buffer->len == 0);
 
     int result = AWS_OP_ERR;
 
@@ -1115,7 +1040,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
 
-    assert(payload_hash_buffer->len == 0);
+    AWS_ASSERT(payload_hash_buffer->len == 0);
 
     int result = AWS_OP_ERR;
 
@@ -1240,7 +1165,7 @@ static int s_append_credential_scope_terminator(enum aws_signing_algorithm algor
  *   Date, region, service, algorithm terminator
  */
 static int s_build_credential_scope(struct aws_signing_state_aws *state) {
-    assert(state->credential_scope.len == 0);
+    AWS_ASSERT(state->credential_scope.len == 0);
 
     const struct aws_signing_config_aws *config = state->config;
     struct aws_byte_buf *dest = &state->credential_scope;
@@ -1287,7 +1212,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
  * Builds a sigv4-signed canonical request
  */
 static int s_build_canonical_request_sigv4(struct aws_signing_state_aws *state) {
-    assert(state->canonical_request.len == 0);
+    AWS_ASSERT(state->canonical_request.len == 0);
 
     int result = AWS_OP_ERR;
 
@@ -1408,8 +1333,8 @@ cleanup:
  */
 static int s_build_string_to_sign_4(struct aws_signing_state_aws *state) {
     /* We must have a canonical request.  We must not have the credential scope or the string to sign */
-    assert(state->canonical_request.len > 0);
-    assert(state->string_to_sign.len == 0);
+    AWS_ASSERT(state->canonical_request.len > 0);
+    AWS_ASSERT(state->string_to_sign.len == 0);
 
     struct aws_byte_buf *dest = &state->string_to_sign;
 
@@ -1477,7 +1402,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_secret_key_prefix, "AWS4");
  */
 static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, struct aws_byte_buf *dest) {
     /* dest should be empty */
-    assert(dest->len == 0);
+    AWS_ASSERT(dest->len == 0);
 
     const struct aws_signing_config_aws *config = state->config;
     struct aws_allocator *allocator = state->allocator;
@@ -1695,8 +1620,8 @@ static int s_append_authorization_header_preamble(struct aws_signing_state_aws *
  * signing result.
  */
 int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
-    assert(state->string_to_sign.len > 0);
-    assert(state->credential_scope.len > 0);
+    AWS_ASSERT(state->string_to_sign.len > 0);
+    AWS_ASSERT(state->credential_scope.len > 0);
 
     int result = AWS_OP_ERR;
 

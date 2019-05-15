@@ -236,6 +236,7 @@ static int s_initialize_test_from_contents(
     config->region = aws_byte_cursor_from_string(s_test_suite_region);
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->use_double_uri_encode = true;
+    config->should_normalize_uri_path = true;
     config->sign_body = false;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);

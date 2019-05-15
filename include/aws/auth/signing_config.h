@@ -104,6 +104,11 @@ struct aws_signing_config_aws {
     bool use_double_uri_encode;
 
     /*
+     * Controls whether or not the uri paths should be normalized when building the canonical request
+     */
+    bool should_normalize_uri_path;
+
+    /*
      * If true adds the x-amz-content-sha256 header (with appropriate value) to the canonical request, otherwise does
      * nothing
      */
