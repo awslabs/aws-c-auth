@@ -401,7 +401,7 @@ static int s_append_normalized_path(
     /*
      * Special case preserve whether or not the path ended with a '/'
      */
-    bool ends_with_slash = raw_path->len > 0 && *(raw_path->ptr + raw_path->len - 1) == '/';
+    bool ends_with_slash = raw_path->len > 0 && raw_path->ptr[raw_path->len - 1] == '/';
 
     /*
      * Paths always start with a single '/'
