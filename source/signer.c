@@ -23,7 +23,7 @@ void aws_signer_destroy(struct aws_signer *signer) {
         return;
     }
 
-    assert(signer->vtable->clean_up);
+    AWS_ASSERT(signer->vtable->clean_up);
     signer->vtable->clean_up(signer);
 
     aws_mem_release(signer->allocator, signer);
@@ -34,8 +34,8 @@ int aws_signer_sign_request(
     const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_signing_result *result) {
-    assert(signer && signable);
-    assert(signer->vtable && signer->vtable->sign_request);
+    AWS_ASSERT(signer && signable);
+    AWS_ASSERT(signer->vtable && signer->vtable->sign_request);
 
     return signer->vtable->sign_request(signer, signable, base_config, result);
 }

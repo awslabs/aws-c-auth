@@ -23,7 +23,7 @@ void aws_signable_destroy(struct aws_signable *signable) {
     }
 
     if (signable->vtable != NULL) {
-        assert(signable->vtable->clean_up);
+        AWS_ASSERT(signable->vtable->clean_up);
 
         signable->vtable->clean_up(signable);
     }
@@ -36,7 +36,7 @@ int aws_signable_get_property(
     const struct aws_string *name,
     struct aws_byte_cursor *out_value) {
 
-    assert(signable && signable->vtable && signable->vtable->get_property);
+    AWS_ASSERT(signable && signable->vtable && signable->vtable->get_property);
 
     return signable->vtable->get_property(signable, name, out_value);
 }
@@ -46,14 +46,14 @@ int aws_signable_get_property_list(
     const struct aws_string *name,
     struct aws_array_list **out_property_list) {
 
-    assert(signable && signable->vtable && signable->vtable->get_property_list);
+    AWS_ASSERT(signable && signable->vtable && signable->vtable->get_property_list);
 
     return signable->vtable->get_property_list(signable, name, out_property_list);
 }
 
 int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream) {
 
-    assert(signable && signable->vtable && signable->vtable->get_payload_stream);
+    AWS_ASSERT(signable && signable->vtable && signable->vtable->get_payload_stream);
 
     return signable->vtable->get_payload_stream(signable, input_stream);
 }

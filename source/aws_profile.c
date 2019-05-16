@@ -362,7 +362,7 @@ on_failure:
 
 static int s_profile_property_merge(struct aws_profile_property *dest, const struct aws_profile_property *source) {
 
-    assert(dest != NULL && source != NULL);
+    AWS_ASSERT(dest != NULL && source != NULL);
 
     /*
      * Source value overwrites any existing dest value
@@ -546,7 +546,7 @@ struct aws_profile_property *aws_profile_get_property(
 
 static int s_profile_merge(struct aws_profile *dest_profile, const struct aws_profile *source_profile) {
 
-    assert(dest_profile != NULL && source_profile != NULL);
+    AWS_ASSERT(dest_profile != NULL && source_profile != NULL);
 
     dest_profile->has_profile_prefix = source_profile->has_profile_prefix;
 
@@ -711,7 +711,7 @@ static int s_profile_collection_merge(
     struct aws_profile_collection *dest_collection,
     const struct aws_profile_collection *source_collection) {
 
-    assert(dest_collection != NULL && source_collection);
+    AWS_ASSERT(dest_collection != NULL && source_collection);
 
     struct aws_hash_iter source_iter = aws_hash_iter_begin(&source_collection->profiles);
     while (!aws_hash_iter_done(&source_iter)) {

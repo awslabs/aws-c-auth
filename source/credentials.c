@@ -112,7 +112,7 @@ static void s_aws_credentials_provider_destroy(struct aws_credentials_provider *
 void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
     aws_atomic_store_int(&provider->shutting_down, 1);
 
-    assert(provider->vtable->shutdown);
+    AWS_ASSERT(provider->vtable->shutdown);
     provider->vtable->shutdown(provider);
 }
 
@@ -132,7 +132,7 @@ int aws_credentials_provider_get_credentials(
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
-    assert(provider->vtable->get_credentials);
+    AWS_ASSERT(provider->vtable->get_credentials);
 
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
@@ -480,7 +480,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_cached_options *options) {
-    assert(options->source != NULL);
+    AWS_ASSERT(options->source != NULL);
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_cached *impl = NULL;
