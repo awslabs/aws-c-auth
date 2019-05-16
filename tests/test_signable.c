@@ -16,7 +16,6 @@
 #include "test_signable.h"
 
 #include <aws/auth/signable.h>
-#include <aws/auth/signable_constants.h>
 #include <aws/common/string.h>
 
 struct aws_signable_test_impl {
@@ -35,9 +34,9 @@ static int s_aws_signable_test_get_property(
 
     AWS_ZERO_STRUCT(*out_value);
 
-    if (aws_string_eq(name, aws_get_http_signable_constants()->uri_property_name)) {
+    if (aws_string_eq(name, g_aws_http_uri_property_name)) {
         *out_value = impl->uri;
-    } else if (aws_string_eq(name, aws_get_http_signable_constants()->method_property_name)) {
+    } else if (aws_string_eq(name, g_aws_http_method_property_name)) {
         *out_value = impl->method;
     }
 
@@ -53,7 +52,7 @@ static int s_aws_signable_test_get_property_list(
 
     *out_list = NULL;
 
-    if (aws_string_eq(name, aws_get_http_signable_constants()->headers_property_list_name)) {
+    if (aws_string_eq(name, g_aws_http_headers_property_list_name)) {
         *out_list = &impl->headers;
     }
 

@@ -18,7 +18,6 @@
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/aws_signing.h>
 #include <aws/auth/signable.h>
-#include <aws/auth/signable_constants.h>
 #include <aws/auth/signer.h>
 #include <aws/common/string.h>
 #include <aws/io/file_utils.h>
@@ -367,8 +366,8 @@ static int s_do_sigv4_test_suite_test(
 
     struct aws_array_list *headers = NULL;
     ASSERT_TRUE(
-        aws_signing_result_get_property_list(
-            &result, aws_get_http_signable_constants()->headers_property_list_name, &headers) == AWS_OP_SUCCESS);
+        aws_signing_result_get_property_list(&result, g_aws_http_headers_property_list_name, &headers) ==
+        AWS_OP_SUCCESS);
 
     struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
     struct aws_byte_cursor expected_auth_header = aws_byte_cursor_from_buf(&test_contents.expected_auth_header);
@@ -384,8 +383,8 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_TRUE(aws_signer_sign_request(signer, signable, (void *)&config, &result) == AWS_OP_SUCCESS);
 
     ASSERT_TRUE(
-        aws_signing_result_get_property_list(
-            &result, aws_get_http_signable_constants()->headers_property_list_name, &headers) == AWS_OP_SUCCESS);
+        aws_signing_result_get_property_list(&result, g_aws_http_headers_property_list_name, &headers) ==
+        AWS_OP_SUCCESS);
 
     struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(headers, &auth_header_name);
     ASSERT_BIN_ARRAYS_EQUALS(
@@ -402,8 +401,8 @@ static int s_do_sigv4_test_suite_test(
 
     struct aws_array_list *params = NULL;
     ASSERT_TRUE(
-        aws_signing_result_get_property_list(
-            &result, aws_get_http_signable_constants()->query_params_property_list_name, &params) == AWS_OP_SUCCESS);
+        aws_signing_result_get_property_list(&result, g_aws_http_query_params_property_list_name, &params) ==
+        AWS_OP_SUCCESS);
 
     ASSERT_TRUE(params != NULL);
 
