@@ -89,6 +89,7 @@ struct aws_profile_collection *aws_prepare_profile_test(
 
     struct aws_byte_cursor contents = aws_byte_cursor_from_string(profile_contents);
     struct aws_byte_buf buffer;
+    AWS_ZERO_STRUCT(buffer);
     aws_byte_buf_init_copy_from_cursor(&buffer, allocator, contents);
 
     struct aws_profile_collection *profile_collection =

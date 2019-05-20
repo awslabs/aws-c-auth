@@ -14,6 +14,8 @@
  */
 #include <aws/auth/auth.h>
 
+#include <aws/auth/private/aws_signing.h>
+
 #include <aws/common/error.h>
 
 #define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
@@ -26,6 +28,12 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_PROFILE_PARSE_FATAL_ERROR,
         "Fatal error while parsing an aws profile file"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM,
+        "Attempt to sign an http request with an unusupported version of the AWS signing protocol"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION,
+        "Attempt to sign an http request with a signing configuration unrecognized by the invoked signer"),
 };
 /* clang-format on */
 
@@ -33,15 +41,6 @@ static struct aws_error_info_list s_error_list = {
     .error_list = s_errors,
     .count = sizeof(s_errors) / sizeof(struct aws_error_info),
 };
-
-static bool s_error_strings_loaded = false;
-
-void aws_auth_load_error_strings(void) {
-    if (!s_error_strings_loaded) {
-        s_error_strings_loaded = true;
-        aws_register_error_info(&s_error_list);
-    }
-}
 
 static struct aws_log_subject_info s_auth_log_subject_infos[] = {
     DEFINE_LOG_SUBJECT_INFO(
@@ -53,6 +52,7 @@ static struct aws_log_subject_info s_auth_log_subject_infos[] = {
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "AuthCredentialsProvider",
         "Subject for credentials provider related logging."),
+    DEFINE_LOG_SUBJECT_INFO(AWS_LS_AUTH_SIGNING, "AuthSigning", "Subject for AWS request signing logging."),
 };
 
 static struct aws_log_subject_info_list s_auth_log_subject_list = {
@@ -60,11 +60,21 @@ static struct aws_log_subject_info_list s_auth_log_subject_list = {
     .count = AWS_ARRAY_SIZE(s_auth_log_subject_infos),
 };
 
-static bool s_log_subject_strings_loaded = false;
+static bool s_library_initialized = false;
 
-void aws_auth_load_log_subject_strings(void) {
-    if (!s_log_subject_strings_loaded) {
-        s_log_subject_strings_loaded = true;
-        aws_register_log_subject_info_list(&s_auth_log_subject_list);
+void aws_auth_library_init(struct aws_allocator *allocator) {
+    (void)allocator;
+    if (s_library_initialized) {
+        return;
     }
+    s_library_initialized = true;
+
+    aws_register_error_info(&s_error_list);
+    aws_register_log_subject_info_list(&s_auth_log_subject_list);
+
+    AWS_FATAL_ASSERT(aws_signing_init_skipped_headers(allocator) == AWS_OP_SUCCESS);
+}
+
+void aws_auth_library_clean_up(void) {
+    aws_signing_clean_up_skipped_headers();
 }

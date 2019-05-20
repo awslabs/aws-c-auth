@@ -519,14 +519,14 @@ AWS_TEST_CASE(
 int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
     FILE *fp = fopen((const char *)file_name->bytes, "w");
     if (fp == NULL) {
-        return aws_io_translate_and_raise_file_open_error(errno);
+        return aws_io_translate_and_raise_io_error(errno);
     }
 
     int result = fprintf(fp, "%s", (const char *)file_contents->bytes);
     fclose(fp);
 
     if (result < 0) {
-        return aws_io_translate_and_raise_file_write_error(errno);
+        return aws_io_translate_and_raise_io_error(errno);
     }
 
     return AWS_OP_SUCCESS;

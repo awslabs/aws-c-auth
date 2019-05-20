@@ -23,6 +23,8 @@
 enum aws_auth_errors {
     AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR = 0x1800,
     AWS_AUTH_PROFILE_PARSE_FATAL_ERROR,
+    AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM,
+    AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION,
 
     AWS_AUTH_ERROR_END_RANGE = 0x1BFF
 };
@@ -31,6 +33,7 @@ enum aws_auth_log_subject {
     AWS_LS_AUTH_GENERAL = 0x1800,
     AWS_LS_AUTH_PROFILE,
     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+    AWS_LS_AUTH_SIGNING,
 
     AWS_LS_AUTH_LAST = (AWS_LS_AUTH_GENERAL + AWS_LOG_SUBJECT_SPACE_SIZE - 1)
 };
@@ -38,16 +41,18 @@ enum aws_auth_log_subject {
 AWS_EXTERN_C_BEGIN
 
 /**
- * Loads error strings for this library so that aws_last_error_str etc... will return useful debug strings.
+ * Initializes internal datastructures used by aws-c-auth.
+ * Must be called before using any functionality in aws-c-auth.
  */
 AWS_AUTH_API
-void aws_auth_load_error_strings(void);
+void aws_auth_library_init(struct aws_allocator *allocator);
 
 /**
- * Loads log subject info strings for this library.
+ * Clean up internal datastructures used by aws-c-auth.
+ * Must not be called until application is done using functionality in aws-c-auth.
  */
 AWS_AUTH_API
-void aws_auth_load_log_subject_strings(void);
+void aws_auth_library_clean_up(void);
 
 AWS_EXTERN_C_END
 

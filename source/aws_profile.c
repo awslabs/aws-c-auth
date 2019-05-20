@@ -362,7 +362,7 @@ on_failure:
 
 static int s_profile_property_merge(struct aws_profile_property *dest, const struct aws_profile_property *source) {
 
-    assert(dest != NULL && source != NULL);
+    AWS_ASSERT(dest != NULL && source != NULL);
 
     /*
      * Source value overwrites any existing dest value
@@ -546,7 +546,7 @@ struct aws_profile_property *aws_profile_get_property(
 
 static int s_profile_merge(struct aws_profile *dest_profile, const struct aws_profile *source_profile) {
 
-    assert(dest_profile != NULL && source_profile != NULL);
+    AWS_ASSERT(dest_profile != NULL && source_profile != NULL);
 
     dest_profile->has_profile_prefix = source_profile->has_profile_prefix;
 
@@ -711,7 +711,7 @@ static int s_profile_collection_merge(
     struct aws_profile_collection *dest_collection,
     const struct aws_profile_collection *source_collection) {
 
-    assert(dest_collection != NULL && source_collection);
+    AWS_ASSERT(dest_collection != NULL && source_collection);
 
     struct aws_hash_iter source_iter = aws_hash_iter_begin(&source_collection->profiles);
     while (!aws_hash_iter_done(&source_iter)) {
@@ -1231,28 +1231,30 @@ static struct aws_profile_collection *s_aws_profile_collection_new_internal(
         goto cleanup;
     }
 
-    struct profile_file_parse_context context;
-    AWS_ZERO_STRUCT(context);
-    context.current_line_number = 1;
-    context.profile_collection = profile_collection;
-    context.source_file_path = path;
-
     struct aws_byte_cursor current_position = aws_byte_cursor_from_buf(buffer);
 
-    struct aws_byte_cursor line_cursor;
-    AWS_ZERO_STRUCT(line_cursor);
+    if (current_position.len > 0) {
+        struct aws_byte_cursor line_cursor;
+        AWS_ZERO_STRUCT(line_cursor);
 
-    while (aws_byte_cursor_next_split(&current_position, '\n', &line_cursor)) {
-        context.current_line = line_cursor;
+        struct profile_file_parse_context context;
+        AWS_ZERO_STRUCT(context);
+        context.current_line_number = 1;
+        context.profile_collection = profile_collection;
+        context.source_file_path = path;
 
-        s_parse_and_apply_line_to_profile_collection(&context, &line_cursor);
-        if (context.parse_error == AWS_AUTH_PROFILE_PARSE_FATAL_ERROR) {
-            AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Fatal error while parsing aws profile collection");
-            goto cleanup;
+        while (aws_byte_cursor_next_split(&current_position, '\n', &line_cursor)) {
+            context.current_line = line_cursor;
+
+            s_parse_and_apply_line_to_profile_collection(&context, &line_cursor);
+            if (context.parse_error == AWS_AUTH_PROFILE_PARSE_FATAL_ERROR) {
+                AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Fatal error while parsing aws profile collection");
+                goto cleanup;
+            }
+
+            aws_byte_cursor_advance(&current_position, line_cursor.len + 1);
+            ++context.current_line_number;
         }
-
-        aws_byte_cursor_advance(&current_position, line_cursor.len + 1);
-        ++context.current_line_number;
     }
 
     return profile_collection;

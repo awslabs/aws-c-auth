@@ -84,7 +84,7 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
     }
 
     if (credentials->secret_access_key != NULL) {
-        aws_string_destroy(credentials->secret_access_key);
+        aws_string_destroy_secure(credentials->secret_access_key);
     }
 
     if (credentials->session_token != NULL) {
@@ -112,7 +112,7 @@ static void s_aws_credentials_provider_destroy(struct aws_credentials_provider *
 void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
     aws_atomic_store_int(&provider->shutting_down, 1);
 
-    assert(provider->vtable->shutdown);
+    AWS_ASSERT(provider->vtable->shutdown);
     provider->vtable->shutdown(provider);
 }
 
@@ -132,7 +132,7 @@ int aws_credentials_provider_get_credentials(
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
-    assert(provider->vtable->get_credentials);
+    AWS_ASSERT(provider->vtable->get_credentials);
 
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
@@ -465,8 +465,6 @@ static void s_cached_credentials_provider_clean_up(struct aws_credentials_provid
     }
 
     aws_mutex_clean_up(&impl->lock);
-
-    aws_mem_release(provider->allocator, impl);
 }
 
 static void s_cached_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
@@ -482,22 +480,26 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_cached_options *options) {
-    assert(options->source != NULL);
+    AWS_ASSERT(options->source != NULL);
 
-    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_cached *impl = NULL;
+
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_cached));
+
+    if (!provider) {
         return NULL;
     }
 
     AWS_ZERO_STRUCT(*provider);
-
-    struct aws_credentials_provider_cached *impl =
-        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_cached));
-    if (impl == NULL) {
-        goto on_error;
-    }
-
     AWS_ZERO_STRUCT(*impl);
+
     s_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_cached_vtable, impl);
 
     if (aws_mutex_init(&impl->lock)) {
@@ -645,8 +647,6 @@ static void s_profile_file_credentials_provider_clean_up(struct aws_credentials_
     aws_string_destroy(impl->config_file_path);
     aws_string_destroy(impl->credentials_file_path);
     aws_string_destroy(impl->profile_name);
-
-    aws_mem_release(provider->allocator, impl);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_profile_file_vtable = {
@@ -658,17 +658,22 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_profile_options *options) {
 
-    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_profile_file_impl *impl = NULL;
+
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_profile_file_impl));
+
+    if (!provider) {
         return NULL;
     }
-    AWS_ZERO_STRUCT(*provider);
 
-    struct aws_credentials_provider_profile_file_impl *impl =
-        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_profile_file_impl));
-    if (impl == NULL) {
-        goto on_error;
-    }
+    AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
     s_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_profile_file_vtable, impl);
@@ -824,8 +829,6 @@ static void s_credentials_provider_chain_clean_up(struct aws_credentials_provide
     }
 
     aws_array_list_clean_up(&impl->providers);
-
-    aws_mem_release(provider->allocator, impl);
 }
 
 static void s_credentials_provider_chain_shutdown(struct aws_credentials_provider *provider) {
@@ -854,18 +857,22 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
         return NULL;
     }
 
-    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_chain_impl *impl = NULL;
+
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_chain_impl));
+
+    if (!provider) {
         return NULL;
     }
+
     AWS_ZERO_STRUCT(*provider);
-
-    struct aws_credentials_provider_chain_impl *impl =
-        aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_chain_impl));
-    if (impl == NULL) {
-        goto on_error;
-    }
-
     AWS_ZERO_STRUCT(*impl);
 
     s_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_chain_vtable, impl);
