@@ -16,11 +16,13 @@
 #include <aws/auth/credentials.h>
 
 #include <aws/auth/private/aws_profile.h>
+#include <aws/auth/private/cJSON.h>
 #include <aws/auth/private/credentials_query.h>
 #include <aws/common/clock.h>
 #include <aws/common/environment.h>
 #include <aws/common/mutex.h>
 #include <aws/common/string.h>
+#include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/io/logging.h>
@@ -43,6 +45,45 @@ struct aws_credentials *aws_credentials_new(
     const struct aws_string *secret_access_key,
     const struct aws_string *session_token) {
 
+    struct aws_byte_cursor access_key_id_cursor;
+    AWS_ZERO_STRUCT(access_key_id_cursor);
+    if (access_key_id) {
+        access_key_id_cursor = aws_byte_cursor_from_string(access_key_id);
+    }
+
+    struct aws_byte_cursor secret_access_key_cursor;
+    AWS_ZERO_STRUCT(secret_access_key_cursor);
+    if (secret_access_key) {
+        secret_access_key_cursor = aws_byte_cursor_from_string(access_key_id);
+    }
+
+    struct aws_byte_cursor session_token_cursor;
+    AWS_ZERO_STRUCT(session_token_cursor);
+    if (session_token) {
+        session_token_cursor = aws_byte_cursor_from_string(session_token);
+    }
+
+    return aws_credentials_new_from_cursors(allocator,
+        access_key_id != NULL ? &access_key_id_cursor : NULL,
+        secret_access_key != NULL ? &secret_access_key_cursor : NULL,
+        session_token != NULL ? &session_token_cursor : NULL);
+}
+
+struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials) {
+    if (credentials != NULL) {
+        return aws_credentials_new(
+            allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
+    }
+
+    return NULL;
+}
+
+struct aws_credentials *aws_credentials_new_from_cursors(
+    struct aws_allocator *allocator,
+    const struct aws_byte_cursor *access_key_id_cursor,
+    const struct aws_byte_cursor *secret_access_key_cursor,
+    const struct aws_byte_cursor *session_token_cursor) {
+
     struct aws_credentials *credentials = aws_mem_acquire(allocator, sizeof(struct aws_credentials));
     if (credentials == NULL) {
         return NULL;
@@ -52,26 +93,32 @@ struct aws_credentials *aws_credentials_new(
 
     credentials->allocator = allocator;
 
-    if (access_key_id != NULL) {
-        credentials->access_key_id = aws_string_new_from_string(allocator, access_key_id);
+    if (access_key_id_cursor != NULL) {
+        credentials->access_key_id = aws_string_new_from_array(allocator, access_key_id_cursor->ptr, access_key_id_cursor->len);
+        if (credentials->access_key_id == NULL) {
+            goto error;
+        }
     }
 
-    if (secret_access_key != NULL) {
-        credentials->secret_access_key = aws_string_new_from_string(allocator, secret_access_key);
+    if (secret_access_key_cursor != NULL) {
+        credentials->secret_access_key = aws_string_new_from_array(allocator, secret_access_key_cursor->ptr, secret_access_key_cursor->len);
+        if (credentials->secret_access_key == NULL) {
+            goto error;
+        }
     }
 
-    if (session_token != NULL) {
-        credentials->session_token = aws_string_new_from_string(allocator, session_token);
+    if (session_token_cursor != NULL) {
+        credentials->session_token = aws_string_new_from_array(allocator, session_token_cursor->ptr, session_token_cursor->len);
+        if (credentials->session_token == NULL) {
+            goto error;
+        }
     }
 
     return credentials;
-}
 
-struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials) {
-    if (credentials != NULL) {
-        return aws_credentials_new(
-            allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
-    }
+error:
+
+    aws_credentials_destroy(credentials);
 
     return NULL;
 }
@@ -914,6 +961,8 @@ enum aws_imds_query_state {
     AWS_IMDS_QS_ROLE_CREDENTIALS
 };
 
+#define IMDS_RESPONSE_SIZE_LIMIT 10000
+
 struct aws_credentials_provider_imds_user_data {
     struct aws_allocator *allocator;
     struct aws_credentials_provider *imds_provider;
@@ -944,14 +993,62 @@ static void s_aws_credentials_provider_imds_user_data_destroy(struct aws_credent
     aws_mem_release(user_data->allocator, user_data);
 }
 
-static struct aws_credentials *s_parse_credentials_from_imds_document(struct aws_byte_buf *document) {
-    (void)document;
+AWS_STATIC_STRING_FROM_LITERAL(s_empty_empty_string, "\0");
 
-    return NULL;
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "AccessKeyId");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "SecretAccessKey");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "Token");
+
+static struct aws_credentials *s_parse_credentials_from_imds_document(struct aws_allocator *allocator, struct aws_byte_buf *document) {
+
+    struct aws_credentials *credentials = NULL;
+    cJSON *document_root = NULL;
+
+    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
+    if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
+        goto done;
+    }
+
+    document_root = cJSON_Parse((const char *)document->buffer);
+    if (document_root == NULL) {
+        goto done;
+    }
+
+    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_access_key_id_name->bytes);
+    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL))
+    {
+        goto done;
+    }
+
+    cJSON *secret_access_key = cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_secret_access_key_name->bytes);
+    if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL))
+    {
+        goto done;
+    }
+
+    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_session_token_name->bytes);
+    if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL))
+    {
+        goto done;
+    }
+
+    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
+    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
+    struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
+
+    credentials = aws_credentials_new_from_cursors(allocator, &access_key_id_cursor, &secret_access_key_cursor, &session_token_cursor);
+
+done:
+
+    if (document_root != NULL) {
+        cJSON_Delete(document_root);
+    }
+
+    return credentials;
 }
 
 static void s_imds_finalize_get_credentials_query(struct aws_credentials_provider_imds_user_data *imds_user_data) {
-    struct aws_credentials *credentials = s_parse_credentials_from_imds_document(&imds_user_data->current_result);
+    struct aws_credentials *credentials = s_parse_credentials_from_imds_document(imds_user_data->allocator, &imds_user_data->current_result);
     imds_user_data->original_callback(credentials, imds_user_data->original_user_data);
     s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
 }
@@ -965,8 +1062,18 @@ static void s_imds_on_incoming_body_fn(
 
     (void)stream;
     (void)out_window_update_size;
-    (void)user_data;
     (void)data;
+
+    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+
+    if (data->len + imds_user_data->current_result.len > IMDS_RESPONSE_SIZE_LIMIT) {
+        aws_http_connection_close(imds_user_data->connection);
+        return;
+    }
+
+    if (aws_byte_buf_append_dynamic(&imds_user_data->current_result, data)) {
+        aws_http_connection_close(imds_user_data->connection);
+    }
 }
 
 static void s_imds_on_incoming_headers_fn(
@@ -1134,9 +1241,7 @@ static int s_credentials_provider_imds_get_credentials_async(
         goto error;
     }
 
-    if (aws_http_connection_manager_acquire_connection(impl->connection_manager, s_imds_on_acquire_connection, wrapped_user_data)) {
-        goto error;
-    }
+    aws_http_connection_manager_acquire_connection(impl->connection_manager, s_imds_on_acquire_connection, wrapped_user_data);
 
     return AWS_OP_SUCCESS;
 
