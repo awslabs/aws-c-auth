@@ -89,10 +89,7 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
 
     AWS_FATAL_ASSERT(aws_signing_init_skipped_headers(allocator) == AWS_OP_SUCCESS);
 
-    struct cJSON_Hooks allocation_hooks = {
-        .malloc_fn = s_cJSONAlloc,
-        .free_fn = s_cJSONFree
-    };
+    struct cJSON_Hooks allocation_hooks = {.malloc_fn = s_cJSONAlloc, .free_fn = s_cJSONFree};
 
     cJSON_InitHooks(&allocation_hooks);
 }
