@@ -22,10 +22,6 @@
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 
-/*
- * Provider ec2 instance metadata implementation
- */
-
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
 };
@@ -36,6 +32,7 @@ enum aws_imds_query_state {
 };
 
 #define IMDS_RESPONSE_SIZE_LIMIT 10000
+#define IMDS_RESPONSE_SIZE_INITIAL 2048 /* instance role credentials body response is currently ~ 1300 characters + name length */
 
 struct aws_credentials_provider_imds_user_data {
     struct aws_allocator *allocator;
@@ -65,6 +62,37 @@ static void s_aws_credentials_provider_imds_user_data_destroy(struct aws_credent
     aws_byte_buf_clean_up(&user_data->current_result);
 
     aws_mem_release(user_data->allocator, user_data);
+}
+
+static struct aws_credentials_provider_imds_user_data *s_aws_credentials_provider_imds_user_data_new(
+    struct aws_credentials_provider *imds_provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+
+    struct aws_credentials_provider_imds_user_data *wrapped_user_data =
+            aws_mem_acquire(imds_provider->allocator, sizeof(struct aws_credentials_provider_imds_user_data));
+    if (wrapped_user_data == NULL) {
+        goto on_error;
+    }
+
+    AWS_ZERO_STRUCT(*wrapped_user_data);
+
+    wrapped_user_data->allocator = imds_provider->allocator;
+    wrapped_user_data->imds_provider = imds_provider;
+    wrapped_user_data->original_user_data = user_data;
+    wrapped_user_data->original_callback = callback;
+
+    if (aws_byte_buf_init(&wrapped_user_data->current_result, imds_provider->allocator, IMDS_RESPONSE_SIZE_INITIAL)) {
+        goto on_error;
+    }
+
+    return wrapped_user_data;
+
+on_error:
+
+    s_aws_credentials_provider_imds_user_data_destroy(wrapped_user_data);
+
+    return NULL;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_empty_empty_string, "\0");
@@ -128,11 +156,11 @@ static void s_imds_finalize_get_credentials_query(struct aws_credentials_provide
 }
 
 static void s_imds_on_incoming_body_fn(
-        struct aws_http_stream *stream,
-        const struct aws_byte_cursor *data,
-        /* NOLINTNEXTLINE(readability-non-const-parameter) */
-        size_t *out_window_update_size,
-        void *user_data) {
+    struct aws_http_stream *stream,
+    const struct aws_byte_cursor *data,
+    /* NOLINTNEXTLINE(readability-non-const-parameter) */
+    size_t *out_window_update_size,
+    void *user_data) {
 
     (void)stream;
     (void)out_window_update_size;
@@ -151,10 +179,10 @@ static void s_imds_on_incoming_body_fn(
 }
 
 static void s_imds_on_incoming_headers_fn(
-        struct aws_http_stream *stream,
-        const struct aws_http_header *header_array,
-        size_t num_headers,
-        void *user_data) {
+    struct aws_http_stream *stream,
+    const struct aws_http_header *header_array,
+    size_t num_headers,
+    void *user_data) {
 
     (void)stream;
     (void)header_array;
@@ -252,7 +280,7 @@ static void s_imds_query_instance_role_credentials(struct aws_credentials_provid
         result = AWS_OP_SUCCESS;
     }
 
-    cleanup:
+cleanup:
 
     if (result == AWS_OP_ERR) {
         s_imds_finalize_get_credentials_query(imds_user_data);
@@ -276,10 +304,10 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
 
     if (connection == NULL) {
         AWS_LOGF_WARN(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                      "id=%p: Instance metadata provider failed to acquire a connection, error code %d(%s)",
-                      (void *)imds_user_data->imds_provider,
-                      error_code,
-                      aws_error_str(error_code));
+              "id=%p: Instance metadata provider failed to acquire a connection, error code %d(%s)",
+              (void *)imds_user_data->imds_provider,
+              error_code,
+              aws_error_str(error_code));
 
         s_imds_finalize_get_credentials_query(imds_user_data);
         return;
@@ -292,26 +320,14 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
 }
 
 static int s_credentials_provider_imds_get_credentials_async(
-        struct aws_credentials_provider *provider,
-        aws_on_get_credentials_callback_fn callback,
-        void *user_data) {
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
 
     struct aws_credentials_provider_imds_impl *impl = provider->impl;
 
-    struct aws_credentials_provider_imds_user_data *wrapped_user_data =
-            aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_provider_imds_user_data));
+    struct aws_credentials_provider_imds_user_data *wrapped_user_data = s_aws_credentials_provider_imds_user_data_new(provider, callback, user_data);
     if (wrapped_user_data == NULL) {
-        goto error;
-    }
-
-    AWS_ZERO_STRUCT(*wrapped_user_data);
-
-    wrapped_user_data->allocator = provider->allocator;
-    wrapped_user_data->imds_provider = provider;
-    wrapped_user_data->original_user_data = user_data;
-    wrapped_user_data->original_callback = callback;
-
-    if (aws_byte_buf_init(&wrapped_user_data->current_result, provider->allocator, 300)) {
         goto error;
     }
 
@@ -319,7 +335,7 @@ static int s_credentials_provider_imds_get_credentials_async(
 
     return AWS_OP_SUCCESS;
 
-    error:
+error:
 
     s_aws_credentials_provider_imds_user_data_destroy(wrapped_user_data);
 
@@ -340,13 +356,13 @@ static void s_credentials_provider_imds_shutdown(struct aws_credentials_provider
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_imds_vtable = {
-        .get_credentials = s_credentials_provider_imds_get_credentials_async,
-        .clean_up = s_credentials_provider_imds_clean_up,
-        .shutdown = s_credentials_provider_imds_shutdown};
+    .get_credentials = s_credentials_provider_imds_get_credentials_async,
+    .clean_up = s_credentials_provider_imds_clean_up,
+    .shutdown = s_credentials_provider_imds_shutdown};
 
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
-        struct aws_allocator *allocator,
-        struct aws_credentials_provider_imds_options *options) {
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_imds_options *options) {
 
     (void)options;
 
@@ -354,12 +370,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_credentials_provider_imds_impl *impl = NULL;
 
     aws_mem_acquire_many(
-            allocator,
-            2,
-            &provider,
-            sizeof(struct aws_credentials_provider),
-            &impl,
-            sizeof(struct aws_credentials_provider_imds_impl));
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_imds_impl));
 
     if (!provider) {
         return NULL;
@@ -369,7 +385,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_imds_vtable, impl);
-
 
     struct aws_http_connection_manager_options manager_options;
     AWS_ZERO_STRUCT(manager_options);
