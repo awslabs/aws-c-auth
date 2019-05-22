@@ -72,7 +72,7 @@
 #pragma GCC visibility pop
 #endif
 
-#include <aws/auth/private/cJSON.h>
+#include <aws/auth/external/cJSON.h>
 
 /* define our own boolean type */
 #ifdef true
