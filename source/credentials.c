@@ -54,7 +54,7 @@ struct aws_credentials *aws_credentials_new(
     struct aws_byte_cursor secret_access_key_cursor;
     AWS_ZERO_STRUCT(secret_access_key_cursor);
     if (secret_access_key) {
-        secret_access_key_cursor = aws_byte_cursor_from_string(access_key_id);
+        secret_access_key_cursor = aws_byte_cursor_from_string(secret_access_key);
     }
 
     struct aws_byte_cursor session_token_cursor;

@@ -15,8 +15,10 @@
 #include <aws/auth/auth.h>
 
 #include <aws/auth/private/aws_signing.h>
+#include <aws/auth/private/cJSON.h>
 
 #include <aws/common/error.h>
+
 
 #define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
 
@@ -60,6 +62,14 @@ static struct aws_log_subject_info_list s_auth_log_subject_list = {
     .count = AWS_ARRAY_SIZE(s_auth_log_subject_infos),
 };
 
+static void *s_cJSONAlloc(size_t sz) {
+    return aws_mem_acquire(aws_default_allocator(), sz);
+}
+
+static void s_cJSONFree(void *ptr) {
+    aws_mem_release(aws_default_allocator(), ptr);
+}
+
 static bool s_library_initialized = false;
 
 void aws_auth_library_init(struct aws_allocator *allocator) {
@@ -73,8 +83,16 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
     aws_register_log_subject_info_list(&s_auth_log_subject_list);
 
     AWS_FATAL_ASSERT(aws_signing_init_skipped_headers(allocator) == AWS_OP_SUCCESS);
+
+    struct cJSON_Hooks allocation_hooks = {
+        .malloc_fn = s_cJSONAlloc,
+        .free_fn = s_cJSONFree
+    };
+    cJSON_InitHooks(&allocation_hooks);
 }
 
 void aws_auth_library_clean_up(void) {
     aws_signing_clean_up_skipped_headers();
+
+    s_library_initialized = false;
 }
