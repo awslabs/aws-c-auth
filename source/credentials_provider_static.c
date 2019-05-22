@@ -45,7 +45,6 @@ static void s_static_credentials_provider_clean_up(struct aws_credentials_provid
  * shared across all providers that do not need to do anything special on shutdown
  */
 
-
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_static_vtable = {
     .get_credentials = s_static_credentials_provider_get_credentials_async,
     .clean_up = s_static_credentials_provider_clean_up,
@@ -65,7 +64,7 @@ struct aws_credentials_provider *aws_credentials_provider_static_new(
     AWS_ZERO_STRUCT(*provider);
 
     struct aws_credentials *credentials =
-            aws_credentials_new(allocator, access_key_id, secret_access_key, session_token);
+        aws_credentials_new(allocator, access_key_id, secret_access_key, session_token);
     if (credentials == NULL) {
         goto on_new_credentials_failure;
     }

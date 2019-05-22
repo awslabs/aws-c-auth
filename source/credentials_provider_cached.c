@@ -136,7 +136,7 @@ static int s_cached_credentials_provider_get_credentials_async(
         credentials = aws_credentials_new_copy(provider->allocator, impl->cached_credentials);
     } else {
         struct aws_credentials_query *query =
-                aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_query));
+            aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_query));
         if (query != NULL) {
             aws_credentials_query_init(query, provider, callback, user_data);
             should_submit_query = aws_linked_list_empty(&impl->pending_queries);
@@ -155,7 +155,7 @@ static int s_cached_credentials_provider_get_credentials_async(
             (void *)provider);
 
         aws_credentials_provider_get_credentials(
-                impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
+            impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
 
     } else {
         AWS_LOGF_DEBUG(
@@ -245,7 +245,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
 
     if (options->refresh_time_in_milliseconds > 0) {
         impl->refresh_interval_in_ns = aws_timestamp_convert(
-                options->refresh_time_in_milliseconds, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
+            options->refresh_time_in_milliseconds, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
     } else {
         /*
          * TODO: query AWS_CREDENTIAL_EXPIRATION for a refresh override

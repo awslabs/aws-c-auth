@@ -88,7 +88,7 @@ static int s_credentials_provider_chain_get_credentials_async(
     }
 
     struct aws_credentials_provider_chain_user_data *wrapped_user_data =
-            aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_provider_chain_user_data));
+        aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_provider_chain_user_data));
     if (wrapped_user_data == NULL) {
         return AWS_OP_ERR;
     }
@@ -151,8 +151,8 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_chain_v
     .shutdown = s_credentials_provider_chain_shutdown};
 
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
-        struct aws_allocator *allocator,
-        struct aws_credentials_provider_chain_options *options) {
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_chain_options *options) {
 
     if (options->provider_count == 0) {
         return NULL;

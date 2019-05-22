@@ -41,7 +41,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
      * Parse config file, if it exists
      */
     struct aws_profile_collection *config_profiles =
-            aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
+        aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
 
     if (config_profiles != NULL) {
         AWS_LOGF_DEBUG(
@@ -61,7 +61,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
      * Parse credentials file, if it exists
      */
     struct aws_profile_collection *credentials_profiles =
-            aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
+        aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
 
     if (credentials_profiles != NULL) {
         AWS_LOGF_DEBUG(
@@ -81,7 +81,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
      * Merge the (up to) two sources into a single unified profile
      */
     struct aws_profile_collection *merged_profiles =
-            aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
+        aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
     if (merged_profiles != NULL) {
         struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
         if (profile != NULL) {
@@ -142,12 +142,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_credentials_provider_profile_file_impl *impl = NULL;
 
     aws_mem_acquire_many(
-            allocator,
-            2,
-            &provider,
-            sizeof(struct aws_credentials_provider),
-            &impl,
-            sizeof(struct aws_credentials_provider_profile_file_impl));
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_profile_file_impl));
 
     if (!provider) {
         return NULL;
