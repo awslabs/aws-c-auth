@@ -13,7 +13,7 @@
  * permissions and limitations under the License.
  */
 
-#include <aws/auth/private/credentials_query.h>
+#include <aws/auth/private/credentials_utils.h>
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
@@ -33,4 +33,21 @@ void aws_credentials_query_clean_up(struct aws_credentials_query *query) {
     if (query != NULL) {
         aws_credentials_provider_release(query->provider);
     }
+}
+
+void aws_credentials_provider_init_base(
+    struct aws_credentials_provider *provider,
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_vtable *vtable,
+    void *impl) {
+
+    provider->allocator = allocator;
+    provider->vtable = vtable;
+    provider->impl = impl;
+    aws_atomic_store_int(&provider->shutting_down, 0);
+    aws_atomic_store_int(&provider->ref_count, 1);
+}
+
+void aws_credentials_provider_shutdown_nil(struct aws_credentials_provider *provider) {
+    (void)provider;
 }

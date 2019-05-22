@@ -35,7 +35,7 @@ struct aws_credentials_query {
 AWS_EXTERN_C_BEGIN
 
 /*
- * Credentials query APIs
+ * Misc. credentials-related APIs
  */
 
 AWS_AUTH_API
@@ -47,6 +47,19 @@ void aws_credentials_query_init(
 
 AWS_AUTH_API
 void aws_credentials_query_clean_up(struct aws_credentials_query *query);
+
+AWS_AUTH_API
+void aws_credentials_provider_init_base(
+    struct aws_credentials_provider *provider,
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_vtable *vtable,
+    void *impl);
+
+AWS_AUTH_API
+void aws_credentials_provider_destroy(struct aws_credentials_provider *provider);
+
+AWS_AUTH_API
+void aws_credentials_provider_shutdown_nil(struct aws_credentials_provider *provider);
 
 AWS_EXTERN_C_END
 
