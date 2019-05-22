@@ -282,9 +282,9 @@ typedef struct
 } parse_buffer;
 
 /* check if the given size is left to read in a given parse buffer (starting with 1) */
-#define can_read(buffer, size) ((buffer != NULL) && (((buffer)->offset + size) <= (buffer)->length))
+#define can_read(buffer, size) (((buffer) != NULL) && (((buffer)->offset + (size)) <= (buffer)->length))
 /* check if the buffer can be accessed at the given index (starting with 0) */
-#define can_access_at_index(buffer, index) ((buffer != NULL) && (((buffer)->offset + index) < (buffer)->length))
+#define can_access_at_index(buffer, index) (((buffer) != NULL) && (((buffer)->offset + (index)) < (buffer)->length))
 #define cannot_access_at_index(buffer, index) (!can_access_at_index(buffer, index))
 /* get a pointer to the buffer at the position */
 #define buffer_at_offset(buffer) ((buffer)->content + (buffer)->offset)
@@ -873,7 +873,7 @@ static cJSON_bool print_string_ptr(const unsigned char * const input, printbuffe
         {
             return false;
         }
-        strcpy((char*)output, "\"\"");
+        strcpy((char*)output, "\"\""); /* NOLINT */
 
         return true;
     }
@@ -979,12 +979,12 @@ static cJSON_bool print_string(const cJSON * const item, printbuffer * const p)
 }
 
 /* Predeclare these prototypes. */
-static cJSON_bool parse_value(cJSON * const item, parse_buffer * const input_buffer);
-static cJSON_bool print_value(const cJSON * const item, printbuffer * const output_buffer);
-static cJSON_bool parse_array(cJSON * const item, parse_buffer * const input_buffer);
-static cJSON_bool print_array(const cJSON * const item, printbuffer * const output_buffer);
-static cJSON_bool parse_object(cJSON * const item, parse_buffer * const input_buffer);
-static cJSON_bool print_object(const cJSON * const item, printbuffer * const output_buffer);
+static cJSON_bool parse_value(cJSON * const item, parse_buffer * const input_buffer); /* NOLINT */
+static cJSON_bool print_value(const cJSON * const item, printbuffer * const output_buffer); /* NOLINT */
+static cJSON_bool parse_array(cJSON * const item, parse_buffer * const input_buffer); /* NOLINT */
+static cJSON_bool print_array(const cJSON * const item, printbuffer * const output_buffer); /* NOLINT */
+static cJSON_bool parse_object(cJSON * const item, parse_buffer * const input_buffer); /* NOLINT */
+static cJSON_bool print_object(const cJSON * const item, printbuffer * const output_buffer); /* NOLINT */
 
 /* Utility to jump whitespace and cr/lf */
 static parse_buffer *buffer_skip_whitespace(parse_buffer * const buffer)
@@ -1109,7 +1109,7 @@ CJSON_PUBLIC(cJSON *) cJSON_Parse(const char *value)
     return cJSON_ParseWithOpts(value, 0, 0);
 }
 
-#define cjson_min(a, b) ((a < b) ? a : b)
+#define cjson_min(a, b) (((a) < (b)) ? (a) : (b))
 
 static unsigned char *print(const cJSON * const item, cJSON_bool format, const internal_hooks * const hooks)
 {
@@ -1308,7 +1308,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "null");
+            strcpy((char*)output, "null"); /* NOLINT */
             return true;
 
         case cJSON_False:
@@ -1317,7 +1317,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "false");
+            strcpy((char*)output, "false"); /* NOLINT */
             return true;
 
         case cJSON_True:
@@ -1326,7 +1326,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "true");
+            strcpy((char*)output, "true"); /* NOLINT */
             return true;
 
         case cJSON_Number:
@@ -2698,7 +2698,7 @@ static void minify_string(char **input, char **output) {
             *input += static_strlen("\"");
             *output += static_strlen("\"");
             return;
-        } else if (((*input)[0] == '\\') && ((*input)[1] == '\"')) {
+        } else if (((*input)[0] == '\\') && ((*input)[1] == '\"')) { /* NOLINT */
             (*output)[1] = (*input)[1];
             *input += static_strlen("\"");
             *output += static_strlen("\"");
