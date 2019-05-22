@@ -19,6 +19,7 @@
 
 #include <aws/common/error.h>
 
+
 #define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
 
 /* clang-format off */

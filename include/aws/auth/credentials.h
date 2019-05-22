@@ -108,6 +108,13 @@ AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials);
 
 AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_from_cursors(
+    struct aws_allocator *allocator,
+    const struct aws_byte_cursor *access_key_id_cursor,
+    const struct aws_byte_cursor *secret_access_key_cursor,
+    const struct aws_byte_cursor *session_token_cursor);
+
+AWS_AUTH_API
 void aws_credentials_destroy(struct aws_credentials *credentials);
 
 /*
