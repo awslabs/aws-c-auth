@@ -16,7 +16,7 @@
 #include "credentials_provider_utils.h"
 
 #include <aws/auth/credentials.h>
-#include <aws/auth/private/credentials_query.h>
+#include <aws/auth/private/credentials_utils.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/io/file_utils.h>
