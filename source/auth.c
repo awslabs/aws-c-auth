@@ -14,8 +14,8 @@
  */
 #include <aws/auth/auth.h>
 
+#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_signing.h>
-#include <aws/auth/private/cJSON.h>
 
 #include <aws/common/error.h>
 
