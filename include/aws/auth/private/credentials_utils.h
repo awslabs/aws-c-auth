@@ -20,6 +20,13 @@
 
 #include <aws/auth/credentials.h>
 
+#include <aws/http/connection_manager.h>
+
+struct aws_http_connection;
+struct aws_http_connection_manager;
+struct aws_http_request_options;
+struct aws_http_stream;
+
 /*
  * Internal struct tracking an asynchronous credentials query.
  * Used by both the cached provider and the test mocks.
@@ -30,6 +37,34 @@ struct aws_credentials_query {
     struct aws_credentials_provider *provider;
     aws_on_get_credentials_callback_fn *callback;
     void *user_data;
+};
+
+typedef struct aws_http_connection_manager *(aws_http_connection_manager_new_fn)(
+    struct aws_allocator *allocator,
+    struct aws_http_connection_manager_options *options);
+typedef void(aws_http_connection_manager_release_fn)(struct aws_http_connection_manager *manager);
+typedef void(aws_http_connection_manager_acquire_connection_fn)(
+    struct aws_http_connection_manager *manager,
+    aws_http_connection_manager_on_connection_setup_fn *callback,
+    void *user_data);
+typedef int(aws_http_connection_manager_release_connection_fn)(
+    struct aws_http_connection_manager *manager,
+    struct aws_http_connection *connection);
+typedef struct aws_http_stream *(aws_http_stream_new_client_request_fn)(const struct aws_http_request_options *options);
+typedef void(aws_http_stream_release_fn)(struct aws_http_stream *stream);
+typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connection);
+
+struct aws_credentials_provider_imds_function_table {
+    aws_http_connection_manager_new_fn *aws_http_connection_manager_new;
+    aws_http_connection_manager_release_fn *aws_http_connection_manager_release;
+
+    aws_http_connection_manager_acquire_connection_fn *aws_http_connection_manager_acquire_connection;
+    aws_http_connection_manager_release_connection_fn *aws_http_connection_manager_release_connection;
+
+    aws_http_stream_new_client_request_fn *aws_http_stream_new_client_request;
+    aws_http_stream_release_fn *aws_http_stream_release;
+
+    aws_http_connection_close_fn *aws_http_connection_close;
 };
 
 AWS_EXTERN_C_BEGIN

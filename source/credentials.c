@@ -66,7 +66,8 @@ struct aws_credentials *aws_credentials_new(
         session_token_cursor = aws_byte_cursor_from_string(session_token);
     }
 
-    return aws_credentials_new_from_cursors(allocator,
+    return aws_credentials_new_from_cursors(
+        allocator,
         access_key_id != NULL ? &access_key_id_cursor : NULL,
         secret_access_key != NULL ? &secret_access_key_cursor : NULL,
         session_token != NULL ? &session_token_cursor : NULL);
@@ -97,21 +98,24 @@ struct aws_credentials *aws_credentials_new_from_cursors(
     credentials->allocator = allocator;
 
     if (access_key_id_cursor != NULL) {
-        credentials->access_key_id = aws_string_new_from_array(allocator, access_key_id_cursor->ptr, access_key_id_cursor->len);
+        credentials->access_key_id =
+            aws_string_new_from_array(allocator, access_key_id_cursor->ptr, access_key_id_cursor->len);
         if (credentials->access_key_id == NULL) {
             goto error;
         }
     }
 
     if (secret_access_key_cursor != NULL) {
-        credentials->secret_access_key = aws_string_new_from_array(allocator, secret_access_key_cursor->ptr, secret_access_key_cursor->len);
+        credentials->secret_access_key =
+            aws_string_new_from_array(allocator, secret_access_key_cursor->ptr, secret_access_key_cursor->len);
         if (credentials->secret_access_key == NULL) {
             goto error;
         }
     }
 
     if (session_token_cursor != NULL) {
-        credentials->session_token = aws_string_new_from_array(allocator, session_token_cursor->ptr, session_token_cursor->len);
+        credentials->session_token =
+            aws_string_new_from_array(allocator, session_token_cursor->ptr, session_token_cursor->len);
         if (credentials->session_token == NULL) {
             goto error;
         }

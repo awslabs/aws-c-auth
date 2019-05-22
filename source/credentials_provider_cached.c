@@ -29,7 +29,7 @@
 AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_EXPIRATION");
 
  ToDo: implement configurable pre-fetching and swap in pre-fetched credentials on expiration
- 
+
 */
 
 struct aws_credentials_provider_cached {

@@ -25,6 +25,7 @@
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
+struct aws_credentials_provider_imds_function_table;
 struct aws_string;
 
 /*
@@ -89,6 +90,7 @@ struct aws_credentials_provider_chain_options {
 
 struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
+    struct aws_credentials_provider_imds_function_table *function_table;
 };
 
 AWS_EXTERN_C_BEGIN
