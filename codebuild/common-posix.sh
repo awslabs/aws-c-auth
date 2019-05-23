@@ -30,6 +30,7 @@ function install_library {
 if [ "$TRAVIS_OS_NAME" != "osx" ]; then
     sudo apt-get install libssl-dev -y
     install_library s2n 7c9069618e68214802ac7fbf45705d5f8b53135f
+    CMAKE_ARGS="-DAWS_BUILDING_ON_EC2 $CMAKE_ARGS"
 fi
 install_library aws-c-common
 install_library aws-c-io

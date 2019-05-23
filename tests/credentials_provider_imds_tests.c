@@ -17,11 +17,15 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
+#include <aws/io/channel_bootstrap.h>
+#include <aws/io/event_loop.h>
+#include <aws/io/socket.h>
 
-struct aws_imds_tester {
+struct aws_mock_imds_tester {
     struct aws_byte_buf first_request_uri;
     struct aws_byte_buf second_request_uri;
 
@@ -39,7 +43,7 @@ struct aws_imds_tester {
     bool has_received_credentials_callback;
 };
 
-static struct aws_imds_tester s_tester;
+static struct aws_mock_imds_tester s_tester;
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
@@ -398,3 +402,131 @@ static int s_credentials_provider_imds_basic_success(struct aws_allocator *alloc
 }
 
 AWS_TEST_CASE(credentials_provider_imds_basic_success, s_credentials_provider_imds_basic_success);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_test_role_response_first_half, "test-");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_role_response_second_half, "role");
+
+static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_role_cursor1 = aws_byte_cursor_from_string(s_test_role_response_first_half);
+    struct aws_byte_cursor test_role_cursor2 = aws_byte_cursor_from_string(s_test_role_response_second_half);
+    aws_array_list_push_back(&s_tester.first_response_data_callbacks, &test_role_cursor1);
+    aws_array_list_push_back(&s_tester.first_response_data_callbacks, &test_role_cursor2);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
+            .function_table = &s_mock_function_table};
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->access_key_id->bytes, s_tester.credentials->access_key_id->len, s_good_access_key_id->bytes, s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->secret_access_key->bytes, s_tester.credentials->secret_access_key->len, s_good_secret_access_key->bytes, s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->session_token->bytes, s_tester.credentials->session_token->len, s_good_session_token->bytes, s_good_session_token->len);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_imds_success_multi_part_role_name, s_credentials_provider_imds_success_multi_part_role_name);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_good_response_first_part, "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"Secret");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_response_second_part, "AccessKey\":\"SuccessfulSecr");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_response_third_part, "et\", \n  \"Token\":\"TokenSuccess\"\n}");
+
+static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
+    aws_array_list_push_back(&s_tester.first_response_data_callbacks, &test_role_cursor);
+
+    struct aws_byte_cursor good_response_cursor1 = aws_byte_cursor_from_string(s_good_response_first_part);
+    struct aws_byte_cursor good_response_cursor2 = aws_byte_cursor_from_string(s_good_response_second_part);
+    struct aws_byte_cursor good_response_cursor3 = aws_byte_cursor_from_string(s_good_response_third_part);
+    aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor1);
+    aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor2);
+    aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor3);
+
+    struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
+            .function_table = &s_mock_function_table};
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->access_key_id->bytes, s_tester.credentials->access_key_id->len, s_good_access_key_id->bytes, s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->secret_access_key->bytes, s_tester.credentials->secret_access_key->len, s_good_secret_access_key->bytes, s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->session_token->bytes, s_tester.credentials->session_token->len, s_good_session_token->bytes, s_good_session_token->len);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_imds_success_multi_part_doc, s_credentials_provider_imds_success_multi_part_doc);
+
+static int s_credentials_provider_imds_real_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+#ifdef AWS_BUILDING_ON_EC2
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_event_loop_group el_group;
+    aws_event_loop_group_default_init(&el_group, allocator, 1);
+
+    struct aws_host_resolver resolver;
+    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+
+    struct aws_credentials_provider_imds_options options = {
+        .bootstrap = bootstrap
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials != NULL);
+
+    aws_credentials_provider_release(provider);
+
+    aws_client_bootstrap_release(bootstrap);
+    aws_host_resolver_clean_up(&resolver);
+    aws_event_loop_group_clean_up(&el_group);
+
+    s_aws_imds_tester_cleanup();
+#endif /* AWS_BUILDING_ON_EC2 */
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_imds_real_success, s_credentials_provider_imds_real_success);
