@@ -492,9 +492,7 @@ AWS_TEST_CASE(credentials_provider_imds_success_multi_part_doc, s_credentials_pr
 
 static int s_credentials_provider_imds_real_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    (void)allocator;
 
-#ifdef AWS_BUILDING_ON_EC2
     s_aws_imds_tester_init(allocator);
 
     struct aws_event_loop_group el_group;
@@ -524,7 +522,6 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
     aws_event_loop_group_clean_up(&el_group);
 
     s_aws_imds_tester_cleanup();
-#endif /* AWS_BUILDING_ON_EC2 */
 
     return 0;
 }
