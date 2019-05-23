@@ -14,7 +14,7 @@ CALL :install_library aws-c-http
 
 mkdir %BUILDS_DIR%\aws-c-auth-build
 cd %BUILDS_DIR%\aws-c-auth-build
-cmake %CMAKE_ARGS% -DAWS_BUILDING_ON_EC2 -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%" -DCMAKE_PREFIX_PATH="%INSTALL_DIR%" %CODEBUILD_SRC_DIR% || goto error
+cmake %CMAKE_ARGS% -DAWS_BUILDING_ON_EC2=ON -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DCMAKE_INSTALL_PREFIX="%INSTALL_DIR%" -DCMAKE_PREFIX_PATH="%INSTALL_DIR%" %CODEBUILD_SRC_DIR% || goto error
 cmake --build . --config RelWithDebInfo || goto error
 ctest -V || goto error
 
