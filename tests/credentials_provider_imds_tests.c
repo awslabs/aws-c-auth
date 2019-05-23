@@ -201,7 +201,8 @@ static bool s_has_tester_received_credentials_callback(void *user_data) {
 
 static void s_aws_wait_for_credentials_result(void) {
     aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_credentials_callback, NULL);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_credentials_callback, NULL);
     aws_mutex_unlock(&s_tester.lock);
 }
 
@@ -240,7 +241,7 @@ static int s_credentials_provider_imds_connect_failure(struct aws_allocator *all
     s_tester.is_connection_acquire_successful = false;
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -271,7 +272,7 @@ static int s_credentials_provider_imds_first_request_failure(struct aws_allocato
     s_tester.is_first_request_successful = false;
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -279,7 +280,11 @@ static int s_credentials_provider_imds_first_request_failure(struct aws_allocato
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.first_request_uri.buffer,
+        s_tester.first_request_uri.len,
+        s_expected_imds_base_uri->bytes,
+        s_expected_imds_base_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
 
@@ -302,7 +307,7 @@ static int s_credentials_provider_imds_second_request_failure(struct aws_allocat
     aws_array_list_push_back(&s_tester.first_response_data_callbacks, &test_role_cursor);
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -310,8 +315,16 @@ static int s_credentials_provider_imds_second_request_failure(struct aws_allocat
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.first_request_uri.buffer,
+        s_tester.first_request_uri.len,
+        s_expected_imds_base_uri->bytes,
+        s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.second_request_uri.buffer,
+        s_tester.second_request_uri.len,
+        s_expected_imds_role_uri->bytes,
+        s_expected_imds_role_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
 
@@ -338,7 +351,7 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
     aws_array_list_push_back(&s_tester.second_response_data_callbacks, &bad_document_cursor);
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -346,8 +359,16 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.first_request_uri.buffer,
+        s_tester.first_request_uri.len,
+        s_expected_imds_base_uri->bytes,
+        s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.second_request_uri.buffer,
+        s_tester.second_request_uri.len,
+        s_expected_imds_role_uri->bytes,
+        s_expected_imds_role_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
 
@@ -360,8 +381,10 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
 
 AWS_TEST_CASE(credentials_provider_imds_bad_document_failure, s_credentials_provider_imds_bad_document_failure);
 
-
-AWS_STATIC_STRING_FROM_LITERAL(s_good_response, "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  \"Token\":\"TokenSuccess\"\n}");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_good_response,
+    "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
+    "\"Token\":\"TokenSuccess\"\n}");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
@@ -378,7 +401,7 @@ static int s_credentials_provider_imds_basic_success(struct aws_allocator *alloc
     aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -386,13 +409,33 @@ static int s_credentials_provider_imds_basic_success(struct aws_allocator *alloc
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.first_request_uri.buffer,
+        s_tester.first_request_uri.len,
+        s_expected_imds_base_uri->bytes,
+        s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.second_request_uri.buffer,
+        s_tester.second_request_uri.len,
+        s_expected_imds_role_uri->bytes,
+        s_expected_imds_role_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->access_key_id->bytes, s_tester.credentials->access_key_id->len, s_good_access_key_id->bytes, s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->secret_access_key->bytes, s_tester.credentials->secret_access_key->len, s_good_secret_access_key->bytes, s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->session_token->bytes, s_tester.credentials->session_token->len, s_good_session_token->bytes, s_good_session_token->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->access_key_id->bytes,
+        s_tester.credentials->access_key_id->len,
+        s_good_access_key_id->bytes,
+        s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->secret_access_key->bytes,
+        s_tester.credentials->secret_access_key->len,
+        s_good_secret_access_key->bytes,
+        s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->session_token->bytes,
+        s_tester.credentials->session_token->len,
+        s_good_session_token->bytes,
+        s_good_session_token->len);
 
     aws_credentials_provider_release(provider);
 
@@ -420,7 +463,7 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
     aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -428,13 +471,33 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.first_request_uri.buffer,
+        s_tester.first_request_uri.len,
+        s_expected_imds_base_uri->bytes,
+        s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.second_request_uri.buffer,
+        s_tester.second_request_uri.len,
+        s_expected_imds_role_uri->bytes,
+        s_expected_imds_role_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->access_key_id->bytes, s_tester.credentials->access_key_id->len, s_good_access_key_id->bytes, s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->secret_access_key->bytes, s_tester.credentials->secret_access_key->len, s_good_secret_access_key->bytes, s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->session_token->bytes, s_tester.credentials->session_token->len, s_good_session_token->bytes, s_good_session_token->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->access_key_id->bytes,
+        s_tester.credentials->access_key_id->len,
+        s_good_access_key_id->bytes,
+        s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->secret_access_key->bytes,
+        s_tester.credentials->secret_access_key->len,
+        s_good_secret_access_key->bytes,
+        s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->session_token->bytes,
+        s_tester.credentials->session_token->len,
+        s_good_session_token->bytes,
+        s_good_session_token->len);
 
     aws_credentials_provider_release(provider);
 
@@ -443,7 +506,9 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_imds_success_multi_part_role_name, s_credentials_provider_imds_success_multi_part_role_name);
+AWS_TEST_CASE(
+    credentials_provider_imds_success_multi_part_role_name,
+    s_credentials_provider_imds_success_multi_part_role_name);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_first_part, "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"Secret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_second_part, "AccessKey\":\"SuccessfulSecr");
@@ -465,7 +530,7 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
     aws_array_list_push_back(&s_tester.second_response_data_callbacks, &good_response_cursor3);
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = NULL,
-            .function_table = &s_mock_function_table};
+                                                            .function_table = &s_mock_function_table};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -473,13 +538,33 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.first_request_uri.buffer, s_tester.first_request_uri.len, s_expected_imds_base_uri->bytes, s_expected_imds_base_uri->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.second_request_uri.buffer, s_tester.second_request_uri.len, s_expected_imds_role_uri->bytes, s_expected_imds_role_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.first_request_uri.buffer,
+        s_tester.first_request_uri.len,
+        s_expected_imds_base_uri->bytes,
+        s_expected_imds_base_uri->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.second_request_uri.buffer,
+        s_tester.second_request_uri.len,
+        s_expected_imds_role_uri->bytes,
+        s_expected_imds_role_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->access_key_id->bytes, s_tester.credentials->access_key_id->len, s_good_access_key_id->bytes, s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->secret_access_key->bytes, s_tester.credentials->secret_access_key->len, s_good_secret_access_key->bytes, s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(s_tester.credentials->session_token->bytes, s_tester.credentials->session_token->len, s_good_session_token->bytes, s_good_session_token->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->access_key_id->bytes,
+        s_tester.credentials->access_key_id->len,
+        s_good_access_key_id->bytes,
+        s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->secret_access_key->bytes,
+        s_tester.credentials->secret_access_key->len,
+        s_good_secret_access_key->bytes,
+        s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->session_token->bytes,
+        s_tester.credentials->session_token->len,
+        s_good_session_token->bytes,
+        s_good_session_token->len);
 
     aws_credentials_provider_release(provider);
 
@@ -503,9 +588,7 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
-    struct aws_credentials_provider_imds_options options = {
-        .bootstrap = bootstrap
-    };
+    struct aws_credentials_provider_imds_options options = {.bootstrap = bootstrap};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
