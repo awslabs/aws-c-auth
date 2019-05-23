@@ -58,7 +58,6 @@ struct aws_credentials_provider_imds_user_data {
     /* mutable */
     enum aws_imds_query_state query_state;
     struct aws_http_connection *connection;
-    struct aws_http_stream *current_stream;
     struct aws_byte_buf current_result;
 };
 
@@ -69,10 +68,6 @@ static void s_aws_credentials_provider_imds_user_data_destroy(
     }
 
     struct aws_credentials_provider_imds_impl *impl = user_data->imds_provider->impl;
-
-    if (user_data->current_stream) {
-        impl->function_table->aws_http_stream_release(user_data->current_stream);
-    }
 
     if (user_data->connection) {
         impl->function_table->aws_http_connection_manager_release_connection(
@@ -178,8 +173,9 @@ static void s_imds_finalize_get_credentials_query(struct aws_credentials_provide
     struct aws_credentials *credentials =
         s_parse_credentials_from_imds_document(imds_user_data->allocator, &imds_user_data->current_result);
     imds_user_data->original_callback(credentials, imds_user_data->original_user_data);
-    s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
     aws_credentials_provider_release(imds_user_data->imds_provider);
+    s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+    aws_credentials_destroy(credentials);
 }
 
 static void s_imds_on_incoming_body_fn(
@@ -231,12 +227,9 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     (void)user_data;
 
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
-    AWS_FATAL_ASSERT(imds_user_data->current_stream == stream);
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
     impl->function_table->aws_http_stream_release(stream);
-
-    imds_user_data->current_stream = NULL;
 
     if (error_code == AWS_ERROR_SUCCESS && imds_user_data->query_state == AWS_IMDS_QS_ROLE_NAME) {
         imds_user_data->query_state = AWS_IMDS_QS_ROLE_CREDENTIALS;
@@ -253,7 +246,6 @@ static int s_make_imds_http_query(
     struct aws_credentials_provider_imds_user_data *imds_user_data,
     struct aws_byte_cursor *uri) {
     AWS_FATAL_ASSERT(imds_user_data->connection);
-    AWS_FATAL_ASSERT(imds_user_data->current_stream == NULL);
 
     struct aws_http_header headers[2];
     AWS_ZERO_ARRAY(headers);
@@ -273,16 +265,16 @@ static int s_make_imds_http_query(
     request.on_response_header_block_done = s_imds_on_incoming_header_block_done_fn;
     request.on_response_body = s_imds_on_incoming_body_fn;
     request.on_complete = s_imds_on_stream_complete_fn;
+    request.user_data = imds_user_data;
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
-    imds_user_data->current_stream = impl->function_table->aws_http_stream_new_client_request(&request);
+    struct aws_http_stream *stream = impl->function_table->aws_http_stream_new_client_request(&request);
 
-    return imds_user_data->current_stream == NULL ? AWS_OP_ERR : AWS_OP_SUCCESS;
+    return stream == NULL ? AWS_OP_ERR : AWS_OP_SUCCESS;
 }
 
 static void s_imds_query_instance_role_credentials(struct aws_credentials_provider_imds_user_data *imds_user_data) {
     AWS_FATAL_ASSERT(imds_user_data->connection);
-    AWS_FATAL_ASSERT(imds_user_data->current_stream == NULL);
 
     int result = AWS_OP_ERR;
     struct aws_byte_buf uri;
