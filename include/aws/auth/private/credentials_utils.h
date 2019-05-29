@@ -54,6 +54,9 @@ typedef struct aws_http_stream *(aws_http_stream_new_client_request_fn)(const st
 typedef void(aws_http_stream_release_fn)(struct aws_http_stream *stream);
 typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connection);
 
+/*
+ * Table of all downstream http functions used by the imds credentials provider.  Allows for simple mocking.
+ */
 struct aws_credentials_provider_imds_function_table {
     aws_http_connection_manager_new_fn *aws_http_connection_manager_new;
     aws_http_connection_manager_release_fn *aws_http_connection_manager_release;

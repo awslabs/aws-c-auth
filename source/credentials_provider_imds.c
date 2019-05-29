@@ -22,7 +22,13 @@
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
+#include <aws/io/logging.h>
 #include <aws/io/socket.h>
+
+/* instance role credentials body response is currently ~ 1300 characters + name length */
+#define IMDS_RESPONSE_SIZE_INITIAL 2048
+#define IMDS_RESPONSE_SIZE_LIMIT 10000
+#define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
@@ -38,15 +44,13 @@ static struct aws_credentials_provider_imds_function_table s_default_function_ta
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close};
 
+/*
+ * It takes two http requests to get IMDS credentials.  This tracks which request we're on.
+ */
 enum aws_imds_query_state { AWS_IMDS_QS_ROLE_NAME, AWS_IMDS_QS_ROLE_CREDENTIALS };
 
-/* instance role credentials body response is currently ~ 1300 characters + name length */
-#define IMDS_RESPONSE_SIZE_INITIAL 2048
-#define IMDS_RESPONSE_SIZE_LIMIT 10000
-#define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
-
 /*
- * Tracking structure for each outstanding credentials query to an imds provider
+ * Tracking structure for each outstanding async query to an imds provider
  */
 struct aws_credentials_provider_imds_user_data {
     /* immutable post-creation */
@@ -111,11 +115,24 @@ on_error:
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_empty_empty_string, "\0");
-
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "AccessKeyId");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "SecretAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "Token");
 
+/*
+ * In general, the IMDS document looks something like:
+
+{
+  "Code" : "Success",
+  "LastUpdated" : "2019-05-28T18:03:09Z",
+  "Type" : "AWS-HMAC",
+  "AccessKeyId" : "...",
+  "SecretAccessKey" : "...",
+  "Token" : "...",
+  "Expiration" : "2019-05-29T00:21:43Z"
+}
+
+ */
 static struct aws_credentials *s_parse_credentials_from_imds_document(
     struct aws_allocator *allocator,
     struct aws_byte_buf *document) {
@@ -133,6 +150,9 @@ static struct aws_credentials *s_parse_credentials_from_imds_document(
         goto done;
     }
 
+    /*
+     * Pull out the three credentials components
+     */
     cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_access_key_id_name->bytes);
     if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
         goto done;
@@ -149,6 +169,9 @@ static struct aws_credentials *s_parse_credentials_from_imds_document(
         goto done;
     }
 
+    /*
+     * Build the credentials
+     */
     struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
     struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
     struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
@@ -169,10 +192,29 @@ done:
     return credentials;
 }
 
+/*
+ * No matter the result, this always gets called assuming that imds_user_data is successfully allocated
+ */
 static void s_imds_finalize_get_credentials_query(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+    /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials =
         s_parse_credentials_from_imds_document(imds_user_data->allocator, &imds_user_data->current_result);
+
+    /* pass the credentials back */
     imds_user_data->original_callback(credentials, imds_user_data->original_user_data);
+    if (credentials != NULL) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) IMDS credentials provider successfully queried instance role credentials",
+            (void *)imds_user_data->imds_provider);
+    } else {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) IMDS credentials provider failed to query instance role credentials",
+            (void *)imds_user_data->imds_provider);
+    }
+
+    /* clean up */
     aws_credentials_provider_release(imds_user_data->imds_provider);
     s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
     aws_credentials_destroy(credentials);
@@ -192,13 +234,27 @@ static void s_imds_on_incoming_body_fn(
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p) IMDS credentials provider received %zu response bytes",
+        (void *)imds_user_data->imds_provider,
+        data->len);
+
     if (data->len + imds_user_data->current_result.len > IMDS_RESPONSE_SIZE_LIMIT) {
         impl->function_table->aws_http_connection_close(imds_user_data->connection);
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) IMDS credentials provider query response exceeded maximum allowed length",
+            (void *)imds_user_data->imds_provider);
         return;
     }
 
     if (aws_byte_buf_append_dynamic(&imds_user_data->current_result, data)) {
         impl->function_table->aws_http_connection_close(imds_user_data->connection);
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) IMDS credentials provider query error appending response",
+            (void *)imds_user_data->imds_provider);
     }
 }
 
@@ -240,26 +296,37 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_metadata_resource_path, "/latest/meta-data/iam/security-credentials/");
-AWS_STATIC_STRING_FROM_LITERAL(s_imds_host, "169.254.169.254");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_accept_header, "Accept");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_accept_header_value, "*/*");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_host_header, "Host");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_host_header_value, "169.254.169.254");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header, "User-Agent");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header_value, "aws-sdk-crt/imds-credentials-provider");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_h1_0_keep_alive_header, "Connection");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_h1_0_keep_alive_header_value, "keep-alive");
 
 static int s_make_imds_http_query(
     struct aws_credentials_provider_imds_user_data *imds_user_data,
     struct aws_byte_cursor *uri) {
     AWS_FATAL_ASSERT(imds_user_data->connection);
 
-    struct aws_http_header headers[2];
+    struct aws_http_header headers[4];
     AWS_ZERO_ARRAY(headers);
 
-    headers[0].name = aws_byte_cursor_from_c_str("accept");
-    headers[0].value = aws_byte_cursor_from_c_str("*/*");
-    headers[1].name = aws_byte_cursor_from_c_str("host");
-    headers[1].value = aws_byte_cursor_from_string(s_imds_host);
+    headers[0].name = aws_byte_cursor_from_string(s_imds_accept_header);
+    headers[0].value = aws_byte_cursor_from_string(s_imds_accept_header_value);
+    headers[1].name = aws_byte_cursor_from_string(s_imds_host_header);
+    headers[1].value = aws_byte_cursor_from_string(s_imds_host_header_value);
+    headers[2].name = aws_byte_cursor_from_string(s_imds_user_agent_header);
+    headers[2].value = aws_byte_cursor_from_string(s_imds_user_agent_header_value);
+    headers[3].name = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header);
+    headers[3].value = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header_value);
 
     struct aws_http_request_options request = AWS_HTTP_REQUEST_OPTIONS_INIT;
     request.client_connection = imds_user_data->connection;
     request.method = aws_byte_cursor_from_c_str("GET");
     request.uri = *uri;
-    request.num_headers = 2;
+    request.num_headers = AWS_ARRAY_SIZE(headers);
     request.header_array = headers;
     request.on_response_headers = s_imds_on_incoming_headers_fn;
     request.on_response_header_block_done = s_imds_on_incoming_header_block_done_fn;
@@ -280,10 +347,16 @@ static void s_imds_query_instance_role_credentials(struct aws_credentials_provid
     struct aws_byte_buf uri;
     AWS_ZERO_STRUCT(uri);
 
+    /*
+     * Take the result of the base query, which should be the name of the instance role
+     */
     if (imds_user_data->current_result.len == 0) {
         goto cleanup;
     }
 
+    /*
+     * Append the role name to the base uri to get the final uri
+     */
     if (aws_byte_buf_init(
             &uri, imds_user_data->allocator, s_imds_metadata_resource_path->len + imds_user_data->current_result.len)) {
         goto cleanup;
@@ -299,6 +372,7 @@ static void s_imds_query_instance_role_credentials(struct aws_credentials_provid
         goto cleanup;
     }
 
+    /* "Clear" the result buffer */
     imds_user_data->current_result.len = 0;
 
     struct aws_byte_cursor uri_cursor = aws_byte_cursor_from_buf(&uri);
@@ -416,12 +490,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
             IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL),
     };
 
-    struct aws_http_connection_manager_options manager_options = {.bootstrap = options->bootstrap,
-                                                                  .socket_options = &socket_options,
-                                                                  .tls_connection_options = NULL,
-                                                                  .host = aws_byte_cursor_from_string(s_imds_host),
-                                                                  .port = 80,
-                                                                  .max_connections = 2};
+    struct aws_http_connection_manager_options manager_options = {
+        .bootstrap = options->bootstrap,
+        .initial_window_size = IMDS_RESPONSE_SIZE_LIMIT,
+        .socket_options = &socket_options,
+        .tls_connection_options = NULL,
+        .host = aws_byte_cursor_from_string(s_imds_host_header_value),
+        .port = 80,
+        .max_connections = 2};
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

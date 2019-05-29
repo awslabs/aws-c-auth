@@ -20,9 +20,11 @@
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/string.h>
+#include <aws/common/thread.h>
 #include <aws/http/request_response.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
+#include <aws/io/logging.h>
 #include <aws/io/socket.h>
 
 struct aws_mock_imds_tester {
@@ -578,6 +580,22 @@ AWS_TEST_CASE(credentials_provider_imds_success_multi_part_doc, s_credentials_pr
 static int s_credentials_provider_imds_real_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
+    aws_load_error_strings();
+    aws_io_load_error_strings();
+    aws_io_load_log_subject_strings();
+
+    aws_http_library_init(allocator);
+    aws_auth_library_init(allocator);
+
+    struct aws_logger_standard_options logger_options = {
+        .level = AWS_LOG_LEVEL_TRACE,
+        .file = stderr,
+    };
+
+    struct aws_logger logger;
+    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
+    aws_logger_set(&logger);
+
     s_aws_imds_tester_init(allocator);
 
     struct aws_event_loop_group el_group;
@@ -605,6 +623,12 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
     aws_event_loop_group_clean_up(&el_group);
 
     s_aws_imds_tester_cleanup();
+
+    aws_auth_library_clean_up();
+    aws_http_library_clean_up();
+
+    aws_logger_set(NULL);
+    aws_logger_clean_up(&logger);
 
     return 0;
 }

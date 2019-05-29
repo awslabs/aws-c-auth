@@ -88,6 +88,11 @@ struct aws_credentials_provider_chain_options {
     size_t provider_count;
 };
 
+/**
+ *
+        <p>The unique identifier for the application.</p>
+
+ */
 struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
     struct aws_credentials_provider_imds_function_table *function_table;
