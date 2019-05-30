@@ -25,6 +25,7 @@
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
+struct aws_credentials_provider_imds_function_table;
 struct aws_string;
 
 /*
@@ -87,8 +88,14 @@ struct aws_credentials_provider_chain_options {
     size_t provider_count;
 };
 
+/**
+ *
+        <p>The unique identifier for the application.</p>
+
+ */
 struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
+    struct aws_credentials_provider_imds_function_table *function_table;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -106,6 +113,13 @@ struct aws_credentials *aws_credentials_new(
 
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials);
+
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_from_cursors(
+    struct aws_allocator *allocator,
+    const struct aws_byte_cursor *access_key_id_cursor,
+    const struct aws_byte_cursor *secret_access_key_cursor,
+    const struct aws_byte_cursor *session_token_cursor);
 
 AWS_AUTH_API
 void aws_credentials_destroy(struct aws_credentials *credentials);

@@ -106,8 +106,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
 find_package(aws-c-common REQUIRED)
 find_package(aws-c-cal REQUIRED)
 find_package(aws-c-io REQUIRED)
+find_package(aws-c-http REQUIRED)
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC AWS::aws-c-io AWS::aws-c-cal AWS::aws-c-common ${PLATFORM_LIBS})
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC AWS::aws-c-http AWS::aws-c-io AWS::aws-c-cal AWS::aws-c-common ${PLATFORM_LIBS})
 
 aws_prepare_shared_lib_exports(${CMAKE_PROJECT_NAME})
 
