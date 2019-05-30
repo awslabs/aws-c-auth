@@ -483,12 +483,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_imds_vtable, impl);
 
-    struct aws_socket_options socket_options = {
-        .type = AWS_SOCKET_STREAM,
-        .domain = AWS_SOCKET_IPV4,
-        .connect_timeout_ms = (uint32_t)aws_timestamp_convert(
-            IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL),
-    };
+    struct aws_socket_options socket_options;
+    AWS_ZERO_STRUCT(socket_options);
+    socket_options.type = AWS_SOCKET_STREAM;
+    socket_options.domain = AWS_SOCKET_IPV4;
+    socket_options.connect_timeout_ms = (uint32_t)aws_timestamp_convert(
+        IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
 
     struct aws_http_connection_manager_options manager_options;
     AWS_ZERO_STRUCT(manager_options);
