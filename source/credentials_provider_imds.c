@@ -490,14 +490,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
             IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL),
     };
 
-    struct aws_http_connection_manager_options manager_options = {
-        .bootstrap = options->bootstrap,
-        .initial_window_size = IMDS_RESPONSE_SIZE_LIMIT,
-        .socket_options = &socket_options,
-        .tls_connection_options = NULL,
-        .host = aws_byte_cursor_from_string(s_imds_host_header_value),
-        .port = 80,
-        .max_connections = 2};
+    struct aws_http_connection_manager_options manager_options;
+    AWS_ZERO_STRUCT(manager_options);
+    manager_options.bootstrap = options->bootstrap;
+    manager_options.initial_window_size = IMDS_RESPONSE_SIZE_LIMIT;
+    manager_options.socket_options = &socket_options;
+    manager_options.tls_connection_options = NULL;
+    manager_options.host = aws_byte_cursor_from_string(s_imds_host_header_value);
+    manager_options.port = 80;
+    manager_options.max_connections = 2;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
