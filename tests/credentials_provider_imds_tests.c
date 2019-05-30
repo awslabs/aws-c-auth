@@ -211,6 +211,8 @@ static void s_aws_wait_for_credentials_result(void) {
 }
 
 static void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
+    (void)user_data;
+
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
     if (credentials != NULL) {
