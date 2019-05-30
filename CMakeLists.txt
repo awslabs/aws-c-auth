@@ -31,13 +31,26 @@ option(BUILD_RELOCATABLE_BINARIES
         "Build Relocatable Binaries, this will turn off features that will fail on older kernels than used for the build."
         OFF)
 
-file(GLOB AWS_AUTH_HEADERS
+file(GLOB AWS_AUTH_ROOT_HEADERS
         "include/aws/auth/*.h"
         )
 
-file(GLOB AWS_AUTH_SRC
+file(GLOB AWS_AUTH_PRIVATE_HEADERS
+        "include/aws/auth/private/*.h"
+        )
+
+file(GLOB AWS_AUTH_EXTERNAL_HEADERS
+        "include/aws/auth/external/*.h"
+        )
+
+file(GLOB AWS_AUTH_ROOT_SRC
         "source/*.c"
         )
+
+file(GLOB AWS_AUTH_EXTERNAL_SRC
+        "source/external/*.c"
+        )
+
 
 if (WIN32)
     if (MSVC)
@@ -54,11 +67,14 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "NetB
 endif()
 
 file(GLOB AUTH_HEADERS
-        ${AWS_AUTH_HEADERS}
+        ${AWS_AUTH_ROOT_HEADERS}
+        ${AWS_AUTH_PRIVATE_HEADERS}
+        ${AWS_AUTH_EXTERNAL_HEADERS}
         )
 
 file(GLOB AUTH_SRC
-        ${AWS_AUTH_SRC}
+        ${AWS_AUTH_ROOT_SRC}
+        ${AWS_AUTH_EXTERNAL_SRC}
         )
 
 add_library(${CMAKE_PROJECT_NAME} ${LIBTYPE} ${AUTH_HEADERS} ${AUTH_SRC})
