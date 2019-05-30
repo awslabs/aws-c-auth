@@ -9,6 +9,7 @@ mkdir %INSTALL_DIR%
 CALL :install_library aws-c-common
 CALL :install_library aws-c-io
 CALL :install_library aws-c-cal
+CALL :install_library aws-c-compression
 CALL :install_library aws-c-http
 
 mkdir %BUILDS_DIR%\aws-c-auth-build
