@@ -198,6 +198,8 @@ static void s_aws_imds_tester_cleanup(void) {
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
+    (void)user_data;
+
     return s_tester.has_received_credentials_callback;
 }
 

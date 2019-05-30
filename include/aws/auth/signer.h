@@ -55,7 +55,7 @@ AWS_AUTH_API
 void aws_signer_destroy(struct aws_signer *signer);
 
 /*
- * Takes an http request and a per-signer-type configuration struct and computes the changes to the request necessary
+ * Takes a signable object and a per-signer-type configuration struct and computes the changes necessary
  * for compliance with the signer's signing algorithm.
  */
 AWS_AUTH_API
@@ -66,7 +66,7 @@ int aws_signer_sign_request(
     struct aws_signing_result *result);
 
 /*
- * Creates a new signer that performs AWS http request signing.  Requires an instance of
+ * Creates a new signer that performs message signing.  Requires an instance of
  * the aws_signing_config_aws struct when signing.
  *
  * This signer currently supports only the sigv4 algorithm.
