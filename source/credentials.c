@@ -17,26 +17,8 @@
 
 #include <aws/common/string.h>
 
-/*
-#include <aws/auth/private/aws_profile.h>
-#include <aws/auth/private/credentials_utils.h>
-#include <aws/common/clock.h>
-#include <aws/common/environment.h>
-#include <aws/common/mutex.h>
-#include <aws/common/string.h>
-#include <aws/http/connection.h>
-#include <aws/http/connection_manager.h>
-#include <aws/http/request_response.h>
-#include <aws/io/logging.h>
-
-#include <inttypes.h>
-*/
-
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
 
-#if defined(_MSC_VER)
-#    pragma warning(disable : 4204)
-#endif /* _MSC_VER */
 
 /*
  * Credentials API implementations
@@ -136,7 +118,7 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
     }
 
     if (credentials->access_key_id != NULL) {
-        aws_string_destroy_secure(credentials->access_key_id);
+        aws_string_destroy(credentials->access_key_id);
     }
 
     if (credentials->secret_access_key != NULL) {
@@ -144,7 +126,7 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
     }
 
     if (credentials->session_token != NULL) {
-        aws_string_destroy_secure(credentials->session_token);
+        aws_string_destroy(credentials->session_token);
     }
 
     aws_mem_release(credentials->allocator, credentials);
