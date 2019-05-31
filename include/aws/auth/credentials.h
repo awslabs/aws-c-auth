@@ -93,6 +93,10 @@ struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_imds_function_table *function_table;
 };
 
+struct aws_credentials_provider_chain_default_options {
+    struct aws_client_bootstrap *bootstrap;
+};
+
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -233,7 +237,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
  * implemented.
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_chain_default(struct aws_allocator *allocator);
+struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_chain_default_options *options);
 
 AWS_EXTERN_C_END
 

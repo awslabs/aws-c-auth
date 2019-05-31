@@ -196,9 +196,12 @@ int aws_credentials_provider_get_credentials(
 /*
  * Default provider chain implementation
  */
-struct aws_credentials_provider *aws_credentials_provider_new_chain_default(struct aws_allocator *allocator) {
+struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_chain_default_options *options) {
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
 
@@ -214,10 +217,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
         goto on_error;
     }
 
-    struct aws_credentials_provider *providers[] = {environment_provider, profile_provider};
+    struct aws_credentials_provider_imds_options imds_options;
+    AWS_ZERO_STRUCT(imds_options);
+    imds_options.bootstrap = options->bootstrap;
+    imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
+    if (imds_provider == NULL) {
+        goto on_error;
+    }
+
+    struct aws_credentials_provider *providers[] = {environment_provider, profile_provider, imds_provider};
     struct aws_credentials_provider_chain_options chain_options;
     AWS_ZERO_STRUCT(chain_options);
-    chain_options.provider_count = 2;
+    chain_options.provider_count = AWS_ARRAY_SIZE(providers);
     chain_options.providers = providers;
 
     chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);
@@ -230,6 +241,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
      */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
+    aws_credentials_provider_release(imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options;
     AWS_ZERO_STRUCT(cached_options);
@@ -263,6 +275,7 @@ on_error:
     } else if (chain_provider) {
         aws_credentials_provider_release(chain_provider);
     } else {
+        aws_credentials_provider_release(imds_provider);
         aws_credentials_provider_release(profile_provider);
         aws_credentials_provider_release(environment_provider);
     }

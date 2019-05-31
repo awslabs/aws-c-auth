@@ -788,7 +788,10 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
     aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_chain_default(allocator);
+    struct aws_credentials_provider_chain_default_options options;
+    AWS_ZERO_STRUCT(options);
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_chain_default(allocator, &options);
 
     ASSERT_TRUE(
         s_do_basic_provider_test(
