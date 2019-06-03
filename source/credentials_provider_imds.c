@@ -41,6 +41,7 @@ static struct aws_credentials_provider_imds_function_table s_default_function_ta
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
     .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
     .aws_http_stream_new_client_request = aws_http_stream_new_client_request,
+    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close};
 
@@ -63,6 +64,7 @@ struct aws_credentials_provider_imds_user_data {
     enum aws_imds_query_state query_state;
     struct aws_http_connection *connection;
     struct aws_byte_buf current_result;
+    int status_code;
 };
 
 static void s_aws_credentials_provider_imds_user_data_destroy(
@@ -112,6 +114,12 @@ on_error:
     s_aws_credentials_provider_imds_user_data_destroy(wrapped_user_data);
 
     return NULL;
+}
+
+static void s_aws_credentials_provider_imds_user_data_reset_response(
+    struct aws_credentials_provider_imds_user_data *imds_user_data) {
+    imds_user_data->current_result.len = 0;
+    imds_user_data->status_code = 0;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_empty_empty_string, "\0");
@@ -264,28 +272,43 @@ static void s_imds_on_incoming_headers_fn(
     size_t num_headers,
     void *user_data) {
 
-    (void)stream;
     (void)header_array;
     (void)num_headers;
-    (void)user_data;
-}
 
-static void s_imds_on_incoming_header_block_done_fn(struct aws_http_stream *stream, bool has_body, void *user_data) {
-    (void)stream;
-    (void)has_body;
-    (void)user_data;
+    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    if (imds_user_data->status_code == 0) {
+        struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
+        if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &imds_user_data->status_code)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) IMDS credentials provider failed to get http status code",
+                (void *)imds_user_data->imds_provider);
+        } else {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) IMDS credentials provider query received http status code %d",
+                (void *)imds_user_data->imds_provider,
+                imds_user_data->status_code);
+        }
+    }
 }
 
 static void s_imds_query_instance_role_credentials(struct aws_credentials_provider_imds_user_data *imds_user_data);
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
-    (void)error_code;
-    (void)user_data;
-
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
     impl->function_table->aws_http_stream_release(stream);
+
+    /*
+     * On anything other than a 200, nullify the response and pretend there was
+     * an error
+     */
+    if (imds_user_data->status_code != 200) {
+        imds_user_data->current_result.len = 0;
+        error_code = AWS_ERROR_HTTP_UNKNOWN;
+    }
 
     if (error_code == AWS_ERROR_SUCCESS && imds_user_data->query_state == AWS_IMDS_QS_ROLE_NAME) {
         imds_user_data->query_state = AWS_IMDS_QS_ROLE_CREDENTIALS;
@@ -298,7 +321,6 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_metadata_resource_path, "/latest/meta-data/iam/security-credentials/");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_accept_header, "Accept");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_accept_header_value, "*/*");
-AWS_STATIC_STRING_FROM_LITERAL(s_imds_host_header, "Host");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_host_header_value, "169.254.169.254");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header, "User-Agent");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header_value, "aws-sdk-crt/imds-credentials-provider");
@@ -315,12 +337,10 @@ static int s_make_imds_http_query(
 
     headers[0].name = aws_byte_cursor_from_string(s_imds_accept_header);
     headers[0].value = aws_byte_cursor_from_string(s_imds_accept_header_value);
-    headers[1].name = aws_byte_cursor_from_string(s_imds_host_header);
-    headers[1].value = aws_byte_cursor_from_string(s_imds_host_header_value);
-    headers[2].name = aws_byte_cursor_from_string(s_imds_user_agent_header);
-    headers[2].value = aws_byte_cursor_from_string(s_imds_user_agent_header_value);
-    headers[3].name = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header);
-    headers[3].value = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header_value);
+    headers[1].name = aws_byte_cursor_from_string(s_imds_user_agent_header);
+    headers[1].value = aws_byte_cursor_from_string(s_imds_user_agent_header_value);
+    headers[2].name = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header);
+    headers[2].value = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header_value);
 
     struct aws_http_request_options request = AWS_HTTP_REQUEST_OPTIONS_INIT;
     request.client_connection = imds_user_data->connection;
@@ -329,7 +349,7 @@ static int s_make_imds_http_query(
     request.num_headers = AWS_ARRAY_SIZE(headers);
     request.header_array = headers;
     request.on_response_headers = s_imds_on_incoming_headers_fn;
-    request.on_response_header_block_done = s_imds_on_incoming_header_block_done_fn;
+    request.on_response_header_block_done = NULL;
     request.on_response_body = s_imds_on_incoming_body_fn;
     request.on_complete = s_imds_on_stream_complete_fn;
     request.user_data = imds_user_data;
@@ -372,8 +392,8 @@ static void s_imds_query_instance_role_credentials(struct aws_credentials_provid
         goto cleanup;
     }
 
-    /* "Clear" the result buffer */
-    imds_user_data->current_result.len = 0;
+    /* "Clear" the result */
+    s_aws_credentials_provider_imds_user_data_reset_response(imds_user_data);
 
     struct aws_byte_cursor uri_cursor = aws_byte_cursor_from_buf(&uri);
     if (s_make_imds_http_query(imds_user_data, &uri_cursor) == AWS_OP_SUCCESS) {

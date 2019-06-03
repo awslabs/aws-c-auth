@@ -103,17 +103,14 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
 
-find_package(aws-c-common REQUIRED)
 find_package(aws-c-cal REQUIRED)
-find_package(aws-c-io REQUIRED)
-find_package(aws-c-compression REQUIRED)
 find_package(aws-c-http REQUIRED)
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC AWS::aws-c-http AWS::aws-c-compression AWS::aws-c-io AWS::aws-c-cal AWS::aws-c-common ${PLATFORM_LIBS})
+target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC AWS::aws-c-http AWS::aws-c-cal ${PLATFORM_LIBS})
 
 aws_prepare_shared_lib_exports(${CMAKE_PROJECT_NAME})
 
-install(FILES ${AWS_AUTH_HEADERS} DESTINATION "include/aws/auth" COMPONENT Development)
+install(FILES ${AWS_AUTH_ROOT_HEADERS} DESTINATION "include/aws/auth" COMPONENT Development)
 
 install(EXPORT "${CMAKE_PROJECT_NAME}-targets"
         DESTINATION "${LIBRARY_DIRECTORY}/${CMAKE_PROJECT_NAME}/cmake/"

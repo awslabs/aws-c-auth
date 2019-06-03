@@ -90,6 +90,8 @@ struct aws_credentials_provider_chain_options {
 
 struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_imds_function_table *function_table;
 };
 

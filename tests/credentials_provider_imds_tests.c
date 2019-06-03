@@ -103,7 +103,10 @@ static void s_invoke_mock_request_callbacks(
 
     options->on_response_headers((struct aws_http_stream *)1, headers, 1, options->user_data);
 
-    options->on_response_header_block_done((struct aws_http_stream *)1, data_callback_count > 0, options->user_data);
+    if (options->on_response_header_block_done) {
+        options->on_response_header_block_done(
+            (struct aws_http_stream *)1, data_callback_count > 0, options->user_data);
+    }
 
     for (size_t i = 0; i < data_callback_count; ++i) {
         struct aws_byte_cursor data_callback_cursor;
@@ -139,6 +142,16 @@ static struct aws_http_stream *s_aws_http_stream_new_client_request_mock(
     return (struct aws_http_stream *)1;
 }
 
+static int s_aws_http_stream_get_incoming_response_status_mock(
+    const struct aws_http_stream *stream,
+    int *out_status_code) {
+    (void)stream;
+
+    *out_status_code = 200;
+
+    return AWS_OP_SUCCESS;
+}
+
 static void s_aws_http_stream_release_mock(struct aws_http_stream *stream) {
     (void)stream;
 }
@@ -153,6 +166,7 @@ static struct aws_credentials_provider_imds_function_table s_mock_function_table
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,
     .aws_http_connection_manager_release_connection = s_aws_http_connection_manager_release_connection_mock,
     .aws_http_stream_new_client_request = s_aws_http_stream_new_client_request_mock,
+    .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
