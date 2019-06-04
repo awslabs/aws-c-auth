@@ -15,15 +15,7 @@
 
 #include <aws/auth/credentials.h>
 
-#include <aws/auth/private/aws_profile.h>
-#include <aws/auth/private/credentials_utils.h>
-#include <aws/common/clock.h>
-#include <aws/common/environment.h>
-#include <aws/common/mutex.h>
 #include <aws/common/string.h>
-#include <aws/io/logging.h>
-
-#include <inttypes.h>
 
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
 
@@ -41,6 +33,46 @@ struct aws_credentials *aws_credentials_new(
     const struct aws_string *secret_access_key,
     const struct aws_string *session_token) {
 
+    struct aws_byte_cursor access_key_id_cursor;
+    AWS_ZERO_STRUCT(access_key_id_cursor);
+    if (access_key_id) {
+        access_key_id_cursor = aws_byte_cursor_from_string(access_key_id);
+    }
+
+    struct aws_byte_cursor secret_access_key_cursor;
+    AWS_ZERO_STRUCT(secret_access_key_cursor);
+    if (secret_access_key) {
+        secret_access_key_cursor = aws_byte_cursor_from_string(secret_access_key);
+    }
+
+    struct aws_byte_cursor session_token_cursor;
+    AWS_ZERO_STRUCT(session_token_cursor);
+    if (session_token) {
+        session_token_cursor = aws_byte_cursor_from_string(session_token);
+    }
+
+    return aws_credentials_new_from_cursors(
+        allocator,
+        access_key_id != NULL ? &access_key_id_cursor : NULL,
+        secret_access_key != NULL ? &secret_access_key_cursor : NULL,
+        session_token != NULL ? &session_token_cursor : NULL);
+}
+
+struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials) {
+    if (credentials != NULL) {
+        return aws_credentials_new(
+            allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
+    }
+
+    return NULL;
+}
+
+struct aws_credentials *aws_credentials_new_from_cursors(
+    struct aws_allocator *allocator,
+    const struct aws_byte_cursor *access_key_id_cursor,
+    const struct aws_byte_cursor *secret_access_key_cursor,
+    const struct aws_byte_cursor *session_token_cursor) {
+
     struct aws_credentials *credentials = aws_mem_acquire(allocator, sizeof(struct aws_credentials));
     if (credentials == NULL) {
         return NULL;
@@ -50,26 +82,35 @@ struct aws_credentials *aws_credentials_new(
 
     credentials->allocator = allocator;
 
-    if (access_key_id != NULL) {
-        credentials->access_key_id = aws_string_new_from_string(allocator, access_key_id);
+    if (access_key_id_cursor != NULL) {
+        credentials->access_key_id =
+            aws_string_new_from_array(allocator, access_key_id_cursor->ptr, access_key_id_cursor->len);
+        if (credentials->access_key_id == NULL) {
+            goto error;
+        }
     }
 
-    if (secret_access_key != NULL) {
-        credentials->secret_access_key = aws_string_new_from_string(allocator, secret_access_key);
+    if (secret_access_key_cursor != NULL) {
+        credentials->secret_access_key =
+            aws_string_new_from_array(allocator, secret_access_key_cursor->ptr, secret_access_key_cursor->len);
+        if (credentials->secret_access_key == NULL) {
+            goto error;
+        }
     }
 
-    if (session_token != NULL) {
-        credentials->session_token = aws_string_new_from_string(allocator, session_token);
+    if (session_token_cursor != NULL) {
+        credentials->session_token =
+            aws_string_new_from_array(allocator, session_token_cursor->ptr, session_token_cursor->len);
+        if (credentials->session_token == NULL) {
+            goto error;
+        }
     }
 
     return credentials;
-}
 
-struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials) {
-    if (credentials != NULL) {
-        return aws_credentials_new(
-            allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
-    }
+error:
+
+    aws_credentials_destroy(credentials);
 
     return NULL;
 }
@@ -140,9 +181,12 @@ int aws_credentials_provider_get_credentials(
 /*
  * Default provider chain implementation
  */
-struct aws_credentials_provider *aws_credentials_provider_new_chain_default(struct aws_allocator *allocator) {
+struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_chain_default_options *options) {
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
 
@@ -158,10 +202,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
         goto on_error;
     }
 
-    struct aws_credentials_provider *providers[] = {environment_provider, profile_provider};
+    struct aws_credentials_provider_imds_options imds_options;
+    AWS_ZERO_STRUCT(imds_options);
+    imds_options.bootstrap = options->bootstrap;
+    imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
+    if (imds_provider == NULL) {
+        goto on_error;
+    }
+
+    struct aws_credentials_provider *providers[] = {environment_provider, profile_provider, imds_provider};
     struct aws_credentials_provider_chain_options chain_options;
     AWS_ZERO_STRUCT(chain_options);
-    chain_options.provider_count = 2;
+    chain_options.provider_count = AWS_ARRAY_SIZE(providers);
     chain_options.providers = providers;
 
     chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);
@@ -174,6 +226,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(stru
      */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
+    aws_credentials_provider_release(imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options;
     AWS_ZERO_STRUCT(cached_options);
@@ -207,6 +260,7 @@ on_error:
     } else if (chain_provider) {
         aws_credentials_provider_release(chain_provider);
     } else {
+        aws_credentials_provider_release(imds_provider);
         aws_credentials_provider_release(profile_provider);
         aws_credentials_provider_release(environment_provider);
     }
