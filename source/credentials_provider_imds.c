@@ -338,7 +338,7 @@ static int s_make_imds_http_query(
     struct aws_byte_cursor *uri) {
     AWS_FATAL_ASSERT(imds_user_data->connection);
 
-    struct aws_http_header headers[4];
+    struct aws_http_header headers[3];
     AWS_ZERO_ARRAY(headers);
 
     headers[0].name = aws_byte_cursor_from_string(s_imds_accept_header);
