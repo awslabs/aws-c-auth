@@ -293,12 +293,6 @@ static void s_imds_on_incoming_headers_fn(
     }
 }
 
-static void s_imds_on_incoming_header_block_done_fn(struct aws_http_stream *stream, bool has_body, void *user_data) {
-    (void)stream;
-    (void)has_body;
-    (void)user_data;
-}
-
 static void s_imds_query_instance_role_credentials(struct aws_credentials_provider_imds_user_data *imds_user_data);
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
@@ -355,7 +349,7 @@ static int s_make_imds_http_query(
     request.num_headers = AWS_ARRAY_SIZE(headers);
     request.header_array = headers;
     request.on_response_headers = s_imds_on_incoming_headers_fn;
-    request.on_response_header_block_done = s_imds_on_incoming_header_block_done_fn;
+    request.on_response_header_block_done = NULL;
     request.on_response_body = s_imds_on_incoming_body_fn;
     request.on_complete = s_imds_on_stream_complete_fn;
     request.user_data = imds_user_data;
