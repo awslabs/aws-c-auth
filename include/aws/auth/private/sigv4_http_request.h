@@ -21,16 +21,25 @@
 #include <aws/http/request_response.h>
 
 struct aws_http_request_options;
+struct aws_input_stream;
 
 AWS_EXTERN_C_BEGIN
 
 AWS_AUTH_API
-int aws_sign_http_request_identity(struct aws_http_request_options *input_request,
+int aws_sign_http_request_identity(struct aws_allocator *allocator,
+        struct aws_http_request_options *input_request,
+                                   struct aws_input_stream *payload_stream,
+                                   const char *signing_region,
+                                   const char *signing_service,
                                    struct aws_http_request_options **output_request,
                                    aws_http_request_options_destroy_fn **request_cleanup);
 
 AWS_AUTH_API
-int aws_sign_http_request_sigv4(struct aws_http_request_options *input_request,
+int aws_sign_http_request_sigv4(struct aws_allocator *allocator,
+        struct aws_http_request_options *input_request,
+                                struct aws_input_stream *payload_stream,
+                                const char *signing_region,
+                                const char *signing_service,
                                    struct aws_http_request_options **output_request,
                                    aws_http_request_options_destroy_fn **request_cleanup);
 
