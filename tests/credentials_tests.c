@@ -22,8 +22,8 @@
 #include <aws/common/mutex.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
-#include <aws/io/file_utils.h>
 #include <aws/http/http.h>
+#include <aws/io/file_utils.h>
 
 #include <credentials_provider_utils.h>
 

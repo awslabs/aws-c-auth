@@ -24,14 +24,14 @@
 #include <aws/common/string.h>
 #include <aws/io/uri.h>
 
-int aws_sign_http_request_identity(struct aws_allocator *allocator,
-                                   struct aws_http_request_options *input_request,
-                                   struct aws_input_stream *payload_stream,
-                                   const char *signing_region,
-                                   const char *signing_service,
-                                   struct aws_http_request_options **output_request,
-                                   aws_http_request_options_destroy_fn **request_cleanup)
-{
+int aws_sign_http_request_identity(
+    struct aws_allocator *allocator,
+    struct aws_http_request_options *input_request,
+    struct aws_input_stream *payload_stream,
+    const char *signing_region,
+    const char *signing_service,
+    struct aws_http_request_options **output_request,
+    aws_http_request_options_destroy_fn **request_cleanup) {
     (void)payload_stream;
     (void)signing_region;
     (void)signing_service;
@@ -67,11 +67,14 @@ static void s_destroy_signed_request_clone(struct aws_allocator *allocator, stru
     }
 
     if (request->header_array) {
-        aws_mem_release(allocator, (struct aws_http_header *) request->header_array);
+        aws_mem_release(allocator, (struct aws_http_header *)request->header_array);
     }
 }
 
-static int s_clone_byte_cursor(struct aws_allocator *allocator, struct aws_byte_cursor *source, struct aws_byte_cursor *dest) {
+static int s_clone_byte_cursor(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor *source,
+    struct aws_byte_cursor *dest) {
     if (source->len == 0) {
         return AWS_OP_SUCCESS;
     }
@@ -88,7 +91,11 @@ static int s_clone_byte_cursor(struct aws_allocator *allocator, struct aws_byte_
     return AWS_OP_SUCCESS;
 }
 
-static int s_clone_request_uri(struct aws_allocator *allocator, struct aws_byte_cursor *source_uri, struct aws_http_request_options *dest_request, struct aws_signing_result *result) {
+static int s_clone_request_uri(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor *source_uri,
+    struct aws_http_request_options *dest_request,
+    struct aws_signing_result *result) {
 
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
@@ -171,8 +178,12 @@ error:
     return AWS_OP_ERR;
 }
 
-static struct aws_http_request_options *s_build_signed_request(struct aws_allocator *allocator, struct aws_http_request_options *request, struct aws_signing_result *result) {
-    struct aws_http_request_options *request_copy = aws_mem_calloc(allocator, 1, sizeof(struct aws_http_request_options));
+static struct aws_http_request_options *s_build_signed_request(
+    struct aws_allocator *allocator,
+    struct aws_http_request_options *request,
+    struct aws_signing_result *result) {
+    struct aws_http_request_options *request_copy =
+        aws_mem_calloc(allocator, 1, sizeof(struct aws_http_request_options));
     if (request_copy == NULL) {
         return NULL;
     }
@@ -222,7 +233,8 @@ static struct aws_http_request_options *s_build_signed_request(struct aws_alloca
         if (aws_array_list_get_at(result_header_list, &source_header, i)) {
             goto error;
         }
-        struct aws_http_header *dest_header = (struct aws_http_header *)&request_copy->header_array[i + request->num_headers];
+        struct aws_http_header *dest_header =
+            (struct aws_http_header *)&request_copy->header_array[i + request->num_headers];
 
         struct aws_byte_cursor source_name_cursor = aws_byte_cursor_from_string(source_header.name);
         if (s_clone_byte_cursor(allocator, &source_name_cursor, &dest_header->name)) {
@@ -280,9 +292,9 @@ static int s_aws_signable_http_request_get_property(
 }
 
 static int s_aws_signable_http_request_get_property_list(
-        const struct aws_signable *signable,
-        const struct aws_string *name,
-        struct aws_array_list **out_list) {
+    const struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_array_list **out_list) {
 
     struct aws_signable_http_request_impl *impl = signable->impl;
 
@@ -317,15 +329,15 @@ static void s_aws_signable_http_request_clean_up(struct aws_signable *signable) 
 }
 
 static struct aws_signable_vtable s_signable_http_request_vtable = {
-        .get_property = s_aws_signable_http_request_get_property,
-        .get_property_list = s_aws_signable_http_request_get_property_list,
-        .get_payload_stream = s_aws_signable_http_request_get_payload_stream,
-        .clean_up = s_aws_signable_http_request_clean_up};
+    .get_property = s_aws_signable_http_request_get_property,
+    .get_property_list = s_aws_signable_http_request_get_property_list,
+    .get_payload_stream = s_aws_signable_http_request_get_payload_stream,
+    .clean_up = s_aws_signable_http_request_clean_up};
 
 struct aws_signable *aws_signable_new_http_request(
     struct aws_allocator *allocator,
     struct aws_http_request_options *request,
-            struct aws_input_stream *request_payload) {
+    struct aws_input_stream *request_payload) {
 
     struct aws_signable *signable = aws_mem_acquire(allocator, sizeof(struct aws_signable));
     if (signable == NULL) {
@@ -336,7 +348,8 @@ struct aws_signable *aws_signable_new_http_request(
     signable->allocator = allocator;
     signable->vtable = &s_signable_http_request_vtable;
 
-    struct aws_signable_http_request_impl *impl = aws_mem_acquire(allocator, sizeof(struct aws_signable_http_request_impl));
+    struct aws_signable_http_request_impl *impl =
+        aws_mem_acquire(allocator, sizeof(struct aws_signable_http_request_impl));
     if (impl == NULL) {
         goto on_error;
     }
@@ -415,14 +428,14 @@ void s_aws_credentials_waiter_wait_on_credentials(struct aws_credentials_waiter 
     aws_mutex_unlock(&waiter->lock);
 }
 
-int aws_sign_http_request_sigv4(struct aws_allocator *allocator,
-        struct aws_http_request_options *input_request,
-                                struct aws_input_stream *payload_stream,
-                                const char *signing_region,
-                                const char *signing_service,
-                                struct aws_http_request_options **output_request,
-                                aws_http_request_options_destroy_fn **request_cleanup)
-{
+int aws_sign_http_request_sigv4(
+    struct aws_allocator *allocator,
+    struct aws_http_request_options *input_request,
+    struct aws_input_stream *payload_stream,
+    const char *signing_region,
+    const char *signing_service,
+    struct aws_http_request_options **output_request,
+    aws_http_request_options_destroy_fn **request_cleanup) {
     int result = AWS_OP_ERR;
 
     *output_request = NULL;
