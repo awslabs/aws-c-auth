@@ -1308,9 +1308,9 @@ static const struct aws_string *s_profile_get_property_value(
     return property->value;
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "access_key_id");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "secret_access_key");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "session_token");
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "aws_secret_access_key");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "aws_session_token");
 
 struct aws_credentials *aws_credentials_new_from_profile(
     struct aws_allocator *allocator,

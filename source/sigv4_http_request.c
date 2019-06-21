@@ -218,17 +218,19 @@ static struct aws_http_request_options *s_build_signed_request(struct aws_alloca
     }
 
     for (size_t i = 0; i < signing_header_count; ++i) {
-        struct aws_signable_property_list_pair source_header;
+        struct aws_signing_result_property source_header;
         if (aws_array_list_get_at(result_header_list, &source_header, i)) {
             goto error;
         }
         struct aws_http_header *dest_header = (struct aws_http_header *)&request_copy->header_array[i + request->num_headers];
 
-        if (s_clone_byte_cursor(allocator, &source_header.name, &dest_header->name)) {
+        struct aws_byte_cursor source_name_cursor = aws_byte_cursor_from_string(source_header.name);
+        if (s_clone_byte_cursor(allocator, &source_name_cursor, &dest_header->name)) {
             goto error;
         }
 
-        if (s_clone_byte_cursor(allocator, &source_header.value, &dest_header->value)) {
+        struct aws_byte_cursor source_value_cursor = aws_byte_cursor_from_string(source_header.value);
+        if (s_clone_byte_cursor(allocator, &source_value_cursor, &dest_header->value)) {
             goto error;
         }
     }
@@ -451,6 +453,10 @@ int aws_sign_http_request_sigv4(struct aws_allocator *allocator,
         goto done;
     }
 
+    if (aws_signing_result_init(&signing_result, allocator)) {
+        goto done;
+    }
+
     struct aws_credentials_provider_profile_options provider_options;
     AWS_ZERO_STRUCT(provider_options);
 
@@ -466,6 +472,7 @@ int aws_sign_http_request_sigv4(struct aws_allocator *allocator,
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, &credentials_waiter);
     s_aws_credentials_waiter_wait_on_credentials(&credentials_waiter);
 
+    config.credentials = credentials_waiter.credentials;
     config.config_type = AWS_SIGNING_CONFIG_AWS;
     config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
     config.region = aws_byte_cursor_from_c_str(signing_region);

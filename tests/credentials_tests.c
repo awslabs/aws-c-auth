@@ -23,6 +23,7 @@
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/io/file_utils.h>
+#include <aws/http/http.h>
 
 #include <credentials_provider_utils.h>
 
@@ -581,10 +582,10 @@ on_file_failure:
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_config_contents,
-    "[profile default]\naccess_key_id=fake_access_key\nsecret_access_key=fake_secret_key\n");
+    "[profile default]\naws_access_key_id=fake_access_key\naws_secret_access_key=fake_secret_key\n");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_credentials_contents,
-    "[foo]\naccess_key_id=foo_access\nsecret_access_key=foo_secret\nsession_token=foo_session\n");
+    "[foo]\naws_access_key_id=foo_access\naws_secret_access_key=foo_secret\naws_session_token=foo_session\n");
 
 int s_verify_default_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
@@ -780,6 +781,8 @@ AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_
 static int s_credentials_provider_default_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
+    aws_http_library_init(allocator);
+
     /*
      * Do a basic environment provider test, but use the default provider chain
      */
@@ -811,6 +814,8 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
         AWS_OP_SUCCESS);
 
     aws_credentials_provider_release(provider);
+
+    aws_http_library_clean_up();
 
     return 0;
 }
