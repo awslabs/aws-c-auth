@@ -481,6 +481,8 @@ int aws_sign_http_request_sigv4(struct aws_allocator *allocator,
     config.should_normalize_uri_path = true;
     config.sign_body = false;
 
+    aws_date_time_init_now(&config.date);
+
     if (aws_signer_sign_request(signer, signable, (void *)&config, &signing_result)) {
         goto done;
     }
