@@ -22,86 +22,33 @@
 #include <aws/common/condition_variable.h>
 #include <aws/common/mutex.h>
 #include <aws/common/string.h>
+#include <aws/http/request_response.h>
 #include <aws/io/uri.h>
 
 int aws_sign_http_request_identity(
+    struct aws_http_request *request,
     struct aws_allocator *allocator,
-    struct aws_http_request_options *input_request,
-    struct aws_input_stream *payload_stream,
-    const char *signing_region,
-    const char *signing_service,
-    struct aws_http_request_options **output_request,
-    aws_http_request_options_destroy_fn **request_cleanup) {
-    (void)payload_stream;
-    (void)signing_region;
-    (void)signing_service;
+    const struct aws_hash_table *context) {
+    (void)request;
     (void)allocator;
-
-    *request_cleanup = NULL;
-    *output_request = input_request;
+    (void)context;
 
     return AWS_OP_SUCCESS;
 }
 
-static void s_destroy_signed_request_clone(struct aws_allocator *allocator, struct aws_http_request_options *request) {
-    if (request == NULL) {
-        return;
-    }
-
-    if (request->method.ptr) {
-        aws_mem_release(allocator, request->method.ptr);
-    }
-
-    if (request->uri.ptr) {
-        aws_mem_release(allocator, request->uri.ptr);
-    }
-
-    for (size_t i = 0; i < request->num_headers; ++i) {
-        const struct aws_http_header *header = &request->header_array[i];
-        if (header->name.ptr) {
-            aws_mem_release(allocator, header->name.ptr);
-        }
-        if (header->value.ptr) {
-            aws_mem_release(allocator, header->value.ptr);
-        }
-    }
-
-    if (request->header_array) {
-        aws_mem_release(allocator, (struct aws_http_header *)request->header_array);
-    }
-}
-
-static int s_clone_byte_cursor(
+static int s_build_request_uri(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor *source,
-    struct aws_byte_cursor *dest) {
-    if (source->len == 0) {
-        return AWS_OP_SUCCESS;
-    }
-
-    uint8_t *raw_data = aws_mem_acquire(allocator, source->len);
-    if (raw_data == NULL) {
-        return AWS_OP_ERR;
-    }
-
-    memcpy(raw_data, source->ptr, source->len);
-    dest->ptr = raw_data;
-    dest->len = source->len;
-
-    return AWS_OP_SUCCESS;
-}
-
-static int s_clone_request_uri(
-    struct aws_allocator *allocator,
-    struct aws_byte_cursor *source_uri,
-    struct aws_http_request_options *dest_request,
-    struct aws_signing_result *result) {
+    struct aws_http_request *request,
+    struct aws_signing_result *signing_result) {
 
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
-    if (aws_signing_result_get_property_list(result, g_aws_http_query_params_property_list_name, &result_param_list)) {
-        return AWS_OP_ERR;
+    if (aws_signing_result_get_property_list(
+            signing_result, g_aws_http_query_params_property_list_name, &result_param_list)) {
+        return AWS_OP_SUCCESS;
     }
+
+    int result = AWS_OP_ERR;
 
     size_t signed_query_param_count = 0;
     if (result_param_list != NULL) {
@@ -120,18 +67,21 @@ static int s_clone_request_uri(
     struct aws_array_list query_params;
     AWS_ZERO_STRUCT(query_params);
 
+    struct aws_byte_cursor old_path;
+    aws_http_request_get_path(request, &old_path);
+
     /* start with the old uri and parse it */
-    if (aws_uri_init_parse(&old_uri, allocator, source_uri)) {
-        goto error;
+    if (aws_uri_init_parse(&old_uri, allocator, &old_path)) {
+        goto done;
     }
 
     /* pull out the query params */
     if (aws_array_list_init_dynamic(&query_params, allocator, 10, sizeof(struct aws_uri_param))) {
-        goto error;
+        goto done;
     }
 
     if (aws_uri_query_string_params(&old_uri, &query_params)) {
-        goto error;
+        goto done;
     }
 
     /* initialize a builder for the new uri matching the old uri */
@@ -145,7 +95,7 @@ static int s_clone_request_uri(
     for (size_t i = 0; i < signed_query_param_count; ++i) {
         struct aws_signable_property_list_pair source_param;
         if (aws_array_list_get_at(result_param_list, &source_param, i)) {
-            goto error;
+            goto done;
         }
 
         struct aws_uri_param signed_param;
@@ -157,51 +107,41 @@ static int s_clone_request_uri(
 
     /* create the new uri */
     if (aws_uri_init_from_builder_options(&new_uri, allocator, &new_uri_builder)) {
-        goto error;
+        goto done;
     }
 
     /* copy the full string */
     struct aws_byte_cursor new_uri_cursor = aws_byte_cursor_from_buf(&new_uri.uri_str);
-    if (s_clone_byte_cursor(allocator, &new_uri_cursor, &dest_request->uri)) {
-        goto error;
+    if (aws_http_request_set_path(request, new_uri_cursor)) {
+        goto done;
     }
 
-    return AWS_OP_SUCCESS;
+    result = AWS_OP_SUCCESS;
 
-error:
+done:
 
     aws_array_list_clean_up(&query_params);
 
     aws_uri_clean_up(&new_uri);
     aws_uri_clean_up(&old_uri);
 
-    return AWS_OP_ERR;
+    return result;
 }
 
-static struct aws_http_request_options *s_build_signed_request(
+static int s_apply_signing_result_to_request(
+    struct aws_http_request *request,
     struct aws_allocator *allocator,
-    struct aws_http_request_options *request,
     struct aws_signing_result *result) {
-    struct aws_http_request_options *request_copy =
-        aws_mem_calloc(allocator, 1, sizeof(struct aws_http_request_options));
-    if (request_copy == NULL) {
-        return NULL;
-    }
-
-    /* method */
-    if (s_clone_byte_cursor(allocator, &request->method, &request_copy->method)) {
-        goto error;
-    }
 
     /* uri/query params */
-    if (s_clone_request_uri(allocator, &request->uri, request_copy, result)) {
-        goto error;
+    if (s_build_request_uri(allocator, request, result)) {
+        return AWS_OP_ERR;
     }
 
     /* headers */
     struct aws_array_list *result_header_list = NULL;
     if (aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &result_header_list)) {
-        goto error;
+        return AWS_OP_ERR;
     }
 
     size_t signing_header_count = 0;
@@ -209,68 +149,23 @@ static struct aws_http_request_options *s_build_signed_request(
         signing_header_count = aws_array_list_length(result_header_list);
     }
 
-    size_t copy_header_count = request->num_headers + signing_header_count;
-    request_copy->header_array = aws_mem_calloc(allocator, copy_header_count, sizeof(struct aws_http_header));
-    if (request_copy->header_array == NULL) {
-        goto error;
-    }
-
-    request_copy->num_headers = copy_header_count;
-    for (size_t i = 0; i < request->num_headers; ++i) {
-        struct aws_http_header *source_header = (struct aws_http_header *)&request->header_array[i];
-        struct aws_http_header *dest_header = (struct aws_http_header *)&request_copy->header_array[i];
-        if (s_clone_byte_cursor(allocator, &source_header->name, &dest_header->name)) {
-            goto error;
-        }
-
-        if (s_clone_byte_cursor(allocator, &source_header->value, &dest_header->value)) {
-            goto error;
-        }
-    }
-
     for (size_t i = 0; i < signing_header_count; ++i) {
         struct aws_signing_result_property source_header;
         if (aws_array_list_get_at(result_header_list, &source_header, i)) {
-            goto error;
-        }
-        struct aws_http_header *dest_header =
-            (struct aws_http_header *)&request_copy->header_array[i + request->num_headers];
-
-        struct aws_byte_cursor source_name_cursor = aws_byte_cursor_from_string(source_header.name);
-        if (s_clone_byte_cursor(allocator, &source_name_cursor, &dest_header->name)) {
-            goto error;
+            return AWS_OP_ERR;
         }
 
-        struct aws_byte_cursor source_value_cursor = aws_byte_cursor_from_string(source_header.value);
-        if (s_clone_byte_cursor(allocator, &source_value_cursor, &dest_header->value)) {
-            goto error;
-        }
+        struct aws_http_header dest_header = {.name = aws_byte_cursor_from_string(source_header.name),
+                                              .value = aws_byte_cursor_from_string(source_header.value)};
+        aws_http_request_add_header(request, dest_header);
     }
 
-    request_copy->self_size = request->self_size;
-    request_copy->client_connection = request->client_connection;
-    request_copy->user_data = request->user_data;
-    request_copy->stream_outgoing_body = request->stream_outgoing_body;
-    request_copy->on_response_headers = request->on_response_headers;
-    request_copy->on_response_header_block_done = request->on_response_header_block_done;
-    request_copy->on_response_body = request->on_response_body;
-    request_copy->on_complete = request->on_complete;
-
-    return request_copy;
-
-error:
-
-    s_destroy_signed_request_clone(allocator, request_copy);
-
-    return NULL;
+    return AWS_OP_SUCCESS;
 }
 
 struct aws_signable_http_request_impl {
-    struct aws_http_request_options *request;
-    struct aws_input_stream *payload;
+    struct aws_http_request *request;
     struct aws_array_list headers;
-    struct aws_byte_cursor uri;
-    struct aws_byte_cursor method;
 };
 
 static int s_aws_signable_http_request_get_property(
@@ -283,9 +178,9 @@ static int s_aws_signable_http_request_get_property(
     AWS_ZERO_STRUCT(*out_value);
 
     if (aws_string_eq(name, g_aws_http_uri_property_name)) {
-        *out_value = impl->uri;
+        aws_http_request_get_path(impl->request, out_value);
     } else if (aws_string_eq(name, g_aws_http_method_property_name)) {
-        *out_value = impl->method;
+        aws_http_request_get_method(impl->request, out_value);
     }
 
     return AWS_OP_SUCCESS;
@@ -311,8 +206,7 @@ static int s_aws_signable_http_request_get_payload_stream(
     const struct aws_signable *signable,
     struct aws_input_stream **out_input_stream) {
     struct aws_signable_http_request_impl *impl = signable->impl;
-
-    *out_input_stream = impl->payload;
+    *out_input_stream = aws_http_request_get_body_stream(impl->request);
 
     return AWS_OP_SUCCESS;
 }
@@ -334,10 +228,7 @@ static struct aws_signable_vtable s_signable_http_request_vtable = {
     .get_payload_stream = s_aws_signable_http_request_get_payload_stream,
     .clean_up = s_aws_signable_http_request_clean_up};
 
-struct aws_signable *aws_signable_new_http_request(
-    struct aws_allocator *allocator,
-    struct aws_http_request_options *request,
-    struct aws_input_stream *request_payload) {
+struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_request *request) {
 
     struct aws_signable *signable = aws_mem_acquire(allocator, sizeof(struct aws_signable));
     if (signable == NULL) {
@@ -357,19 +248,21 @@ struct aws_signable *aws_signable_new_http_request(
     AWS_ZERO_STRUCT(*impl);
     signable->impl = impl;
 
+    size_t header_count = aws_http_request_get_header_count(request);
     if (aws_array_list_init_dynamic(
-            &impl->headers, allocator, request->num_headers, sizeof(struct aws_signable_property_list_pair))) {
+            &impl->headers, allocator, header_count, sizeof(struct aws_signable_property_list_pair))) {
         goto on_error;
     }
 
-    for (size_t i = 0; i < request->num_headers; ++i) {
-        aws_array_list_push_back(&impl->headers, &request->header_array[i]);
+    for (size_t i = 0; i < header_count; ++i) {
+        struct aws_http_header header;
+        aws_http_request_get_header(request, &header, i);
+
+        struct aws_signable_property_list_pair property = {.name = header.name, .value = header.value};
+        aws_array_list_push_back(&impl->headers, &property);
     }
 
     impl->request = request;
-    impl->payload = request_payload;
-    impl->method = request->method;
-    impl->uri = request->uri;
 
     return signable;
 
@@ -428,18 +321,14 @@ void s_aws_credentials_waiter_wait_on_credentials(struct aws_credentials_waiter 
     aws_mutex_unlock(&waiter->lock);
 }
 
-int aws_sign_http_request_sigv4(
-    struct aws_allocator *allocator,
-    struct aws_http_request_options *input_request,
-    struct aws_input_stream *payload_stream,
-    const char *signing_region,
-    const char *signing_service,
-    struct aws_http_request_options **output_request,
-    aws_http_request_options_destroy_fn **request_cleanup) {
-    int result = AWS_OP_ERR;
+AWS_STATIC_STRING_FROM_LITERAL(s_region_key, "region");
+AWS_STATIC_STRING_FROM_LITERAL(s_service_key, "service");
 
-    *output_request = NULL;
-    *request_cleanup = NULL;
+int aws_sign_http_request_sigv4(
+    struct aws_http_request *request,
+    struct aws_allocator *allocator,
+    const struct aws_hash_table *context) {
+    int result = AWS_OP_ERR;
 
     struct aws_signing_result signing_result;
     AWS_ZERO_STRUCT(signing_result);
@@ -456,7 +345,7 @@ int aws_sign_http_request_sigv4(
 
     aws_auth_library_init(allocator);
 
-    signable = aws_signable_new_http_request(allocator, input_request, payload_stream);
+    signable = aws_signable_new_http_request(allocator, request);
     if (signable == NULL) {
         goto done;
     }
@@ -485,11 +374,23 @@ int aws_sign_http_request_sigv4(
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, &credentials_waiter);
     s_aws_credentials_waiter_wait_on_credentials(&credentials_waiter);
 
+    struct aws_hash_element *region_element = NULL;
+    if (aws_hash_table_find(context, s_region_key, &region_element)) {
+        goto done;
+    }
+    struct aws_string *region = region_element->value;
+
+    struct aws_hash_element *service_element = NULL;
+    if (aws_hash_table_find(context, s_service_key, &service_element)) {
+        goto done;
+    }
+    struct aws_string *service = service_element->value;
+
     config.credentials = credentials_waiter.credentials;
     config.config_type = AWS_SIGNING_CONFIG_AWS;
     config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
-    config.region = aws_byte_cursor_from_c_str(signing_region);
-    config.service = aws_byte_cursor_from_c_str(signing_service);
+    config.region = aws_byte_cursor_from_c_str((const char *)region->bytes);
+    config.service = aws_byte_cursor_from_c_str((const char *)service->bytes);
     config.use_double_uri_encode = true;
     config.should_normalize_uri_path = true;
     config.sign_body = false;
@@ -500,12 +401,7 @@ int aws_sign_http_request_sigv4(
         goto done;
     }
 
-    *output_request = s_build_signed_request(allocator, input_request, &signing_result);
-    if (*output_request == NULL) {
-        goto done;
-    }
-
-    *request_cleanup = &s_destroy_signed_request_clone;
+    s_apply_signing_result_to_request(request, allocator, &signing_result);
 
     result = AWS_OP_SUCCESS;
 
