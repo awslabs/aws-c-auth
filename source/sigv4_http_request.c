@@ -25,6 +25,10 @@
 #include <aws/http/request_response.h>
 #include <aws/io/uri.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4204)
+#endif /* _MSC_VER */
+
 /*
  * Uses the signing result to rebuild the request's URI.  If the signing was not done via
  * query params, then this ends up doing nothing.
