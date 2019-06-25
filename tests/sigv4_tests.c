@@ -290,7 +290,12 @@ struct aws_byte_cursor s_get_value_from_result(
     size_t pair_count = aws_array_list_length(pair_list);
     for (size_t i = 0; i < pair_count; ++i) {
         struct aws_signing_result_property pair;
+        AWS_ZERO_STRUCT(pair);
         if (aws_array_list_get_at(pair_list, &pair, i)) {
+            continue;
+        }
+
+        if (pair.name == NULL) {
             continue;
         }
 
