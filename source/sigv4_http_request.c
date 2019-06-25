@@ -29,6 +29,8 @@
 #    pragma warning(disable : 4204)
 #endif /* _MSC_VER */
 
+#define DEFAULT_QUERY_PARAM_COUNT 10
+
 /*
  * Uses the signing result to rebuild the request's URI.  If the signing was not done via
  * query params, then this ends up doing nothing.
@@ -41,7 +43,8 @@ static int s_build_request_uri(
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
     if (aws_signing_result_get_property_list(
-            signing_result, g_aws_http_query_params_property_list_name, &result_param_list)) {
+            signing_result, g_aws_http_query_params_property_list_name, &result_param_list) ||
+        result_param_list == NULL) {
         return AWS_OP_SUCCESS;
     }
 
@@ -54,11 +57,7 @@ static int s_build_request_uri(
      * (4) Use the builder to make a new URI
      */
     int result = AWS_OP_ERR;
-
-    size_t signed_query_param_count = 0;
-    if (result_param_list != NULL) {
-        signed_query_param_count = aws_array_list_length(result_param_list);
-    }
+    size_t signed_query_param_count = aws_array_list_length(result_param_list);
 
     struct aws_uri old_uri;
     AWS_ZERO_STRUCT(old_uri);
@@ -81,7 +80,8 @@ static int s_build_request_uri(
     }
 
     /* pull out the old query params */
-    if (aws_array_list_init_dynamic(&query_params, allocator, 10, sizeof(struct aws_uri_param))) {
+    if (aws_array_list_init_dynamic(
+            &query_params, allocator, DEFAULT_QUERY_PARAM_COUNT, sizeof(struct aws_uri_param))) {
         goto done;
     }
 
@@ -436,8 +436,8 @@ int aws_sign_http_request_sigv4(
     config.credentials = credentials_waiter.credentials;
     config.config_type = AWS_SIGNING_CONFIG_AWS;
     config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
-    config.region = aws_byte_cursor_from_c_str((const char *)region->bytes);
-    config.service = aws_byte_cursor_from_c_str((const char *)service->bytes);
+    config.region = aws_byte_cursor_from_string(region);
+    config.service = aws_byte_cursor_from_string(service);
     config.use_double_uri_encode = true;
     config.should_normalize_uri_path = true;
     config.sign_body = false;
