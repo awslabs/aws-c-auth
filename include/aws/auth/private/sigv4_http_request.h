@@ -23,12 +23,9 @@ struct aws_http_request;
 
 AWS_EXTERN_C_BEGIN
 
-AWS_AUTH_API
-int aws_sign_http_request_identity(
-    struct aws_http_request *request,
-    struct aws_allocator *allocator,
-    const struct aws_hash_table *context);
-
+/*
+ * An http request transformation that performs AWS sigv4 signing
+ */
 AWS_AUTH_API
 int aws_sign_http_request_sigv4(
     struct aws_http_request *request,
