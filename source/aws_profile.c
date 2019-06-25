@@ -1308,9 +1308,9 @@ static const struct aws_string *s_profile_get_property_value(
     return property->value;
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "access_key_id");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "secret_access_key");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "session_token");
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "aws_secret_access_key");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "aws_session_token");
 
 struct aws_credentials *aws_credentials_new_from_profile(
     struct aws_allocator *allocator,
@@ -1374,6 +1374,8 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
     size_t path_segment_count = aws_array_list_length(&path_segments);
     for (size_t i = 0; i < path_segment_count; ++i) {
         struct aws_byte_cursor segment_cursor;
+        AWS_ZERO_STRUCT(segment_cursor);
+
         if (aws_array_list_get_at(&path_segments, &segment_cursor, i)) {
             continue;
         }
@@ -1412,6 +1414,8 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
     aws_byte_buf_init(&result, allocator, final_string_length);
     for (size_t i = 0; i < path_segment_count; ++i) {
         struct aws_byte_cursor segment_cursor;
+        AWS_ZERO_STRUCT(segment_cursor);
+
         if (aws_array_list_get_at(&path_segments, &segment_cursor, i)) {
             continue;
         }

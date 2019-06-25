@@ -269,6 +269,7 @@ static void mock_async_background_thread_function(void *arg) {
 
             size_t result_count = aws_array_list_length(&impl->mock_results);
             struct get_credentials_mock_result result;
+            AWS_ZERO_STRUCT(result);
             if (impl->next_result >= result_count ||
                 aws_array_list_get_at(&impl->mock_results, &result, impl->next_result)) {
                 AWS_FATAL_ASSERT(false);
@@ -276,11 +277,14 @@ static void mock_async_background_thread_function(void *arg) {
 
             for (size_t i = 0; i < callback_count; ++i) {
                 struct aws_credentials_query query;
+                AWS_ZERO_STRUCT(query);
                 if (aws_array_list_get_at(&impl->queries, &query, i)) {
                     continue;
                 }
 
+                AWS_FATAL_ASSERT(query.callback != NULL);
                 query.callback(result.credentials, query.user_data);
+
                 aws_credentials_query_clean_up(&query);
             }
 

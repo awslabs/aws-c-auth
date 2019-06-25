@@ -38,6 +38,8 @@ static int s_aws_signable_test_get_property(
         *out_value = impl->uri;
     } else if (aws_string_eq(name, g_aws_http_method_property_name)) {
         *out_value = impl->method;
+    } else {
+        return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;
@@ -54,6 +56,8 @@ static int s_aws_signable_test_get_property_list(
 
     if (aws_string_eq(name, g_aws_http_headers_property_list_name)) {
         *out_list = &impl->headers;
+    } else {
+        return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;

@@ -755,6 +755,7 @@ static int s_build_canonical_stable_header_list(
     size_t signable_header_count = aws_array_list_length(signable_header_list);
     for (size_t i = 0; i < signable_header_count; ++i) {
         struct stable_header header_wrapper;
+        AWS_ZERO_STRUCT(header_wrapper);
         header_wrapper.original_index = i;
 
         if (aws_array_list_get_at(signable_header_list, &header_wrapper.header, i)) {

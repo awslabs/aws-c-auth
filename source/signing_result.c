@@ -33,6 +33,8 @@ static void s_aws_hash_callback_property_list_destroy(void *value) {
     size_t property_count = aws_array_list_length(property_list);
     for (size_t i = 0; i < property_count; ++i) {
         struct aws_signing_result_property property;
+        AWS_ZERO_STRUCT(property);
+
         if (aws_array_list_get_at(property_list, &property, i)) {
             continue;
         }
