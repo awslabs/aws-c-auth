@@ -150,6 +150,7 @@ static int s_initialize_test_from_contents(
     }
 
     struct aws_byte_cursor first_line;
+    AWS_ZERO_STRUCT(first_line);
     if (aws_array_list_get_at(&request_lines, &first_line, 0)) {
         return AWS_OP_ERR;
     }
@@ -170,6 +171,7 @@ static int s_initialize_test_from_contents(
     size_t line_index = 1;
     for (; line_index < line_count; ++line_index) {
         struct aws_byte_cursor current_line;
+        AWS_ZERO_STRUCT(current_line);
         if (aws_array_list_get_at(&request_lines, &current_line, line_index)) {
             return AWS_OP_ERR;
         }
@@ -193,8 +195,7 @@ static int s_initialize_test_from_contents(
         } else {
             /* new header, parse it and add to the header set */
             struct aws_signable_property_list_pair current_header;
-            AWS_ZERO_STRUCT(current_header.name);
-            AWS_ZERO_STRUCT(current_header.value);
+            AWS_ZERO_STRUCT(current_header);
             if (!aws_byte_cursor_next_split(&current_line, ':', &current_header.name)) {
                 return AWS_OP_ERR;
             }

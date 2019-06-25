@@ -156,7 +156,13 @@ static int s_apply_signing_result_to_request(
 
     for (size_t i = 0; i < signing_header_count; ++i) {
         struct aws_signing_result_property source_header;
+        AWS_ZERO_STRUCT(source_header);
+
         if (aws_array_list_get_at(result_header_list, &source_header, i)) {
+            return AWS_OP_ERR;
+        }
+
+        if (source_header.name == NULL || source_header.value == NULL) {
             return AWS_OP_ERR;
         }
 

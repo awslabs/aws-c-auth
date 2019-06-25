@@ -1374,6 +1374,8 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
     size_t path_segment_count = aws_array_list_length(&path_segments);
     for (size_t i = 0; i < path_segment_count; ++i) {
         struct aws_byte_cursor segment_cursor;
+        AWS_ZERO_STRUCT(segment_cursor);
+
         if (aws_array_list_get_at(&path_segments, &segment_cursor, i)) {
             continue;
         }
@@ -1412,6 +1414,8 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
     aws_byte_buf_init(&result, allocator, final_string_length);
     for (size_t i = 0; i < path_segment_count; ++i) {
         struct aws_byte_cursor segment_cursor;
+        AWS_ZERO_STRUCT(segment_cursor);
+
         if (aws_array_list_get_at(&path_segments, &segment_cursor, i)) {
             continue;
         }
