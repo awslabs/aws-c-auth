@@ -158,7 +158,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_profile_file_vtable, impl);
 
-    impl->credentials_file_path = aws_get_credentials_file_path(allocator, options->credentials_file_name_override);
+    impl->credentials_file_path = aws_get_credentials_file_path(allocator, &options->credentials_file_name_override);
     if (impl->credentials_file_path == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -167,7 +167,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
         goto on_error;
     }
 
-    impl->config_file_path = aws_get_config_file_path(allocator, options->config_file_name_override);
+    impl->config_file_path = aws_get_config_file_path(allocator, &options->config_file_name_override);
     if (impl->config_file_path == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -176,7 +176,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
         goto on_error;
     }
 
-    impl->profile_name = aws_get_profile_name(allocator, options->profile_name_override);
+    impl->profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
     if (impl->profile_name == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,

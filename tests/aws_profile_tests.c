@@ -1228,7 +1228,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_config_override_path_result, "/tmp/.aws/config"
 static int s_config_file_path_override_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_string *path = aws_get_config_file_path(allocator, s_config_override_path);
+    struct aws_byte_cursor override_cursor = aws_byte_cursor_from_string(s_config_override_path);
+    struct aws_string *path = aws_get_config_file_path(allocator, &override_cursor);
     ASSERT_TRUE(aws_string_compare(path, s_config_override_path_result) == 0);
 
     aws_string_destroy(path);
@@ -1266,7 +1267,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credentials_override_path_result, "/tmp/.aws/cr
 static int s_credentials_file_path_override_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_string *path = aws_get_credentials_file_path(allocator, s_credentials_override_path);
+    struct aws_byte_cursor override_cursor = aws_byte_cursor_from_string(s_credentials_override_path);
+    struct aws_string *path = aws_get_credentials_file_path(allocator, &override_cursor);
     ASSERT_TRUE(aws_string_compare(path, s_credentials_override_path_result) == 0);
 
     aws_string_destroy(path);
@@ -1298,7 +1300,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_profile_override, "NotTheDefault");
 static int s_profile_override_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_string *profile_name = aws_get_profile_name(allocator, s_profile_override);
+    struct aws_byte_cursor override_cursor = aws_byte_cursor_from_string(s_profile_override);
+    struct aws_string *profile_name = aws_get_profile_name(allocator, &override_cursor);
     ASSERT_TRUE(aws_string_compare(profile_name, s_profile_override) == 0);
 
     aws_string_destroy(profile_name);

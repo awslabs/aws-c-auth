@@ -1478,12 +1478,12 @@ AWS_STATIC_STRING_FROM_LITERAL(s_config_file_path_env_variable_name, "AWS_CONFIG
 
 static struct aws_string *s_get_raw_file_path(
     struct aws_allocator *allocator,
-    const struct aws_string *override_path,
+    const struct aws_byte_cursor *override_path,
     const struct aws_string *override_env_var_name,
     const struct aws_string *default_path) {
 
-    if (override_path != NULL) {
-        return aws_string_new_from_string(allocator, override_path);
+    if (override_path != NULL && override_path->ptr != NULL) {
+        return aws_string_new_from_array(allocator, override_path->ptr, override_path->len);
     }
 
     struct aws_string *env_override_path = NULL;
@@ -1497,7 +1497,7 @@ static struct aws_string *s_get_raw_file_path(
 
 struct aws_string *aws_get_credentials_file_path(
     struct aws_allocator *allocator,
-    const struct aws_string *override_path) {
+    const struct aws_byte_cursor *override_path) {
 
     struct aws_string *raw_path = s_get_raw_file_path(
         allocator, override_path, s_credentials_file_path_env_variable_name, s_default_credentials_path);
@@ -1509,7 +1509,9 @@ struct aws_string *aws_get_credentials_file_path(
     return final_path;
 }
 
-struct aws_string *aws_get_config_file_path(struct aws_allocator *allocator, const struct aws_string *override_path) {
+struct aws_string *aws_get_config_file_path(
+    struct aws_allocator *allocator,
+    const struct aws_byte_cursor *override_path) {
 
     struct aws_string *raw_path =
         s_get_raw_file_path(allocator, override_path, s_config_file_path_env_variable_name, s_default_config_path);
@@ -1523,14 +1525,14 @@ struct aws_string *aws_get_config_file_path(struct aws_allocator *allocator, con
 
 AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
 
-struct aws_string *aws_get_profile_name(struct aws_allocator *allocator, const struct aws_string *override_name) {
+struct aws_string *aws_get_profile_name(struct aws_allocator *allocator, const struct aws_byte_cursor *override_name) {
 
     struct aws_string *profile_name = NULL;
 
     if (aws_get_environment_value(allocator, s_default_profile_env_variable_name, &profile_name) ||
         profile_name == NULL) {
-        if (override_name != NULL) {
-            profile_name = aws_string_new_from_string(allocator, override_name);
+        if (override_name != NULL && override_name->ptr != NULL) {
+            profile_name = aws_string_new_from_array(allocator, override_name->ptr, override_name->len);
         } else {
             profile_name = aws_string_new_from_string(allocator, s_default_profile_name);
         }
