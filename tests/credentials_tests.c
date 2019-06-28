@@ -657,7 +657,8 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
     aws_set_environment_value(s_default_config_path_env_variable_name, s_config_file_name);
     aws_set_environment_value(s_default_credentials_path_env_variable_name, s_credentials_file_name);
 
-    struct aws_credentials_provider_profile_options options = {};
+    struct aws_credentials_provider_profile_options options;
+    AWS_ZERO_STRUCT(options);
 
     return s_do_credentials_provider_profile_test(
         allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
