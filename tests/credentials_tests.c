@@ -605,8 +605,7 @@ static int s_profile_credentials_provider_default_test(struct aws_allocator *all
 
     struct aws_credentials_provider_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(s_config_file_name),
-        .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name),
-        .profile_name_override = {}};
+        .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name)};
 
     return s_do_credentials_provider_profile_test(
         allocator, s_config_contents, s_credentials_contents, &options, s_verify_default_credentials_callback);
