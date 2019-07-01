@@ -135,8 +135,11 @@ static int s_do_basic_provider_test(
 static int s_static_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_static_new(
-        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_static(
+        allocator,
+        aws_byte_cursor_from_string(s_access_key_id_test_value),
+        aws_byte_cursor_from_string(s_secret_access_key_test_value),
+        aws_byte_cursor_from_string(s_session_token_test_value));
 
     ASSERT_TRUE(
         s_do_basic_provider_test(
@@ -502,9 +505,9 @@ static int s_profile_credentials_provider_new_destroy_overrides_test(struct aws_
 
     struct aws_credentials_provider_profile_options options;
     AWS_ZERO_STRUCT(options);
-    options.config_file_name_override = s_config_file_path;
-    options.credentials_file_name_override = s_credentials_file_path;
-    options.profile_name_override = s_profile_name;
+    options.config_file_name_override = aws_byte_cursor_from_string(s_config_file_path);
+    options.credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_path);
+    options.profile_name_override = aws_byte_cursor_from_string(s_profile_name);
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
 
@@ -600,10 +603,9 @@ int s_verify_default_credentials_callback(struct aws_get_credentials_test_callba
 static int s_profile_credentials_provider_default_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials_provider_profile_options options = {.config_file_name_override = s_config_file_name,
-                                                               .credentials_file_name_override =
-                                                                   s_credentials_file_name,
-                                                               .profile_name_override = NULL};
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(s_config_file_name),
+        .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name)};
 
     return s_do_credentials_provider_profile_test(
         allocator, s_config_contents, s_credentials_contents, &options, s_verify_default_credentials_callback);
@@ -626,10 +628,10 @@ int s_verify_nondefault_credentials_callback(struct aws_get_credentials_test_cal
 static int s_profile_credentials_provider_nondefault_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials_provider_profile_options options = {.config_file_name_override = s_config_file_name,
-                                                               .credentials_file_name_override =
-                                                                   s_credentials_file_name,
-                                                               .profile_name_override = s_foo_profile};
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(s_config_file_name),
+        .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name),
+        .profile_name_override = aws_byte_cursor_from_string(s_foo_profile)};
 
     return s_do_credentials_provider_profile_test(
         allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
@@ -655,8 +657,8 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
     aws_set_environment_value(s_default_config_path_env_variable_name, s_config_file_name);
     aws_set_environment_value(s_default_credentials_path_env_variable_name, s_credentials_file_name);
 
-    struct aws_credentials_provider_profile_options options = {
-        .config_file_name_override = NULL, .credentials_file_name_override = NULL, .profile_name_override = NULL};
+    struct aws_credentials_provider_profile_options options;
+    AWS_ZERO_STRUCT(options);
 
     return s_do_credentials_provider_profile_test(
         allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
@@ -727,10 +729,16 @@ static int s_credentials_provider_first_in_chain_test(struct aws_allocator *allo
 
     return s_do_provider_chain_test(
         allocator,
-        aws_credentials_provider_static_new(
-            allocator, s_access_key_id_value1, s_secret_access_key_value1, s_session_token_value1),
-        aws_credentials_provider_static_new(
-            allocator, s_access_key_id_value2, s_secret_access_key_value2, s_session_token_value2),
+        aws_credentials_provider_new_static(
+            allocator,
+            aws_byte_cursor_from_string(s_access_key_id_value1),
+            aws_byte_cursor_from_string(s_secret_access_key_value1),
+            aws_byte_cursor_from_string(s_session_token_value1)),
+        aws_credentials_provider_new_static(
+            allocator,
+            aws_byte_cursor_from_string(s_access_key_id_value2),
+            aws_byte_cursor_from_string(s_secret_access_key_value2),
+            aws_byte_cursor_from_string(s_session_token_value2)),
         s_verify_first_credentials_callback);
 }
 
@@ -752,8 +760,11 @@ static int s_credentials_provider_second_in_chain_test(struct aws_allocator *all
     return s_do_provider_chain_test(
         allocator,
         aws_credentials_provider_new_null(allocator),
-        aws_credentials_provider_static_new(
-            allocator, s_access_key_id_value2, s_secret_access_key_value2, s_session_token_value2),
+        aws_credentials_provider_new_static(
+            allocator,
+            aws_byte_cursor_from_string(s_access_key_id_value2),
+            aws_byte_cursor_from_string(s_secret_access_key_value2),
+            aws_byte_cursor_from_string(s_session_token_value2)),
         s_verify_second_credentials_callback);
 }
 

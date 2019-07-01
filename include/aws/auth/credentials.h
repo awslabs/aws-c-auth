@@ -72,9 +72,9 @@ struct aws_credentials_provider {
  */
 
 struct aws_credentials_provider_profile_options {
-    const struct aws_string *profile_name_override;
-    const struct aws_string *config_file_name_override;
-    const struct aws_string *credentials_file_name_override;
+    struct aws_byte_cursor profile_name_override;
+    struct aws_byte_cursor config_file_name_override;
+    struct aws_byte_cursor credentials_file_name_override;
 };
 
 struct aws_credentials_provider_cached_options {
@@ -166,11 +166,11 @@ int aws_credentials_provider_get_credentials(
  * A simple provider that just returns a fixed set of credentials
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_static_new(
+struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
-    const struct aws_string *access_key_id,
-    const struct aws_string *secret_access_key,
-    const struct aws_string *session_token);
+    struct aws_byte_cursor access_key_id,
+    struct aws_byte_cursor secret_access_key,
+    struct aws_byte_cursor session_token);
 
 /*
  * A provider that returns credentials sourced from the environment variables:

@@ -50,11 +50,11 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_static_
     .clean_up = s_static_credentials_provider_clean_up,
     .shutdown = aws_credentials_provider_shutdown_nil};
 
-struct aws_credentials_provider *aws_credentials_provider_static_new(
+struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
-    const struct aws_string *access_key_id,
-    const struct aws_string *secret_access_key,
-    const struct aws_string *session_token) {
+    struct aws_byte_cursor access_key_id,
+    struct aws_byte_cursor secret_access_key,
+    struct aws_byte_cursor session_token) {
 
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
@@ -64,7 +64,7 @@ struct aws_credentials_provider *aws_credentials_provider_static_new(
     AWS_ZERO_STRUCT(*provider);
 
     struct aws_credentials *credentials =
-        aws_credentials_new(allocator, access_key_id, secret_access_key, session_token);
+        aws_credentials_new_from_cursors(allocator, &access_key_id, &secret_access_key, &session_token);
     if (credentials == NULL) {
         goto on_new_credentials_failure;
     }
