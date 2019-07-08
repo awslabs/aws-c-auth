@@ -523,14 +523,14 @@ AWS_TEST_CASE(
 int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
     FILE *fp = fopen((const char *)file_name->bytes, "w");
     if (fp == NULL) {
-        return aws_io_translate_and_raise_io_error(errno);
+        return aws_translate_and_raise_io_error(errno);
     }
 
     int result = fprintf(fp, "%s", (const char *)file_contents->bytes);
     fclose(fp);
 
     if (result < 0) {
-        return aws_io_translate_and_raise_io_error(errno);
+        return aws_translate_and_raise_io_error(errno);
     }
 
     return AWS_OP_SUCCESS;
@@ -647,7 +647,7 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
     (void)ctx;
 
     /*
-     * Force a profile switch via environment
+     * Force a profile switch via environment variable
      */
     aws_set_environment_value(s_default_profile_env_variable_name, s_foo_profile);
 

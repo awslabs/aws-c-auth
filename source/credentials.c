@@ -136,7 +136,7 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
 }
 
 /*
- * global provider APIs
+ * global credentials provider APIs
  */
 
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
