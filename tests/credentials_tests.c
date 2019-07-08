@@ -647,7 +647,7 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
     (void)ctx;
 
     /*
-     * Force a profile switch via environment
+     * Force a profile switch via environment variable
      */
     aws_set_environment_value(s_default_profile_env_variable_name, s_foo_profile);
 
