@@ -22,6 +22,7 @@
 
 struct aws_array_list;
 struct aws_byte_cursor;
+struct aws_http_request;
 struct aws_string;
 
 struct aws_signing_result_property {
@@ -103,6 +104,15 @@ int aws_signing_result_get_property_list(
     struct aws_signing_result *result,
     const struct aws_string *list_name,
     struct aws_array_list **out_list);
+
+/*
+ * Specific implementation that applies a signing result to a mutable http request
+ */
+AWS_AUTH_API
+int aws_apply_signing_result_to_http_request(
+    struct aws_http_request *request,
+    struct aws_allocator *allocator,
+    struct aws_signing_result *result);
 
 AWS_EXTERN_C_END
 

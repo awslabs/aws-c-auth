@@ -3,6 +3,7 @@
 
 #include <aws/auth/auth.h>
 
+struct aws_http_request;
 struct aws_input_stream;
 struct aws_signable;
 struct aws_string;
@@ -124,6 +125,13 @@ AWS_AUTH_API extern const struct aws_string *g_aws_http_method_property_name;
  * Name of the property that holds the URI of an http request
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_http_uri_property_name;
+
+/*
+ * Common signable implementations
+ */
+
+AWS_AUTH_API
+struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_request *request);
 
 AWS_EXTERN_C_END
 
