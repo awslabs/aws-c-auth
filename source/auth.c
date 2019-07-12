@@ -35,6 +35,10 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION,
         "Attempt to sign an http request with a signing configuration unrecognized by the invoked signer"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_NO_CREDENTIALS,
+        "Attempt to sign an http request without credentials"),
+
 };
 /* clang-format on */
 
