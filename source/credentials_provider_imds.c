@@ -223,8 +223,9 @@ static void s_imds_finalize_get_credentials_query(struct aws_credentials_provide
     }
 
     /* clean up */
-    aws_credentials_provider_release(imds_user_data->imds_provider);
+    struct aws_credentials_provider *provider = imds_user_data->imds_provider;
     s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+    aws_credentials_provider_release(provider);
     aws_credentials_destroy(credentials);
 }
 
