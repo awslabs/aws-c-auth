@@ -114,8 +114,7 @@ static void s_invoke_mock_request_callbacks(
             continue;
         }
 
-        size_t window_size = 0;
-        options->on_response_body((struct aws_http_stream *)1, &data_callback_cursor, &window_size, options->user_data);
+        options->on_response_body((struct aws_http_stream *)1, &data_callback_cursor, options->user_data);
     }
 
     options->on_complete(
@@ -128,13 +127,18 @@ static struct aws_http_stream *s_aws_http_stream_new_client_request_mock(
     const struct aws_http_request_options *options) {
     (void)options;
 
+    struct aws_byte_cursor uri;
+    if (aws_http_message_get_request_path(options->request, &uri)) {
+        return NULL;
+    }
+
     if (s_tester.current_request == 0) {
         ++s_tester.current_request;
-        aws_byte_buf_append_dynamic(&s_tester.first_request_uri, &options->uri);
+        aws_byte_buf_append_dynamic(&s_tester.first_request_uri, &uri);
         s_invoke_mock_request_callbacks(
             options, &s_tester.first_response_data_callbacks, s_tester.is_first_request_successful);
     } else {
-        aws_byte_buf_append_dynamic(&s_tester.second_request_uri, &options->uri);
+        aws_byte_buf_append_dynamic(&s_tester.second_request_uri, &uri);
         s_invoke_mock_request_callbacks(
             options, &s_tester.second_response_data_callbacks, s_tester.is_second_request_successful);
     }

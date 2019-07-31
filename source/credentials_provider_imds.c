@@ -63,6 +63,7 @@ struct aws_credentials_provider_imds_user_data {
     /* mutable */
     enum aws_imds_query_state query_state;
     struct aws_http_connection *connection;
+    struct aws_http_message *request;
     struct aws_byte_buf current_result;
     int status_code;
 };
@@ -229,15 +230,12 @@ static void s_imds_finalize_get_credentials_query(struct aws_credentials_provide
     aws_credentials_destroy(credentials);
 }
 
-static void s_imds_on_incoming_body_fn(
+static int s_imds_on_incoming_body_fn(
     struct aws_http_stream *stream,
     const struct aws_byte_cursor *data,
-    /* NOLINTNEXTLINE(readability-non-const-parameter) */
-    size_t *out_window_update_size,
     void *user_data) {
 
     (void)stream;
-    (void)out_window_update_size;
     (void)data;
 
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
@@ -255,7 +253,8 @@ static void s_imds_on_incoming_body_fn(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) IMDS credentials provider query response exceeded maximum allowed length",
             (void *)imds_user_data->imds_provider);
-        return;
+
+        return AWS_OP_ERR;
     }
 
     if (aws_byte_buf_append_dynamic(&imds_user_data->current_result, data)) {
@@ -264,10 +263,14 @@ static void s_imds_on_incoming_body_fn(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) IMDS credentials provider query error appending response",
             (void *)imds_user_data->imds_provider);
+
+        return AWS_OP_ERR;
     }
+
+    return AWS_OP_SUCCESS;
 }
 
-static void s_imds_on_incoming_headers_fn(
+static int s_imds_on_incoming_headers_fn(
     struct aws_http_stream *stream,
     const struct aws_http_header *header_array,
     size_t num_headers,
@@ -284,6 +287,8 @@ static void s_imds_on_incoming_headers_fn(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p) IMDS credentials provider failed to get http status code",
                 (void *)imds_user_data->imds_provider);
+
+            return AWS_OP_ERR;
         } else {
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -292,12 +297,17 @@ static void s_imds_on_incoming_headers_fn(
                 imds_user_data->status_code);
         }
     }
+
+    return AWS_OP_SUCCESS;
 }
 
 static void s_imds_query_instance_role_credentials(struct aws_credentials_provider_imds_user_data *imds_user_data);
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+
+    aws_http_message_destroy(imds_user_data->request);
+    imds_user_data->request = NULL;
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
     impl->function_table->aws_http_stream_release(stream);
@@ -343,20 +353,23 @@ static int s_make_imds_http_query(
     headers[2].name = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header);
     headers[2].value = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header_value);
 
-    struct aws_http_request_options request = AWS_HTTP_REQUEST_OPTIONS_INIT;
-    request.client_connection = imds_user_data->connection;
-    request.method = aws_byte_cursor_from_c_str("GET");
-    request.uri = *uri;
-    request.num_headers = AWS_ARRAY_SIZE(headers);
-    request.header_array = headers;
-    request.on_response_headers = s_imds_on_incoming_headers_fn;
-    request.on_response_header_block_done = NULL;
-    request.on_response_body = s_imds_on_incoming_body_fn;
-    request.on_complete = s_imds_on_stream_complete_fn;
-    request.user_data = imds_user_data;
+    AWS_ASSERT(!imds_user_data->request);
+    imds_user_data->request = aws_http_message_new_request(imds_user_data->allocator);
+    aws_http_message_set_request_method(imds_user_data->request, aws_http_method_get);
+    aws_http_message_set_request_path(imds_user_data->request, *uri);
+    aws_http_message_add_header_array(imds_user_data->request, headers, AWS_ARRAY_SIZE(headers));
+
+    struct aws_http_request_options request_options = AWS_HTTP_REQUEST_OPTIONS_INIT;
+    request_options.client_connection = imds_user_data->connection;
+    request_options.request = imds_user_data->request;
+    request_options.on_response_headers = s_imds_on_incoming_headers_fn;
+    request_options.on_response_header_block_done = NULL;
+    request_options.on_response_body = s_imds_on_incoming_body_fn;
+    request_options.on_complete = s_imds_on_stream_complete_fn;
+    request_options.user_data = imds_user_data;
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
-    struct aws_http_stream *stream = impl->function_table->aws_http_stream_new_client_request(&request);
+    struct aws_http_stream *stream = impl->function_table->aws_http_stream_new_client_request(&request_options);
 
     return stream == NULL ? AWS_OP_ERR : AWS_OP_SUCCESS;
 }
