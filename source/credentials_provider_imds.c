@@ -262,6 +262,7 @@ static int s_imds_on_incoming_body_fn(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) IMDS credentials provider query response exceeded maximum allowed length",
             (void *)imds_user_data->imds_provider);
+
         return AWS_OP_ERR;
     }
 
@@ -271,6 +272,8 @@ static int s_imds_on_incoming_body_fn(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) IMDS credentials provider query error appending response",
             (void *)imds_user_data->imds_provider);
+
+        return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;
@@ -293,6 +296,8 @@ static int s_imds_on_incoming_headers_fn(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p) IMDS credentials provider failed to get http status code",
                 (void *)imds_user_data->imds_provider);
+
+            return AWS_OP_ERR;
         } else {
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -309,6 +314,9 @@ static void s_imds_query_instance_role_credentials(struct aws_credentials_provid
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+
+    aws_http_message_destroy(imds_user_data->request);
+    imds_user_data->request = NULL;
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
     impl->function_table->aws_http_stream_release(stream);
