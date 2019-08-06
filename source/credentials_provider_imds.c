@@ -25,6 +25,10 @@
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4204)
+#endif /* _MSC_VER */
+
 /* instance role credentials body response is currently ~ 1300 characters + name length */
 #define IMDS_RESPONSE_SIZE_INITIAL 2048
 #define IMDS_RESPONSE_SIZE_LIMIT 10000
