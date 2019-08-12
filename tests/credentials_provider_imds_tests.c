@@ -89,7 +89,7 @@ static int s_aws_http_connection_manager_release_connection_mock(
 }
 
 static void s_invoke_mock_request_callbacks(
-    const struct aws_http_request_options *options,
+    const struct aws_http_make_request_options *options,
     struct aws_array_list *data_callbacks,
     bool is_request_successful) {
 
@@ -123,8 +123,11 @@ static void s_invoke_mock_request_callbacks(
         options->user_data);
 }
 
-static struct aws_http_stream *s_aws_http_stream_new_client_request_mock(
-    const struct aws_http_request_options *options) {
+static struct aws_http_stream *s_aws_http_connection_make_request_mock(
+    struct aws_http_connection *client_connection,
+    const struct aws_http_make_request_options *options) {
+
+    (void)client_connection;
     (void)options;
 
     struct aws_byte_cursor path;
@@ -168,7 +171,7 @@ static struct aws_credentials_provider_imds_function_table s_mock_function_table
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,
     .aws_http_connection_manager_release_connection = s_aws_http_connection_manager_release_connection_mock,
-    .aws_http_stream_new_client_request = s_aws_http_stream_new_client_request_mock,
+    .aws_http_connection_make_request = s_aws_http_connection_make_request_mock,
     .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
     .aws_http_connection_close = s_aws_http_connection_close_mock};

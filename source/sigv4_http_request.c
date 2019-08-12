@@ -359,10 +359,7 @@ void s_aws_credentials_waiter_wait_on_credentials(struct aws_credentials_waiter 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_key, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_service_key, "service");
 
-int aws_sign_http_request_sigv4(
-    struct aws_http_message *request,
-    struct aws_allocator *allocator,
-    void *user_data) {
+int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_allocator *allocator, void *user_data) {
     int result = AWS_OP_ERR;
     const struct aws_hash_table *context = user_data;
 

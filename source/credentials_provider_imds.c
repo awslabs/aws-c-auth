@@ -44,7 +44,7 @@ static struct aws_credentials_provider_imds_function_table s_default_function_ta
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
     .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_stream_new_client_request = aws_http_stream_new_client_request,
+    .aws_http_connection_make_request = aws_http_connection_make_request,
     .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close};
@@ -363,14 +363,15 @@ static int s_make_imds_http_query(
 
     struct aws_http_header accept_header = {
         .name = aws_byte_cursor_from_string(s_imds_accept_header),
-        .value = aws_byte_cursor_from_string(s_imds_accept_header_value)};
+        .value = aws_byte_cursor_from_string(s_imds_accept_header_value),
+    };
     if (aws_http_message_add_header(request, accept_header)) {
         goto on_error;
     }
 
     struct aws_http_header user_agent_header = {
         .name = aws_byte_cursor_from_string(s_imds_user_agent_header),
-        .value = aws_byte_cursor_from_string(s_imds_user_agent_header_value)
+        .value = aws_byte_cursor_from_string(s_imds_user_agent_header_value),
     };
     if (aws_http_message_add_header(request, user_agent_header)) {
         goto on_error;
@@ -378,7 +379,7 @@ static int s_make_imds_http_query(
 
     struct aws_http_header keep_alive_header = {
         .name = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header),
-        .value = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header_value)
+        .value = aws_byte_cursor_from_string(s_imds_h1_0_keep_alive_header_value),
     };
     if (aws_http_message_add_header(request, keep_alive_header)) {
         goto on_error;
@@ -394,17 +395,19 @@ static int s_make_imds_http_query(
 
     imds_user_data->request = request;
 
-    struct aws_http_request_options request_options = AWS_HTTP_REQUEST_OPTIONS_INIT;
-    request_options.client_connection = imds_user_data->connection;
-    request_options.on_response_headers = s_imds_on_incoming_headers_fn;
-    request_options.on_response_header_block_done = NULL;
-    request_options.on_response_body = s_imds_on_incoming_body_fn;
-    request_options.on_complete = s_imds_on_stream_complete_fn;
-    request_options.user_data = imds_user_data;
-    request_options.request = request;
+    struct aws_http_make_request_options request_options = {
+        .self_size = sizeof(request_options),
+        .on_response_headers = s_imds_on_incoming_headers_fn,
+        .on_response_header_block_done = NULL,
+        .on_response_body = s_imds_on_incoming_body_fn,
+        .on_complete = s_imds_on_stream_complete_fn,
+        .user_data = imds_user_data,
+        .request = request,
+    };
 
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
-    struct aws_http_stream *stream = impl->function_table->aws_http_stream_new_client_request(&request_options);
+    struct aws_http_stream *stream =
+        impl->function_table->aws_http_connection_make_request(imds_user_data->connection, &request_options);
 
     return stream == NULL ? AWS_OP_ERR : AWS_OP_SUCCESS;
 
