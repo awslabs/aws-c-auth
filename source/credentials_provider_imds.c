@@ -302,13 +302,12 @@ static int s_imds_on_incoming_headers_fn(
                 (void *)imds_user_data->imds_provider);
 
             return AWS_OP_ERR;
-        } else {
-            AWS_LOGF_DEBUG(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p) IMDS credentials provider query received http status code %d",
-                (void *)imds_user_data->imds_provider,
-                imds_user_data->status_code);
         }
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) IMDS credentials provider query received http status code %d",
+            (void *)imds_user_data->imds_provider,
+            imds_user_data->status_code);
     }
 
     return AWS_OP_SUCCESS;
