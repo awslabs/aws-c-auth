@@ -51,7 +51,6 @@ file(GLOB AWS_AUTH_EXTERNAL_SRC
         "source/external/*.c"
         )
 
-
 if (WIN32)
     if (MSVC)
         source_group("Header Files\\aws\\auth" FILES ${AWS_AUTH_HEADERS})
