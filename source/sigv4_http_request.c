@@ -37,7 +37,7 @@
  */
 static int s_build_request_uri(
     struct aws_allocator *allocator,
-    struct aws_http_request *request,
+    struct aws_http_message *request,
     struct aws_signing_result *signing_result) {
 
     /* first let's see if we need to do anything at all */
@@ -72,7 +72,7 @@ static int s_build_request_uri(
     AWS_ZERO_STRUCT(query_params);
 
     struct aws_byte_cursor old_path;
-    aws_http_request_get_path(request, &old_path);
+    aws_http_message_get_request_path(request, &old_path);
 
     /* start with the old uri and parse it */
     if (aws_uri_init_parse(&old_uri, allocator, &old_path)) {
@@ -117,7 +117,7 @@ static int s_build_request_uri(
 
     /* copy the full string */
     struct aws_byte_cursor new_uri_cursor = aws_byte_cursor_from_buf(&new_uri.uri_str);
-    if (aws_http_request_set_path(request, new_uri_cursor)) {
+    if (aws_http_message_set_request_path(request, new_uri_cursor)) {
         goto done;
     }
 
@@ -138,7 +138,7 @@ done:
  * signing process.
  */
 int aws_apply_signing_result_to_http_request(
-    struct aws_http_request *request,
+    struct aws_http_message *request,
     struct aws_allocator *allocator,
     struct aws_signing_result *result) {
 
@@ -172,17 +172,17 @@ int aws_apply_signing_result_to_http_request(
 
         struct aws_http_header dest_header = {.name = aws_byte_cursor_from_string(source_header.name),
                                               .value = aws_byte_cursor_from_string(source_header.value)};
-        aws_http_request_add_header(request, dest_header);
+        aws_http_message_add_header(request, dest_header);
     }
 
     return AWS_OP_SUCCESS;
 }
 
 /*
- * This is a simple aws_signable wrapper implementation for the aws_http_request struct
+ * This is a simple aws_signable wrapper implementation for the aws_http_message struct
  */
 struct aws_signable_http_request_impl {
-    struct aws_http_request *request;
+    struct aws_http_message *request;
     struct aws_array_list headers;
 };
 
@@ -199,9 +199,9 @@ static int s_aws_signable_http_request_get_property(
      * uri and method can be queried directly from the wrapper request
      */
     if (aws_string_eq(name, g_aws_http_uri_property_name)) {
-        aws_http_request_get_path(impl->request, out_value);
+        aws_http_message_get_request_path(impl->request, out_value);
     } else if (aws_string_eq(name, g_aws_http_method_property_name)) {
-        aws_http_request_get_method(impl->request, out_value);
+        aws_http_message_get_request_method(impl->request, out_value);
     } else {
         return AWS_OP_ERR;
     }
@@ -232,7 +232,7 @@ static int s_aws_signable_http_request_get_payload_stream(
     struct aws_input_stream **out_input_stream) {
 
     struct aws_signable_http_request_impl *impl = signable->impl;
-    *out_input_stream = aws_http_request_get_body_stream(impl->request);
+    *out_input_stream = aws_http_message_get_body_stream(impl->request);
 
     return AWS_OP_SUCCESS;
 }
@@ -257,7 +257,7 @@ static struct aws_signable_vtable s_signable_http_request_vtable = {
     .get_payload_stream = s_aws_signable_http_request_get_payload_stream,
     .clean_up = s_aws_signable_http_request_clean_up};
 
-struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_request *request) {
+struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request) {
 
     struct aws_signable *signable = aws_mem_acquire(allocator, sizeof(struct aws_signable));
     if (signable == NULL) {
@@ -280,7 +280,7 @@ struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocat
     /*
      * Copy the headers since they're not different types
      */
-    size_t header_count = aws_http_request_get_header_count(request);
+    size_t header_count = aws_http_message_get_header_count(request);
     if (aws_array_list_init_dynamic(
             &impl->headers, allocator, header_count, sizeof(struct aws_signable_property_list_pair))) {
         goto on_error;
@@ -288,7 +288,7 @@ struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocat
 
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_http_header header;
-        aws_http_request_get_header(request, &header, i);
+        aws_http_message_get_header(request, &header, i);
 
         struct aws_signable_property_list_pair property = {.name = header.name, .value = header.value};
         aws_array_list_push_back(&impl->headers, &property);
@@ -359,11 +359,9 @@ void s_aws_credentials_waiter_wait_on_credentials(struct aws_credentials_waiter 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_key, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_service_key, "service");
 
-int aws_sign_http_request_sigv4(
-    struct aws_http_request *request,
-    struct aws_allocator *allocator,
-    const struct aws_hash_table *context) {
+int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_allocator *allocator, void *user_data) {
     int result = AWS_OP_ERR;
+    const struct aws_hash_table *context = user_data;
 
     struct aws_signing_result signing_result;
     AWS_ZERO_STRUCT(signing_result);

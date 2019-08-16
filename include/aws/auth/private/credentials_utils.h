@@ -24,7 +24,7 @@
 
 struct aws_http_connection;
 struct aws_http_connection_manager;
-struct aws_http_request_options;
+struct aws_http_make_request_options;
 struct aws_http_stream;
 
 /*
@@ -50,7 +50,9 @@ typedef void(aws_http_connection_manager_acquire_connection_fn)(
 typedef int(aws_http_connection_manager_release_connection_fn)(
     struct aws_http_connection_manager *manager,
     struct aws_http_connection *connection);
-typedef struct aws_http_stream *(aws_http_stream_new_client_request_fn)(const struct aws_http_request_options *options);
+typedef struct aws_http_stream *(aws_http_connection_make_request_fn)(
+    struct aws_http_connection *client_connection,
+    const struct aws_http_make_request_options *options);
 typedef int(aws_http_stream_get_incoming_response_status_fn)(const struct aws_http_stream *stream, int *out_status);
 typedef void(aws_http_stream_release_fn)(struct aws_http_stream *stream);
 typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connection);
@@ -65,7 +67,7 @@ struct aws_credentials_provider_imds_function_table {
     aws_http_connection_manager_acquire_connection_fn *aws_http_connection_manager_acquire_connection;
     aws_http_connection_manager_release_connection_fn *aws_http_connection_manager_release_connection;
 
-    aws_http_stream_new_client_request_fn *aws_http_stream_new_client_request;
+    aws_http_connection_make_request_fn *aws_http_connection_make_request;
     aws_http_stream_get_incoming_response_status_fn *aws_http_stream_get_incoming_response_status;
     aws_http_stream_release_fn *aws_http_stream_release;
 
