@@ -17,6 +17,8 @@
 #include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_signing.h>
 
+#include <aws/http/http.h>
+
 #include <aws/common/error.h>
 
 #define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
@@ -82,6 +84,8 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
     }
     s_library_initialized = true;
 
+    aws_http_library_init(allocator);
+
     if (allocator) {
         s_library_allocator = allocator;
     } else {
@@ -99,7 +103,13 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
 }
 
 void aws_auth_library_clean_up(void) {
-    aws_signing_clean_up_skipped_headers();
+    if (!s_library_initialized) {
+        return;
+    }
 
     s_library_initialized = false;
+
+    aws_signing_clean_up_skipped_headers();
+
+    aws_http_library_clean_up();
 }

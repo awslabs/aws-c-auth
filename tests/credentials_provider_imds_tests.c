@@ -604,11 +604,6 @@ AWS_TEST_CASE(credentials_provider_imds_success_multi_part_doc, s_credentials_pr
 static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_load_error_strings();
-    aws_io_load_error_strings();
-    aws_io_load_log_subject_strings();
-
-    aws_http_library_init(allocator);
     aws_auth_library_init(allocator);
 
     struct aws_logger_standard_options logger_options = {
@@ -660,11 +655,6 @@ AWS_TEST_CASE(credentials_provider_imds_real_new_destroy, s_credentials_provider
 static int s_credentials_provider_imds_real_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_load_error_strings();
-    aws_io_load_error_strings();
-    aws_io_load_log_subject_strings();
-
-    aws_http_library_init(allocator);
     aws_auth_library_init(allocator);
 
     struct aws_logger_standard_options logger_options = {
