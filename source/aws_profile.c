@@ -162,8 +162,6 @@ static bool s_parse_by_token(
     bool matched = false;
 
     if (token->len <= start->len) {
-        /* Some implementations of strncmp do some weird stuff in a macro that triggers a warning */
-        /* NOLINTNEXTLINE(readability-isolate-declaration) */
         matched = strncmp((const char *)start->ptr, (const char *)token->bytes, token->len) == 0;
     }
 
