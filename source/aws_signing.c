@@ -259,6 +259,7 @@ static int s_append_normalized_path(
      */
     for (size_t i = 0; i < raw_split_count; ++i) {
         struct aws_byte_cursor path_component;
+        AWS_ZERO_STRUCT(path_component);
         if (aws_array_list_get_at(&raw_split, &path_component, i)) {
             goto cleanup;
         }
@@ -295,6 +296,7 @@ static int s_append_normalized_path(
     size_t normalized_split_count = aws_array_list_length(&normalized_split);
     for (size_t i = 0; i < normalized_split_count; ++i) {
         struct aws_byte_cursor normalized_path_component;
+        AWS_ZERO_STRUCT(normalized_path_component);
         if (aws_array_list_get_at(&normalized_split, &normalized_path_component, i)) {
             goto cleanup;
         }
