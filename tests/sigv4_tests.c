@@ -48,7 +48,7 @@ static int s_load_test_suite_file(
     snprintf(
         path,
         AWS_ARRAY_SIZE(path),
-        "./aws-sig-v4-test-suite/aws-sig-v4-test-suite/%s/%s/%s.%s",
+        "./%s/%s/%s.%s",
         parent_folder,
         test_name,
         test_name,
