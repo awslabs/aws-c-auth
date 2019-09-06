@@ -45,14 +45,7 @@ static int s_load_test_suite_file(
     const char *file_suffix,
     struct aws_byte_buf *file_contents) {
     char path[1024];
-    snprintf(
-        path,
-        AWS_ARRAY_SIZE(path),
-        "./%s/%s/%s.%s",
-        parent_folder,
-        test_name,
-        test_name,
-        file_suffix);
+    snprintf(path, AWS_ARRAY_SIZE(path), "./%s/%s/%s.%s", parent_folder, test_name, test_name, file_suffix);
 
     return aws_byte_buf_init_from_file(file_contents, allocator, path);
 }
