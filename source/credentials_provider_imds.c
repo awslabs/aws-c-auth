@@ -285,10 +285,12 @@ static int s_imds_on_incoming_body_fn(
 
 static int s_imds_on_incoming_headers_fn(
     struct aws_http_stream *stream,
+    enum aws_http_header_type header_type,
     const struct aws_http_header *header_array,
     size_t num_headers,
     void *user_data) {
 
+    (void)header_type;
     (void)header_array;
     (void)num_headers;
 
