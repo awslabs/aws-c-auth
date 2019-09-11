@@ -101,7 +101,8 @@ static void s_invoke_mock_request_callbacks(
     headers[0].name = aws_byte_cursor_from_c_str("some-header");
     headers[0].value = aws_byte_cursor_from_c_str("value");
 
-    options->on_response_headers((struct aws_http_stream *)1, headers, 1, options->user_data);
+    options->on_response_headers(
+        (struct aws_http_stream *)1, AWS_HTTP_HEADER_BLOCK_MAIN, headers, 1, options->user_data);
 
     if (options->on_response_header_block_done) {
         options->on_response_header_block_done(

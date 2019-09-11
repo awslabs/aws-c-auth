@@ -285,6 +285,7 @@ static int s_imds_on_incoming_body_fn(
 
 static int s_imds_on_incoming_headers_fn(
     struct aws_http_stream *stream,
+    enum aws_http_header_block header_block,
     const struct aws_http_header *header_array,
     size_t num_headers,
     void *user_data) {
@@ -293,21 +294,25 @@ static int s_imds_on_incoming_headers_fn(
     (void)num_headers;
 
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
-    if (imds_user_data->status_code == 0) {
-        struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
-        if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &imds_user_data->status_code)) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p) IMDS credentials provider failed to get http status code",
-                (void *)imds_user_data->imds_provider);
+    if (header_block == AWS_HTTP_HEADER_BLOCK_MAIN) {
+        if (imds_user_data->status_code == 0) {
+            struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
+            if (impl->function_table->aws_http_stream_get_incoming_response_status(
+                    stream, &imds_user_data->status_code)) {
 
-            return AWS_OP_ERR;
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p) IMDS credentials provider failed to get http status code",
+                    (void *)imds_user_data->imds_provider);
+
+                return AWS_OP_ERR;
+            }
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) IMDS credentials provider query received http status code %d",
+                (void *)imds_user_data->imds_provider,
+                imds_user_data->status_code);
         }
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) IMDS credentials provider query received http status code %d",
-            (void *)imds_user_data->imds_provider,
-            imds_user_data->status_code);
     }
 
     return AWS_OP_SUCCESS;
