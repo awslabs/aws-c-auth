@@ -71,6 +71,8 @@ struct aws_credentials_provider {
  * Config structs for creating all the different credentials providers
  */
 
+typedef void(aws_credentials_provider_bootstrap_released_fn)(void *user_data);
+
 struct aws_credentials_provider_profile_options {
     struct aws_byte_cursor profile_name_override;
     struct aws_byte_cursor config_file_name_override;
@@ -90,6 +92,8 @@ struct aws_credentials_provider_chain_options {
 
 struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
+    aws_credentials_provider_bootstrap_released_fn *bootstrap_release_callback;
+    void *bootstrap_release_user_data;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_imds_function_table *function_table;
@@ -97,6 +101,8 @@ struct aws_credentials_provider_imds_options {
 
 struct aws_credentials_provider_chain_default_options {
     struct aws_client_bootstrap *bootstrap;
+    aws_credentials_provider_bootstrap_released_fn *bootstrap_release_callback;
+    void *bootstrap_release_user_data;
 };
 
 AWS_EXTERN_C_BEGIN

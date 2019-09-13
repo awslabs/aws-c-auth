@@ -285,12 +285,17 @@ static int s_imds_on_incoming_body_fn(
 
 static int s_imds_on_incoming_headers_fn(
     struct aws_http_stream *stream,
+    enum aws_http_header_block header_block,
     const struct aws_http_header *header_array,
     size_t num_headers,
     void *user_data) {
 
     (void)header_array;
     (void)num_headers;
+
+    if (header_block != AWS_HTTP_HEADER_BLOCK_MAIN) {
+        return AWS_OP_SUCCESS;
+    }
 
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
     if (imds_user_data->status_code == 0) {
@@ -576,6 +581,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     manager_options.host = aws_byte_cursor_from_string(s_imds_host);
     manager_options.port = 80;
     manager_options.max_connections = 2;
+    manager_options.shutdown_complete_callback = options->bootstrap_release_callback;
+    manager_options.shutdown_complete_user_data = options->bootstrap_release_user_data;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

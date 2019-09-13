@@ -101,7 +101,8 @@ static void s_invoke_mock_request_callbacks(
     headers[0].name = aws_byte_cursor_from_c_str("some-header");
     headers[0].value = aws_byte_cursor_from_c_str("value");
 
-    options->on_response_headers((struct aws_http_stream *)1, headers, 1, options->user_data);
+    options->on_response_headers(
+        (struct aws_http_stream *)1, AWS_HTTP_HEADER_BLOCK_MAIN, headers, 1, options->user_data);
 
     if (options->on_response_header_block_done) {
         options->on_response_header_block_done(
@@ -601,6 +602,28 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
 
 AWS_TEST_CASE(credentials_provider_imds_success_multi_part_doc, s_credentials_provider_imds_success_multi_part_doc);
 
+struct s_imds_bootstrap_release_callback_data {
+    struct aws_mutex lock;
+    struct aws_condition_variable signal;
+    bool released;
+};
+
+static void s_on_bootstrap_release(void *user_data) {
+    struct s_imds_bootstrap_release_callback_data *release_data = user_data;
+
+    aws_mutex_lock(&release_data->lock);
+    release_data->released = true;
+    aws_mutex_unlock(&release_data->lock);
+
+    aws_condition_variable_notify_one(&release_data->signal);
+}
+
+static bool s_release_wait_predicate(void *user_data) {
+    struct s_imds_bootstrap_release_callback_data *release_data = user_data;
+
+    return release_data->released;
+}
+
 static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -615,6 +638,12 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
     ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
     aws_logger_set(&logger);
 
+    struct s_imds_bootstrap_release_callback_data release_data;
+    AWS_ZERO_STRUCT(release_data);
+
+    ASSERT_SUCCESS(aws_mutex_init(&release_data.lock));
+    ASSERT_SUCCESS(aws_condition_variable_init(&release_data.signal));
+
     s_aws_imds_tester_init(allocator);
 
     struct aws_event_loop_group el_group;
@@ -625,7 +654,9 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
-    struct aws_credentials_provider_imds_options options = {.bootstrap = bootstrap};
+    struct aws_credentials_provider_imds_options options = {.bootstrap = bootstrap,
+                                                            .bootstrap_release_callback = s_on_bootstrap_release,
+                                                            .bootstrap_release_user_data = &release_data};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
@@ -634,6 +665,8 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
     s_aws_wait_for_credentials_result();
 
     aws_credentials_provider_release(provider);
+
+    aws_condition_variable_wait_pred(&release_data.signal, &release_data.lock, s_release_wait_predicate, &release_data);
 
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_clean_up(&resolver);
