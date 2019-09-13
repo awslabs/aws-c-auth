@@ -1,0 +1,9 @@
+{
+    "name": "aws-c-auth",
+    "upstream": [
+        { "name": "aws-c-http" },
+        { "name": "aws-c-cal" }
+    ],
+    "downstream": [
+    ]
+}

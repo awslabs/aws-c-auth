@@ -2,12 +2,16 @@
 cmake_minimum_required(VERSION 3.1)
 project(aws-c-auth C)
 
+if (POLICY CMP0069)
+    cmake_policy(SET CMP0069 NEW) # Enable LTO/IPO if available in the compiler, see AwsCFlags
+endif()
+
 if (DEFINED CMAKE_PREFIX_PATH)
-    file(TO_CMAKE_PATH ${CMAKE_PREFIX_PATH} CMAKE_PREFIX_PATH)
+    file(TO_CMAKE_PATH "${CMAKE_PREFIX_PATH}" CMAKE_PREFIX_PATH)
 endif()
 
 if (DEFINED CMAKE_INSTALL_PREFIX)
-    file(TO_CMAKE_PATH ${CMAKE_INSTALL_PREFIX} CMAKE_INSTALL_PREFIX)
+    file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" CMAKE_INSTALL_PREFIX)
 endif()
 
 
