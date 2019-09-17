@@ -1391,6 +1391,10 @@ static struct aws_string *s_process_profile_file_path(struct aws_allocator *allo
         if (i == 0 && segment_cursor.len == 1 && *segment_cursor.ptr == '~') {
             if (home_directory == NULL) {
                 home_directory = aws_get_home_directory(allocator);
+
+                if (AWS_UNLIKELY(!home_directory)) {
+                    goto on_empty_path;
+                }
             }
 
             final_string_length += home_directory->len;
