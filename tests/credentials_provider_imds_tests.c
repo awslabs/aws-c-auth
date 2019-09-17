@@ -666,9 +666,9 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
 
     aws_credentials_provider_release(provider);
 
-	aws_mutex_lock(&release_data.lock);
+    aws_mutex_lock(&release_data.lock);
     aws_condition_variable_wait_pred(&release_data.signal, &release_data.lock, s_release_wait_predicate, &release_data);
-	aws_mutex_unlock(&release_data.lock);
+    aws_mutex_unlock(&release_data.lock);
 
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_clean_up(&resolver);
