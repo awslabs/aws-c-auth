@@ -92,8 +92,8 @@ struct aws_credentials_provider_chain_options {
 
 struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
-    aws_credentials_provider_bootstrap_released_fn *bootstrap_release_callback;
-    void *bootstrap_release_user_data;
+    aws_credentials_provider_bootstrap_released_fn *resources_released_callback;
+    void *resources_released_user_data;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_imds_function_table *function_table;
@@ -101,8 +101,8 @@ struct aws_credentials_provider_imds_options {
 
 struct aws_credentials_provider_chain_default_options {
     struct aws_client_bootstrap *bootstrap;
-    aws_credentials_provider_bootstrap_released_fn *bootstrap_release_callback;
-    void *bootstrap_release_user_data;
+    aws_credentials_provider_bootstrap_released_fn *resources_released_callback;
+    void *resources_released_user_data;
 };
 
 AWS_EXTERN_C_BEGIN

@@ -585,8 +585,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     manager_options.host = aws_byte_cursor_from_string(s_imds_host);
     manager_options.port = 80;
     manager_options.max_connections = 2;
-    manager_options.shutdown_complete_callback = options->bootstrap_release_callback;
-    manager_options.shutdown_complete_user_data = options->bootstrap_release_user_data;
+    manager_options.shutdown_complete_callback = options->resources_released_callback;
+    manager_options.shutdown_complete_user_data = options->resources_released_user_data;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

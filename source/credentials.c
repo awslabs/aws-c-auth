@@ -205,8 +205,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_imds_options imds_options;
     AWS_ZERO_STRUCT(imds_options);
     imds_options.bootstrap = options->bootstrap;
-    imds_options.bootstrap_release_callback = options->bootstrap_release_callback;
-    imds_options.bootstrap_release_user_data = options->bootstrap_release_user_data;
+    imds_options.resources_released_callback = options->resources_released_callback;
+    imds_options.resources_released_user_data = options->resources_released_user_data;
     imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
     if (imds_provider == NULL) {
         goto on_error;
