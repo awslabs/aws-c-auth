@@ -809,18 +809,20 @@ static int s_build_canonical_stable_header_list(
         }
     }
 
-    /*
-     * X-Amz-Date
-     */
-    struct stable_header date_header = {.original_index = signable_header_count,
-                                        .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
-                                                   .value = aws_byte_cursor_from_buf(&state->date)}};
+    if (!s_is_query_param_auth(state->config->algorithm)) {
+        /*
+         * X-Amz-Date
+         */
+        struct stable_header date_header = {.original_index = signable_header_count,
+                .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
+                        .value = aws_byte_cursor_from_buf(&state->date)}};
 
-    if (aws_array_list_push_back(stable_header_list, &date_header)) {
-        return AWS_OP_ERR;
+        if (aws_array_list_push_back(stable_header_list, &date_header)) {
+            return AWS_OP_ERR;
+        }
+
+        *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
     }
-
-    *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
 
     /*
      * x-amz-content-sha256 (optional)

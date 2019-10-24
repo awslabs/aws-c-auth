@@ -396,6 +396,12 @@ static int s_do_sigv4_test_suite_test(
 
     config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM;
 
+    aws_signing_state_clean_up(&signing_state);
+    ASSERT_TRUE(aws_signing_state_init(&signing_state, allocator, &config, signable, &result) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_signing_build_canonical_request(&signing_state) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_signing_build_string_to_sign(&signing_state) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_signing_build_authorization_value(&signing_state) == AWS_OP_SUCCESS);
+
     ASSERT_TRUE(aws_signer_sign_request(signer, signable, (void *)&config, &result) == AWS_OP_SUCCESS);
 
     struct aws_array_list *params = NULL;
