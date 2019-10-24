@@ -198,13 +198,11 @@ static void s_log_parse_context(enum aws_log_level log_level, const struct profi
     AWS_LOGF(
         log_level,
         AWS_LS_AUTH_PROFILE,
-        "Profile Parse context:\n Source File:%s\n Line: %d\n Current Profile: %s\n Current Property: %s\n Line Text: "
-        "\"" PRInSTR "\"",
+        "Profile Parse context:\n Source File:%s\n Line: %d\n Current Profile: %s\n Current Property: %s",
         context->source_file_path ? context->source_file_path->bytes : s_none_string->bytes,
         context->current_line_number,
         context->current_profile ? context->current_profile->name->bytes : s_none_string->bytes,
-        context->current_property ? context->current_property->name->bytes : s_none_string->bytes,
-        AWS_BYTE_CURSOR_PRI(context->current_line));
+        context->current_property ? context->current_property->name->bytes : s_none_string->bytes);
 }
 
 /*
@@ -336,10 +334,9 @@ static int s_profile_property_add_sub_property(
     if (was_present) {
         AWS_LOGF_WARN(
             AWS_LS_AUTH_PROFILE,
-            "subproperty \"%s\" of property \"%s\" had value overridden with new value \"%s\"",
+            "subproperty \"%s\" of property \"%s\" had value overridden with new value",
             key_string->bytes,
-            property->name->bytes,
-            value_string->bytes);
+            property->name->bytes);
         s_log_parse_context(AWS_LL_WARN, context);
     }
 
@@ -376,10 +373,9 @@ static int s_profile_property_merge(struct aws_profile_property *dest, const str
         if (dest->value) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_PROFILE,
-                "property \"%s\" has value \"%s\" replaced with \"%s\" during merge",
+                "property \"%s\" has value \"%s\" replaced during merge",
                 dest->name->bytes,
-                dest->value->bytes,
-                new_value->bytes);
+                dest->value->bytes);
             aws_string_destroy(dest->value);
         }
 
@@ -412,11 +408,9 @@ static int s_profile_property_merge(struct aws_profile_property *dest, const str
         if (was_present) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_PROFILE,
-                "subproperty \"%s\" of property \"%s\" had value overridden with new value \"%s\" during property "
-                "merge",
+                "subproperty \"%s\" of property \"%s\" had value overridden during property merge",
                 dest_key->bytes,
-                dest->name->bytes,
-                dest_sub_property->bytes);
+                dest->name->bytes);
         }
 
         if (aws_hash_table_put(&dest->sub_properties, dest_key, dest_sub_property, NULL)) {
@@ -1180,8 +1174,7 @@ static void s_parse_and_apply_line_to_profile_collection(
 
     AWS_LOGF_TRACE(
         AWS_LS_AUTH_PROFILE,
-        "Parsing aws profile line: \"" PRInSTR "\" with current profile \"%s\", current property: \"%s\"",
-        AWS_BYTE_CURSOR_PRI(line),
+        "Parsing aws profile line in profile \"%s\", current property: \"%s\"",
         context->current_profile ? context->current_profile->name->bytes : s_none_string->bytes,
         context->current_property ? context->current_property->name->bytes : s_none_string->bytes);
 
