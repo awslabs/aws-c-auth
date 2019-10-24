@@ -500,6 +500,27 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Creden
 AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 
+static int s_add_authorization_query_param_with_encoding(
+    struct aws_signing_state_aws *state,
+    struct aws_array_list *query_params,
+    struct aws_uri_param *uri_param,
+    struct aws_byte_buf *uri_encoded_buffer) {
+    uri_encoded_buffer->len = 0;
+
+    if (aws_byte_buf_append_encoding_uri_param(uri_encoded_buffer, &uri_param->value)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor encoded_algorithm_value = aws_byte_cursor_from_buf(uri_encoded_buffer);
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_query_params_property_list_name, &uri_param->key, &encoded_algorithm_value) ||
+        aws_array_list_push_back(query_params, uri_param)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * If the auth type was query param then this function adds all the required query params and values with the
  * exception of X-Amz-Signature (because we're still computing its value)
@@ -525,70 +546,33 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         goto done;
     }
 
-    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &algorithm_param.value)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor encoded_algorithm_value = aws_byte_cursor_from_buf(&uri_encoded_value);
-    if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_query_params_property_list_name, &algorithm_param.key, &encoded_algorithm_value) ||
-        aws_array_list_push_back(query_params, &algorithm_param)) {
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &algorithm_param, &uri_encoded_value)) {
         goto done;
     }
 
     /* X-Amz-Credential */
-    uri_encoded_value.len = 0;
     struct aws_uri_param credential_param = {.key =
                                                  aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name),
                                              .value = aws_byte_cursor_from_buf(&state->access_credential_scope)};
 
-    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &credential_param.value)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor encoded_credential_value = aws_byte_cursor_from_buf(&uri_encoded_value);
-    if (aws_signing_result_append_property_list(
-            state->result,
-            g_aws_http_query_params_property_list_name,
-            &credential_param.key,
-            &encoded_credential_value) ||
-        aws_array_list_push_back(query_params, &credential_param)) {
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &credential_param, &uri_encoded_value)) {
         goto done;
     }
 
     /* X-Amz-Date */
-    uri_encoded_value.len = 0;
     struct aws_uri_param date_param = {.key = aws_byte_cursor_from_string(g_aws_signing_date_name),
                                        .value = aws_byte_cursor_from_buf(&state->date)};
 
-    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &date_param.value)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor encoded_date_value = aws_byte_cursor_from_buf(&uri_encoded_value);
-    if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_query_params_property_list_name, &date_param.key, &encoded_date_value) ||
-        aws_array_list_push_back(query_params, &date_param)) {
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &date_param, &uri_encoded_value)) {
         goto done;
     }
 
     /* X-Amz-SignedHeaders */
-    uri_encoded_value.len = 0;
     struct aws_uri_param signed_headers_param = {
         .key = aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name),
         .value = aws_byte_cursor_from_buf(&state->signed_headers)};
 
-    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &signed_headers_param.value)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor encoded_headers_value = aws_byte_cursor_from_buf(&uri_encoded_value);
-    if (aws_signing_result_append_property_list(
-            state->result,
-            g_aws_http_query_params_property_list_name,
-            &signed_headers_param.key,
-            &encoded_headers_value) ||
-        aws_array_list_push_back(query_params, &signed_headers_param)) {
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &signed_headers_param, &uri_encoded_value)) {
         goto done;
     }
 
@@ -599,7 +583,6 @@ done:
     aws_byte_buf_clean_up(&uri_encoded_value);
 
     return result;
-
 }
 
 /*
@@ -852,8 +835,8 @@ static int s_build_canonical_stable_header_list(
          * X-Amz-Date
          */
         struct stable_header date_header = {.original_index = signable_header_count,
-                .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
-                        .value = aws_byte_cursor_from_buf(&state->date)}};
+                                            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
+                                                       .value = aws_byte_cursor_from_buf(&state->date)}};
 
         if (aws_array_list_push_back(stable_header_list, &date_header)) {
             return AWS_OP_ERR;

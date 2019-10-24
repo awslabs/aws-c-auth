@@ -22,6 +22,7 @@
 #include <aws/common/string.h>
 #include <aws/io/file_utils.h>
 #include <aws/io/stream.h>
+#include <aws/io/uri.h>
 
 #include <ctype.h>
 
@@ -422,28 +423,42 @@ static int s_do_sigv4_test_suite_test(
 
     struct aws_byte_cursor param_value;
 
+    struct aws_byte_buf expected_value_uri_encoded;
+    aws_byte_buf_init(&expected_value_uri_encoded, allocator, 256);
+
     /* This validation is fairly weak since we just check for equality against what was cached in the signing
      * state.  I'm not sure a redundant recalculation of the expected value for credential scope and signed headers
      * would have much value though.
      */
     param_value = s_get_value_from_result(params, &algorithm_query_param_name);
-    struct aws_byte_cursor expected_algorithm = aws_byte_cursor_from_c_str("AWS4-HMAC-SHA256");
+    struct aws_byte_cursor unencoded_algorithm_param_cursor = aws_byte_cursor_from_c_str("AWS4-HMAC-SHA256");
+    aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_algorithm_param_cursor);
+    struct aws_byte_cursor expected_algorithm = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
     ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value.ptr, param_value.len);
 
     param_value = s_get_value_from_result(params, &credential_query_param_name);
-    struct aws_byte_cursor expected_credential_param_value =
+    struct aws_byte_cursor unencoded_credential_param_cursor =
         aws_byte_cursor_from_buf(&signing_state.access_credential_scope);
+    expected_value_uri_encoded.len = 0;
+    aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_credential_param_cursor);
+
+    struct aws_byte_cursor expected_credential_param_value = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
     ASSERT_BIN_ARRAYS_EQUALS(
         expected_credential_param_value.ptr, expected_credential_param_value.len, param_value.ptr, param_value.len);
 
     param_value = s_get_value_from_result(params, &signed_headers_query_param_name);
-    struct aws_byte_cursor expected_signed_headers = aws_byte_cursor_from_buf(&signing_state.signed_headers);
+    struct aws_byte_cursor unencoded_signed_headers_param_cursor =
+        aws_byte_cursor_from_buf(&signing_state.signed_headers);
+    expected_value_uri_encoded.len = 0;
+    aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_signed_headers_param_cursor);
+    struct aws_byte_cursor expected_signed_headers = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
     ASSERT_BIN_ARRAYS_EQUALS(
         expected_signed_headers.ptr, expected_signed_headers.len, param_value.ptr, param_value.len);
 
     param_value = s_get_value_from_result(params, &auth_query_param_name);
     ASSERT_TRUE(param_value.len > 0); /* Is there are least something? */
 
+    aws_byte_buf_clean_up(&expected_value_uri_encoded);
     aws_signing_state_clean_up(&signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
     aws_credentials_destroy(credentials);
