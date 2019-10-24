@@ -1123,16 +1123,17 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
 
     /* While we're at it, build the accesskey/credential scope string which is used during query param signing*/
     struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_string(state->config->credentials->access_key_id);
-    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &access_key_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&state->access_credential_scope, &access_key_cursor)) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(&state->access_credential_scope, '/')) {
+    struct aws_byte_cursor slash_cursor = aws_byte_cursor_from_c_str("/");
+    if (aws_byte_buf_append_encoding_uri_param(&state->access_credential_scope, &slash_cursor)) {
         return AWS_OP_ERR;
     }
 
     struct aws_byte_cursor credential_scope_cursor = aws_byte_cursor_from_buf(&state->credential_scope);
-    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &credential_scope_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&state->access_credential_scope, &credential_scope_cursor)) {
         return AWS_OP_ERR;
     }
 
