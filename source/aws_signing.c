@@ -509,59 +509,97 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         return AWS_OP_SUCCESS;
     }
 
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf uri_encoded_value;
+    AWS_ZERO_STRUCT(uri_encoded_value);
+    if (aws_byte_buf_init(&uri_encoded_value, state->allocator, 256)) {
+        goto done;
+    }
+
     /* X-Amz-Algorithm */
     struct aws_uri_param algorithm_param = {.key =
                                                 aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name)};
 
     if (s_get_signing_algorithm_cursor(state->config->algorithm, &algorithm_param.value)) {
-        return AWS_OP_ERR;
+        goto done;
     }
 
+    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &algorithm_param.value)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor encoded_algorithm_value = aws_byte_cursor_from_buf(&uri_encoded_value);
     if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_query_params_property_list_name, &algorithm_param.key, &algorithm_param.value) ||
+            state->result, g_aws_http_query_params_property_list_name, &algorithm_param.key, &encoded_algorithm_value) ||
         aws_array_list_push_back(query_params, &algorithm_param)) {
-        return AWS_OP_ERR;
+        goto done;
     }
 
     /* X-Amz-Credential */
+    uri_encoded_value.len = 0;
     struct aws_uri_param credential_param = {.key =
                                                  aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name),
                                              .value = aws_byte_cursor_from_buf(&state->access_credential_scope)};
 
+    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &credential_param.value)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor encoded_credential_value = aws_byte_cursor_from_buf(&uri_encoded_value);
     if (aws_signing_result_append_property_list(
             state->result,
             g_aws_http_query_params_property_list_name,
             &credential_param.key,
-            &credential_param.value) ||
+            &encoded_credential_value) ||
         aws_array_list_push_back(query_params, &credential_param)) {
-        return AWS_OP_ERR;
+        goto done;
     }
 
     /* X-Amz-Date */
+    uri_encoded_value.len = 0;
     struct aws_uri_param date_param = {.key = aws_byte_cursor_from_string(g_aws_signing_date_name),
                                        .value = aws_byte_cursor_from_buf(&state->date)};
 
+    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &date_param.value)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor encoded_date_value = aws_byte_cursor_from_buf(&uri_encoded_value);
     if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_query_params_property_list_name, &date_param.key, &date_param.value) ||
+            state->result, g_aws_http_query_params_property_list_name, &date_param.key, &encoded_date_value) ||
         aws_array_list_push_back(query_params, &date_param)) {
-        return AWS_OP_ERR;
+        goto done;
     }
 
     /* X-Amz-SignedHeaders */
+    uri_encoded_value.len = 0;
     struct aws_uri_param signed_headers_param = {
         .key = aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name),
         .value = aws_byte_cursor_from_buf(&state->signed_headers)};
 
+    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_value, &signed_headers_param.value)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor encoded_headers_value = aws_byte_cursor_from_buf(&uri_encoded_value);
     if (aws_signing_result_append_property_list(
             state->result,
             g_aws_http_query_params_property_list_name,
             &signed_headers_param.key,
-            &signed_headers_param.value) ||
+            &encoded_headers_value) ||
         aws_array_list_push_back(query_params, &signed_headers_param)) {
-        return AWS_OP_ERR;
+        goto done;
     }
 
-    return AWS_OP_SUCCESS;
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_byte_buf_clean_up(&uri_encoded_value);
+
+    return result;
+
 }
 
 /*
