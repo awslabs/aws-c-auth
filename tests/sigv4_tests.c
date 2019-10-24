@@ -425,9 +425,10 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value.ptr, param_value.len);
 
     param_value = s_get_value_from_result(params, &credential_query_param_name);
-    struct aws_byte_cursor expected_credential_scope = aws_byte_cursor_from_buf(&signing_state.credential_scope);
+    struct aws_byte_cursor expected_credential_param_value =
+        aws_byte_cursor_from_buf(&signing_state.access_credential_scope);
     ASSERT_BIN_ARRAYS_EQUALS(
-        expected_credential_scope.ptr, expected_credential_scope.len, param_value.ptr, param_value.len);
+        expected_credential_param_value.ptr, expected_credential_param_value.len, param_value.ptr, param_value.len);
 
     param_value = s_get_value_from_result(params, &signed_headers_query_param_name);
     struct aws_byte_cursor expected_signed_headers = aws_byte_cursor_from_buf(&signing_state.signed_headers);
