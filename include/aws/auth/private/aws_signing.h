@@ -53,6 +53,7 @@ struct aws_signing_state_aws {
     struct aws_byte_buf canonical_header_block;
     struct aws_byte_buf payload_hash;
     struct aws_byte_buf credential_scope;
+    struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
 };
 

@@ -47,6 +47,8 @@
 #define AUTHORIZATION_VALUE_STARTING_SIZE 512
 #define PAYLOAD_HASH_STARTING_SIZE (AWS_SHA256_LEN * 2)
 #define CREDENTIAL_SCOPE_STARTING_SIZE 128
+#define ACCESS_CREDENTIAL_SCOPE_STARTING_SIZE 149
+#define ENCODED_SIGNING_QUERY_PARAM_STARTING_SIZE 256
 #define INITIAL_QUERY_FRAGMENT_COUNT 5
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
@@ -59,12 +61,22 @@ static struct aws_hash_table s_skipped_headers;
 
 static struct aws_byte_cursor s_amzn_trace_id_header_name;
 static struct aws_byte_cursor s_user_agent_header_name;
+static struct aws_byte_cursor s_connection_header_name;
+static struct aws_byte_cursor s_sec_websocket_key_header_name;
+static struct aws_byte_cursor s_sec_websocket_protocol_header_name;
+static struct aws_byte_cursor s_sec_websocket_version_header_name;
+static struct aws_byte_cursor s_upgrade_header_name;
 
 int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
     (void)allocator;
 
     s_amzn_trace_id_header_name = aws_byte_cursor_from_c_str("x-amzn-trace-id");
     s_user_agent_header_name = aws_byte_cursor_from_c_str("UserAgent");
+    s_connection_header_name = aws_byte_cursor_from_c_str("connection");
+    s_sec_websocket_key_header_name = aws_byte_cursor_from_c_str("sec-websocket-key");
+    s_sec_websocket_protocol_header_name = aws_byte_cursor_from_c_str("sec-websocket-protocol");
+    s_sec_websocket_version_header_name = aws_byte_cursor_from_c_str("sec-websocket-version");
+    s_upgrade_header_name = aws_byte_cursor_from_c_str("upgrade");
 
     if (aws_hash_table_init(
             &s_skipped_headers,
@@ -82,6 +94,26 @@ int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
     }
 
     if (aws_hash_table_put(&s_skipped_headers, &s_user_agent_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_connection_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_key_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_protocol_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_version_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_put(&s_skipped_headers, &s_upgrade_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
@@ -151,6 +183,7 @@ int aws_signing_state_init(
         aws_byte_buf_init(&state->canonical_header_block, allocator, CANONICAL_HEADER_BLOCK_STARTING_SIZE) ||
         aws_byte_buf_init(&state->payload_hash, allocator, PAYLOAD_HASH_STARTING_SIZE) ||
         aws_byte_buf_init(&state->credential_scope, allocator, CREDENTIAL_SCOPE_STARTING_SIZE) ||
+        aws_byte_buf_init(&state->access_credential_scope, allocator, ACCESS_CREDENTIAL_SCOPE_STARTING_SIZE) ||
         aws_byte_buf_init(&state->date, allocator, AWS_DATE_TIME_STR_MAX_LEN)) {
 
         goto on_error;
@@ -171,6 +204,7 @@ void aws_signing_state_clean_up(struct aws_signing_state_aws *state) {
     aws_byte_buf_clean_up(&state->canonical_header_block);
     aws_byte_buf_clean_up(&state->payload_hash);
     aws_byte_buf_clean_up(&state->credential_scope);
+    aws_byte_buf_clean_up(&state->access_credential_scope);
     aws_byte_buf_clean_up(&state->date);
 }
 
@@ -467,6 +501,27 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Creden
 AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 
+static int s_add_authorization_query_param_with_encoding(
+    struct aws_signing_state_aws *state,
+    struct aws_array_list *query_params,
+    struct aws_uri_param *uri_param,
+    struct aws_byte_buf *uri_encoded_buffer) {
+    uri_encoded_buffer->len = 0;
+
+    if (aws_byte_buf_append_encoding_uri_param(uri_encoded_buffer, &uri_param->value)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor encoded_algorithm_value = aws_byte_cursor_from_buf(uri_encoded_buffer);
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_query_params_property_list_name, &uri_param->key, &encoded_algorithm_value) ||
+        aws_array_list_push_back(query_params, uri_param)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * If the auth type was query param then this function adds all the required query params and values with the
  * exception of X-Amz-Signature (because we're still computing its value)
@@ -476,42 +531,41 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         return AWS_OP_SUCCESS;
     }
 
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf uri_encoded_value;
+    AWS_ZERO_STRUCT(uri_encoded_value);
+    if (aws_byte_buf_init(&uri_encoded_value, state->allocator, ENCODED_SIGNING_QUERY_PARAM_STARTING_SIZE)) {
+        goto done;
+    }
+
     /* X-Amz-Algorithm */
     struct aws_uri_param algorithm_param = {.key =
                                                 aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name)};
 
     if (s_get_signing_algorithm_cursor(state->config->algorithm, &algorithm_param.value)) {
-        return AWS_OP_ERR;
+        goto done;
     }
 
-    if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_query_params_property_list_name, &algorithm_param.key, &algorithm_param.value) ||
-        aws_array_list_push_back(query_params, &algorithm_param)) {
-        return AWS_OP_ERR;
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &algorithm_param, &uri_encoded_value)) {
+        goto done;
     }
 
     /* X-Amz-Credential */
     struct aws_uri_param credential_param = {.key =
                                                  aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name),
-                                             .value = aws_byte_cursor_from_buf(&state->credential_scope)};
+                                             .value = aws_byte_cursor_from_buf(&state->access_credential_scope)};
 
-    if (aws_signing_result_append_property_list(
-            state->result,
-            g_aws_http_query_params_property_list_name,
-            &credential_param.key,
-            &credential_param.value) ||
-        aws_array_list_push_back(query_params, &credential_param)) {
-        return AWS_OP_ERR;
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &credential_param, &uri_encoded_value)) {
+        goto done;
     }
 
     /* X-Amz-Date */
     struct aws_uri_param date_param = {.key = aws_byte_cursor_from_string(g_aws_signing_date_name),
                                        .value = aws_byte_cursor_from_buf(&state->date)};
 
-    if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_query_params_property_list_name, &date_param.key, &date_param.value) ||
-        aws_array_list_push_back(query_params, &date_param)) {
-        return AWS_OP_ERR;
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &date_param, &uri_encoded_value)) {
+        goto done;
     }
 
     /* X-Amz-SignedHeaders */
@@ -519,16 +573,17 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         .key = aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name),
         .value = aws_byte_cursor_from_buf(&state->signed_headers)};
 
-    if (aws_signing_result_append_property_list(
-            state->result,
-            g_aws_http_query_params_property_list_name,
-            &signed_headers_param.key,
-            &signed_headers_param.value) ||
-        aws_array_list_push_back(query_params, &signed_headers_param)) {
-        return AWS_OP_ERR;
+    if (s_add_authorization_query_param_with_encoding(state, query_params, &signed_headers_param, &uri_encoded_value)) {
+        goto done;
     }
 
-    return AWS_OP_SUCCESS;
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_byte_buf_clean_up(&uri_encoded_value);
+
+    return result;
 }
 
 /*
@@ -776,18 +831,20 @@ static int s_build_canonical_stable_header_list(
         }
     }
 
-    /*
-     * X-Amz-Date
-     */
-    struct stable_header date_header = {.original_index = signable_header_count,
-                                        .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
-                                                   .value = aws_byte_cursor_from_buf(&state->date)}};
+    if (!s_is_query_param_auth(state->config->algorithm)) {
+        /*
+         * X-Amz-Date
+         */
+        struct stable_header date_header = {.original_index = signable_header_count,
+                                            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
+                                                       .value = aws_byte_cursor_from_buf(&state->date)}};
 
-    if (aws_array_list_push_back(stable_header_list, &date_header)) {
-        return AWS_OP_ERR;
+        if (aws_array_list_push_back(stable_header_list, &date_header)) {
+            return AWS_OP_ERR;
+        }
+
+        *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
     }
-
-    *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
 
     /*
      * x-amz-content-sha256 (optional)
@@ -947,24 +1004,26 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
         goto on_cleanup;
     }
 
-    if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
-        goto on_cleanup;
-    }
-
-    struct aws_stream_status payload_status;
-    AWS_ZERO_STRUCT(payload_status);
-
-    while (!payload_status.is_end_of_stream) {
-        /* reset the temporary body buffer; we can calculate the hash in window chunks */
-        body_buffer.len = 0;
-        aws_input_stream_read(payload_stream, &body_buffer);
-        if (body_buffer.len > 0) {
-            struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
-            aws_hash_update(hash, &body_cursor);
+    if (payload_stream != NULL) {
+        if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+            goto on_cleanup;
         }
 
-        if (aws_input_stream_get_status(payload_stream, &payload_status)) {
-            goto on_cleanup;
+        struct aws_stream_status payload_status;
+        AWS_ZERO_STRUCT(payload_status);
+
+        while (!payload_status.is_end_of_stream) {
+            /* reset the temporary body buffer; we can calculate the hash in window chunks */
+            body_buffer.len = 0;
+            aws_input_stream_read(payload_stream, &body_buffer);
+            if (body_buffer.len > 0) {
+                struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
+                aws_hash_update(hash, &body_cursor);
+            }
+
+            if (aws_input_stream_get_status(payload_stream, &payload_status)) {
+                goto on_cleanup;
+            }
         }
     }
 
@@ -1083,6 +1142,21 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
     }
 
     if (s_append_credential_scope_terminator(state->config->algorithm, dest)) {
+        return AWS_OP_ERR;
+    }
+
+    /* While we're at it, build the accesskey/credential scope string which is used during query param signing*/
+    struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_string(state->config->credentials->access_key_id);
+    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &access_key_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(&state->access_credential_scope, '/')) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor credential_scope_cursor = aws_byte_cursor_from_buf(&state->credential_scope);
+    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &credential_scope_cursor)) {
         return AWS_OP_ERR;
     }
 

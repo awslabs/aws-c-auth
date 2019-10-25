@@ -98,14 +98,14 @@ static int s_build_request_uri(
 
     /* and now add any signing query params */
     for (size_t i = 0; i < signed_query_param_count; ++i) {
-        struct aws_signable_property_list_pair source_param;
+        struct aws_signing_result_property source_param;
         if (aws_array_list_get_at(result_param_list, &source_param, i)) {
             goto done;
         }
 
         struct aws_uri_param signed_param;
-        signed_param.key = source_param.name;
-        signed_param.value = source_param.value;
+        signed_param.key = aws_byte_cursor_from_string(source_param.name);
+        signed_param.value = aws_byte_cursor_from_string(source_param.value);
 
         aws_array_list_push_back(&query_params, &signed_param);
     }
