@@ -48,6 +48,7 @@
 #define PAYLOAD_HASH_STARTING_SIZE (AWS_SHA256_LEN * 2)
 #define CREDENTIAL_SCOPE_STARTING_SIZE 128
 #define ACCESS_CREDENTIAL_SCOPE_STARTING_SIZE 149
+#define ENCODED_SIGNING_QUERY_PARAM_STARTING_SIZE 256
 #define INITIAL_QUERY_FRAGMENT_COUNT 5
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
@@ -534,7 +535,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
 
     struct aws_byte_buf uri_encoded_value;
     AWS_ZERO_STRUCT(uri_encoded_value);
-    if (aws_byte_buf_init(&uri_encoded_value, state->allocator, 256)) {
+    if (aws_byte_buf_init(&uri_encoded_value, state->allocator, ENCODED_SIGNING_QUERY_PARAM_STARTING_SIZE)) {
         goto done;
     }
 
