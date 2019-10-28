@@ -162,7 +162,7 @@ static bool s_parse_by_token(
     bool matched = false;
 
     if (token->len <= start->len) {
-        matched = strncmp((const char *)start->ptr, (const char *)token->bytes, token->len) == 0;
+        matched = strncmp((const char *)start->ptr, aws_string_c_str(token), token->len) == 0;
     }
 
     if (parsed != NULL) {
@@ -1268,7 +1268,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_file(
 
     AWS_LOGF_DEBUG(AWS_LS_AUTH_PROFILE, "Creating profile collection from file at \"%s\"", file_path->bytes);
 
-    if (aws_byte_buf_init_from_file(&file_contents, allocator, (const char *)file_path->bytes) != 0) {
+    if (aws_byte_buf_init_from_file(&file_contents, allocator, aws_string_c_str(file_path)) != 0) {
         AWS_LOGF_WARN(AWS_LS_AUTH_PROFILE, "Failed to read file at \"%s\"", file_path->bytes);
         return NULL;
     }
