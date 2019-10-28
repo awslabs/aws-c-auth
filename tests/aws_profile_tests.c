@@ -49,7 +49,7 @@
         struct aws_profile_property *property = aws_profile_get_property(profile, property_name_str);                  \
         aws_string_destroy(property_name_str);                                                                         \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(property != NULL && strcmp(expected_property_value, (const char *)property->value->bytes) == 0);   \
+        ASSERT_TRUE(property != NULL && strcmp(expected_property_value, aws_string_c_str(property->value)) == 0);      \
     }
 
 #define EXPECT_SUB_PROPERTY_COUNT(profile_collection, profile_name, property_name, expected_sub_property_count)        \
@@ -76,7 +76,7 @@
         aws_string_destroy(sub_property_name_str);                                                                     \
         aws_string_destroy(property_name_str);                                                                         \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(strcmp(expected_sub_property_value, (const char *)sub_property_value->bytes) == 0);                \
+        ASSERT_TRUE(strcmp(expected_sub_property_value, aws_string_c_str(sub_property_value)) == 0);                   \
     }
 
 /*
