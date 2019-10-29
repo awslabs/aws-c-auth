@@ -988,28 +988,6 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         goto on_cleanup;
     }
 
-    /*
-     * Add X-Amz-Date to the signing result
-     */
-    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
-    struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
-    if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
-        return AWS_OP_ERR;
-    }
-
-    /*
-     * Add Security token to the signing result if a session token was present.
-     */
-    if (state->config->credentials->session_token) {
-        struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
-        struct aws_byte_cursor session_token = aws_byte_cursor_from_string(state->config->credentials->session_token);
-        if (aws_signing_result_append_property_list(
-                state->result, g_aws_http_headers_property_list_name, &session_token_name, &session_token)) {
-            return AWS_OP_ERR;
-        }
-    }
-
     result = AWS_OP_SUCCESS;
 
 on_cleanup:
@@ -1629,8 +1607,11 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
     AWS_ASSERT(state->credential_scope.len > 0);
 
     int result = AWS_OP_ERR;
+    struct aws_byte_buf uri_encoded_buf;
+    AWS_ZERO_STRUCT(uri_encoded_buf);
 
     struct aws_byte_buf authorization_value;
+
     if (aws_byte_buf_init(&authorization_value, state->allocator, AUTHORIZATION_VALUE_STARTING_SIZE)) {
         goto cleanup;
     }
@@ -1648,6 +1629,48 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         goto cleanup;
     }
 
+    /*
+     * Add X-Amz-Date to the signing result
+     */
+    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
+        return AWS_OP_ERR;
+    }
+
+    /*
+     * Add Security token to the signing result if a session token was present.
+     */
+    if (state->config->credentials->session_token) {
+        struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+        struct aws_byte_cursor session_token = aws_byte_cursor_from_string(state->config->credentials->session_token);
+
+        const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
+
+        /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers */
+        if (s_is_query_param_auth(state->config->algorithm)) {
+            property_list_name = g_aws_http_query_params_property_list_name;
+
+            if (aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token.len)) {
+                goto cleanup;
+            }
+
+            /* uri encode it */
+            if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token)) {
+                aws_byte_buf_clean_up(&uri_encoded_buf);
+                goto cleanup;
+            }
+
+            session_token = aws_byte_cursor_from_buf(&uri_encoded_buf);
+        }
+
+        if (aws_signing_result_append_property_list(
+                state->result, property_list_name, &session_token_name, &session_token)) {
+            goto cleanup;
+        }
+    }
+
     AWS_LOGF_INFO(
         AWS_LS_AUTH_SIGNING,
         "(id=%p) Http request successfully built final authorization value via algorithm %s, with contents \"" PRInSTR
@@ -1659,7 +1682,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
     result = AWS_OP_SUCCESS;
 
 cleanup:
-
+    aws_byte_buf_clean_up(&uri_encoded_buf);
     aws_byte_buf_clean_up(&authorization_value);
 
     return result;
