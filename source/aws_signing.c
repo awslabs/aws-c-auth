@@ -1607,8 +1607,11 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
     AWS_ASSERT(state->credential_scope.len > 0);
 
     int result = AWS_OP_ERR;
+    struct aws_byte_buf uri_encoded_buf;
+    AWS_ZERO_STRUCT(uri_encoded_buf);
 
     struct aws_byte_buf authorization_value;
+
     if (aws_byte_buf_init(&authorization_value, state->allocator, AUTHORIZATION_VALUE_STARTING_SIZE)) {
         goto cleanup;
     }
@@ -1645,22 +1648,16 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
 
         const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
 
-        struct aws_byte_buf uri_encoded_buf;
-        AWS_ZERO_STRUCT(uri_encoded_buf);
-
-        int error_code = AWS_OP_ERR;
         /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers */
         if (s_is_query_param_auth(state->config->algorithm)) {
             property_list_name = g_aws_http_query_params_property_list_name;
-            error_code = aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token.len);
 
-            if (error_code) {
+            if (aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token.len)) {
                 goto cleanup;
             }
 
             /* uri encode it */
-            error_code = aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token);
-            if (error_code) {
+            if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token)) {
                 aws_byte_buf_clean_up(&uri_encoded_buf);
                 goto cleanup;
             }
@@ -1668,11 +1665,8 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
             session_token = aws_byte_cursor_from_buf(&uri_encoded_buf);
         }
 
-        error_code = aws_signing_result_append_property_list(
-            state->result, property_list_name, &session_token_name, &session_token);
-        aws_byte_buf_clean_up(&uri_encoded_buf);
-
-        if (error_code) {
+        if (aws_signing_result_append_property_list(
+                state->result, property_list_name, &session_token_name, &session_token)) {
             goto cleanup;
         }
     }
@@ -1688,7 +1682,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
     result = AWS_OP_SUCCESS;
 
 cleanup:
-
+    aws_byte_buf_clean_up(&uri_encoded_buf);
     aws_byte_buf_clean_up(&authorization_value);
 
     return result;
