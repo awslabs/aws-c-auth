@@ -988,28 +988,6 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         goto on_cleanup;
     }
 
-    /*
-     * Add X-Amz-Date to the signing result
-     */
-    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
-    struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
-    if (aws_signing_result_append_property_list(
-            state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
-        return AWS_OP_ERR;
-    }
-
-    /*
-     * Add Security token to the signing result if a session token was present.
-     */
-    if (state->config->credentials->session_token) {
-        struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
-        struct aws_byte_cursor session_token = aws_byte_cursor_from_string(state->config->credentials->session_token);
-        if (aws_signing_result_append_property_list(
-                state->result, g_aws_http_headers_property_list_name, &session_token_name, &session_token)) {
-            return AWS_OP_ERR;
-        }
-    }
-
     result = AWS_OP_SUCCESS;
 
 on_cleanup:
@@ -1646,6 +1624,55 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
 
     if (s_add_authorization_to_result(state, &authorization_value)) {
         goto cleanup;
+    }
+
+    /*
+     * Add X-Amz-Date to the signing result
+     */
+    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
+    if (aws_signing_result_append_property_list(
+            state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
+        return AWS_OP_ERR;
+    }
+
+    /*
+     * Add Security token to the signing result if a session token was present.
+     */
+    if (state->config->credentials->session_token) {
+        struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+        struct aws_byte_cursor session_token = aws_byte_cursor_from_string(state->config->credentials->session_token);
+
+        const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
+
+        struct aws_byte_buf uri_encoded_buf;
+        AWS_ZERO_STRUCT(uri_encoded_buf);
+
+        int error_code = AWS_OP_ERR;
+        if (s_is_query_param_auth(state->config->algorithm)) {
+            property_list_name = g_aws_http_query_params_property_list_name;
+            error_code = aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token.len);
+
+            if (error_code) {
+                goto cleanup;
+            }
+
+            error_code = aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token);
+            if (error_code) {
+                aws_byte_buf_clean_up(&uri_encoded_buf);
+                goto cleanup;
+            }
+
+            session_token = aws_byte_cursor_from_buf(&uri_encoded_buf);
+        }
+
+        error_code = aws_signing_result_append_property_list(
+            state->result, property_list_name, &session_token_name, &session_token);
+        aws_byte_buf_clean_up(&uri_encoded_buf);
+
+        if (error_code) {
+            goto cleanup;
+        }
     }
 
     AWS_LOGF_INFO(
