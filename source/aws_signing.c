@@ -893,7 +893,8 @@ static int s_build_canonical_stable_header_list(
         *out_required_capacity += g_aws_signing_content_header_name->len + state->payload_hash.len;
     }
 
-    *out_required_capacity += aws_array_list_length(stable_header_list) * 2; /*  ':' + '\n' per header */
+    *out_required_capacity += aws_array_list_length(stable_header_list) *
+                              (additional_header_index - signable_header_count); /*  ':' + '\n' per header */
 
     return AWS_OP_SUCCESS;
 }

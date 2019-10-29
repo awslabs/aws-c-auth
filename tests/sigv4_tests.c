@@ -120,6 +120,10 @@ AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_service, "service");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_region, "us-east-1");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_access_key_id, "AKIDEXAMPLE");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_secret_access_key, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_suite_session_token,
+    "6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267");
+
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_date, "2015-08-30T12:36:00Z");
 
 static int s_initialize_test_from_contents(
@@ -314,7 +318,8 @@ struct aws_byte_cursor s_get_value_from_result(
 static int s_do_sigv4_test_suite_test(
     struct aws_allocator *allocator,
     const char *test_name,
-    const char *parent_folder) {
+    const char *parent_folder,
+    struct aws_credentials *credentials) {
 
     /* Set up everything */
     aws_auth_library_init(allocator);
@@ -337,8 +342,6 @@ static int s_do_sigv4_test_suite_test(
     struct aws_signing_state_aws signing_state;
     ASSERT_TRUE(aws_signing_state_init(&signing_state, allocator, &config, signable, &result) == AWS_OP_SUCCESS);
 
-    struct aws_credentials *credentials =
-        aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
     ASSERT_TRUE(credentials != NULL);
 
     config.credentials = credentials;
@@ -461,7 +464,6 @@ static int s_do_sigv4_test_suite_test(
     aws_byte_buf_clean_up(&expected_value_uri_encoded);
     aws_signing_state_clean_up(&signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
-    aws_credentials_destroy(credentials);
     aws_signing_result_clean_up(&result);
     aws_signer_destroy(signer);
     aws_signable_destroy(signable);
@@ -474,14 +476,33 @@ static int s_do_sigv4_test_suite_test(
 #define DECLARE_SIGV4_TEST_SUITE_CASE(test_name, test_name_string)                                                     \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
-        return s_do_sigv4_test_suite_test(allocator, test_name_string, ".");                                           \
+        struct aws_credentials *credentials =                                                                          \
+            aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);          \
+        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
+        aws_credentials_destroy(credentials);                                                                          \
+        return ret_val;                                                                                                \
+    }                                                                                                                  \
+    AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
+
+#define DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(test_name, test_name_string)                                  \
+    static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
+        (void)ctx;                                                                                                     \
+        struct aws_credentials *credentials = aws_credentials_new(                                                     \
+            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_test_suite_session_token);        \
+        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
+        aws_credentials_destroy(credentials);                                                                          \
+        return ret_val;                                                                                                \
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
 
 #define DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(test_name, test_name_string, parent_folder)                               \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
-        return s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder);                                 \
+        struct aws_credentials *credentials =                                                                          \
+            aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);          \
+        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder, credentials);             \
+        aws_credentials_destroy(credentials);                                                                          \
+        return ret_val;                                                                                                \
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
 
@@ -492,6 +513,7 @@ DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_trim, "get-header-value-trim");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_unreserved, "get-unreserved");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_utf8, "get-utf8");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla, "get-vanilla");
+DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(get_vanilla_with_session_token, "get-vanilla-with-session-token");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_empty_query_key, "get-vanilla-empty-query-key");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query, "get-vanilla-query");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query_order_key_case, "get-vanilla-query-order-key-case");
