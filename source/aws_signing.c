@@ -1649,6 +1649,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         AWS_ZERO_STRUCT(uri_encoded_buf);
 
         int error_code = AWS_OP_ERR;
+        /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers */
         if (s_is_query_param_auth(state->config->algorithm)) {
             property_list_name = g_aws_http_query_params_property_list_name;
             error_code = aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token.len);
@@ -1657,6 +1658,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
                 goto cleanup;
             }
 
+            /* uri encode it */
             error_code = aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token);
             if (error_code) {
                 aws_byte_buf_clean_up(&uri_encoded_buf);
