@@ -377,6 +377,25 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_BIN_ARRAYS_EQUALS(
         expected_auth_header.ptr, expected_auth_header.len, auth_header_value.ptr, auth_header_value.len);
 
+    if (credentials->session_token) {
+        struct aws_byte_cursor session_token_header_name =
+            aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+
+        headers = NULL;
+        ASSERT_TRUE(
+            aws_signing_result_get_property_list(&result, g_aws_http_headers_property_list_name, &headers) ==
+            AWS_OP_SUCCESS);
+
+        struct aws_byte_cursor session_header_value = s_get_value_from_result(headers, &session_token_header_name);
+        struct aws_byte_cursor expected_session_header = aws_byte_cursor_from_string(credentials->session_token);
+
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_session_header.ptr,
+            expected_session_header.len,
+            session_header_value.ptr,
+            session_header_value.len);
+    }
+
     /* 2 - validate the public API */
     struct aws_signer *signer = aws_signer_new_aws(allocator);
 
