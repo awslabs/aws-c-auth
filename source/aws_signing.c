@@ -500,6 +500,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_algorithm_query_param_name, "X-Amz-Algorit
 AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Credential");
 AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
+AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 
 static int s_add_authorization_query_param_with_encoding(
     struct aws_signing_state_aws *state,
@@ -575,6 +576,18 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
 
     if (s_add_authorization_query_param_with_encoding(state, query_params, &signed_headers_param, &uri_encoded_value)) {
         goto done;
+    }
+
+    /* X-Amz-Security-token */
+    if (state->config->credentials->session_token) {
+        struct aws_uri_param security_token_param = {
+            .key = aws_byte_cursor_from_string(g_aws_signing_security_token_name),
+            .value = aws_byte_cursor_from_string(state->config->credentials->session_token)};
+
+        if (s_add_authorization_query_param_with_encoding(
+                state, query_params, &security_token_param, &uri_encoded_value)) {
+            goto done;
+        }
     }
 
     result = AWS_OP_SUCCESS;
@@ -831,11 +844,29 @@ static int s_build_canonical_stable_header_list(
         }
     }
 
+    size_t additional_header_index = signable_header_count;
+
+    struct aws_byte_cursor security_token_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+
+    if (state->config->credentials->session_token && s_should_sign_header(state, &security_token_cur)) {
+        /* X-Amz-Security-Token */
+        struct stable_header session_token_header = {
+            .original_index = additional_header_index++,
+            .header = {.name = security_token_cur,
+                       .value = aws_byte_cursor_from_string(state->config->credentials->session_token)}};
+        if (aws_array_list_push_back(stable_header_list, &session_token_header)) {
+            return AWS_OP_ERR;
+        }
+
+        *out_required_capacity +=
+            g_aws_signing_security_token_name->len + state->config->credentials->session_token->len;
+    }
+
     if (!s_is_query_param_auth(state->config->algorithm)) {
         /*
          * X-Amz-Date
          */
-        struct stable_header date_header = {.original_index = signable_header_count,
+        struct stable_header date_header = {.original_index = additional_header_index++,
                                             .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
                                                        .value = aws_byte_cursor_from_buf(&state->date)}};
 
@@ -851,7 +882,7 @@ static int s_build_canonical_stable_header_list(
      */
     if (state->config->sign_body) {
         struct stable_header content_hash_header = {
-            .original_index = signable_header_count + 1,
+            .original_index = additional_header_index++,
             .header = {.name = aws_byte_cursor_from_string(g_aws_signing_content_header_name),
                        .value = aws_byte_cursor_from_buf(&state->payload_hash)}};
 
@@ -889,13 +920,18 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     }
 
     size_t signable_header_count = aws_array_list_length(signable_header_list);
+    size_t total_sign_headers_count = signable_header_count + 1; /* for X-Amz-Credentials */
+
+    if (state->config->sign_body) {
+        total_sign_headers_count += 1;
+    }
+
+    if (state->config->credentials->session_token) {
+        total_sign_headers_count += 1; /* for X-Amz-Security-Token */
+    }
 
     struct aws_array_list headers;
-    if (aws_array_list_init_dynamic(
-            &headers,
-            allocator,
-            signable_header_count + (state->config->sign_body ? 2 : 1),
-            sizeof(struct stable_header))) {
+    if (aws_array_list_init_dynamic(&headers, allocator, total_sign_headers_count, sizeof(struct stable_header))) {
         return AWS_OP_ERR;
     }
 
@@ -958,6 +994,18 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     if (aws_signing_result_append_property_list(
             state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
         return AWS_OP_ERR;
+    }
+
+    /*
+     * Add Security token to the signing result if a session token was present.
+     */
+    if (state->config->credentials->session_token) {
+        struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+        struct aws_byte_cursor session_token = aws_byte_cursor_from_string(state->config->credentials->session_token);
+        if (aws_signing_result_append_property_list(
+                state->result, g_aws_http_headers_property_list_name, &session_token_name, &session_token)) {
+            return AWS_OP_ERR;
+        }
     }
 
     result = AWS_OP_SUCCESS;
