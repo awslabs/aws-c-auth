@@ -524,6 +524,25 @@ static int s_add_authorization_query_param_with_encoding(
 }
 
 /*
+ * Checks the header against both an internal skip list as well as an optional user-supplied filter
+ * function.  Only sign the header if both functions allow it.
+ */
+static bool s_should_sign_param(struct aws_signing_state_aws *state, struct aws_byte_cursor *name) {
+    if (state->config->should_sign_param) {
+        if (!state->config->should_sign_param(name)) {
+            return false;
+        }
+    }
+
+    struct aws_hash_element *element = NULL;
+    if (aws_hash_table_find(&s_skipped_headers, name, &element) == AWS_OP_ERR || element != NULL) {
+        return false;
+    }
+
+    return true;
+}
+
+/*
  * If the auth type was query param then this function adds all the required query params and values with the
  * exception of X-Amz-Signature (because we're still computing its value)
  */
@@ -579,9 +598,11 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     }
 
     /* X-Amz-Security-token */
-    if (state->config->credentials->session_token) {
+    struct aws_byte_cursor security_token_name_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+
+    if (state->config->credentials->session_token && s_should_sign_param(state, &security_token_name_cur)) {
         struct aws_uri_param security_token_param = {
-            .key = aws_byte_cursor_from_string(g_aws_signing_security_token_name),
+            .key = security_token_name_cur,
             .value = aws_byte_cursor_from_string(state->config->credentials->session_token)};
 
         if (s_add_authorization_query_param_with_encoding(
@@ -778,25 +799,6 @@ static int s_append_canonical_header(
 }
 
 /*
- * Checks the header against both an internal skip list as well as an optional user-supplied filter
- * function.  Only sign the header if both functions allow it.
- */
-static bool s_should_sign_header(struct aws_signing_state_aws *state, struct aws_byte_cursor *name) {
-    if (state->config->should_sign_header) {
-        if (!state->config->should_sign_header(name)) {
-            return false;
-        }
-    }
-
-    struct aws_hash_element *element = NULL;
-    if (aws_hash_table_find(&s_skipped_headers, name, &element) == AWS_OP_ERR || element != NULL) {
-        return false;
-    }
-
-    return true;
-}
-
-/*
  * Builds the list of header name-value pairs to be added to the canonical request.  The list members are
  * actually the header wrapper structs that allow for stable sorting.
  *
@@ -833,7 +835,7 @@ static int s_build_canonical_stable_header_list(
         }
 
         struct aws_byte_cursor *header_name_cursor = &header_wrapper.header.name;
-        if (!s_should_sign_header(state, header_name_cursor)) {
+        if (!s_should_sign_param(state, header_name_cursor)) {
             continue;
         }
 
@@ -848,7 +850,7 @@ static int s_build_canonical_stable_header_list(
 
     struct aws_byte_cursor security_token_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
 
-    if (state->config->credentials->session_token && s_should_sign_header(state, &security_token_cur)) {
+    if (state->config->credentials->session_token && s_should_sign_param(state, &security_token_cur)) {
         /* X-Amz-Security-Token */
         struct stable_header session_token_header = {
             .original_index = additional_header_index++,

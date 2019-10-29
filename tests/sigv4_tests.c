@@ -562,7 +562,7 @@ DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www
 
 static int s_do_header_skip_test(
     struct aws_allocator *allocator,
-    aws_should_sign_header_fn *should_sign,
+    aws_should_sign_param_fn *should_sign,
     const struct aws_string *request_contents,
     const struct aws_string *expected_canonical_request) {
 
@@ -584,7 +584,7 @@ static int s_do_header_skip_test(
             &signable, &config, allocator, &test_contents, &request_cursor, &expected_canonical_request_cursor) ==
         AWS_OP_SUCCESS);
 
-    config.should_sign_header = should_sign;
+    config.should_sign_param = should_sign;
 
     struct aws_signing_result result;
     ASSERT_TRUE(aws_signing_result_init(&result, allocator) == AWS_OP_SUCCESS);

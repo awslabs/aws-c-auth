@@ -15,7 +15,6 @@
 
 #include <aws/auth/signer.h>
 
-#include <aws/auth/credentials.h>
 #include <aws/auth/private/aws_signing.h>
 #include <aws/io/uri.h>
 
