@@ -101,6 +101,7 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signing_date_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_signed_headers_query_param_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_header_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_security_token_name;
 
 /**
  * Initializes the internal table of headers that should not be signed
