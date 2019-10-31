@@ -3,7 +3,6 @@ include(CMakeFindDependencyMacro)
 find_dependency(aws-c-common)
 find_dependency(aws-c-cal)
 find_dependency(aws-c-io)
-find_dependency(aws-c-compression)
 find_dependency(aws-c-http)
 
 if (BUILD_SHARED_LIBS)

@@ -53,6 +53,7 @@ struct aws_signing_state_aws {
     struct aws_byte_buf canonical_header_block;
     struct aws_byte_buf payload_hash;
     struct aws_byte_buf credential_scope;
+    struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
 };
 
@@ -100,6 +101,7 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signing_date_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_signed_headers_query_param_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_header_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_security_token_name;
 
 /**
  * Initializes the internal table of headers that should not be signed

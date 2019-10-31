@@ -521,12 +521,12 @@ AWS_TEST_CASE(
     s_profile_credentials_provider_new_destroy_overrides_test);
 
 int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
-    FILE *fp = fopen((const char *)file_name->bytes, "w");
+    FILE *fp = fopen(aws_string_c_str(file_name), "w");
     if (fp == NULL) {
         return aws_translate_and_raise_io_error(errno);
     }
 
-    int result = fprintf(fp, "%s", (const char *)file_contents->bytes);
+    int result = fprintf(fp, "%s", aws_string_c_str(file_contents));
     fclose(fp);
 
     if (result < 0) {
@@ -577,8 +577,8 @@ static int s_do_credentials_provider_profile_test(
     aws_credentials_provider_release(provider);
 
 on_file_failure:
-    remove((const char *)s_config_file_name->bytes);
-    remove((const char *)s_credentials_file_name->bytes);
+    remove(aws_string_c_str(s_config_file_name));
+    remove(aws_string_c_str(s_credentials_file_name));
 
     return result;
 }
@@ -593,8 +593,8 @@ AWS_STATIC_STRING_FROM_LITERAL(
 int s_verify_default_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "fake_access_key") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "fake_secret_key") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->access_key_id), "fake_access_key") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->secret_access_key), "fake_secret_key") == 0);
     ASSERT_TRUE(callback_results->credentials->session_token == NULL);
 
     return AWS_OP_SUCCESS;
@@ -618,9 +618,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_foo_profile, "foo");
 int s_verify_nondefault_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "foo_access") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "foo_secret") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "foo_session") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->access_key_id), "foo_access") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->secret_access_key), "foo_secret") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->session_token), "foo_session") == 0);
 
     return AWS_OP_SUCCESS;
 }
@@ -747,9 +747,9 @@ AWS_TEST_CASE(credentials_provider_first_in_chain_test, s_credentials_provider_f
 int s_verify_second_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->access_key_id->bytes, "Access2") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->secret_access_key->bytes, "Secret2") == 0);
-    ASSERT_TRUE(strcmp((const char *)callback_results->credentials->session_token->bytes, "Session2") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->access_key_id), "Access2") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->secret_access_key), "Secret2") == 0);
+    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->session_token), "Session2") == 0);
 
     return AWS_OP_SUCCESS;
 }

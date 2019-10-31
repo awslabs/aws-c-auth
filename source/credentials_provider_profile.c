@@ -48,13 +48,13 @@ static int s_profile_file_credentials_provider_get_credentials_async(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider successfully built config profile collection from file at (%s)",
             (void *)provider,
-            (const char *)impl->config_file_path->bytes);
+            aws_string_c_str(impl->config_file_path));
     } else {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider failed to build config profile collection from file at (%s)",
             (void *)provider,
-            (const char *)impl->config_file_path->bytes);
+            aws_string_c_str(impl->config_file_path));
     }
 
     /*
@@ -68,13 +68,13 @@ static int s_profile_file_credentials_provider_get_credentials_async(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider successfully built credentials profile collection from file at (%s)",
             (void *)provider,
-            (const char *)impl->credentials_file_path->bytes);
+            aws_string_c_str(impl->credentials_file_path));
     } else {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider failed to build credentials profile collection from file at (%s)",
             (void *)provider,
-            (const char *)impl->credentials_file_path->bytes);
+            aws_string_c_str(impl->credentials_file_path));
     }
 
     /*
@@ -89,14 +89,14 @@ static int s_profile_file_credentials_provider_get_credentials_async(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p) Profile credentials provider attempting to pull credentials from profile \"%s\"",
                 (void *)provider,
-                (const char *)impl->profile_name->bytes);
+                aws_string_c_str(impl->profile_name));
             credentials = aws_credentials_new_from_profile(provider->allocator, profile);
         } else {
             AWS_LOGF_INFO(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p) Profile credentials provider could not find a profile named \"%s\"",
                 (void *)provider,
-                (const char *)impl->profile_name->bytes);
+                aws_string_c_str(impl->profile_name));
         }
     } else {
         AWS_LOGF_ERROR(
