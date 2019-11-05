@@ -556,10 +556,8 @@ static int s_profile_merge(struct aws_profile *dest_profile, const struct aws_pr
                 return AWS_OP_ERR;
             }
 
-            struct aws_byte_cursor empty_value;
-            AWS_ZERO_STRUCT(empty_value);
-
             struct aws_byte_cursor property_name = aws_byte_cursor_from_string(dest_key);
+            static struct aws_byte_cursor empty_value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("");
             dest_property = aws_profile_property_new(dest_profile->allocator, &property_name, &empty_value);
             if (dest_property == NULL) {
                 aws_string_destroy(dest_key);
