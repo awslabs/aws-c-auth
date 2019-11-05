@@ -67,9 +67,9 @@ struct aws_signing_config_aws {
     enum aws_signing_algorithm algorithm;
 
     /*
-     * AWS credentials to sign with
+     * AWS credentials provider to fetch signing credentials with
      */
-    struct aws_credentials *credentials;
+    struct aws_credentials_provider *credentials_provider;
 
     /*
      * The region to sign against
