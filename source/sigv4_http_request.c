@@ -315,6 +315,7 @@ struct aws_signing_waiter {
 
     struct aws_allocator *allocator;
     struct aws_http_message *request;
+    int error_code;
 };
 
 static int s_aws_signing_waiter_init(
@@ -324,6 +325,7 @@ static int s_aws_signing_waiter_init(
 
     waiter->allocator = allocator;
     waiter->request = request;
+    waiter->error_code = AWS_ERROR_SUCCESS;
 
     if (aws_mutex_init(&waiter->lock)) {
         return AWS_OP_ERR;
@@ -342,11 +344,15 @@ static void s_aws_signing_waiter_clean_up(struct aws_signing_waiter *waiter) {
     aws_condition_variable_clean_up(&waiter->signal);
 }
 
-void s_sign_callback(struct aws_signing_result *result, void *user_data) {
+void s_sign_callback(struct aws_signing_result *result, int error_code, void *user_data) {
     struct aws_signing_waiter *waiter = user_data;
     aws_mutex_lock(&waiter->lock);
 
-    aws_apply_signing_result_to_http_request(waiter->request, waiter->allocator, result);
+    waiter->error_code = error_code;
+
+    if (result) {
+        aws_apply_signing_result_to_http_request(waiter->request, waiter->allocator, result);
+    }
 
     waiter->done = true;
     aws_condition_variable_notify_one(&waiter->signal);
@@ -461,7 +467,11 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
 
     s_aws_signing_waiter_wait_on_credentials(&signing_waiter);
 
-    result = AWS_OP_SUCCESS;
+    if (signing_waiter.error_code) {
+        result = aws_raise_error(signing_waiter.error_code);
+    } else {
+        result = AWS_OP_SUCCESS;
+    }
 
 done:
 
