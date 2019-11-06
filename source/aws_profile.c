@@ -271,7 +271,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_newline, "\n");
 
 /*
  * Continuations are applied to the property value by concatenating the old value and the new value, with a '\n'
- * inbetween.
+ * in between.
  */
 static int s_profile_property_add_continuation(
     struct aws_profile_property *property,
@@ -471,7 +471,7 @@ struct aws_profile *aws_profile_new(
             PROPERTIES_TABLE_DEFAULT_SIZE,
             aws_hash_string,
             aws_hash_callback_string_eq,
-            aws_hash_callback_string_destroy,
+            NULL,
             s_property_hash_table_value_destroy)) {
 
         goto cleanup;
@@ -499,17 +499,12 @@ static struct aws_profile_property *s_profile_add_property(
     const struct aws_byte_cursor *key_cursor,
     const struct aws_byte_cursor *value_cursor) {
 
-    struct aws_string *property_name = aws_string_new_from_array(profile->allocator, key_cursor->ptr, key_cursor->len);
-    if (property_name == NULL) {
-        return NULL;
-    }
-
     struct aws_profile_property *property = aws_profile_property_new(profile->allocator, key_cursor, value_cursor);
     if (property == NULL) {
         goto on_property_new_failure;
     }
 
-    if (aws_hash_table_put(&profile->properties, property_name, property, NULL)) {
+    if (aws_hash_table_put(&profile->properties, property->name, property, NULL)) {
         goto on_hash_table_put_failure;
     }
 
@@ -519,8 +514,6 @@ on_hash_table_put_failure:
     s_profile_property_destroy(property);
 
 on_property_new_failure:
-    aws_string_destroy(property_name);
-
     return NULL;
 }
 
@@ -550,25 +543,18 @@ static int s_profile_merge(struct aws_profile *dest_profile, const struct aws_pr
         struct aws_profile_property *dest_property =
             aws_profile_get_property(dest_profile, (struct aws_string *)source_iter.element.key);
         if (dest_property == NULL) {
-            struct aws_string *dest_key =
-                aws_string_new_from_string(dest_profile->allocator, (struct aws_string *)source_iter.element.key);
-            if (dest_key == NULL) {
-                return AWS_OP_ERR;
-            }
 
             struct aws_byte_cursor empty_value;
             AWS_ZERO_STRUCT(empty_value);
 
-            struct aws_byte_cursor property_name = aws_byte_cursor_from_string(dest_key);
+            struct aws_byte_cursor property_name = aws_byte_cursor_from_string(source_iter.element.key);
             dest_property = aws_profile_property_new(dest_profile->allocator, &property_name, &empty_value);
             if (dest_property == NULL) {
-                aws_string_destroy(dest_key);
                 return AWS_OP_ERR;
             }
 
-            if (aws_hash_table_put(&dest_profile->properties, dest_key, dest_property, NULL)) {
+            if (aws_hash_table_put(&dest_profile->properties, dest_property->name, dest_property, NULL)) {
                 s_profile_property_destroy(dest_property);
-                aws_string_destroy(dest_key);
                 return AWS_OP_ERR;
             }
         }
@@ -674,18 +660,12 @@ static int s_profile_collection_add_profile(
         return AWS_OP_SUCCESS;
     }
 
-    struct aws_string *name =
-        aws_string_new_from_array(profile_collection->allocator, profile_name->ptr, profile_name->len);
-    if (name == NULL) {
-        return AWS_OP_ERR;
-    }
-
     struct aws_profile *new_profile = aws_profile_new(profile_collection->allocator, profile_name, has_prefix);
     if (new_profile == NULL) {
         goto on_aws_profile_new_failure;
     }
 
-    if (aws_hash_table_put(&profile_collection->profiles, name, new_profile, NULL)) {
+    if (aws_hash_table_put(&profile_collection->profiles, new_profile->name, new_profile, NULL)) {
         goto on_hash_table_put_failure;
     }
 
@@ -696,8 +676,6 @@ on_hash_table_put_failure:
     aws_profile_destroy(new_profile);
 
 on_aws_profile_new_failure:
-    aws_string_destroy(name);
-
     return AWS_OP_ERR;
 }
 
@@ -714,23 +692,16 @@ static int s_profile_collection_merge(
             aws_profile_collection_get_profile(dest_collection, (struct aws_string *)source_iter.element.key);
 
         if (dest_profile == NULL) {
-            struct aws_string *dest_key =
-                aws_string_new_from_string(dest_collection->allocator, (struct aws_string *)source_iter.element.key);
-            if (dest_key == NULL) {
-                return AWS_OP_ERR;
-            }
 
-            struct aws_byte_cursor name_cursor = aws_byte_cursor_from_string(dest_key);
+            struct aws_byte_cursor name_cursor = aws_byte_cursor_from_string(source_iter.element.key);
             dest_profile =
                 aws_profile_new(dest_collection->allocator, &name_cursor, source_profile->has_profile_prefix);
             if (dest_profile == NULL) {
-                aws_string_destroy(dest_key);
                 return AWS_OP_ERR;
             }
 
-            if (aws_hash_table_put(&dest_collection->profiles, dest_key, dest_profile, NULL)) {
+            if (aws_hash_table_put(&dest_collection->profiles, dest_profile->name, dest_profile, NULL)) {
                 aws_profile_destroy(dest_profile);
-                aws_string_destroy(dest_key);
                 return AWS_OP_ERR;
             }
         }
@@ -775,7 +746,7 @@ struct aws_profile_collection *aws_profile_collection_new_from_merge(
             max_profiles,
             aws_hash_string,
             aws_hash_callback_string_eq,
-            aws_hash_callback_string_destroy,
+            NULL,
             s_profile_hash_table_value_destroy)) {
         goto cleanup;
     }
@@ -1219,7 +1190,7 @@ static struct aws_profile_collection *s_aws_profile_collection_new_internal(
             PROFILE_TABLE_DEFAULT_SIZE,
             aws_hash_string,
             aws_hash_callback_string_eq,
-            aws_hash_callback_string_destroy,
+            NULL,
             s_profile_hash_table_value_destroy)) {
         goto cleanup;
     }
