@@ -471,7 +471,7 @@ struct aws_profile *aws_profile_new(
             PROPERTIES_TABLE_DEFAULT_SIZE,
             aws_hash_string,
             aws_hash_callback_string_eq,
-            NULL,
+            NULL, /* The key is owned by the value (and destroy cleans it up), so we don't have to */
             s_property_hash_table_value_destroy)) {
 
         goto cleanup;
@@ -1190,7 +1190,7 @@ static struct aws_profile_collection *s_aws_profile_collection_new_internal(
             PROFILE_TABLE_DEFAULT_SIZE,
             aws_hash_string,
             aws_hash_callback_string_eq,
-            NULL,
+            NULL, /* The key is owned by the value (and destroy cleans it up), so we don't have to */
             s_profile_hash_table_value_destroy)) {
         goto cleanup;
     }
