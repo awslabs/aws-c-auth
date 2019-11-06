@@ -85,6 +85,7 @@ void s_aws_signer_on_get_credentials(struct aws_credentials *credentials, void *
     state->credentials = credentials;
 
     struct aws_signing_result *result = NULL;
+    int error_code = AWS_ERROR_SUCCESS;
 
     if (aws_signing_build_canonical_request(state)) {
         AWS_LOGF_ERROR(
@@ -92,6 +93,7 @@ void s_aws_signer_on_get_credentials(struct aws_credentials *credentials, void *
             "(id=%p) Http request failed to build canonical request via algorithm %s",
             (void *)state->signable,
             aws_signing_algorithm_to_string(state->config->algorithm));
+        error_code = aws_last_error();
         goto cleanup;
     }
 
@@ -108,6 +110,7 @@ void s_aws_signer_on_get_credentials(struct aws_credentials *credentials, void *
             "(id=%p) Http request failed to build string-to-sign via algorithm %s",
             (void *)state->signable,
             aws_signing_algorithm_to_string(state->config->algorithm));
+        error_code = aws_last_error();
         goto cleanup;
     }
 
@@ -124,13 +127,14 @@ void s_aws_signer_on_get_credentials(struct aws_credentials *credentials, void *
             "(id=%p) Http request failed to build final authorization value via algorithm %s",
             (void *)state->signable,
             aws_signing_algorithm_to_string(state->config->algorithm));
+        error_code = aws_last_error();
         goto cleanup;
     }
 
     result = &state->result;
 
 cleanup:
-    state->on_complete(result, state->userdata);
+    state->on_complete(result, error_code, state->userdata);
     aws_signing_state_destroy(state);
 }
 

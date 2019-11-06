@@ -355,7 +355,10 @@ void s_sigv4_signer_wait(struct sigv4_signer_waiter *waiter) {
     aws_mutex_unlock(&waiter->lock);
 }
 
-void s_sigv4_signing_complete(struct aws_signing_result *result, void *userdata) {
+void s_sigv4_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
+
+    AWS_FATAL_ASSERT(error_code == AWS_ERROR_SUCCESS);
+
     struct sigv4_signer_waiter *waiter = userdata;
 
     /* Swap the result into the waiter */

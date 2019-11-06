@@ -30,7 +30,7 @@ struct aws_signer;
  * Note that result will be destroyed after this function returns, so either copy it,
  * or do all necessary adjustments inside the callback.
  */
-typedef void(aws_signer_signing_complete_fn)(struct aws_signing_result *result, void *userdata);
+typedef void(aws_signer_signing_complete_fn)(struct aws_signing_result *result, int error_code, void *userdata);
 
 typedef int(aws_signer_sign_request_fn)(
     struct aws_signer *signer,

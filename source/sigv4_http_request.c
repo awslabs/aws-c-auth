@@ -342,9 +342,11 @@ static void s_aws_signing_waiter_clean_up(struct aws_signing_waiter *waiter) {
     aws_condition_variable_clean_up(&waiter->signal);
 }
 
-void s_sign_callback(struct aws_signing_result *result, void *user_data) {
+void s_sign_callback(struct aws_signing_result *result, int error_code, void *user_data) {
     struct aws_signing_waiter *waiter = user_data;
     aws_mutex_lock(&waiter->lock);
+
+    AWS_FATAL_ASSERT(error_code == AWS_ERROR_SUCCESS);
 
     aws_apply_signing_result_to_http_request(waiter->request, waiter->allocator, result);
 
