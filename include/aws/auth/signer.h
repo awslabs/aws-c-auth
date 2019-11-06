@@ -24,11 +24,20 @@
 struct aws_signable;
 struct aws_signer;
 
+/**
+ * Gets called by the signer when the signing is complete.
+ *
+ * Note that result will be destroyed after this function returns, so either copy it,
+ * or do all necessary adjustments inside the callback.
+ */
+typedef void(aws_signer_signing_complete_fn)(struct aws_signing_result *result, void *userdata);
+
 typedef int(aws_signer_sign_request_fn)(
     struct aws_signer *signer,
     const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
-    struct aws_signing_result *result);
+    aws_signer_signing_complete_fn *on_complete,
+    void *userdata);
 typedef void(aws_signer_clean_up_fn)(struct aws_signer *signer);
 
 struct aws_signer_vtable {
@@ -63,7 +72,8 @@ int aws_signer_sign_request(
     struct aws_signer *signer,
     const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
-    struct aws_signing_result *result);
+    aws_signer_signing_complete_fn *on_complete,
+    void *userdata);
 
 /*
  * Creates a new signer that performs AWS http request signing.  Requires an instance of
