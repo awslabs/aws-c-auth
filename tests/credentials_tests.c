@@ -538,6 +538,9 @@ int aws_create_profile_file(const struct aws_string *file_name, const struct aws
 
 AWS_STATIC_STRING_FROM_LITERAL(s_config_file_name, "./.config_test");
 AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_name, "./.credentials_test");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
 
 typedef int(s_verify_credentials_callback_fn)(struct aws_get_credentials_test_callback_result *callback_results);
 
@@ -546,9 +549,17 @@ static int s_do_credentials_provider_profile_test(
     const struct aws_string *config_contents,
     const struct aws_string *credentials_contents,
     struct aws_credentials_provider_profile_options *options,
-    s_verify_credentials_callback_fn verifier) {
+    s_verify_credentials_callback_fn verifier,
+    bool reset_environment) {
 
     int result = AWS_OP_ERR;
+
+    if (reset_environment) {
+        /* Zero out all of the environment variables, just in case the user has it set (other tests may re-set it) */
+        aws_unset_environment_value(s_default_profile_env_variable_name);
+        aws_unset_environment_value(s_default_config_path_env_variable_name);
+        aws_unset_environment_value(s_default_credentials_path_env_variable_name);
+    }
 
     if (aws_create_profile_file(s_config_file_name, config_contents) ||
         aws_create_profile_file(s_credentials_file_name, credentials_contents)) {
@@ -608,7 +619,7 @@ static int s_profile_credentials_provider_default_test(struct aws_allocator *all
         .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name)};
 
     return s_do_credentials_provider_profile_test(
-        allocator, s_config_contents, s_credentials_contents, &options, s_verify_default_credentials_callback);
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_default_credentials_callback, true);
 }
 
 AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_provider_default_test);
@@ -631,17 +642,14 @@ static int s_profile_credentials_provider_nondefault_test(struct aws_allocator *
     struct aws_credentials_provider_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(s_config_file_name),
         .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name),
-        .profile_name_override = aws_byte_cursor_from_string(s_foo_profile)};
+        .profile_name_override = aws_byte_cursor_from_string(s_foo_profile),
+    };
 
     return s_do_credentials_provider_profile_test(
-        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
+        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback, true);
 }
 
 AWS_TEST_CASE(profile_credentials_provider_nondefault_test, s_profile_credentials_provider_nondefault_test);
-
-AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
 
 static int s_profile_credentials_provider_environment_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -661,7 +669,12 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
     AWS_ZERO_STRUCT(options);
 
     return s_do_credentials_provider_profile_test(
-        allocator, s_config_contents, s_credentials_contents, &options, s_verify_nondefault_credentials_callback);
+        allocator,
+        s_config_contents,
+        s_credentials_contents,
+        &options,
+        s_verify_nondefault_credentials_callback,
+        false);
 }
 
 AWS_TEST_CASE(profile_credentials_provider_environment_test, s_profile_credentials_provider_environment_test);
