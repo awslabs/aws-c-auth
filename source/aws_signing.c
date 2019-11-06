@@ -541,7 +541,7 @@ static int s_add_authorization_query_param_with_encoding(
  */
 static bool s_should_sign_param(struct aws_signing_state_aws *state, struct aws_byte_cursor *name) {
     if (state->config->should_sign_param) {
-        if (!state->config->should_sign_param(name)) {
+        if (!state->config->should_sign_param(name, state->config->should_sign_param_ud)) {
             return false;
         }
     }

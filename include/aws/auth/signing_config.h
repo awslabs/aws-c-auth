@@ -23,7 +23,7 @@
 
 struct aws_credentials;
 
-typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name);
+typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name, void *userdata);
 
 /*
  * A primitive RTTI indicator for signing configuration structs
@@ -96,6 +96,7 @@ struct aws_signing_config_aws {
      * the internal check (skips x-amzn-trace-id, user-agent) and this function (if defined).
      */
     aws_should_sign_param_fn *should_sign_param;
+    void *should_sign_param_ud;
 
     /*
      * We assume the uri will be encoded once in preparation for transmission.  Certain services

@@ -774,7 +774,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "host;x-amz-date\n"
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
-static bool s_should_sign_header(const struct aws_byte_cursor *name) {
+static bool s_should_sign_header(const struct aws_byte_cursor *name, void *userdata) {
+    (void)userdata;
+
     struct aws_byte_cursor my_header_cursor = aws_byte_cursor_from_c_str("myheader");
     struct aws_byte_cursor another_header_cursor = aws_byte_cursor_from_c_str("anOtherHeader");
 
