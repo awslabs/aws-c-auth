@@ -1111,7 +1111,7 @@ static int s_append_canonical_payload_hash(struct aws_signing_state_aws *state) 
     /*
      * Add the payload hash header to the result if necessary
      */
-    if (s_is_header_auth(state->config->algorithm)) {
+    if (state->config->sign_body && s_is_header_auth(state->config->algorithm)) {
         struct aws_byte_cursor hashed_body_header_name = aws_byte_cursor_from_string(g_aws_signing_content_header_name);
         if (aws_signing_result_append_property_list(
                 &state->result,
