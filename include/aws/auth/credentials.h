@@ -55,6 +55,13 @@ struct aws_credentials_provider_vtable {
 
 typedef void(aws_credentials_provider_shutdown_completed_fn)(void *user_data);
 
+/*
+ * All credentials providers support an optional shutdown callback that
+ * gets invoked, with appropriate user data, when the resources used by the provider
+ * are no longer in use.  For example, the imds provider uses this to
+ * signal when it is no longer using the client bootstrap used in its
+ * internal connection manager.
+ */
 struct aws_credentials_provider_shutdown_options {
     aws_credentials_provider_shutdown_completed_fn *shutdown_callback;
     void *shutdown_user_data;

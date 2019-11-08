@@ -49,6 +49,8 @@ struct aws_mock_imds_tester {
 static struct aws_mock_imds_tester s_tester;
 
 static void s_on_shutdown_complete(void *user_data) {
+    (void)user_data;
+
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_shutdown_callback = true;
     aws_mutex_unlock(&s_tester.lock);

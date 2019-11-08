@@ -100,6 +100,8 @@ static void s_aws_credentials_shutdown_checker_clean_up(void) {
 }
 
 static void s_on_shutdown_complete(void *user_data) {
+    (void)user_data;
+
     aws_mutex_lock(&s_shutdown_checker.lock);
     s_shutdown_checker.is_shutdown_complete = true;
     aws_mutex_unlock(&s_shutdown_checker.lock);
