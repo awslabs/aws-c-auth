@@ -930,7 +930,9 @@ int s_verify_second_credentials_callback(struct aws_get_credentials_test_callbac
 static int s_credentials_provider_second_in_chain_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials_provider_shutdown_options null_options = {};
+    struct aws_credentials_provider_shutdown_options null_options;
+    AWS_ZERO_STRUCT(null_options);
+
     struct aws_credentials_provider_static_options options = {
         .access_key_id = aws_byte_cursor_from_string(s_access_key_id_value2),
         .secret_access_key = aws_byte_cursor_from_string(s_secret_access_key_value2),
@@ -956,7 +958,8 @@ int s_verify_null_credentials_callback(struct aws_get_credentials_test_callback_
 static int s_credentials_provider_null_chain_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials_provider_shutdown_options null_options = {};
+    struct aws_credentials_provider_shutdown_options null_options;
+    AWS_ZERO_STRUCT(null_options);
 
     return s_do_provider_chain_test(
         allocator,
