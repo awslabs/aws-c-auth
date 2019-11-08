@@ -115,36 +115,44 @@ static int s_mock_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_mock_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_mock_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_mock_impl *impl = (struct aws_credentials_provider_mock_impl *)provider->impl;
 
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
     aws_array_list_clean_up(&impl->results);
-    aws_mem_release(provider->allocator, impl);
+
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_mock_vtable = {
     .get_credentials = s_mock_credentials_provider_get_credentials_async,
-    .clean_up = s_mock_credentials_provider_clean_up};
+    .destroy = s_mock_credentials_provider_destroy,
+};
 
 struct aws_credentials_provider *aws_credentials_provider_new_mock(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
-    size_t result_count) {
-    struct aws_credentials_provider_mock_impl *impl = (struct aws_credentials_provider_mock_impl *)aws_mem_acquire(
-        allocator, sizeof(struct aws_credentials_provider_mock_impl));
-    if (impl == NULL) {
+    size_t result_count,
+    struct aws_credentials_provider_shutdown_options *shutdown_options) {
+
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_mock_impl *impl = NULL;
+
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_mock_impl));
+
+    if (!provider) {
         return NULL;
     }
 
-    AWS_ZERO_STRUCT(*impl);
-
-    struct aws_credentials_provider *provider =
-        (struct aws_credentials_provider *)aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
-        goto on_allocate_provider_failure;
-    }
-
     AWS_ZERO_STRUCT(*provider);
+    AWS_ZERO_STRUCT(*impl);
 
     if (aws_array_list_init_dynamic(
             &impl->results, allocator, result_count, sizeof(struct get_credentials_mock_result))) {
@@ -158,16 +166,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_vtable;
     provider->impl = impl;
+    provider->shutdown_options = *shutdown_options;
     aws_atomic_store_int(&provider->ref_count, 1);
-    aws_atomic_store_int(&provider->shutting_down, 0);
 
     return provider;
 
 on_init_result_list_failure:
     aws_mem_release(allocator, provider);
-
-on_allocate_provider_failure:
-    aws_mem_release(allocator, impl);
 
     return NULL;
 }
@@ -218,9 +223,11 @@ static int s_async_mock_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_async_mock_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_async_mock_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_mock_async_impl *impl =
         (struct aws_credentials_provider_mock_async_impl *)provider->impl;
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
 
     aws_mutex_lock(&impl->controller->sync);
     impl->controller->should_quit = true;
@@ -233,12 +240,13 @@ static void s_async_mock_credentials_provider_clean_up(struct aws_credentials_pr
     aws_array_list_clean_up(&impl->queries);
     aws_array_list_clean_up(&impl->mock_results);
 
-    aws_mem_release(provider->allocator, impl);
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_mock_async_vtable = {
     .get_credentials = s_async_mock_credentials_provider_get_credentials_async,
-    .clean_up = s_async_mock_credentials_provider_clean_up};
+    .destroy = s_async_mock_credentials_provider_destroy,
+};
 
 bool invoke_credential_callback_predicate(void *arg) {
     struct aws_credentials_provider_mock_async_controller *controller =
@@ -303,20 +311,25 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
     size_t result_count,
-    struct aws_credentials_provider_mock_async_controller *controller) {
+    struct aws_credentials_provider_mock_async_controller *controller,
+    struct aws_credentials_provider_shutdown_options *shutdown_options) {
 
-    struct aws_credentials_provider *provider =
-        (struct aws_credentials_provider *)aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_mock_async_impl *impl = NULL;
+
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_mock_async_impl));
+
+    if (!provider) {
         return NULL;
     }
 
-    struct aws_credentials_provider_mock_async_impl *impl =
-        (struct aws_credentials_provider_mock_async_impl *)aws_mem_acquire(
-            allocator, sizeof(struct aws_credentials_provider_mock_async_impl));
-    if (impl == NULL) {
-        goto on_mock_async_provider_impl_allocate_failure;
-    }
+    AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
     if (aws_array_list_init_dynamic(&impl->queries, allocator, 10, sizeof(struct aws_credentials_query))) {
@@ -348,8 +361,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_async_vtable;
     provider->impl = impl;
+    provider->shutdown_options = *shutdown_options;
     aws_atomic_store_int(&provider->ref_count, 1);
-    aws_atomic_store_int(&provider->shutting_down, 0);
 
     return provider;
 
@@ -363,9 +376,6 @@ on_mock_result_list_init_failure:
     aws_array_list_clean_up(&impl->queries);
 
 on_query_list_init_failure:
-    aws_mem_release(allocator, impl);
-
-on_mock_async_provider_impl_allocate_failure:
     aws_mem_release(allocator, provider);
 
     return NULL;
@@ -410,15 +420,20 @@ static int s_credentials_provider_null_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_credentials_provider_null_clean_up(struct aws_credentials_provider *provider) {
-    (void)provider;
+static void s_credentials_provider_null_destroy(struct aws_credentials_provider *provider) {
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_null_vtable = {
     .get_credentials = s_credentials_provider_null_get_credentials_async,
-    .clean_up = s_credentials_provider_null_clean_up};
+    .destroy = s_credentials_provider_null_destroy,
+};
 
-struct aws_credentials_provider *aws_credentials_provider_new_null(struct aws_allocator *allocator) {
+struct aws_credentials_provider *aws_credentials_provider_new_null(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_shutdown_options *shutdown_options) {
     struct aws_credentials_provider *provider =
         (struct aws_credentials_provider *)aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
@@ -430,8 +445,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(struct aws_al
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_null_vtable;
     provider->impl = NULL;
+    provider->shutdown_options = *shutdown_options;
     aws_atomic_store_int(&provider->ref_count, 1);
-    aws_atomic_store_int(&provider->shutting_down, 0);
 
     return provider;
 }

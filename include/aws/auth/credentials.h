@@ -191,7 +191,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
  * AWS_SESSION_TOKEN
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_environment(struct aws_allocator *allocator, struct aws_credentials_provider_environment_options *options);
+struct aws_credentials_provider *aws_credentials_provider_new_environment(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_environment_options *options);
 
 /*
  * A provider that functions as a caching decorating of another provider.

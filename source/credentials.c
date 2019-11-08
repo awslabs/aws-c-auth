@@ -172,6 +172,7 @@ int aws_credentials_provider_get_credentials(
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_chain_default_options *options) {
+
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
     struct aws_credentials_provider *imds_provider = NULL;
@@ -179,8 +180,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider *cached_provider = NULL;
 
     struct aws_credentials_provider_environment_options environment_options;
-    environment_options.
-    environment_provider = aws_credentials_provider_new_environment(allocator);
+    AWS_ZERO_STRUCT(environment_options);
+
+    environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
     if (environment_provider == NULL) {
         goto on_error;
     }
@@ -195,8 +197,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_imds_options imds_options;
     AWS_ZERO_STRUCT(imds_options);
     imds_options.bootstrap = options->bootstrap;
-    imds_options.resources_released_callback = options->resources_released_callback;
-    imds_options.resources_released_user_data = options->resources_released_user_data;
     imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
     if (imds_provider == NULL) {
         goto on_error;
@@ -225,6 +225,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     cached_options.source = chain_provider;
     cached_options.refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS;
+    cached_options.shutdown_options = options->shutdown_options;
 
     cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
     if (cached_provider == NULL) {

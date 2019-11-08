@@ -478,11 +478,14 @@ static int s_do_sigv4_test_suite_test(
         } else {
             AWS_ZERO_STRUCT(session_token);
         }
-        config.credentials_provider = aws_credentials_provider_new_static(
-            allocator,
-            aws_byte_cursor_from_string(credentials->access_key_id),
-            aws_byte_cursor_from_string(credentials->secret_access_key),
-            session_token);
+
+        struct aws_credentials_provider_static_options static_options = {
+            .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
+            .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
+            .session_token = session_token,
+        };
+
+        config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
 
         struct sigv4_signer_waiter waiter;
         ASSERT_SUCCESS(s_sigv4_signer_waiter_init(&waiter));

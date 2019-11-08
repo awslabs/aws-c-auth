@@ -66,7 +66,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
     AWS_ZERO_STRUCT(*provider);
 
     struct aws_credentials *credentials = aws_credentials_new_from_cursors(
-        allocator, &options->access_key_id, &options->secret_access_key, options->session_token.len ? &options->session_token : NULL);
+        allocator,
+        &options->access_key_id,
+        &options->secret_access_key,
+        options->session_token.len ? &options->session_token : NULL);
     if (credentials == NULL) {
         goto on_new_credentials_failure;
     }

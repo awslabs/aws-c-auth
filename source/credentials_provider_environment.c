@@ -72,9 +72,11 @@ static void s_credentials_provider_environment_destroy(struct aws_credentials_pr
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_environment_vtable = {
     .get_credentials = s_credentials_provider_environment_get_credentials_async,
     .destroy = s_credentials_provider_environment_destroy,
-    };
+};
 
-struct aws_credentials_provider *aws_credentials_provider_new_environment(struct aws_allocator *allocator, struct aws_credentials_provider_environment_options *options) {
+struct aws_credentials_provider *aws_credentials_provider_new_environment(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_environment_options *options) {
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
         return NULL;

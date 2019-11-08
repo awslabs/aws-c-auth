@@ -23,6 +23,7 @@
 
 struct aws_credentials;
 struct aws_credentials_provider;
+struct aws_credentials_provider_shutdown_options;
 struct aws_string;
 
 /*
@@ -68,7 +69,8 @@ struct get_credentials_mock_result {
 struct aws_credentials_provider *aws_credentials_provider_new_mock(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
-    size_t result_count);
+    size_t result_count,
+    struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 /*
  * Credentials provider that puts a mock provider in a background thread and uses signalling to control callback
@@ -90,7 +92,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
     size_t result_count,
-    struct aws_credentials_provider_mock_async_controller *controller);
+    struct aws_credentials_provider_mock_async_controller *controller,
+    struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 /*
  * Simple global clock mock
@@ -101,6 +104,8 @@ void mock_aws_set_time(uint64_t current_time);
 /*
  * Credentials provider that always returns NULL.  Useful for chain tests.
  */
-struct aws_credentials_provider *aws_credentials_provider_new_null(struct aws_allocator *allocator);
+struct aws_credentials_provider *aws_credentials_provider_new_null(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 #endif /* AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H */
