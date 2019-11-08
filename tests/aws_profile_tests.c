@@ -49,7 +49,7 @@
         struct aws_profile_property *property = aws_profile_get_property(profile, property_name_str);                  \
         aws_string_destroy(property_name_str);                                                                         \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(property != NULL && strcmp(expected_property_value, (const char *)property->value->bytes) == 0);   \
+        ASSERT_TRUE(property != NULL && strcmp(expected_property_value, aws_string_c_str(property->value)) == 0);      \
     }
 
 #define EXPECT_SUB_PROPERTY_COUNT(profile_collection, profile_name, property_name, expected_sub_property_count)        \
@@ -60,7 +60,7 @@
         struct aws_profile_property *property = aws_profile_get_property(profile, property_name_str);                  \
         aws_string_destroy(property_name_str);                                                                         \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(aws_profile_property_get_sub_property_count(property) == (expected_sub_property_count));           \
+        ASSERT_UINT_EQUALS((expected_sub_property_count), aws_profile_property_get_sub_property_count(property));      \
     }
 
 #define EXPECT_SUB_PROPERTY(                                                                                           \
@@ -76,7 +76,7 @@
         aws_string_destroy(sub_property_name_str);                                                                     \
         aws_string_destroy(property_name_str);                                                                         \
         aws_string_destroy(profile_name_str);                                                                          \
-        ASSERT_TRUE(strcmp(expected_sub_property_value, (const char *)sub_property_value->bytes) == 0);                \
+        ASSERT_TRUE(strcmp(expected_sub_property_value, aws_string_c_str(sub_property_value)) == 0);                   \
     }
 
 /*
@@ -1295,10 +1295,14 @@ static int s_credentials_file_path_environment_test(struct aws_allocator *alloca
 
 AWS_TEST_CASE(credentials_file_path_environment_test, s_credentials_file_path_environment_test);
 
+AWS_STATIC_STRING_FROM_LITERAL(s_profile_env_var, "AWS_PROFILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_profile_override, "NotTheDefault");
 
 static int s_profile_override_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
+
+    /* Make sure the environment doesn't affect this test */
+    aws_unset_environment_value(s_profile_env_var);
 
     struct aws_byte_cursor override_cursor = aws_byte_cursor_from_string(s_profile_override);
     struct aws_string *profile_name = aws_get_profile_name(allocator, &override_cursor);
@@ -1310,8 +1314,6 @@ static int s_profile_override_test(struct aws_allocator *allocator, void *ctx) {
 }
 
 AWS_TEST_CASE(profile_override_test, s_profile_override_test);
-
-AWS_STATIC_STRING_FROM_LITERAL(s_profile_env_var, "AWS_PROFILE");
 
 static int s_profile_environment_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;

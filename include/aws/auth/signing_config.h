@@ -23,7 +23,7 @@
 
 struct aws_credentials;
 
-typedef bool(aws_should_sign_header_fn)(const struct aws_byte_cursor *name);
+typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name, void *userdata);
 
 /*
  * A primitive RTTI indicator for signing configuration structs
@@ -67,9 +67,9 @@ struct aws_signing_config_aws {
     enum aws_signing_algorithm algorithm;
 
     /*
-     * AWS credentials to sign with
+     * AWS credentials provider to fetch signing credentials with
      */
-    struct aws_credentials *credentials;
+    struct aws_credentials_provider *credentials_provider;
 
     /*
      * The region to sign against
@@ -87,14 +87,16 @@ struct aws_signing_config_aws {
     struct aws_date_time date;
 
     /*
-     * Optional function to control which headers are a part of the canonical request.  Skipping auth-required headers
+     * Optional function to control which parameters (header or query) are a part of the canonical request.
+     * Skipping auth-required params
      * will result in an unusable signature.  Headers injected by the signing process are not skippable.
      *
      * This function does not override the internal check function (x-amzn-trace-id, user-agent), but rather
      * supplements it.  In particular, a header will get signed if and only if it returns true to both
      * the internal check (skips x-amzn-trace-id, user-agent) and this function (if defined).
      */
-    aws_should_sign_header_fn *should_sign_header;
+    aws_should_sign_param_fn *should_sign_param;
+    void *should_sign_param_ud;
 
     /*
      * We assume the uri will be encoded once in preparation for transmission.  Certain services

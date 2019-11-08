@@ -175,18 +175,18 @@ static struct aws_credentials *s_parse_credentials_from_imds_document(
     /*
      * Pull out the three credentials components
      */
-    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_access_key_id_name->bytes);
+    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_access_key_id_name));
     if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
         goto done;
     }
 
     cJSON *secret_access_key =
-        cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_secret_access_key_name->bytes);
+        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_secret_access_key_name));
     if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
         goto done;
     }
 
-    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, (const char *)s_session_token_name->bytes);
+    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
     if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
         goto done;
     }

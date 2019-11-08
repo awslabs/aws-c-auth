@@ -17,6 +17,7 @@
  */
 
 #include <aws/auth/auth.h>
+#include <aws/auth/signer.h>
 
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
@@ -41,7 +42,11 @@ struct aws_signing_state_aws {
 
     const struct aws_signable *signable;
     const struct aws_signing_config_aws *config;
-    struct aws_signing_result *result;
+    aws_signer_signing_complete_fn *on_complete;
+    void *userdata;
+
+    struct aws_signing_result result;
+    struct aws_credentials *credentials;
 
     /* persistent, constructed values that are either/or
      *  (1) consumed by later stages of the signing process,
@@ -53,21 +58,22 @@ struct aws_signing_state_aws {
     struct aws_byte_buf canonical_header_block;
     struct aws_byte_buf payload_hash;
     struct aws_byte_buf credential_scope;
+    struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
 };
 
 AWS_EXTERN_C_BEGIN
 
 AWS_AUTH_API
-int aws_signing_state_init(
-    struct aws_signing_state_aws *state,
+struct aws_signing_state_aws *aws_signing_state_new(
     struct aws_allocator *allocator,
     const struct aws_signing_config_aws *context,
     const struct aws_signable *signable,
-    struct aws_signing_result *result);
+    aws_signer_signing_complete_fn *on_complete,
+    void *userdata);
 
 AWS_AUTH_API
-void aws_signing_state_clean_up(struct aws_signing_state_aws *state);
+void aws_signing_state_destroy(struct aws_signing_state_aws *state);
 
 /*
  * A set of functions that together performs the AWS signing process based
@@ -100,6 +106,7 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signing_date_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_signed_headers_query_param_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_header_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_security_token_name;
 
 /**
  * Initializes the internal table of headers that should not be signed
