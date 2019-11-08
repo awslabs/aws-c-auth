@@ -655,8 +655,8 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
     struct aws_credentials_provider_imds_options options = {.bootstrap = bootstrap,
-                                                            .bootstrap_release_callback = s_on_bootstrap_release,
-                                                            .bootstrap_release_user_data = &release_data};
+                                                            .resources_released_callback = s_on_bootstrap_release,
+                                                            .resources_released_user_data = &release_data};
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
