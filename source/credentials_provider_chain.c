@@ -113,7 +113,7 @@ static int s_credentials_provider_chain_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_credentials_provider_chain_clean_up(struct aws_credentials_provider *provider) {
+static void s_credentials_provider_chain_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
     if (impl == NULL) {
         return;
@@ -130,25 +130,14 @@ static void s_credentials_provider_chain_clean_up(struct aws_credentials_provide
     }
 
     aws_array_list_clean_up(&impl->providers);
-}
 
-static void s_credentials_provider_chain_shutdown(struct aws_credentials_provider *provider) {
-    struct aws_credentials_provider_chain_impl *impl = provider->impl;
-    size_t provider_count = aws_array_list_length(&impl->providers);
-    for (size_t i = 0; i < provider_count; ++i) {
-        struct aws_credentials_provider *chain_member = NULL;
-        if (aws_array_list_get_at(&impl->providers, &chain_member, i)) {
-            continue;
-        }
-
-        aws_credentials_provider_shutdown(chain_member);
-    }
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_chain_vtable = {
     .get_credentials = s_credentials_provider_chain_get_credentials_async,
-    .clean_up = s_credentials_provider_chain_clean_up,
-    .shutdown = s_credentials_provider_chain_shutdown};
+    .destroy = s_credentials_provider_chain_destroy,
+    };
 
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
@@ -191,6 +180,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
 
         aws_credentials_provider_acquire(sub_provider);
     }
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 

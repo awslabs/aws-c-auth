@@ -141,20 +141,8 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
 
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     if (provider != NULL) {
-        /* allow this to be null to support partial construction cleanup */
-        if (provider->vtable->clean_up) {
-            provider->vtable->clean_up(provider);
-        }
-
-        aws_mem_release(provider->allocator, provider);
+        provider->vtable->destroy(provider);
     }
-}
-
-void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
-    aws_atomic_store_int(&provider->shutting_down, 1);
-
-    AWS_ASSERT(provider->vtable->shutdown);
-    provider->vtable->shutdown(provider);
 }
 
 void aws_credentials_provider_release(struct aws_credentials_provider *provider) {
@@ -190,6 +178,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
 
+    struct aws_credentials_provider_environment_options environment_options;
+    environment_options.
     environment_provider = aws_credentials_provider_new_environment(allocator);
     if (environment_provider == NULL) {
         goto on_error;

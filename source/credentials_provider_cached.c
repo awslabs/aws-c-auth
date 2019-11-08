@@ -183,7 +183,7 @@ static int s_cached_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_cached_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_cached_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_cached *impl = provider->impl;
     if (impl == NULL) {
         return;
@@ -196,17 +196,14 @@ static void s_cached_credentials_provider_clean_up(struct aws_credentials_provid
     }
 
     aws_mutex_clean_up(&impl->lock);
-}
 
-static void s_cached_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
-    struct aws_credentials_provider_cached *impl = provider->impl;
-    aws_credentials_provider_shutdown(impl->source);
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_vtable = {
     .get_credentials = s_cached_credentials_provider_get_credentials_async,
-    .clean_up = s_cached_credentials_provider_clean_up,
-    .shutdown = s_cached_credentials_provider_shutdown};
+    .destroy = s_cached_credentials_provider_destroy,
+    };
 
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
@@ -262,6 +259,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     } else {
         impl->clock_fn = &aws_high_res_clock_get_ticks;
     }
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 

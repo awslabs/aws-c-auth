@@ -44,10 +44,14 @@ void aws_credentials_provider_init_base(
     provider->allocator = allocator;
     provider->vtable = vtable;
     provider->impl = impl;
-    aws_atomic_store_int(&provider->shutting_down, 0);
+
     aws_atomic_store_int(&provider->ref_count, 1);
 }
 
-void aws_credentials_provider_shutdown_nil(struct aws_credentials_provider *provider) {
-    (void)provider;
+void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider) {
+    if (provider) {
+        if (provider->shutdown_options.shutdown_callback) {
+            provider->shutdown_options.shutdown_callback(provider->shutdown_options.shutdown_user_data);
+        }
+    }
 }

@@ -63,16 +63,18 @@ static int s_credentials_provider_environment_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_credentials_provider_environment_clean_up(struct aws_credentials_provider *provider) {
-    (void)provider;
+static void s_credentials_provider_environment_destroy(struct aws_credentials_provider *provider) {
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_environment_vtable = {
     .get_credentials = s_credentials_provider_environment_get_credentials_async,
-    .clean_up = s_credentials_provider_environment_clean_up,
-    .shutdown = aws_credentials_provider_shutdown_nil};
+    .destroy = s_credentials_provider_environment_destroy,
+    };
 
-struct aws_credentials_provider *aws_credentials_provider_new_environment(struct aws_allocator *allocator) {
+struct aws_credentials_provider *aws_credentials_provider_new_environment(struct aws_allocator *allocator, struct aws_credentials_provider_environment_options *options) {
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
         return NULL;
@@ -81,6 +83,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(struct
     AWS_ZERO_STRUCT(*provider);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_environment_vtable, NULL);
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 }
