@@ -61,28 +61,9 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 
-/* forbidden query params and headers */
+/* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
 static struct aws_hash_table s_forbidden_params;
-
-/*  params
-*      X-Amz-Signature,
-*      X-Amz-Date,
-*      X-Amz-Credential,
-*      X-Amz-Algorithm,
-*      X-Amz-SignedHeaders
-*/
-
-/*
- * Headers
- *      x-amz-content-sha256,
- *      X-Amz-Date,
- *      Authorization
- */
-
-/*
- * Header signing helpers
- */
 static struct aws_hash_table s_skipped_headers;
 
 static struct aws_byte_cursor s_amzn_trace_id_header_name;
@@ -93,15 +74,17 @@ static struct aws_byte_cursor s_sec_websocket_protocol_header_name;
 static struct aws_byte_cursor s_sec_websocket_version_header_name;
 static struct aws_byte_cursor s_upgrade_header_name;
 
-int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
+static struct aws_byte_cursor s_amz_content_sha256_header_name;
+static struct aws_byte_cursor s_amz_date_header_name;
+static struct aws_byte_cursor s_authorization_header_name;
 
-    s_amzn_trace_id_header_name = aws_byte_cursor_from_c_str("x-amzn-trace-id");
-    s_user_agent_header_name = aws_byte_cursor_from_c_str("UserAgent");
-    s_connection_header_name = aws_byte_cursor_from_c_str("connection");
-    s_sec_websocket_key_header_name = aws_byte_cursor_from_c_str("sec-websocket-key");
-    s_sec_websocket_protocol_header_name = aws_byte_cursor_from_c_str("sec-websocket-protocol");
-    s_sec_websocket_version_header_name = aws_byte_cursor_from_c_str("sec-websocket-version");
-    s_upgrade_header_name = aws_byte_cursor_from_c_str("upgrade");
+static struct aws_byte_cursor s_amz_signature_param_name;
+static struct aws_byte_cursor s_amz_date_param_name;
+static struct aws_byte_cursor s_amz_credential_param_name;
+static struct aws_byte_cursor s_amz_algorithm_param_name;
+static struct aws_byte_cursor s_amz_signed_headers_param_name;
+
+int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
 
     if (aws_hash_table_init(
             &s_skipped_headers,
@@ -114,30 +97,37 @@ int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_amzn_trace_id_header_name = aws_byte_cursor_from_c_str("x-amzn-trace-id");
     if (aws_hash_table_put(&s_skipped_headers, &s_amzn_trace_id_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
+    s_user_agent_header_name = aws_byte_cursor_from_c_str("UserAgent");
     if (aws_hash_table_put(&s_skipped_headers, &s_user_agent_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
+    s_connection_header_name = aws_byte_cursor_from_c_str("connection");
     if (aws_hash_table_put(&s_skipped_headers, &s_connection_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
+    s_sec_websocket_key_header_name = aws_byte_cursor_from_c_str("sec-websocket-key");
     if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_key_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
+    s_sec_websocket_protocol_header_name = aws_byte_cursor_from_c_str("sec-websocket-protocol");
     if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_protocol_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
+    s_sec_websocket_version_header_name = aws_byte_cursor_from_c_str("sec-websocket-version");
     if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_version_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
+    s_upgrade_header_name = aws_byte_cursor_from_c_str("upgrade");
     if (aws_hash_table_put(&s_skipped_headers, &s_upgrade_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
@@ -153,6 +143,21 @@ int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_amz_content_sha256_header_name = aws_byte_cursor_from_string(g_aws_signing_content_header_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_amz_content_sha256_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_amz_date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_amz_date_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_authorization_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_authorization_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     if (aws_hash_table_init(
             &s_forbidden_params,
             allocator,
@@ -164,10 +169,35 @@ int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_amz_signature_param_name = aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_signature_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_amz_date_param_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_date_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_amz_credential_param_name = aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_credential_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_amz_algorithm_param_name = aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_algorithm_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_amz_signed_headers_param_name = aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_signed_headers_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     return AWS_OP_SUCCESS;
 }
 
-void aws_signing_clean_up_skipped_headers(void) {
+void aws_signing_clean_up_signing_tables(void) {
     aws_hash_table_clean_up(&s_skipped_headers);
     aws_hash_table_clean_up(&s_forbidden_headers);
     aws_hash_table_clean_up(&s_forbidden_params);
@@ -674,6 +704,31 @@ done:
     return result;
 }
 
+static int s_validate_query_params(struct aws_array_list *params) {
+    size_t param_count = aws_array_list_length(params);
+    for (size_t i = 0; i < param_count; ++i) {
+        struct aws_uri_param param;
+        if (aws_array_list_get_at(params, &param, i)) {
+            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
+        }
+
+        struct aws_hash_element *forbidden_element = NULL;
+        if (aws_hash_table_find(&s_forbidden_params, &param.key, &forbidden_element)) {
+            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
+        }
+
+        if (forbidden_element != NULL) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_SIGNING,
+                "AWS authorization query param \"" PRInSTR "\" found in request while signing",
+                AWS_BYTE_CURSOR_PRI(param.key));
+            return aws_raise_error(AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
+        }
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Adds the full canonical query string to the canonical request:
  */
@@ -690,6 +745,10 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
     }
 
     if (aws_uri_query_string_params(uri, &query_params)) {
+        goto cleanup;
+    }
+
+    if (s_validate_query_params(&query_params)) {
         goto cleanup;
     }
 
@@ -957,6 +1016,31 @@ static int s_build_canonical_stable_header_list(
     return AWS_OP_SUCCESS;
 }
 
+static int s_validate_signable_header_list(struct aws_array_list *header_list) {
+    size_t header_count = aws_array_list_length(header_list);
+    for (size_t i = 0; i < header_count; ++i) {
+        struct aws_signable_property_list_pair header;
+        if (aws_array_list_get_at(header_list, &header, i)) {
+            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
+        }
+
+        struct aws_hash_element *forbidden_element = NULL;
+        if (aws_hash_table_find(&s_forbidden_headers, &header.name, &forbidden_element)) {
+            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
+        }
+
+        if (forbidden_element != NULL) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_SIGNING,
+                "AWS authorization header \"" PRInSTR "\" found in request while signing",
+                AWS_BYTE_CURSOR_PRI(header.name));
+            return aws_raise_error(AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+        }
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Top-level-ish function to write the canonical header set into a buffer as well as the signed header names
  * into a separate buffer.  We do this very early in the canonical request construction process so that the
@@ -975,6 +1059,10 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
 
     struct aws_array_list *signable_header_list = NULL;
     if (aws_signable_get_property_list(signable, g_aws_http_headers_property_list_name, &signable_header_list)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_validate_signable_header_list(signable_header_list)) {
         return AWS_OP_ERR;
     }
 

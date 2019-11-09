@@ -134,6 +134,15 @@ add_test_case(sigv4_skip_xray_header_test)
 add_test_case(sigv4_skip_user_agent_header_test)
 add_test_case(sigv4_skip_custom_header_test)
 
+add_test_case(sigv4_fail_date_header_test)
+add_test_case(sigv4_fail_content_header_test)
+add_test_case(sigv4_fail_authorization_header_test)
+add_test_case(sigv4_fail_signature_param_test)
+add_test_case(sigv4_fail_date_param_test)
+add_test_case(sigv4_fail_credential_param_test)
+add_test_case(sigv4_fail_algorithm_param_test)
+add_test_case(sigv4_fail_signed_headers_param_test)
+
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
