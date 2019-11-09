@@ -134,6 +134,9 @@ add_test_case(sigv4_skip_xray_header_test)
 add_test_case(sigv4_skip_user_agent_header_test)
 add_test_case(sigv4_skip_custom_header_test)
 
+add_test_case(xml_parser_root_with_text)
+add_test_case(xml_parser_child_with_text)
+
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
