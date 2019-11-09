@@ -53,6 +53,32 @@
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
+AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
+AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_query_param_name, "X-Amz-Signature");
+AWS_STRING_FROM_LITERAL(g_aws_signing_algorithm_query_param_name, "X-Amz-Algorithm");
+AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Credential");
+AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
+AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
+AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
+
+/* forbidden query params and headers */
+static struct aws_hash_table s_forbidden_headers;
+static struct aws_hash_table s_forbidden_params;
+
+/*  params
+*      X-Amz-Signature,
+*      X-Amz-Date,
+*      X-Amz-Credential,
+*      X-Amz-Algorithm,
+*      X-Amz-SignedHeaders
+*/
+
+/*
+ * Headers
+ *      x-amz-content-sha256,
+ *      X-Amz-Date,
+ *      Authorization
+ */
 
 /*
  * Header signing helpers
@@ -68,7 +94,6 @@ static struct aws_byte_cursor s_sec_websocket_version_header_name;
 static struct aws_byte_cursor s_upgrade_header_name;
 
 int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
-    (void)allocator;
 
     s_amzn_trace_id_header_name = aws_byte_cursor_from_c_str("x-amzn-trace-id");
     s_user_agent_header_name = aws_byte_cursor_from_c_str("UserAgent");
@@ -81,7 +106,7 @@ int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
     if (aws_hash_table_init(
             &s_skipped_headers,
             allocator,
-            2,
+            10,
             aws_hash_byte_cursor_ptr_ignore_case,
             (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
             NULL,
@@ -117,11 +142,35 @@ int aws_signing_init_skipped_headers(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    if (aws_hash_table_init(
+            &s_forbidden_headers,
+            allocator,
+            10,
+            aws_hash_byte_cursor_ptr_ignore_case,
+            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            NULL,
+            NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_hash_table_init(
+            &s_forbidden_params,
+            allocator,
+            10,
+            aws_hash_byte_cursor_ptr_ignore_case,
+            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            NULL,
+            NULL)) {
+        return AWS_OP_ERR;
+    }
+
     return AWS_OP_SUCCESS;
 }
 
 void aws_signing_clean_up_skipped_headers(void) {
     aws_hash_table_clean_up(&s_skipped_headers);
+    aws_hash_table_clean_up(&s_forbidden_headers);
+    aws_hash_table_clean_up(&s_forbidden_params);
 }
 
 /*
@@ -507,12 +556,6 @@ static int s_append_canonical_query_param(struct aws_uri_param *param, struct aw
 
     return AWS_OP_SUCCESS;
 }
-
-AWS_STRING_FROM_LITERAL(g_aws_signing_algorithm_query_param_name, "X-Amz-Algorithm");
-AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Credential");
-AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
-AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
-AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 
 static int s_add_authorization_query_param_with_encoding(
     struct aws_signing_state_aws *state,
@@ -1532,9 +1575,6 @@ int s_append_signature_value(struct aws_signing_state_aws *state, struct aws_byt
             return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM);
     }
 }
-
-AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
-AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_query_param_name, "X-Amz-Signature");
 
 /*
  * Adds the appropriate authorization header or query param to the signing result

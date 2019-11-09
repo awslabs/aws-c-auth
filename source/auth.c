@@ -95,7 +95,7 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
     aws_register_error_info(&s_error_list);
     aws_register_log_subject_info_list(&s_auth_log_subject_list);
 
-    AWS_FATAL_ASSERT(aws_signing_init_skipped_headers(allocator) == AWS_OP_SUCCESS);
+    AWS_FATAL_ASSERT(aws_signing_init_signing_tables(allocator) == AWS_OP_SUCCESS);
 
     struct cJSON_Hooks allocation_hooks = {.malloc_fn = s_cJSONAlloc, .free_fn = s_cJSONFree};
 
@@ -109,7 +109,7 @@ void aws_auth_library_clean_up(void) {
 
     s_library_initialized = false;
 
-    aws_signing_clean_up_skipped_headers();
+    aws_signing_clean_up_signing_tables();
 
     aws_http_library_clean_up();
 }
