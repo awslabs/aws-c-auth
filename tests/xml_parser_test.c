@@ -13,8 +13,8 @@
  * permissions and limitations under the License.
  */
 
-#include <aws/testing/aws_test_harness.h>
 #include <aws/auth/private/xml_parser.h>
+#include <aws/testing/aws_test_harness.h>
 
 const char root_with_text[] = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rootNode>TestBody</rootNode>";
 
@@ -51,12 +51,15 @@ static int s_xml_parser_root_with_text_test(struct aws_allocator *allocator, voi
     ASSERT_BIN_ARRAYS_EQUALS(expected_name, sizeof(expected_name) - 1, capture.node_name.ptr, capture.node_name.len);
     ASSERT_BIN_ARRAYS_EQUALS(expected_value, sizeof(expected_value) - 1, capture.capture.ptr, capture.capture.len);
 
+    aws_xml_parser_clean_up(&parser);
+
     return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(xml_parser_root_with_text, s_xml_parser_root_with_text_test)
 
-const char child_with_text[] = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rootNode><child1>TestBody</child1></rootNode>";
+const char child_with_text[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rootNode><child1>TestBody</child1></rootNode>";
 
 struct child_text_capture {
     struct aws_byte_cursor capture;
@@ -97,7 +100,193 @@ static int s_xml_parser_child_with_text_test(struct aws_allocator *allocator, vo
     ASSERT_BIN_ARRAYS_EQUALS(expected_name, sizeof(expected_name) - 1, capture.node_name.ptr, capture.node_name.len);
     ASSERT_BIN_ARRAYS_EQUALS(expected_value, sizeof(expected_value) - 1, capture.capture.ptr, capture.capture.len);
 
+    aws_xml_parser_clean_up(&parser);
     return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(xml_parser_child_with_text, s_xml_parser_child_with_text_test)
+
+const char siblings_with_text[] =
+    "<?xml version=\"1.0\" "
+    "encoding=\"UTF-8\"?><rootNode><child1>TestBody</child1><child2>TestBody2</child2></rootNode>";
+
+struct sibling_text_capture {
+    struct aws_byte_cursor capture1;
+    struct aws_byte_cursor capture2;
+    struct aws_byte_cursor node_name1;
+    struct aws_byte_cursor node_name2;
+    int error;
+};
+
+bool s_sibling_with_text_root_node(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    struct sibling_text_capture *capture = user_data;
+
+    struct aws_byte_cursor child1_name = aws_byte_cursor_from_c_str("child1");
+    struct aws_byte_cursor child2_name = aws_byte_cursor_from_c_str("child2");
+
+    if (aws_byte_cursor_eq_ignore_case(&node->name, &child1_name)) {
+        capture->node_name1 = node->name;
+        capture->error |= aws_xml_node_as_body(parser, node, &capture->capture1);
+    } else if (aws_byte_cursor_eq_ignore_case(&node->name, &child2_name)) {
+        capture->node_name2 = node->name;
+        capture->error |= aws_xml_node_as_body(parser, node, &capture->capture2);
+    }
+
+    return true;
+}
+
+bool s_root_with_child_siblings(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    struct child_text_capture *capture = user_data;
+
+    capture->error |= aws_xml_node_traverse(parser, node, s_sibling_with_text_root_node, user_data);
+    return true;
+}
+
+static int s_xml_parser_siblings_with_text_test(struct aws_allocator *allocator, void *ctx) {
+
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_array(siblings_with_text, sizeof(siblings_with_text));
+    struct aws_xml_parser parser;
+
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
+
+    struct sibling_text_capture capture;
+    AWS_ZERO_STRUCT(capture);
+
+    ASSERT_SUCCESS(aws_xml_parser_parse(&parser, s_root_with_child_siblings, &capture));
+
+    const char expected_name1[] = "child1";
+    const char expected_value1[] = "TestBody";
+
+    const char expected_name2[] = "child2";
+    const char expected_value2[] = "TestBody2";
+
+    ASSERT_INT_EQUALS(AWS_OP_SUCCESS, capture.error);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_name1, sizeof(expected_name1) - 1, capture.node_name1.ptr, capture.node_name1.len);
+    ASSERT_BIN_ARRAYS_EQUALS(expected_value1, sizeof(expected_value1) - 1, capture.capture1.ptr, capture.capture1.len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_name2, sizeof(expected_name2) - 1, capture.node_name2.ptr, capture.node_name2.len);
+    ASSERT_BIN_ARRAYS_EQUALS(expected_value2, sizeof(expected_value2) - 1, capture.capture2.ptr, capture.capture2.len);
+
+    aws_xml_parser_clean_up(&parser);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(xml_parser_siblings_with_text, s_xml_parser_siblings_with_text_test)
+
+const char preamble_and_attributes[] =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<!DOCTYPE html \n"
+    " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
+    "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\"> "
+    "<rootNode attribute1=\"abc\" attribute2=\"def\">\n"
+    "<child1>TestBody</child1><child2 attribute3=\"childAttr\">TestBody2</child2></rootNode>";
+
+struct preamble_and_attributes_capture {
+    struct aws_byte_cursor capture1;
+    struct aws_byte_cursor capture2;
+    struct aws_xml_attribute capture2_attr;
+    struct aws_byte_cursor node_name1;
+    struct aws_byte_cursor node_name2;
+    struct aws_xml_attribute root_attr1;
+    struct aws_xml_attribute root_attr2;
+    int error;
+};
+
+bool s_preamble_and_attributes_child_node(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    struct preamble_and_attributes_capture *capture = user_data;
+
+    struct aws_byte_cursor child1_name = aws_byte_cursor_from_c_str("child1");
+    struct aws_byte_cursor child2_name = aws_byte_cursor_from_c_str("child2");
+
+    if (aws_byte_cursor_eq_ignore_case(&node->name, &child1_name)) {
+        capture->node_name1 = node->name;
+        capture->error |= aws_xml_node_as_body(parser, node, &capture->capture1);
+    } else if (aws_byte_cursor_eq_ignore_case(&node->name, &child2_name)) {
+        capture->node_name2 = node->name;
+        capture->error |= aws_xml_node_as_body(parser, node, &capture->capture2);
+        aws_array_list_get_at(&node->attributes, &capture->capture2_attr, 0);
+    }
+
+    return true;
+}
+
+bool s_preamble_and_attributes(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    struct preamble_and_attributes_capture *capture = user_data;
+
+    aws_array_list_get_at(&node->attributes, &capture->root_attr1, 0);
+    aws_array_list_get_at(&node->attributes, &capture->root_attr2, 1);
+    capture->error |= aws_xml_node_traverse(parser, node, s_preamble_and_attributes_child_node, user_data);
+    return true;
+}
+
+static int s_xml_parser_preamble_and_attributes_test(struct aws_allocator *allocator, void *ctx) {
+
+    struct aws_byte_cursor test_doc =
+        aws_byte_cursor_from_array(preamble_and_attributes, sizeof(preamble_and_attributes));
+    struct aws_xml_parser parser;
+
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
+
+    struct preamble_and_attributes_capture capture;
+    AWS_ZERO_STRUCT(capture);
+
+    ASSERT_SUCCESS(aws_xml_parser_parse(&parser, s_preamble_and_attributes, &capture));
+
+    const char expected_attr1_name[] = "attribute1";
+    const char expected_attr1_value1[] = "abc";
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_attr1_name, sizeof(expected_attr1_name) - 1, capture.root_attr1.name.ptr, capture.root_attr1.name.len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_attr1_value1,
+        sizeof(expected_attr1_value1) - 1,
+        capture.root_attr1.value.ptr,
+        capture.root_attr1.value.len);
+
+    const char expected_attr2_name[] = "attribute2";
+    const char expected_attr2_value1[] = "def";
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_attr2_name, sizeof(expected_attr2_name) - 1, capture.root_attr2.name.ptr, capture.root_attr2.name.len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_attr2_value1,
+        sizeof(expected_attr2_value1) - 1,
+        capture.root_attr2.value.ptr,
+        capture.root_attr2.value.len);
+
+    const char expected_name1[] = "child1";
+    const char expected_value1[] = "TestBody";
+
+    const char expected_name2[] = "child2";
+    const char expected_value2[] = "TestBody2";
+
+    ASSERT_INT_EQUALS(AWS_OP_SUCCESS, capture.error);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_name1, sizeof(expected_name1) - 1, capture.node_name1.ptr, capture.node_name1.len);
+    ASSERT_BIN_ARRAYS_EQUALS(expected_value1, sizeof(expected_value1) - 1, capture.capture1.ptr, capture.capture1.len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_name2, sizeof(expected_name2) - 1, capture.node_name2.ptr, capture.node_name2.len);
+    ASSERT_BIN_ARRAYS_EQUALS(expected_value2, sizeof(expected_value2) - 1, capture.capture2.ptr, capture.capture2.len);
+
+    const char expected_attr3_name[] = "attribute3";
+    const char expected_attr3_value1[] = "childAttr";
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_attr3_name,
+        sizeof(expected_attr2_name) - 1,
+        capture.capture2_attr.name.ptr,
+        capture.capture2_attr.name.len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_attr3_value1,
+        sizeof(expected_attr3_value1) - 1,
+        capture.capture2_attr.value.ptr,
+        capture.capture2_attr.value.len);
+
+    aws_xml_parser_clean_up(&parser);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(xml_parser_preamble_and_attributes, s_xml_parser_preamble_and_attributes_test)
