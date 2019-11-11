@@ -95,6 +95,13 @@ struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_imds_function_table *function_table;
 };
 
+struct aws_credentials_provider_sts_options {
+    struct aws_cient_bootstrap *bootstrap;
+    struct aws_tls_ctx *tls_ctx;
+    struct aws_credentials_provider *creds_provider;
+    struct aws_byte_cursor role_arn;
+};
+
 struct aws_credentials_provider_chain_default_options {
     struct aws_client_bootstrap *bootstrap;
 };
@@ -205,6 +212,15 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_profile_options *options);
+
+/*
+ * A provider assumes an IAM role via. STS AssumeRole() API. It can use either MTLS cert/key pair or another
+ * credentials provider.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options);
 
 /*
  * A provider that sources credentials from an ordered sequence of providers, with the overall result

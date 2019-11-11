@@ -23,6 +23,7 @@ struct cb_stack_data {
 };
 
 int aws_xml_parser_init(struct aws_xml_parser *parser, struct aws_allocator *allocator, struct aws_byte_cursor *doc) {
+    AWS_ZERO_STRUCT(*parser);
     parser->allocator = allocator;
     parser->doc = *doc;
 
@@ -43,6 +44,7 @@ static bool s_trim_quotes_fn(uint8_t value) {
     return value == '\"';
 }
 
+/* load the node declaration line, parsing node name and attributes. */
 static int s_load_node_decl(
     struct aws_xml_parser *parser,
     struct aws_byte_cursor *decl_body,
@@ -54,7 +56,18 @@ static int s_load_node_decl(
     aws_array_list_init_static(
         &splits, parser->split_scratch, AWS_ARRAY_SIZE(parser->split_scratch), sizeof(struct aws_byte_cursor));
 
-    aws_byte_cursor_split_on_char(decl_body, ' ', &splits);
+    /* split by space, first split will be the node name, everything after will be attribute=value pairs. For now
+     * we limit to 10 attributes, if this is exceeded we consider it invalid document. */
+    if (aws_byte_cursor_split_on_char(decl_body, ' ', &splits)) {
+        return aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
+    }
+
+    size_t splits_count = aws_array_list_length(&splits);
+
+    if (splits_count < 1) {
+        return aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
+    }
+
     aws_array_list_get_at(&splits, &node->name, 0);
 
     AWS_ZERO_ARRAY(parser->attributes);
@@ -93,6 +106,10 @@ int aws_xml_parser_parse(
     struct aws_xml_parser *parser,
     aws_xml_parser_on_node_encountered_fn *on_node_encountered,
     void *user_data) {
+
+    aws_array_list_clear(&parser->cb_stack);
+
+    /* burn everything that precedes the actual xml nodes. */
     while (parser->doc.len) {
         uint8_t *start = memchr(parser->doc.ptr, '<', parser->doc.len);
         if (!start) {
@@ -117,26 +134,27 @@ int aws_xml_parser_parse(
         }
     }
 
+    /* now we should be at the start of the actual document. */
     struct cb_stack_data stack_data = {
         .cb = on_node_encountered,
         .user_data = user_data,
     };
 
-    aws_array_list_push_back(&parser->cb_stack, &stack_data);
-    s_node_next_sibling(parser);
-
-    return AWS_OP_SUCCESS;
+    AWS_FATAL_ASSERT(!aws_array_list_push_back(&parser->cb_stack, &stack_data));
+    return s_node_next_sibling(parser);
 }
 
 int s_advance_to_closing_tag(
     struct aws_xml_parser *parser,
     struct aws_xml_node *node,
     struct aws_byte_cursor *out_body) {
-    uint8_t name_close[260] = {0};
+    /* currently the max node name is 256 characters. This is arbitrary, but should be enough
+     * for our uses. If we ever generalize this, we'll have to come back and rethink this. */
+    uint8_t name_close[259] = {0};
 
     struct aws_byte_buf cmp_buf = aws_byte_buf_from_empty_array(name_close, sizeof(name_close));
 
-    size_t closing_name_len = node->name.len + 4;
+    size_t closing_name_len = node->name.len + 3;
 
     if (closing_name_len > node->doc_at_body.len) {
         return aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
@@ -148,21 +166,20 @@ int s_advance_to_closing_tag(
 
     struct aws_byte_cursor open_bracket = aws_byte_cursor_from_c_str("</");
     struct aws_byte_cursor close_bracket = aws_byte_cursor_from_c_str(">");
-    struct aws_byte_cursor null_term = aws_byte_cursor_from_array("\0", 1);
 
     aws_byte_buf_append(&cmp_buf, &open_bracket);
     aws_byte_buf_append(&cmp_buf, &node->name);
     aws_byte_buf_append(&cmp_buf, &close_bracket);
-    aws_byte_buf_append(&cmp_buf, &null_term);
 
-    uint8_t *end_tag_location = (uint8_t *)strstr((const char *)node->doc_at_body.ptr, (const char *)cmp_buf.buffer);
-
-    if (!end_tag_location) {
+    struct aws_byte_cursor to_find = aws_byte_cursor_from_buf(&cmp_buf);
+    struct aws_byte_cursor find_result;
+    AWS_ZERO_STRUCT(find_result);
+    if (aws_byte_cursor_find_exact(&node->doc_at_body, &to_find, &find_result)) {
         return aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
     }
 
-    size_t len = end_tag_location - node->doc_at_body.ptr;
-    aws_byte_cursor_advance(&parser->doc, len + cmp_buf.len - 1);
+    size_t len = find_result.ptr - node->doc_at_body.ptr;
+    aws_byte_cursor_advance(&parser->doc, len + cmp_buf.len);
 
     if (out_body) {
         *out_body = aws_byte_cursor_from_array(node->doc_at_body.ptr, len);
@@ -184,8 +201,12 @@ int aws_xml_node_traverse(
         .user_data = user_data,
     };
 
-    aws_array_list_push_back(&parser->cb_stack, &stack_data);
+    if (aws_array_list_push_back(&parser->cb_stack, &stack_data)) {
+        return AWS_OP_ERR;
+    }
 
+    /* look for the next node at the current level. do this until we encounter the parent node's
+     * closing tag. */
     while (true) {
         uint8_t *next_location = memchr(parser->doc.ptr, '<', parser->doc.len);
 
@@ -219,15 +240,23 @@ int aws_xml_node_traverse(
             .doc_at_body = parser->doc,
         };
 
-        s_load_node_decl(parser, &decl_body, &next_node);
+        if (s_load_node_decl(parser, &decl_body, &next_node)) {
+            return AWS_OP_ERR;
+        }
 
-        on_node_encountered(parser, &next_node, user_data);
-        s_advance_to_closing_tag(parser, node, NULL);
+        if (!on_node_encountered(parser, &next_node, user_data)) {
+            return AWS_OP_SUCCESS;
+        }
+
+        if (s_advance_to_closing_tag(parser, node, NULL)) {
+            return AWS_OP_ERR;
+        }
     }
     aws_array_list_pop_back(&parser->cb_stack);
     return AWS_OP_SUCCESS;
 }
 
+/* advance the parser to the next sibling node.*/
 int s_node_next_sibling(struct aws_xml_parser *parser) {
     uint8_t *next_location = memchr(parser->doc.ptr, '<', parser->doc.len);
 
@@ -250,7 +279,10 @@ int s_node_next_sibling(struct aws_xml_parser *parser) {
     struct aws_xml_node sibling_node = {
         .doc_at_body = parser->doc,
     };
-    s_load_node_decl(parser, &node_decl_body, &sibling_node);
+
+    if (s_load_node_decl(parser, &node_decl_body, &sibling_node)) {
+        return AWS_OP_ERR;
+    }
 
     struct cb_stack_data stack_data;
     AWS_ZERO_STRUCT(stack_data);

@@ -16,7 +16,7 @@
 #include <aws/auth/private/xml_parser.h>
 #include <aws/testing/aws_test_harness.h>
 
-const char root_with_text[] = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rootNode>TestBody</rootNode>";
+const char *root_with_text = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rootNode>TestBody</rootNode>";
 
 struct root_with_text_capture {
     struct aws_byte_cursor capture;
@@ -33,8 +33,8 @@ bool s_root_with_text_root_node(struct aws_xml_parser *parser, struct aws_xml_no
 }
 
 static int s_xml_parser_root_with_text_test(struct aws_allocator *allocator, void *ctx) {
-
-    struct aws_byte_cursor test_doc = aws_byte_cursor_from_array(root_with_text, sizeof(root_with_text));
+    (void)ctx;
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(root_with_text);
     struct aws_xml_parser parser;
 
     ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
@@ -58,7 +58,7 @@ static int s_xml_parser_root_with_text_test(struct aws_allocator *allocator, voi
 
 AWS_TEST_CASE(xml_parser_root_with_text, s_xml_parser_root_with_text_test)
 
-const char child_with_text[] =
+const char *child_with_text =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rootNode><child1>TestBody</child1></rootNode>";
 
 struct child_text_capture {
@@ -82,8 +82,9 @@ bool s_root_with_child(struct aws_xml_parser *parser, struct aws_xml_node *node,
 }
 
 static int s_xml_parser_child_with_text_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
-    struct aws_byte_cursor test_doc = aws_byte_cursor_from_array(child_with_text, sizeof(child_with_text));
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(child_with_text);
     struct aws_xml_parser parser;
 
     ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
@@ -106,7 +107,7 @@ static int s_xml_parser_child_with_text_test(struct aws_allocator *allocator, vo
 
 AWS_TEST_CASE(xml_parser_child_with_text, s_xml_parser_child_with_text_test)
 
-const char siblings_with_text[] =
+const char *siblings_with_text =
     "<?xml version=\"1.0\" "
     "encoding=\"UTF-8\"?><rootNode><child1>TestBody</child1><child2>TestBody2</child2></rootNode>";
 
@@ -143,8 +144,9 @@ bool s_root_with_child_siblings(struct aws_xml_parser *parser, struct aws_xml_no
 }
 
 static int s_xml_parser_siblings_with_text_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
-    struct aws_byte_cursor test_doc = aws_byte_cursor_from_array(siblings_with_text, sizeof(siblings_with_text));
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(siblings_with_text);
     struct aws_xml_parser parser;
 
     ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
@@ -175,7 +177,7 @@ static int s_xml_parser_siblings_with_text_test(struct aws_allocator *allocator,
 
 AWS_TEST_CASE(xml_parser_siblings_with_text, s_xml_parser_siblings_with_text_test)
 
-const char preamble_and_attributes[] =
+const char *preamble_and_attributes =
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
     "<!DOCTYPE html \n"
     " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
@@ -223,8 +225,7 @@ bool s_preamble_and_attributes(struct aws_xml_parser *parser, struct aws_xml_nod
 
 static int s_xml_parser_preamble_and_attributes_test(struct aws_allocator *allocator, void *ctx) {
 
-    struct aws_byte_cursor test_doc =
-        aws_byte_cursor_from_array(preamble_and_attributes, sizeof(preamble_and_attributes));
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(preamble_and_attributes);
     struct aws_xml_parser parser;
 
     ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
