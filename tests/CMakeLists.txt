@@ -35,6 +35,8 @@ if(AWS_BUILDING_ON_EC2)
     add_test_case(credentials_provider_imds_real_success)
 endif()
 
+add_net_test_case(credentials_provider_sts_default_tls_options)
+
 add_test_case(aws_profile_early_property_parse_failure_test)
 add_test_case(aws_profile_missing_bracket_parse_failure_test)
 add_test_case(aws_profile_missing_assignment_parse_failure_test)

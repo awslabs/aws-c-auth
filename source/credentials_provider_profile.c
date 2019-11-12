@@ -18,6 +18,7 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/string.h>
+#include <aws/io/tls_channel_handler.h>
 
 /*
  * Profile provider implementation

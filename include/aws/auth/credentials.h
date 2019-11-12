@@ -96,10 +96,11 @@ struct aws_credentials_provider_imds_options {
 };
 
 struct aws_credentials_provider_sts_options {
-    struct aws_cient_bootstrap *bootstrap;
+    struct aws_client_bootstrap *bootstrap;
     struct aws_tls_ctx *tls_ctx;
     struct aws_credentials_provider *creds_provider;
     struct aws_byte_cursor role_arn;
+    struct aws_byte_cursor session_name;
 };
 
 struct aws_credentials_provider_chain_default_options {

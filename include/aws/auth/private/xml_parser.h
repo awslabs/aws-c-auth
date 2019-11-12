@@ -19,6 +19,8 @@
 #include <aws/common/array_list.h>
 #include <aws/common/byte_buf.h>
 
+#include <aws/auth/exports.h>
+
 struct aws_xml_attribute {
     struct aws_byte_cursor name;
     struct aws_byte_cursor value;
@@ -42,14 +44,22 @@ struct aws_xml_parser {
     struct aws_byte_cursor split_scratch[22];
 };
 
+AWS_AUTH_API
 int aws_xml_parser_init(struct aws_xml_parser *parser, struct aws_allocator *allocator, struct aws_byte_cursor *doc);
+
+AWS_AUTH_API
 void aws_xml_parser_clean_up(struct aws_xml_parser *parser);
 
+AWS_AUTH_API
 int aws_xml_parser_parse(
     struct aws_xml_parser *parser,
     aws_xml_parser_on_node_encountered_fn *on_node_encountered,
     void *user_data);
+
+AWS_AUTH_API
 int aws_xml_node_as_body(struct aws_xml_parser *parser, struct aws_xml_node *node, struct aws_byte_cursor *out_body);
+
+AWS_AUTH_API
 int aws_xml_node_traverse(
     struct aws_xml_parser *parser,
     struct aws_xml_node *node,
