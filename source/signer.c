@@ -81,7 +81,14 @@ cleanup:
 }
 
 void s_aws_signer_on_get_credentials(struct aws_credentials *credentials, void *user_data) {
+
     struct aws_signing_state_aws *state = user_data;
+
+    if (!credentials) {
+        state->on_complete(NULL, AWS_AUTH_SIGNING_NO_CREDENTIALS, state->userdata);
+        return;
+    }
+
     state->credentials = credentials;
 
     struct aws_signing_result *result = NULL;
