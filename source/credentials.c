@@ -15,6 +15,7 @@
 
 #include <aws/auth/credentials.h>
 
+#include <aws/common/clock.h>
 #include <aws/common/string.h>
 
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
@@ -176,6 +177,43 @@ int aws_credentials_provider_get_credentials(
     AWS_ASSERT(provider->vtable->get_credentials);
 
     return provider->vtable->get_credentials(provider, callback, user_data);
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_sts(
+        struct aws_allocator *allocator,
+        struct aws_credentials_provider_sts_options *options) {
+    struct aws_credentials_provider *direct_provider = aws_credentials_provider_new_sts_direct(allocator, options);
+
+    if (!direct_provider) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options;
+    AWS_ZERO_STRUCT(cached_options);
+
+    /* minimum for STS is 900 seconds*/
+    if (options->duration_seconds < 900) {
+        options->duration_seconds = 900;
+    }
+
+    /* give a 30 second grace period to avoid latency problems at the caching layer*/
+    uint64_t cache_timeout_seconds = options->duration_seconds - 30;
+
+    cached_options.source = direct_provider;
+    cached_options.refresh_time_in_milliseconds =
+            aws_timestamp_convert(cache_timeout_seconds,
+                    AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
+    cached_options.source = direct_provider;
+
+    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    if (cached_provider == NULL) {
+        aws_credentials_provider_destroy(direct_provider);
+        return NULL;
+    }
+
+    aws_credentials_provider_release(direct_provider);
+    return cached_provider;
 }
 
 /*

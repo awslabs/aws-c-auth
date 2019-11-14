@@ -52,6 +52,7 @@ static int s_credentials_provider_sts_default_tls_options(struct aws_allocator *
             .bootstrap = bootstrap,
             .role_arn = aws_byte_cursor_from_c_str("arn:aws:iam::123124136734:role/assume_admin_role_testing"),
             .session_name = aws_byte_cursor_from_c_str("test_session"),
+            .duration_seconds = 0,
     };
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
@@ -64,6 +65,8 @@ static int s_credentials_provider_sts_default_tls_options(struct aws_allocator *
     aws_mutex_lock(&cb_data.mutex);
     aws_credentials_provider_get_credentials(sts_provider, s_on_credentials_callback_fn, &cb_data);
 
+    aws_condition_variable_wait(&cb_data.cvar, &cb_data.mutex);
+    aws_credentials_provider_get_credentials(sts_provider, s_on_credentials_callback_fn, &cb_data);
     aws_condition_variable_wait(&cb_data.cvar, &cb_data.mutex);
 
     return AWS_OP_SUCCESS;

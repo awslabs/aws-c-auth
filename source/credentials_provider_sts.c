@@ -19,6 +19,7 @@
 #include <aws/auth/signing_config.h>
 #include <aws/auth/signable.h>
 #include <aws/common/string.h>
+#include <aws/common/mutex.h>
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
 #include <aws/http/connection_manager.h>
@@ -61,6 +62,7 @@ struct aws_credentials_provider_sts_impl {
 };
 
 struct sts_creds_provider_user_data {
+    struct aws_allocator *allocator;
     struct aws_credentials_provider *provider;
     aws_on_get_credentials_callback_fn *callback;
     struct aws_byte_buf payload_body;
@@ -72,24 +74,58 @@ struct sts_creds_provider_user_data {
     void *user_data;
 };
 
+static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
+    if (user_data->signable) {
+        aws_signable_destroy(user_data->signable);
+    }
+
+    if (user_data->input_stream) {
+        aws_input_stream_destroy(user_data->input_stream);
+    }
+
+    aws_byte_buf_clean_up(&user_data->payload_body);
+
+    if (user_data->message) {
+        aws_http_message_destroy(user_data->message);
+    }
+
+    aws_byte_buf_clean_up(&user_data->output_buf);
+    aws_mem_release(user_data->allocator, user_data);
+}
+
 static int s_write_body_to_buffer(struct aws_credentials_provider *provider, struct aws_byte_buf *body) {
     struct aws_credentials_provider_sts_impl *provider_impl = provider->impl;
 
     struct aws_byte_cursor working_cur = aws_byte_cursor_from_c_str("Version=2011-06-15&Action=AssumeRole&RoleArn=");
-    aws_byte_buf_append_dynamic(body, &working_cur);
+    if (aws_byte_buf_append_dynamic(body, &working_cur)) {
+        return AWS_OP_ERR;
+    }
     struct aws_byte_cursor role_cur = aws_byte_cursor_from_string(provider_impl->assume_role_profile);
-    aws_byte_buf_append_encoding_uri_param(body, &role_cur);
+    if (aws_byte_buf_append_encoding_uri_param(body, &role_cur)) {
+        return AWS_OP_ERR;
+    }
     working_cur = aws_byte_cursor_from_c_str("&RoleSessionName=");
-    aws_byte_buf_append_dynamic(body, &working_cur);
+    if  (aws_byte_buf_append_dynamic(body, &working_cur)) {
+        return AWS_OP_ERR;
+    }
+
     struct aws_byte_cursor session_cur = aws_byte_cursor_from_string(provider_impl->role_session_name);
-    aws_byte_buf_append_encoding_uri_param(body, &session_cur);
+    if (aws_byte_buf_append_encoding_uri_param(body, &session_cur)) {
+        return AWS_OP_ERR;
+    }
+
     working_cur = aws_byte_cursor_from_c_str("&DurationSeconds=");
-    aws_byte_buf_append_dynamic(body, &working_cur);
+    if (aws_byte_buf_append_dynamic(body, &working_cur)) {
+        return AWS_OP_ERR;
+    }
+
     char duration_seconds[6];
     AWS_ZERO_ARRAY(duration_seconds);
     sprintf(duration_seconds, "%" PRIu16, provider_impl->duration_seconds);
     working_cur = aws_byte_cursor_from_c_str(duration_seconds);
-    aws_byte_buf_append_dynamic(body, &working_cur);
+    if (aws_byte_buf_append_dynamic(body, &working_cur)) {
+        return AWS_OP_ERR;
+    }
 
     return AWS_OP_SUCCESS;
 }
@@ -98,10 +134,24 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
     (void)stream;
 
     struct sts_creds_provider_user_data *provider_user_data = user_data;
-    aws_byte_buf_append_dynamic(&provider_user_data->output_buf, data);
-    return AWS_OP_SUCCESS;
+    return aws_byte_buf_append_dynamic(&provider_user_data->output_buf, data);
 }
 
+/* parse doc of form
+<AssumeRoleResponse>
+     <AssumeRoleResult>
+         <AssumeRoleUser>
+             <Credentials>
+                 <AccessKeyId>accessKeyId</AccessKeyId>
+                 <SecretKey>secretKey</SecretKey>
+                 <SessionToken>sessionToken</SessionToken>
+             </Credentials>
+             ... a bunch of other stuff we don't care about
+         </AssumeRoleUser>
+         ... more stuff we don't care about
+      </AssumeRoleResult>
+</AssumeRoleResponse>
+ */
 static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_root_name) ||
         aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_result_name) ||
@@ -131,35 +181,51 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
     return true;
 }
 
+/* called upon completion of http request */
 static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     int http_response_code = 0;
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
 
-    aws_http_stream_get_incoming_response_status(stream, &http_response_code);
+    struct aws_credentials *credentials = NULL;
+    if (aws_http_stream_get_incoming_response_status(stream, &http_response_code)) {
+        goto finish;
+    }
 
     if (!error_code && http_response_code == 200) {
         struct aws_xml_parser xml_parser;
         struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
 
-        aws_xml_parser_init(&xml_parser, provider_user_data->provider->allocator, &payload_cur);
+        if (aws_xml_parser_init(&xml_parser, provider_user_data->provider->allocator, &payload_cur)) {
+            goto finish;
+        }
 
-        struct aws_credentials credentials;
-        credentials.allocator = provider_user_data->provider->allocator;
-        aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, &credentials);
+        credentials = aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
+        credentials->allocator = provider_user_data->allocator;
+        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, &credentials)) {
+            goto finish;
+        }
 
-        provider_user_data->callback(&credentials, provider_user_data->user_data);
         aws_xml_parser_clean_up(&xml_parser);
-    } else {
 
+        if (!(credentials->access_key_id && credentials->secret_access_key && credentials->session_token)) {
+            aws_credentials_destroy(credentials);
+            credentials = NULL;
+        }
+    }
+
+finish:
+    provider_user_data->callback(credentials, provider_user_data->user_data);
+
+    if (credentials) {
+        aws_credentials_destroy(credentials);
     }
 
     aws_http_connection_manager_release_connection(provider_impl->connection_manager, aws_http_stream_get_connection(stream));
-    struct aws_credentials_provider *this_provider = provider_user_data->provider;
-    aws_credentials_provider_release(this_provider);
-    // release the rest.
+    s_clean_up_user_data(provider_user_data);
 }
 
+/* called upon aquiring a connection from the pool */
 static void s_on_connection_setup_fn(
         struct aws_http_connection *connection,
         int error_code,
@@ -167,33 +233,59 @@ static void s_on_connection_setup_fn(
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
 
-    if (!error_code) {
-        aws_byte_buf_init(&provider_user_data->output_buf, provider_impl->provider->allocator, 2048);
-
-        struct aws_http_make_request_options options = {
-                .manual_window_management = false,
-                .user_data = user_data,
-                .request = provider_user_data->message,
-                .self_size = sizeof(struct aws_http_make_request_options),
-                .on_response_headers = NULL,
-                .on_response_header_block_done = NULL,
-                .on_response_body = s_on_incoming_body_fn,
-                .on_complete = s_on_stream_complete_fn,
-        };
-
-        aws_http_connection_make_request(connection, &options);
-
-
+    if (error_code) {
+        aws_raise_error(error_code);
+        goto error;
     }
+
+    if (aws_byte_buf_init(&provider_user_data->output_buf, provider_impl->provider->allocator, 2048)) {
+        aws_http_connection_manager_release_connection(provider_impl->connection_manager, connection);
+    }
+
+    struct aws_http_make_request_options options = {
+            .manual_window_management = false,
+            .user_data = user_data,
+            .request = provider_user_data->message,
+            .self_size = sizeof(struct aws_http_make_request_options),
+            .on_response_headers = NULL,
+            .on_response_header_block_done = NULL,
+            .on_response_body = s_on_incoming_body_fn,
+            .on_complete = s_on_stream_complete_fn,
+    };
+
+    struct aws_http_stream *stream = aws_http_connection_make_request(connection, &options);
+    if (!stream) {
+        aws_http_connection_manager_release_connection(provider_impl->connection_manager, connection);
+        goto error;
+    }
+
+    return;
+error:
+    provider_user_data->callback(NULL, provider_user_data->user_data);
+    s_clean_up_user_data(provider_user_data);
 }
 
+/* called once sigv4 signing is complete. This isn 't called if MTLS is used. */
 void s_on_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
     (void)result;
     (void)error_code;
     struct sts_creds_provider_user_data *provider_user_data = userdata;
     struct aws_credentials_provider_sts_impl *sts_impl = provider_user_data->provider->impl;
-    aws_apply_signing_result_to_http_request(provider_user_data->message, provider_user_data->provider->allocator, result);
+
+    if (error_code) {
+        aws_raise_error(error_code);
+        goto error;
+    }
+
+    if (aws_apply_signing_result_to_http_request(provider_user_data->message, provider_user_data->provider->allocator, result)) {
+        goto error;
+    }
+
     aws_http_connection_manager_acquire_connection(sts_impl->connection_manager, s_on_connection_setup_fn, provider_user_data);
+
+error:
+    provider_user_data->callback(NULL, provider_user_data->user_data);
+    s_clean_up_user_data(provider_user_data);
 }
 
 static int s_sts_get_creds(
@@ -203,54 +295,93 @@ static int s_sts_get_creds(
 
     struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
     struct sts_creds_provider_user_data *provider_user_data = aws_mem_calloc(provider->allocator, 1, sizeof(struct sts_creds_provider_user_data));
+
+    if (!provider_user_data) {
+        goto error;
+    }
+
     provider_user_data->provider = provider;
     provider_user_data->callback = callback;
     provider_user_data->user_data = user_data;
 
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
+
+    if (provider_user_data->message) {
+        goto error;
+    }
+
     struct aws_http_header host_header = {
             .name = s_host_name,
             .value = s_host_name_val,
     };
 
-    aws_http_message_add_header(provider_user_data->message, host_header);
+    if (aws_http_message_add_header(provider_user_data->message, host_header)) {
+        goto error;
+    }
 
     struct aws_http_header content_type_header = {
             .name = s_content_type,
             .value = s_content_type_val,
     };
 
-    aws_http_message_add_header(provider_user_data->message, content_type_header);
+    if (aws_http_message_add_header(provider_user_data->message, content_type_header)) {
+        goto error;
+    }
 
     struct aws_http_header api_version_header = {
             .name = s_api_version,
             .value = s_api_version_val,
     };
 
-    aws_http_message_add_header(provider_user_data->message, api_version_header);
+    if (aws_http_message_add_header(provider_user_data->message, api_version_header)) {
+        goto error;
+    }
 
-    aws_byte_buf_init(&provider_user_data->payload_body, provider->allocator, 2048);
-    s_write_body_to_buffer(provider, &provider_user_data->payload_body);
+    if (aws_byte_buf_init(&provider_user_data->payload_body, provider->allocator, 256)) {
+        goto error;
+    }
+
+    if (s_write_body_to_buffer(provider, &provider_user_data->payload_body)) {
+        goto error;
+    }
 
     char content_length[21];
     AWS_ZERO_ARRAY(content_length);
-    sprintf(content_length, "%" PRIu64, provider_user_data->payload_body.len);
+    sprintf(content_length, "%" PRIu64, (uint64_t)provider_user_data->payload_body.len);
 
     struct aws_http_header content_len_header = {
             .name = s_content_length,
             .value = aws_byte_cursor_from_c_str(content_length),
     };
-    aws_http_message_add_header(provider_user_data->message, content_len_header);
+
+    if (aws_http_message_add_header(provider_user_data->message, content_len_header)) {
+        goto error;
+    }
 
     struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->payload_body);
     provider_user_data->input_stream = aws_input_stream_new_from_cursor(provider_user_data->provider->allocator, &payload_cur);
+
+    if (!provider_user_data->input_stream) {
+        goto error;
+    }
+
     aws_http_message_set_body_stream(provider_user_data->message, provider_user_data->input_stream);
 
-    aws_http_message_set_request_method(provider_user_data->message, s_method);
-    aws_http_message_set_request_path(provider_user_data->message, s_path);
+    if (aws_http_message_set_request_method(provider_user_data->message, s_method)) {
+        goto error;
+    }
+
+    if (aws_http_message_set_request_path(provider_user_data->message, s_path)) {
+        goto error;
+    }
 
     if (sts_impl->signer) {
         provider_user_data->signable = aws_signable_new_http_request(provider->allocator, provider_user_data->message);
+
+        if (!provider_user_data->signable) {
+            goto error;
+        }
+
         provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
         provider_user_data->signing_config.sign_body = true;
         provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
@@ -260,32 +391,54 @@ static int s_sts_get_creds(
         provider_user_data->signing_config.service = s_service_name;
         provider_user_data->signing_config.use_double_uri_encode = false;
 
-        aws_signer_sign_request(sts_impl->signer, provider_user_data->signable, (struct aws_signing_config_base *)&provider_user_data->signing_config, s_on_signing_complete, provider_user_data);
+        if (aws_signer_sign_request(sts_impl->signer, provider_user_data->signable, (struct aws_signing_config_base *)&provider_user_data->signing_config, s_on_signing_complete, provider_user_data)) {
+            goto error;
+        }
     } else {
         aws_http_connection_manager_acquire_connection(sts_impl->connection_manager, s_on_connection_setup_fn, provider_user_data);
     }
 
     return AWS_OP_SUCCESS;
+
+error:
+    if (provider_user_data) {
+        s_clean_up_user_data(provider_user_data);
+    }
+
+    callback(NULL, user_data);
+    return AWS_OP_ERR;
 }
 
 void s_clean_up(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
 
-    aws_http_connection_manager_release(sts_impl->connection_manager);
+    if (sts_impl->connection_manager) {
+        aws_http_connection_manager_release(sts_impl->connection_manager);
+    }
 
     if (sts_impl->signer) {
         aws_signer_destroy(sts_impl->signer);
+    }
+
+    if (sts_impl->provider) {
         aws_credentials_provider_release(sts_impl->provider);
     }
 
-    aws_string_destroy(sts_impl->role_session_name);
-    aws_string_destroy(sts_impl->assume_role_profile);
+    if (sts_impl->role_session_name) {
+        aws_string_destroy(sts_impl->role_session_name);
+    }
+
+    if (sts_impl->assume_role_profile) {
+        aws_string_destroy(sts_impl->assume_role_profile);
+    }
 
     if (sts_impl->owns_ctx) {
         aws_tls_ctx_destroy(sts_impl->ctx);
     }
 
     aws_tls_connection_options_clean_up(&sts_impl->connection_options);
+
+    AWS_ZERO_STRUCT(*sts_impl);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vtable = {
@@ -294,7 +447,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
         .shutdown = aws_credentials_provider_shutdown_nil,
 };
 
-struct aws_credentials_provider *aws_credentials_provider_new_sts(
+struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
         struct aws_allocator *allocator,
         struct aws_credentials_provider_sts_options *options) {
     struct aws_credentials_provider *provider = NULL;
@@ -317,6 +470,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
+    /* MTLS case */
     if (options->tls_ctx) {
         impl->ctx = options->tls_ctx;
     } else {
@@ -324,26 +478,49 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         aws_tls_ctx_options_init_default_client(&tls_options, allocator);
         aws_tls_ctx_options_set_verify_peer(&tls_options, false);
         impl->ctx = aws_tls_client_ctx_new(allocator, &tls_options);
-        aws_tls_ctx_options_clean_up(&tls_options);
+
+        if (!impl->ctx) {
+            aws_tls_ctx_options_clean_up(&tls_options);
+            goto cleanup_provider;
+        }
     }
 
+    /* if you don't have a credentials provider backing this, you'd better be using MTLS. */
     if (!options->creds_provider && !options->tls_ctx) {
-        //this is an error;
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        goto cleanup_provider;
         return NULL;
     }
 
     impl->role_session_name = aws_string_new_from_array(allocator, options->session_name.ptr, options->session_name.len);
+
+    if (!impl->role_session_name) {
+        goto cleanup_provider;
+    }
+
     impl->assume_role_profile = aws_string_new_from_array(allocator, options->role_arn.ptr, options->role_arn.len);
-    impl->duration_seconds = 900;
+
+    if (!impl->assume_role_profile) {
+        goto cleanup_provider;
+    }
+
+    impl->duration_seconds = options->duration_seconds;
 
     if (options->creds_provider) {
         aws_credentials_provider_acquire(options->creds_provider);
         impl->provider = options->creds_provider;
         impl->signer = aws_signer_new_aws(allocator);
+
+        if (!impl->signer) {
+            goto cleanup_provider;
+        }
     }
 
     aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
-    aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &s_host_name_val);
+
+    if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &s_host_name_val)) {
+        goto cleanup_provider;
+    }
 
     struct aws_socket_options socket_options = {
             .type = AWS_SOCKET_STREAM,
@@ -363,5 +540,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     impl->connection_manager = aws_http_connection_manager_new(allocator, &connection_manager_options);
 
+    if (!impl->connection_manager) {
+        goto cleanup_provider;
+    }
+
     return provider;
+
+cleanup_provider:
+    aws_credentials_provider_destroy(provider);
+
+    return NULL;
 }
