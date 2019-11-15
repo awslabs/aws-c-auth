@@ -15,13 +15,13 @@
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/xml_parser.h>
+#include <aws/auth/signable.h>
 #include <aws/auth/signer.h>
 #include <aws/auth/signing_config.h>
-#include <aws/auth/signable.h>
-#include <aws/common/string.h>
 #include <aws/common/mutex.h>
-#include <aws/http/connection_manager.h>
+#include <aws/common/string.h>
 #include <aws/http/connection.h>
+#include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/io/socket.h>
 #include <aws/io/stream.h>
@@ -33,7 +33,8 @@
 static struct aws_byte_cursor s_host_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host");
 static struct aws_byte_cursor s_host_name_val = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com");
 static struct aws_byte_cursor s_content_type = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type");
-static struct aws_byte_cursor s_content_type_val = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded");
+static struct aws_byte_cursor s_content_type_val =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded");
 static struct aws_byte_cursor s_api_version = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version");
 static struct aws_byte_cursor s_api_version_val = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15");
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
@@ -105,7 +106,7 @@ static int s_write_body_to_buffer(struct aws_credentials_provider *provider, str
         return AWS_OP_ERR;
     }
     working_cur = aws_byte_cursor_from_c_str("&RoleSessionName=");
-    if  (aws_byte_buf_append_dynamic(body, &working_cur)) {
+    if (aws_byte_buf_append_dynamic(body, &working_cur)) {
         return AWS_OP_ERR;
     }
 
@@ -165,17 +166,28 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
     AWS_ZERO_STRUCT(credential_data);
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_access_key_id_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->access_key_id = aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        credentials->access_key_id =
+            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+
+        if (credentials->access_key_id) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(credentials=%p): AccessKeyId %s",
+                (void *)credentials,
+                aws_string_c_str(credentials->access_key_id));
+        }
     }
 
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_secret_key_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->secret_access_key = aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        credentials->secret_access_key =
+            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
     }
 
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_session_token_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->session_token = aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        credentials->session_token =
+            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
     }
 
     return true;
@@ -192,6 +204,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         goto finish;
     }
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): AssumeRole call completed with http status %d",
+        (void *)provider_user_data->provider,
+        http_response_code);
     if (!error_code && http_response_code == 200) {
         struct aws_xml_parser xml_parser;
         struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
@@ -201,14 +218,19 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         }
 
         credentials = aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
+        AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(credentials=%p): parsing credentials", (void *)credentials);
         credentials->allocator = provider_user_data->allocator;
-        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, &credentials)) {
+        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, credentials)) {
             goto finish;
         }
 
         aws_xml_parser_clean_up(&xml_parser);
 
         if (!(credentials->access_key_id && credentials->secret_access_key && credentials->session_token)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): credentials document was corrupted, treating as an error.",
+                (void *)provider_user_data->provider);
             aws_credentials_destroy(credentials);
             credentials = NULL;
         }
@@ -221,17 +243,21 @@ finish:
         aws_credentials_destroy(credentials);
     }
 
-    aws_http_connection_manager_release_connection(provider_impl->connection_manager, aws_http_stream_get_connection(stream));
+    aws_http_connection_manager_release_connection(
+        provider_impl->connection_manager, aws_http_stream_get_connection(stream));
     s_clean_up_user_data(provider_user_data);
 }
 
 /* called upon aquiring a connection from the pool */
-static void s_on_connection_setup_fn(
-        struct aws_http_connection *connection,
-        int error_code,
-        void *user_data) {
+static void s_on_connection_setup_fn(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): connection returned with error code %d",
+        (void *)provider_user_data->provider,
+        error_code);
 
     if (error_code) {
         aws_raise_error(error_code);
@@ -243,14 +269,14 @@ static void s_on_connection_setup_fn(
     }
 
     struct aws_http_make_request_options options = {
-            .manual_window_management = false,
-            .user_data = user_data,
-            .request = provider_user_data->message,
-            .self_size = sizeof(struct aws_http_make_request_options),
-            .on_response_headers = NULL,
-            .on_response_header_block_done = NULL,
-            .on_response_body = s_on_incoming_body_fn,
-            .on_complete = s_on_stream_complete_fn,
+        .manual_window_management = false,
+        .user_data = user_data,
+        .request = provider_user_data->message,
+        .self_size = sizeof(struct aws_http_make_request_options),
+        .on_response_headers = NULL,
+        .on_response_header_block_done = NULL,
+        .on_response_body = s_on_incoming_body_fn,
+        .on_complete = s_on_stream_complete_fn,
     };
 
     struct aws_http_stream *stream = aws_http_connection_make_request(connection, &options);
@@ -272,16 +298,25 @@ void s_on_signing_complete(struct aws_signing_result *result, int error_code, vo
     struct sts_creds_provider_user_data *provider_user_data = userdata;
     struct aws_credentials_provider_sts_impl *sts_impl = provider_user_data->provider->impl;
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): signing completed with error code %d",
+        (void *)provider_user_data->provider,
+        error_code);
+
     if (error_code) {
         aws_raise_error(error_code);
         goto error;
     }
 
-    if (aws_apply_signing_result_to_http_request(provider_user_data->message, provider_user_data->provider->allocator, result)) {
+    if (aws_apply_signing_result_to_http_request(
+            provider_user_data->message, provider_user_data->provider->allocator, result)) {
         goto error;
     }
 
-    aws_http_connection_manager_acquire_connection(sts_impl->connection_manager, s_on_connection_setup_fn, provider_user_data);
+    aws_http_connection_manager_acquire_connection(
+        sts_impl->connection_manager, s_on_connection_setup_fn, provider_user_data);
+    return;
 
 error:
     provider_user_data->callback(NULL, provider_user_data->user_data);
@@ -289,30 +324,34 @@ error:
 }
 
 static int s_sts_get_creds(
-        struct aws_credentials_provider *provider,
-        aws_on_get_credentials_callback_fn callback,
-        void *user_data) {
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+
+    AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): fetching credentials", (void *)provider);
 
     struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
-    struct sts_creds_provider_user_data *provider_user_data = aws_mem_calloc(provider->allocator, 1, sizeof(struct sts_creds_provider_user_data));
+    struct sts_creds_provider_user_data *provider_user_data =
+        aws_mem_calloc(provider->allocator, 1, sizeof(struct sts_creds_provider_user_data));
 
     if (!provider_user_data) {
         goto error;
     }
 
+    provider_user_data->allocator = provider->allocator;
     provider_user_data->provider = provider;
     provider_user_data->callback = callback;
     provider_user_data->user_data = user_data;
 
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
 
-    if (provider_user_data->message) {
+    if (!provider_user_data->message) {
         goto error;
     }
 
     struct aws_http_header host_header = {
-            .name = s_host_name,
-            .value = s_host_name_val,
+        .name = s_host_name,
+        .value = s_host_name_val,
     };
 
     if (aws_http_message_add_header(provider_user_data->message, host_header)) {
@@ -320,8 +359,8 @@ static int s_sts_get_creds(
     }
 
     struct aws_http_header content_type_header = {
-            .name = s_content_type,
-            .value = s_content_type_val,
+        .name = s_content_type,
+        .value = s_content_type_val,
     };
 
     if (aws_http_message_add_header(provider_user_data->message, content_type_header)) {
@@ -329,8 +368,8 @@ static int s_sts_get_creds(
     }
 
     struct aws_http_header api_version_header = {
-            .name = s_api_version,
-            .value = s_api_version_val,
+        .name = s_api_version,
+        .value = s_api_version_val,
     };
 
     if (aws_http_message_add_header(provider_user_data->message, api_version_header)) {
@@ -350,8 +389,8 @@ static int s_sts_get_creds(
     sprintf(content_length, "%" PRIu64, (uint64_t)provider_user_data->payload_body.len);
 
     struct aws_http_header content_len_header = {
-            .name = s_content_length,
-            .value = aws_byte_cursor_from_c_str(content_length),
+        .name = s_content_length,
+        .value = aws_byte_cursor_from_c_str(content_length),
     };
 
     if (aws_http_message_add_header(provider_user_data->message, content_len_header)) {
@@ -359,7 +398,8 @@ static int s_sts_get_creds(
     }
 
     struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->payload_body);
-    provider_user_data->input_stream = aws_input_stream_new_from_cursor(provider_user_data->provider->allocator, &payload_cur);
+    provider_user_data->input_stream =
+        aws_input_stream_new_from_cursor(provider_user_data->provider->allocator, &payload_cur);
 
     if (!provider_user_data->input_stream) {
         goto error;
@@ -390,7 +430,12 @@ static int s_sts_get_creds(
     provider_user_data->signing_config.service = s_service_name;
     provider_user_data->signing_config.use_double_uri_encode = false;
 
-    if (aws_signer_sign_request(sts_impl->signer, provider_user_data->signable, (struct aws_signing_config_base *)&provider_user_data->signing_config, s_on_signing_complete, provider_user_data)) {
+    if (aws_signer_sign_request(
+            sts_impl->signer,
+            provider_user_data->signable,
+            (struct aws_signing_config_base *)&provider_user_data->signing_config,
+            s_on_signing_complete,
+            provider_user_data)) {
         goto error;
     }
 
@@ -406,6 +451,8 @@ error:
 }
 
 void s_clean_up(struct aws_credentials_provider *provider) {
+    AWS_LOGF_TRACE(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): cleaning up credentials provider", (void *)provider);
+
     struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
 
     if (sts_impl->connection_manager) {
@@ -438,25 +485,26 @@ void s_clean_up(struct aws_credentials_provider *provider) {
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vtable = {
-        .get_credentials = s_sts_get_creds,
-        .clean_up = s_clean_up,
-        .shutdown = aws_credentials_provider_shutdown_nil,
+    .get_credentials = s_sts_get_creds,
+    .clean_up = s_clean_up,
+    .shutdown = aws_credentials_provider_shutdown_nil,
 };
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
-        struct aws_allocator *allocator,
-        struct aws_credentials_provider_sts_options *options) {
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options) {
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_sts_impl *impl = NULL;
 
     aws_mem_acquire_many(
-            allocator,
-            2,
-            &provider,
-            sizeof(struct aws_credentials_provider),
-            &impl,
-            sizeof(struct aws_credentials_provider_sts_impl));
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_sts_impl));
 
+    AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: creating STS credentials provider");
     if (!provider) {
         return NULL;
     }
@@ -467,30 +515,51 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
     if (options->tls_ctx) {
+        AWS_LOGF_TRACE(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): tls context provided, using pre-built tls context.",
+            (void *)provider);
         impl->ctx = options->tls_ctx;
     } else {
+        AWS_LOGF_TRACE(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): tls context not provided, initializing a new one",
+            (void *)provider);
         struct aws_tls_ctx_options tls_options;
         aws_tls_ctx_options_init_default_client(&tls_options, allocator);
         aws_tls_ctx_options_set_verify_peer(&tls_options, false);
         impl->ctx = aws_tls_client_ctx_new(allocator, &tls_options);
 
         if (!impl->ctx) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): failed to create a tls context with error %s",
+                (void *)provider,
+                aws_error_debug_str(aws_last_error()));
             aws_tls_ctx_options_clean_up(&tls_options);
             goto cleanup_provider;
         }
     }
 
-    if (!options->creds_provider || !options->tls_ctx) {
+    if (!options->creds_provider) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): A credentials provider must be specified", (void *)provider);
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         goto cleanup_provider;
-        return NULL;
     }
 
-    impl->role_session_name = aws_string_new_from_array(allocator, options->session_name.ptr, options->session_name.len);
+    impl->role_session_name =
+        aws_string_new_from_array(allocator, options->session_name.ptr, options->session_name.len);
 
     if (!impl->role_session_name) {
         goto cleanup_provider;
     }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): using session_name %s",
+        (void *)provider,
+        aws_string_c_str(impl->role_session_name));
 
     impl->assume_role_profile = aws_string_new_from_array(allocator, options->role_arn.ptr, options->role_arn.len);
 
@@ -498,41 +567,72 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
         goto cleanup_provider;
     }
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): using assume_role_arn %s",
+        (void *)provider,
+        aws_string_c_str(impl->assume_role_profile));
+
     impl->duration_seconds = options->duration_seconds;
+
+    if (impl->duration_seconds < 900) {
+        impl->duration_seconds = 900;
+    }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): using credentials duration %" PRIu16,
+        (void *)provider,
+        impl->duration_seconds);
 
     aws_credentials_provider_acquire(options->creds_provider);
     impl->provider = options->creds_provider;
     impl->signer = aws_signer_new_aws(allocator);
 
     if (!impl->signer) {
-         goto cleanup_provider;
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to create a SigV4 signer with error %s",
+            (void *)provider,
+            aws_error_debug_str(aws_last_error()));
+        goto cleanup_provider;
     }
 
     aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
 
     if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &s_host_name_val)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to create a tls connection options with error %s",
+            (void *)provider,
+            aws_error_debug_str(aws_last_error()));
         goto cleanup_provider;
     }
 
     struct aws_socket_options socket_options = {
-            .type = AWS_SOCKET_STREAM,
-            .domain = AWS_SOCKET_IPV6,
-            .connect_timeout_ms = 3000,
+        .type = AWS_SOCKET_STREAM,
+        .domain = AWS_SOCKET_IPV6,
+        .connect_timeout_ms = 3000,
     };
 
     struct aws_http_connection_manager_options connection_manager_options = {
-            .bootstrap = options->bootstrap,
-            .host = s_host_name_val,
-            .initial_window_size = SIZE_MAX,
-            .max_connections = 2,
-            .port = 443,
-            .socket_options = &socket_options,
-            .tls_connection_options = &impl->connection_options,
+        .bootstrap = options->bootstrap,
+        .host = s_host_name_val,
+        .initial_window_size = SIZE_MAX,
+        .max_connections = 2,
+        .port = 443,
+        .socket_options = &socket_options,
+        .tls_connection_options = &impl->connection_options,
     };
 
     impl->connection_manager = aws_http_connection_manager_new(allocator, &connection_manager_options);
 
     if (!impl->connection_manager) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to create a connection manager with error %s",
+            (void *)provider,
+            aws_error_debug_str(aws_last_error()));
         goto cleanup_provider;
     }
 

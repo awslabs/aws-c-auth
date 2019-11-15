@@ -230,8 +230,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
-        struct aws_allocator *allocator,
-        struct aws_credentials_provider_sts_options *options);
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options);
 
 /*
  * A provider that sources credentials from an ordered sequence of providers, with the overall result

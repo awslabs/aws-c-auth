@@ -17,6 +17,7 @@
 
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/process.h>
 #include <aws/common/string.h>
 
 /*
@@ -28,7 +29,10 @@ AWS_STRING_FROM_LITERAL(s_role_session_name_name, "role_session_name");
 AWS_STRING_FROM_LITERAL(s_credential_source_name, "credential_source");
 AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
 
-static struct aws_byte_cursor s_default_session_name_pfx = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime_profile-config");
+static struct aws_byte_cursor s_default_session_name_pfx =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime_profile-config");
+static struct aws_byte_cursor s_ec2_imds_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Ec2InstanceMetadata");
+static struct aws_byte_cursor s_environment_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Environment");
 
 struct aws_credentials_provider_profile_file_impl {
     struct aws_string *config_file_path;
@@ -147,6 +151,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_profile_file_impl *impl = NULL;
+    struct aws_profile_collection *config_profiles = NULL;
+    struct aws_profile_collection *credentials_profiles = NULL;
+    struct aws_profile_collection *merged_profiles = NULL;
+    struct aws_credentials_provider *returned_provider = NULL;
 
     aws_mem_acquire_many(
         allocator,
@@ -171,7 +179,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider failed resolve credentials file path",
             (void *)provider);
-        goto on_error;
+        goto on_finished;
     }
 
     impl->config_file_path = aws_get_config_file_path(allocator, &options->config_file_name_override);
@@ -180,7 +188,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider failed resolve config file path",
             (void *)provider);
-        goto on_error;
+        goto on_finished;
     }
 
     impl->profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
@@ -189,60 +197,171 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Profile credentials provider failed to resolve profile name",
             (void *)provider);
-        goto on_error;
+        goto on_finished;
     }
 
-    struct aws_profile_collection *config_profiles =
-            aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
-    struct aws_profile_collection *credentials_profiles =
-            aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
+    config_profiles = aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
+    credentials_profiles =
+        aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
 
     if (!(config_profiles || credentials_profiles)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) Profile credentials provider could not load or parse"
-                                                        " a credentials or config file.", (void *)provider);
-        goto on_error;
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Profile credentials provider could not load or parse"
+            " a credentials or config file.",
+            (void *)provider);
+        goto on_finished;
     }
 
-    struct aws_profile_collection *merged_profiles =
-            aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
+    merged_profiles = aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
 
     struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
     struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
 
+    returned_provider = provider;
     if (role_arn_property) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) role_arn property is set to %s, attempting to "
+            "create an STS credentials provider.",
+            (void *)provider,
+            aws_string_c_str(role_arn_property->value));
+
         struct aws_profile_property *source_profile_property = aws_profile_get_property(profile, s_source_profile_name);
+        struct aws_profile_property *credential_source_property =
+            aws_profile_get_property(profile, s_credential_source_name);
+
+        struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
+        char session_name_array[65];
+        AWS_ZERO_ARRAY(session_name_array);
+
+        if (role_session_name) {
+            size_t to_write = role_session_name->value->len;
+            if (to_write > 64) {
+                to_write = 64;
+            }
+            memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
+        } else {
+            memcpy(session_name_array, s_default_session_name_pfx.ptr, s_default_session_name_pfx.len);
+            sprintf(session_name_array + s_default_session_name_pfx.len, "-%d", aws_get_pid());
+        }
+
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) setting session_name to %s",
+            (void *)provider,
+            session_name_array);
+
+        struct aws_credentials_provider_sts_options sts_options = {
+            .bootstrap = options->bootstrap,
+            .role_arn = aws_byte_cursor_from_string(role_arn_property->value),
+            .session_name = aws_byte_cursor_from_c_str(session_name_array),
+            .duration_seconds = 0,
+        };
 
         if (source_profile_property) {
+            returned_provider = NULL;
             aws_string_destroy(impl->profile_name);
             impl->profile_name = aws_string_clone_or_reuse(allocator, source_profile_property->value);
 
-            struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
-            char session_name_array[65];
-            AWS_ZERO_ARRAY(session_name_array);
-
-            if (role_session_name) {
-                size_t to_write = role_session_name->value->len;
-                if (to_write > 64) {
-                    to_write = 64;
-                }
-                memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
-            } else {
-                
+            if (!impl->profile_name) {
+                goto on_finished;
             }
 
-            struct aws_credentials_provider_sts_options sts_options = {
-                    .creds_provider = provider,
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) source_profile set to %s",
+                (void *)provider,
+                aws_string_c_str(impl->profile_name));
+
+            sts_options.creds_provider = provider;
+
+            struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &sts_options);
+
+            if (!sts_provider) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p) failed to load STS credentials provider",
+                    (void *)provider);
+                goto on_finished;
+            }
+            aws_credentials_provider_acquire(provider);
+            returned_provider = sts_provider;
+        } else if (credential_source_property) {
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) credential_source property set to %s",
+                (void *)provider,
+                aws_string_c_str(credential_source_property->value));
+
+            if (aws_string_eq_byte_cursor_ignore_case(credential_source_property->value, &s_ec2_imds_name)) {
+                aws_credentials_provider_release(provider);
+                provider = NULL;
+                struct aws_credentials_provider_imds_options imds_options = {
                     .bootstrap = options->bootstrap,
-                    .role_arn = aws_byte_cursor_from_string(role_arn_property->value),
-                    .session_name = aws_byte_cursor_from_c_str("test_session"),
-                    .duration_seconds = 0,
-            };
+                };
+                struct aws_credentials_provider *imds_provider =
+                    aws_credentials_provider_new_imds(allocator, &imds_options);
+
+                if (!imds_provider) {
+                    goto on_finished;
+                }
+
+                sts_options.creds_provider = imds_provider;
+                struct aws_credentials_provider *sts_provider =
+                    aws_credentials_provider_new_sts(allocator, &sts_options);
+
+                if (!sts_provider) {
+                    aws_credentials_provider_destroy(imds_provider);
+                    goto on_finished;
+                }
+                aws_credentials_provider_acquire(imds_provider);
+                returned_provider = sts_provider;
+            } else if (aws_string_eq_byte_cursor_ignore_case(credential_source_property->value, &s_environment_name)) {
+                aws_credentials_provider_release(provider);
+                provider = NULL;
+                struct aws_credentials_provider *env_provider = aws_credentials_provider_new_environment(allocator);
+
+                if (!env_provider) {
+                    goto on_finished;
+                }
+
+                sts_options.creds_provider = env_provider;
+                struct aws_credentials_provider *sts_provider =
+                    aws_credentials_provider_new_sts(allocator, &sts_options);
+
+                if (!sts_provider) {
+                    aws_credentials_provider_destroy(env_provider);
+                    goto on_finished;
+                }
+                aws_credentials_provider_acquire(env_provider);
+                returned_provider = sts_provider;
+            } else {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p) invalid credential_source property: %s",
+                    (void *)provider,
+                    aws_string_c_str(credential_source_property->value));
+            }
         }
     }
-    return provider;
 
-on_error:
-    aws_credentials_provider_destroy(provider);
+on_finished:
+    if (config_profiles) {
+        aws_profile_collection_destroy(config_profiles);
+    }
 
-    return NULL;
+    if (credentials_profiles) {
+        aws_profile_collection_destroy(credentials_profiles);
+    }
+
+    if (merged_profiles) {
+        aws_profile_collection_destroy(merged_profiles);
+    }
+
+    if (!returned_provider && provider) {
+        aws_credentials_provider_destroy(provider);
+    }
+
+    return returned_provider;
 }
