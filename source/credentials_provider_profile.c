@@ -18,11 +18,17 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/string.h>
-#include <aws/io/tls_channel_handler.h>
 
 /*
  * Profile provider implementation
  */
+
+AWS_STRING_FROM_LITERAL(s_role_arn_name, "role_arn");
+AWS_STRING_FROM_LITERAL(s_role_session_name_name, "role_session_name");
+AWS_STRING_FROM_LITERAL(s_credential_source_name, "credential_source");
+AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
+
+static struct aws_byte_cursor s_default_session_name_pfx = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime_profile-config");
 
 struct aws_credentials_provider_profile_file_impl {
     struct aws_string *config_file_path;
@@ -186,6 +192,53 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
         goto on_error;
     }
 
+    struct aws_profile_collection *config_profiles =
+            aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
+    struct aws_profile_collection *credentials_profiles =
+            aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
+
+    if (!(config_profiles || credentials_profiles)) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) Profile credentials provider could not load or parse"
+                                                        " a credentials or config file.", (void *)provider);
+        goto on_error;
+    }
+
+    struct aws_profile_collection *merged_profiles =
+            aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
+
+    struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
+    struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
+
+    if (role_arn_property) {
+        struct aws_profile_property *source_profile_property = aws_profile_get_property(profile, s_source_profile_name);
+
+        if (source_profile_property) {
+            aws_string_destroy(impl->profile_name);
+            impl->profile_name = aws_string_clone_or_reuse(allocator, source_profile_property->value);
+
+            struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
+            char session_name_array[65];
+            AWS_ZERO_ARRAY(session_name_array);
+
+            if (role_session_name) {
+                size_t to_write = role_session_name->value->len;
+                if (to_write > 64) {
+                    to_write = 64;
+                }
+                memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
+            } else {
+                
+            }
+
+            struct aws_credentials_provider_sts_options sts_options = {
+                    .creds_provider = provider,
+                    .bootstrap = options->bootstrap,
+                    .role_arn = aws_byte_cursor_from_string(role_arn_property->value),
+                    .session_name = aws_byte_cursor_from_c_str("test_session"),
+                    .duration_seconds = 0,
+            };
+        }
+    }
     return provider;
 
 on_error:

@@ -20,15 +20,15 @@
 #include <aws/auth/signable.h>
 #include <aws/common/string.h>
 #include <aws/common/mutex.h>
-#include <aws/io/stream.h>
-#include <aws/io/tls_channel_handler.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/connection.h>
 #include <aws/http/request_response.h>
+#include <aws/io/socket.h>
+#include <aws/io/stream.h>
+#include <aws/io/tls_channel_handler.h>
+#include <aws/io/uri.h>
 
 #include <inttypes.h>
-#include <aws/io/socket.h>
-#include <aws/io/uri.h>
 
 static struct aws_byte_cursor s_host_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host");
 static struct aws_byte_cursor s_host_name_val = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com");
@@ -375,27 +375,23 @@ static int s_sts_get_creds(
         goto error;
     }
 
-    if (sts_impl->signer) {
-        provider_user_data->signable = aws_signable_new_http_request(provider->allocator, provider_user_data->message);
+    provider_user_data->signable = aws_signable_new_http_request(provider->allocator, provider_user_data->message);
 
-        if (!provider_user_data->signable) {
-            goto error;
-        }
+    if (!provider_user_data->signable) {
+        goto error;
+    }
 
-        provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
-        provider_user_data->signing_config.sign_body = true;
-        provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
-        provider_user_data->signing_config.credentials_provider = sts_impl->provider;
-        aws_date_time_init_now(&provider_user_data->signing_config.date);
-        provider_user_data->signing_config.region = s_signing_region;
-        provider_user_data->signing_config.service = s_service_name;
-        provider_user_data->signing_config.use_double_uri_encode = false;
+    provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
+    provider_user_data->signing_config.sign_body = true;
+    provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
+    provider_user_data->signing_config.credentials_provider = sts_impl->provider;
+    aws_date_time_init_now(&provider_user_data->signing_config.date);
+    provider_user_data->signing_config.region = s_signing_region;
+    provider_user_data->signing_config.service = s_service_name;
+    provider_user_data->signing_config.use_double_uri_encode = false;
 
-        if (aws_signer_sign_request(sts_impl->signer, provider_user_data->signable, (struct aws_signing_config_base *)&provider_user_data->signing_config, s_on_signing_complete, provider_user_data)) {
-            goto error;
-        }
-    } else {
-        aws_http_connection_manager_acquire_connection(sts_impl->connection_manager, s_on_connection_setup_fn, provider_user_data);
+    if (aws_signer_sign_request(sts_impl->signer, provider_user_data->signable, (struct aws_signing_config_base *)&provider_user_data->signing_config, s_on_signing_complete, provider_user_data)) {
+        goto error;
     }
 
     return AWS_OP_SUCCESS;
@@ -470,7 +466,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
-    /* MTLS case */
     if (options->tls_ctx) {
         impl->ctx = options->tls_ctx;
     } else {
@@ -485,8 +480,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
         }
     }
 
-    /* if you don't have a credentials provider backing this, you'd better be using MTLS. */
-    if (!options->creds_provider && !options->tls_ctx) {
+    if (!options->creds_provider || !options->tls_ctx) {
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         goto cleanup_provider;
         return NULL;
@@ -506,14 +500,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
 
     impl->duration_seconds = options->duration_seconds;
 
-    if (options->creds_provider) {
-        aws_credentials_provider_acquire(options->creds_provider);
-        impl->provider = options->creds_provider;
-        impl->signer = aws_signer_new_aws(allocator);
+    aws_credentials_provider_acquire(options->creds_provider);
+    impl->provider = options->creds_provider;
+    impl->signer = aws_signer_new_aws(allocator);
 
-        if (!impl->signer) {
-            goto cleanup_provider;
-        }
+    if (!impl->signer) {
+         goto cleanup_provider;
     }
 
     aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);

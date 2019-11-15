@@ -74,6 +74,7 @@ struct aws_credentials_provider_profile_options {
     struct aws_byte_cursor profile_name_override;
     struct aws_byte_cursor config_file_name_override;
     struct aws_byte_cursor credentials_file_name_override;
+    struct aws_client_bootstrap *bootstrap;
 };
 
 struct aws_credentials_provider_cached_options {
