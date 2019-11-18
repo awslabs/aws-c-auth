@@ -84,6 +84,11 @@ static struct aws_byte_cursor s_amz_credential_param_name;
 static struct aws_byte_cursor s_amz_algorithm_param_name;
 static struct aws_byte_cursor s_amz_signed_headers_param_name;
 
+/*
+ * Build a set of library-static tables for quick lookup.
+ *
+ * Construction errors are considered fatal.
+ */
 int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
 
     if (aws_hash_table_init(
@@ -373,7 +378,7 @@ static int s_append_normalized_path(
         goto cleanup;
     }
 
-    size_t raw_split_count = aws_array_list_length(&raw_split);
+    const size_t raw_split_count = aws_array_list_length(&raw_split);
     if (aws_array_list_init_dynamic(&normalized_split, allocator, raw_split_count, sizeof(struct aws_byte_cursor))) {
         goto cleanup;
     }
@@ -418,7 +423,7 @@ static int s_append_normalized_path(
      * build the final normalized path from the normalized split by joining
      * the components together with '/'
      */
-    size_t normalized_split_count = aws_array_list_length(&normalized_split);
+    const size_t normalized_split_count = aws_array_list_length(&normalized_split);
     for (size_t i = 0; i < normalized_split_count; ++i) {
         struct aws_byte_cursor normalized_path_component;
         AWS_ZERO_STRUCT(normalized_path_component);
@@ -705,17 +710,14 @@ done:
 }
 
 static int s_validate_query_params(struct aws_array_list *params) {
-    size_t param_count = aws_array_list_length(params);
+    const size_t param_count = aws_array_list_length(params);
     for (size_t i = 0; i < param_count; ++i) {
         struct aws_uri_param param;
-        if (aws_array_list_get_at(params, &param, i)) {
-            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
-        }
+        AWS_ZERO_STRUCT(param);
+        aws_array_list_get_at(params, &param, i);
 
         struct aws_hash_element *forbidden_element = NULL;
-        if (aws_hash_table_find(&s_forbidden_params, &param.key, &forbidden_element)) {
-            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
-        }
+        aws_hash_table_find(&s_forbidden_params, &param.key, &forbidden_element);
 
         if (forbidden_element != NULL) {
             AWS_LOGF_ERROR(
@@ -756,7 +758,7 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
         goto cleanup;
     }
 
-    size_t param_count = aws_array_list_length(&query_params);
+    const size_t param_count = aws_array_list_length(&query_params);
 
     /* lexical sort and append */
     qsort(query_params.data, param_count, sizeof(struct aws_uri_param), s_canonical_query_param_comparator);
@@ -937,7 +939,7 @@ static int s_build_canonical_stable_header_list(
         return AWS_OP_ERR;
     }
 
-    size_t signable_header_count = aws_array_list_length(signable_header_list);
+    const size_t signable_header_count = aws_array_list_length(signable_header_list);
     for (size_t i = 0; i < signable_header_count; ++i) {
         struct stable_header header_wrapper;
         AWS_ZERO_STRUCT(header_wrapper);
@@ -1017,17 +1019,15 @@ static int s_build_canonical_stable_header_list(
 }
 
 static int s_validate_signable_header_list(struct aws_array_list *header_list) {
-    size_t header_count = aws_array_list_length(header_list);
+    const size_t header_count = aws_array_list_length(header_list);
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_signable_property_list_pair header;
-        if (aws_array_list_get_at(header_list, &header, i)) {
-            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
-        }
+        AWS_ZERO_STRUCT(header);
+
+        aws_array_list_get_at(header_list, &header, i);
 
         struct aws_hash_element *forbidden_element = NULL;
-        if (aws_hash_table_find(&s_forbidden_headers, &header.name, &forbidden_element)) {
-            return aws_raise_error(AWS_AUTH_SIGNING_INTERNAL_ERROR);
-        }
+        aws_hash_table_find(&s_forbidden_headers, &header.name, &forbidden_element);
 
         if (forbidden_element != NULL) {
             AWS_LOGF_ERROR(
@@ -1066,7 +1066,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    size_t signable_header_count = aws_array_list_length(signable_header_list);
+    const size_t signable_header_count = aws_array_list_length(signable_header_list);
     size_t total_sign_headers_count = signable_header_count + 1; /* for X-Amz-Credentials */
 
     if (state->config->sign_body) {
@@ -1095,7 +1095,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    size_t header_count = aws_array_list_length(&headers);
+    const size_t header_count = aws_array_list_length(&headers);
 
     /* Sort the arraylist via lowercase header name and original position */
     qsort(headers.data, header_count, sizeof(struct stable_header), s_canonical_header_comparator);
