@@ -112,13 +112,13 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signing_security_token_name;
  * Initializes the internal table of headers that should not be signed
  */
 AWS_AUTH_API
-int aws_signing_init_skipped_headers(struct aws_allocator *allocator);
+int aws_signing_init_signing_tables(struct aws_allocator *allocator);
 
 /**
  * Cleans up the internal table of headers that should not be signed
  */
 AWS_AUTH_API
-void aws_signing_clean_up_skipped_headers(void);
+void aws_signing_clean_up_signing_tables(void);
 
 AWS_EXTERN_C_END
 
