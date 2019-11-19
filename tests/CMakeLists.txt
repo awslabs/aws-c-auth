@@ -145,6 +145,15 @@ add_test_case(xml_parser_child_with_text)
 add_test_case(xml_parser_siblings_with_text)
 add_test_case(xml_parser_preamble_and_attributes)
 
+add_test_case(sigv4_fail_date_header_test)
+add_test_case(sigv4_fail_content_header_test)
+add_test_case(sigv4_fail_authorization_header_test)
+add_test_case(sigv4_fail_signature_param_test)
+add_test_case(sigv4_fail_date_param_test)
+add_test_case(sigv4_fail_credential_param_test)
+add_test_case(sigv4_fail_algorithm_param_test)
+add_test_case(sigv4_fail_signed_headers_param_test)
+
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
