@@ -146,6 +146,10 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
 }
 
 void aws_credentials_provider_release(struct aws_credentials_provider *provider) {
+    if (provider == NULL) {
+        return;
+    }
+
     size_t old_value = aws_atomic_fetch_sub(&provider->ref_count, 1);
     if (old_value == 1) {
         aws_credentials_provider_destroy(provider);

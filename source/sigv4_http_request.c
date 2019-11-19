@@ -17,7 +17,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/signable.h>
-#include <aws/auth/signer.h>
+#include <aws/auth/signing.h>
 #include <aws/auth/signing_result.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/mutex.h>
@@ -393,7 +393,6 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     AWS_ZERO_STRUCT(provider_options);
 
     struct aws_signable *signable = NULL;
-    struct aws_signer *signer = NULL;
     struct aws_credentials_provider *provider = NULL;
 
     aws_auth_library_init(allocator);
@@ -403,11 +402,6 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
      */
     signable = aws_signable_new_http_request(allocator, request);
     if (signable == NULL) {
-        goto done;
-    }
-
-    signer = aws_signer_new_aws(allocator);
-    if (signer == NULL) {
         goto done;
     }
 
@@ -460,8 +454,8 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     /*
      * Perform the signing process and apply the result to the request
      */
-    if (aws_signer_sign_request(
-            signer, signable, (struct aws_signing_config_base *)&config, s_sign_callback, &config)) {
+    if (aws_sign_request_aws(
+            allocator, signable, (struct aws_signing_config_base *)&config, s_sign_callback, &config)) {
         goto done;
     }
 
@@ -477,7 +471,6 @@ done:
 
     s_aws_signing_waiter_clean_up(&signing_waiter);
     aws_credentials_provider_release(provider);
-    aws_signer_destroy(signer);
     aws_signable_destroy(signable);
 
     aws_signing_result_clean_up(&signing_result);

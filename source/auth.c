@@ -40,7 +40,9 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_NO_CREDENTIALS,
         "Attempt to sign an http request without credentials"),
-
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_INVALID_CONFIGURATION,
+        "Attempt to sign an http request with an invalid signing configuration"),
 };
 /* clang-format on */
 
