@@ -216,6 +216,16 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     merged_profiles = aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
 
     struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
+
+    if (!profile) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Profile credentials provider could not load"
+            " a profile at %s.",
+            (void *)provider,
+            aws_string_c_str(impl->profile_name));
+        goto on_finished;
+    }
     struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
 
     returned_provider = provider;
@@ -257,6 +267,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             .role_arn = aws_byte_cursor_from_string(role_arn_property->value),
             .session_name = aws_byte_cursor_from_c_str(session_name_array),
             .duration_seconds = 0,
+            .function_table = options->function_table,
         };
 
         if (source_profile_property) {
@@ -285,7 +296,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
                     (void *)provider);
                 goto on_finished;
             }
-            aws_credentials_provider_acquire(provider);
             returned_provider = sts_provider;
         } else if (credential_source_property) {
             AWS_LOGF_INFO(
@@ -299,7 +309,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
                 provider = NULL;
                 struct aws_credentials_provider_imds_options imds_options = {
                     .bootstrap = options->bootstrap,
+                    .function_table = options->function_table,
                 };
+
                 struct aws_credentials_provider *imds_provider =
                     aws_credentials_provider_new_imds(allocator, &imds_options);
 
@@ -312,10 +324,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
                     aws_credentials_provider_new_sts(allocator, &sts_options);
 
                 if (!sts_provider) {
-                    aws_credentials_provider_destroy(imds_provider);
+                    aws_credentials_provider_release(imds_provider);
                     goto on_finished;
                 }
-                aws_credentials_provider_acquire(imds_provider);
                 returned_provider = sts_provider;
             } else if (aws_string_eq_byte_cursor_ignore_case(credential_source_property->value, &s_environment_name)) {
                 aws_credentials_provider_release(provider);
@@ -331,10 +342,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
                     aws_credentials_provider_new_sts(allocator, &sts_options);
 
                 if (!sts_provider) {
-                    aws_credentials_provider_destroy(env_provider);
+                    aws_credentials_provider_release(env_provider);
                     goto on_finished;
                 }
-                aws_credentials_provider_acquire(env_provider);
                 returned_provider = sts_provider;
             } else {
                 AWS_LOGF_ERROR(

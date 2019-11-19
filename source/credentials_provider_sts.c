@@ -50,6 +50,16 @@ static struct aws_byte_cursor s_assume_role_session_token_name = AWS_BYTE_CUR_IN
 static struct aws_byte_cursor s_assume_role_secret_key_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SecretAccessKey");
 static struct aws_byte_cursor s_assume_role_access_key_id_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AccessKeyId");
 
+static struct aws_credentials_provider_http_function_table s_default_function_table = {
+    .aws_http_connection_manager_new = aws_http_connection_manager_new,
+    .aws_http_connection_manager_release = aws_http_connection_manager_release,
+    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
+    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
+    .aws_http_connection_make_request = aws_http_connection_make_request,
+    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
+    .aws_http_stream_release = aws_http_stream_release,
+    .aws_http_connection_close = aws_http_connection_close};
+
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_signer *signer;
@@ -59,6 +69,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_credentials_provider *provider;
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
+    struct aws_credentials_provider_http_function_table *function_table;
     bool owns_ctx;
 };
 
@@ -66,6 +77,7 @@ struct sts_creds_provider_user_data {
     struct aws_allocator *allocator;
     struct aws_credentials_provider *provider;
     aws_on_get_credentials_callback_fn *callback;
+    struct aws_http_connection *connection;
     struct aws_byte_buf payload_body;
     struct aws_input_stream *input_stream;
     struct aws_signable *signable;
@@ -141,14 +153,14 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 /* parse doc of form
 <AssumeRoleResponse>
      <AssumeRoleResult>
-         <AssumeRoleUser>
-             <Credentials>
-                 <AccessKeyId>accessKeyId</AccessKeyId>
-                 <SecretKey>secretKey</SecretKey>
-                 <SessionToken>sessionToken</SessionToken>
-             </Credentials>
-             ... a bunch of other stuff we don't care about
-         </AssumeRoleUser>
+          <Credentials>
+             <AccessKeyId>accessKeyId</AccessKeyId>
+             <SecretKey>secretKey</SecretKey>
+             <SessionToken>sessionToken</SessionToken>
+          </Credentials>
+         <AssumedRoleUser>
+             ... more stuff we don't care about.
+         </AssumedRoleUser>
          ... more stuff we don't care about
       </AssumeRoleResult>
 </AssumeRoleResponse>
@@ -200,7 +212,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
 
     struct aws_credentials *credentials = NULL;
-    if (aws_http_stream_get_incoming_response_status(stream, &http_response_code)) {
+    if (provider_impl->function_table->aws_http_stream_get_incoming_response_status(stream, &http_response_code)) {
         goto finish;
     }
 
@@ -243,8 +255,8 @@ finish:
         aws_credentials_destroy(credentials);
     }
 
-    aws_http_connection_manager_release_connection(
-        provider_impl->connection_manager, aws_http_stream_get_connection(stream));
+    provider_impl->function_table->aws_http_connection_manager_release_connection(
+        provider_impl->connection_manager, provider_user_data->connection);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -263,9 +275,11 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
         aws_raise_error(error_code);
         goto error;
     }
+    provider_user_data->connection = connection;
 
     if (aws_byte_buf_init(&provider_user_data->output_buf, provider_impl->provider->allocator, 2048)) {
-        aws_http_connection_manager_release_connection(provider_impl->connection_manager, connection);
+        provider_impl->function_table->aws_http_connection_manager_release_connection(
+            provider_impl->connection_manager, connection);
     }
 
     struct aws_http_make_request_options options = {
@@ -279,9 +293,11 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
         .on_complete = s_on_stream_complete_fn,
     };
 
-    struct aws_http_stream *stream = aws_http_connection_make_request(connection, &options);
+    struct aws_http_stream *stream =
+        provider_impl->function_table->aws_http_connection_make_request(connection, &options);
     if (!stream) {
-        aws_http_connection_manager_release_connection(provider_impl->connection_manager, connection);
+        provider_impl->function_table->aws_http_connection_manager_release_connection(
+            provider_impl->connection_manager, connection);
         goto error;
     }
 
@@ -314,7 +330,7 @@ void s_on_signing_complete(struct aws_signing_result *result, int error_code, vo
         goto error;
     }
 
-    aws_http_connection_manager_acquire_connection(
+    sts_impl->function_table->aws_http_connection_manager_acquire_connection(
         sts_impl->connection_manager, s_on_connection_setup_fn, provider_user_data);
     return;
 
@@ -456,7 +472,7 @@ void s_clean_up(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
 
     if (sts_impl->connection_manager) {
-        aws_http_connection_manager_release(sts_impl->connection_manager);
+        sts_impl->function_table->aws_http_connection_manager_release(sts_impl->connection_manager);
     }
 
     if (sts_impl->signer) {
@@ -514,6 +530,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
+    impl->function_table = &s_default_function_table;
+
+    if (options->function_table) {
+        impl->function_table = options->function_table;
+    }
+
     if (options->tls_ctx) {
         AWS_LOGF_TRACE(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -527,7 +549,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
             (void *)provider);
         struct aws_tls_ctx_options tls_options;
         aws_tls_ctx_options_init_default_client(&tls_options, allocator);
-        aws_tls_ctx_options_set_verify_peer(&tls_options, false);
         impl->ctx = aws_tls_client_ctx_new(allocator, &tls_options);
 
         if (!impl->ctx) {
@@ -539,6 +560,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
             aws_tls_ctx_options_clean_up(&tls_options);
             goto cleanup_provider;
         }
+
+        impl->owns_ctx = true;
     }
 
     if (!options->creds_provider) {
@@ -585,7 +608,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
         (void *)provider,
         impl->duration_seconds);
 
-    aws_credentials_provider_acquire(options->creds_provider);
     impl->provider = options->creds_provider;
     impl->signer = aws_signer_new_aws(allocator);
 
@@ -625,7 +647,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
         .tls_connection_options = &impl->connection_options,
     };
 
-    impl->connection_manager = aws_http_connection_manager_new(allocator, &connection_manager_options);
+    impl->connection_manager =
+        impl->function_table->aws_http_connection_manager_new(allocator, &connection_manager_options);
 
     if (!impl->connection_manager) {
         AWS_LOGF_ERROR(

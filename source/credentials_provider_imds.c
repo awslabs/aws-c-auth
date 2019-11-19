@@ -36,10 +36,10 @@
 
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_credentials_provider_imds_function_table *function_table;
+    struct aws_credentials_provider_http_function_table *function_table;
 };
 
-static struct aws_credentials_provider_imds_function_table s_default_function_table = {
+static struct aws_credentials_provider_http_function_table s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,

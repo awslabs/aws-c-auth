@@ -24,7 +24,7 @@
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
-struct aws_credentials_provider_imds_function_table;
+struct aws_credentials_provider_http_function_table;
 struct aws_string;
 
 /*
@@ -75,6 +75,9 @@ struct aws_credentials_provider_profile_options {
     struct aws_byte_cursor config_file_name_override;
     struct aws_byte_cursor credentials_file_name_override;
     struct aws_client_bootstrap *bootstrap;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_http_function_table *function_table;
 };
 
 struct aws_credentials_provider_cached_options {
@@ -92,7 +95,7 @@ struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_imds_function_table *function_table;
+    struct aws_credentials_provider_http_function_table *function_table;
 };
 
 struct aws_credentials_provider_sts_options {
@@ -102,6 +105,9 @@ struct aws_credentials_provider_sts_options {
     struct aws_byte_cursor role_arn;
     struct aws_byte_cursor session_name;
     uint16_t duration_seconds;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_http_function_table *function_table;
 };
 
 struct aws_credentials_provider_chain_default_options {
@@ -216,8 +222,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_credentials_provider_profile_options *options);
 
 /*
- * A provider assumes an IAM role via. STS AssumeRole() API. It can use either MTLS cert/key pair or another
- * credentials provider.
+ * A provider assumes an IAM role via. STS AssumeRole() API. Caches the result until options.duration expires.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
@@ -225,8 +230,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_credentials_provider_sts_options *options);
 
 /*
- * A provider assumes an IAM role via. STS AssumeRole() API. It can use either MTLS cert/key pair or another
- * credentials provider.
+ * A provider assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
+ * upon each call to aws_credentials_provider_get_credentials(). If you very likely don't want this behavior,
+ * prefer aws_credentials_provider_new_sts() instead.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(

@@ -23,11 +23,10 @@
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/http/http.h>
-#include <aws/io/file_utils.h>
 
 #include <credentials_provider_utils.h>
 
-#include <errno.h>
+#include "shared_credentials_test_definitions.h"
 
 #ifdef _MSC_VER
 #    pragma warning(disable : 4996)
@@ -152,10 +151,6 @@ static int s_static_credentials_provider_basic_test(struct aws_allocator *alloca
 }
 
 AWS_TEST_CASE(static_credentials_provider_basic_test, s_static_credentials_provider_basic_test);
-
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
 
 static int s_environment_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -494,53 +489,6 @@ static int s_profile_credentials_provider_new_destroy_defaults_test(struct aws_a
 AWS_TEST_CASE(
     profile_credentials_provider_new_destroy_defaults_test,
     s_profile_credentials_provider_new_destroy_defaults_test);
-
-AWS_STATIC_STRING_FROM_LITERAL(s_config_file_path, "~derp/.aws/config");
-AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_path, "/Ithink/globalpaths/arebroken/.aws/credentials");
-AWS_STATIC_STRING_FROM_LITERAL(s_profile_name, "notdefault");
-
-static int s_profile_credentials_provider_new_destroy_overrides_test(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-    (void)allocator;
-
-    struct aws_credentials_provider_profile_options options;
-    AWS_ZERO_STRUCT(options);
-    options.config_file_name_override = aws_byte_cursor_from_string(s_config_file_path);
-    options.credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_path);
-    options.profile_name_override = aws_byte_cursor_from_string(s_profile_name);
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
-
-    aws_credentials_provider_release(provider);
-
-    return 0;
-}
-
-AWS_TEST_CASE(
-    profile_credentials_provider_new_destroy_overrides_test,
-    s_profile_credentials_provider_new_destroy_overrides_test);
-
-int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
-    FILE *fp = fopen(aws_string_c_str(file_name), "w");
-    if (fp == NULL) {
-        return aws_translate_and_raise_io_error(errno);
-    }
-
-    int result = fprintf(fp, "%s", aws_string_c_str(file_contents));
-    fclose(fp);
-
-    if (result < 0) {
-        return aws_translate_and_raise_io_error(errno);
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-AWS_STATIC_STRING_FROM_LITERAL(s_config_file_name, "./.config_test");
-AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_name, "./.credentials_test");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
 
 typedef int(s_verify_credentials_callback_fn)(struct aws_get_credentials_test_callback_result *callback_results);
 

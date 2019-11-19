@@ -179,15 +179,18 @@ int s_advance_to_closing_tag(
     }
 
     size_t len = find_result.ptr - node->doc_at_body.ptr;
+
     aws_byte_cursor_advance(&parser->doc, len + cmp_buf.len);
 
     if (out_body) {
         *out_body = aws_byte_cursor_from_array(node->doc_at_body.ptr, len);
     }
+
     return AWS_OP_SUCCESS;
 }
 
 int aws_xml_node_as_body(struct aws_xml_parser *parser, struct aws_xml_node *node, struct aws_byte_cursor *out_body) {
+    node->processed = true;
     return s_advance_to_closing_tag(parser, node, out_body);
 }
 
@@ -196,6 +199,8 @@ int aws_xml_node_traverse(
     struct aws_xml_node *node,
     aws_xml_parser_on_node_encountered_fn *on_node_encountered,
     void *user_data) {
+
+    node->processed = true;
     struct cb_stack_data stack_data = {
         .cb = on_node_encountered,
         .user_data = user_data,
@@ -207,7 +212,7 @@ int aws_xml_node_traverse(
 
     /* look for the next node at the current level. do this until we encounter the parent node's
      * closing tag. */
-    while (true) {
+    while (!parser->stop_parsing) {
         uint8_t *next_location = memchr(parser->doc.ptr, '<', parser->doc.len);
 
         if (!next_location) {
@@ -238,6 +243,7 @@ int aws_xml_node_traverse(
 
         struct aws_xml_node next_node = {
             .doc_at_body = parser->doc,
+            .processed = false,
         };
 
         if (s_load_node_decl(parser, &decl_body, &next_node)) {
@@ -245,13 +251,26 @@ int aws_xml_node_traverse(
         }
 
         if (!on_node_encountered(parser, &next_node, user_data)) {
+            parser->stop_parsing = true;
             return AWS_OP_SUCCESS;
         }
 
-        if (s_advance_to_closing_tag(parser, node, NULL)) {
-            return AWS_OP_ERR;
+        /* if the user simply returned while skipping the node altogether, go ahead and do the skip over. */
+        if (!parser->stop_parsing && !next_node.processed) {
+            if (s_advance_to_closing_tag(parser, &next_node, NULL)) {
+                return AWS_OP_ERR;
+            }
         }
     }
+
+    if (parser->stop_parsing) {
+        return AWS_OP_SUCCESS;
+    }
+
+    if (s_advance_to_closing_tag(parser, node, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     aws_array_list_pop_back(&parser->cb_stack);
     return AWS_OP_SUCCESS;
 }
@@ -278,6 +297,7 @@ int s_node_next_sibling(struct aws_xml_parser *parser) {
 
     struct aws_xml_node sibling_node = {
         .doc_at_body = parser->doc,
+        .processed = false,
     };
 
     if (s_load_node_decl(parser, &node_decl_body, &sibling_node)) {
@@ -287,7 +307,14 @@ int s_node_next_sibling(struct aws_xml_parser *parser) {
     struct cb_stack_data stack_data;
     AWS_ZERO_STRUCT(stack_data);
     aws_array_list_back(&parser->cb_stack, &stack_data);
-    stack_data.cb(parser, &sibling_node, stack_data.user_data);
+    parser->stop_parsing = !stack_data.cb(parser, &sibling_node, stack_data.user_data);
+
+    /* if the user simply returned while skipping the node altogether, go ahead and do the skip over. */
+    if (!sibling_node.processed) {
+        if (s_advance_to_closing_tag(parser, &sibling_node, NULL)) {
+            return AWS_OP_ERR;
+        }
+    }
 
     return AWS_OP_SUCCESS;
 }
