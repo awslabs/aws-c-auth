@@ -830,12 +830,19 @@ static int s_do_forbidden_header_param_test(
         s_initialize_test_from_cursor(&signable, &config, allocator, &test_contents, &request_cursor, NULL, false) ==
         AWS_OP_SUCCESS);
 
-    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
-    ASSERT_NOT_NULL(signing_state);
-
     struct aws_credentials *credentials =
         aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
     ASSERT_NOT_NULL(credentials);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
+        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
+    };
+
+    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
+    ASSERT_NOT_NULL(signing_state);
 
     signing_state->credentials = credentials;
 
@@ -843,6 +850,7 @@ static int s_do_forbidden_header_param_test(
     ASSERT_TRUE(aws_last_error() == expected_error);
 
     aws_signing_state_destroy(signing_state);
+    aws_credentials_provider_release(config.credentials_provider);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
     aws_credentials_destroy(credentials);
     aws_signable_destroy(signable);
