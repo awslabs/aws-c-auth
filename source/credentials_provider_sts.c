@@ -225,7 +225,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         struct aws_xml_parser xml_parser;
         struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
 
-        if (aws_xml_parser_init(&xml_parser, provider_user_data->provider->allocator, &payload_cur)) {
+        if (aws_xml_parser_init(&xml_parser, provider_user_data->provider->allocator, &payload_cur, 0)) {
             goto finish;
         }
 

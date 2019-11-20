@@ -37,7 +37,7 @@ static int s_xml_parser_root_with_text_test(struct aws_allocator *allocator, voi
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(root_with_text);
     struct aws_xml_parser parser;
 
-    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
 
     struct root_with_text_capture capture;
     AWS_ZERO_STRUCT(capture);
@@ -87,7 +87,7 @@ static int s_xml_parser_child_with_text_test(struct aws_allocator *allocator, vo
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(child_with_text);
     struct aws_xml_parser parser;
 
-    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
 
     struct root_with_text_capture capture;
     AWS_ZERO_STRUCT(capture);
@@ -149,7 +149,7 @@ static int s_xml_parser_siblings_with_text_test(struct aws_allocator *allocator,
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(siblings_with_text);
     struct aws_xml_parser parser;
 
-    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
 
     struct sibling_text_capture capture;
     AWS_ZERO_STRUCT(capture);
@@ -228,7 +228,7 @@ static int s_xml_parser_preamble_and_attributes_test(struct aws_allocator *alloc
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(preamble_and_attributes);
     struct aws_xml_parser parser;
 
-    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc));
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
 
     struct preamble_and_attributes_capture capture;
     AWS_ZERO_STRUCT(capture);
@@ -291,3 +291,78 @@ static int s_xml_parser_preamble_and_attributes_test(struct aws_allocator *alloc
 }
 
 AWS_TEST_CASE(xml_parser_preamble_and_attributes, s_xml_parser_preamble_and_attributes_test)
+
+const char *nested_nodes_same_name_doc = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                                         "<!DOCTYPE html \n"
+                                         " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
+                                         "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\"> "
+                                         "<Node>\n"
+                                         "<Node>TestBody</Node><Node>TestBody2</Node>\n"
+                                         "</Node>";
+
+struct nested_node_capture {
+    struct aws_byte_cursor node_body;
+};
+
+bool s_nested_node(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    struct nested_node_capture *capture = user_data;
+
+    aws_xml_node_as_body(parser, node, &capture->node_body);
+
+    return true;
+}
+
+static int s_xml_parser_nested_node_same_name_test(struct aws_allocator *allocator, void *ctx) {
+
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(nested_nodes_same_name_doc);
+    struct aws_xml_parser parser;
+
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
+
+    struct nested_node_capture capture;
+    AWS_ZERO_STRUCT(capture);
+
+    ASSERT_SUCCESS(aws_xml_parser_parse(&parser, s_nested_node, &capture));
+
+    const char *expected_body = "\n<Node>TestBody</Node><Node>TestBody2</Node>\n";
+
+    ASSERT_BIN_ARRAYS_EQUALS(expected_body, strlen(expected_body), capture.node_body.ptr, capture.node_body.len);
+
+    aws_xml_parser_clean_up(&parser);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(xml_parser_nested_node_same_name_test, s_xml_parser_nested_node_same_name_test)
+
+const char *nested_nodes_deep_recursion_doc = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                                              "<!DOCTYPE html \n"
+                                              " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
+                                              "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\"> "
+                                              "<Node>\n"
+                                              "    <Node>\n"
+                                              "        <Node></Node>\n"
+                                              "    </Node>\n"
+                                              "</Node>";
+
+bool s_nested_node_deep_recursion(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    aws_xml_node_traverse(parser, node, s_nested_node_deep_recursion, user_data);
+    return true;
+}
+
+static int s_xml_parser_nested_node_deep_recursion_test(struct aws_allocator *allocator, void *ctx) {
+
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(nested_nodes_deep_recursion_doc);
+    struct aws_xml_parser parser;
+
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 2));
+
+    struct nested_node_capture capture;
+    AWS_ZERO_STRUCT(capture);
+
+    ASSERT_ERROR(AWS_ERROR_MALFORMED_INPUT_STRING, aws_xml_parser_parse(&parser, s_nested_node_deep_recursion, NULL));
+
+    aws_xml_parser_clean_up(&parser);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(xml_parser_nested_node_deep_recursion_test, s_xml_parser_nested_node_deep_recursion_test)

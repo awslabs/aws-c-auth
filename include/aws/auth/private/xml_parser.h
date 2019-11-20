@@ -51,8 +51,12 @@ struct aws_xml_parser {
     struct aws_allocator *allocator;
     struct aws_byte_cursor doc;
     struct aws_array_list cb_stack;
+    /* maximum of 10 attributes */
     struct aws_xml_attribute attributes[10];
+    /* splits on attributes and node name, so (10 attributes + 1 name) * 2 */
     struct aws_byte_cursor split_scratch[22];
+    size_t max_depth;
+    int error;
     bool stop_parsing;
 };
 
@@ -60,7 +64,11 @@ struct aws_xml_parser {
  * Initialize the parser with xml document: doc.
  */
 AWS_AUTH_API
-int aws_xml_parser_init(struct aws_xml_parser *parser, struct aws_allocator *allocator, struct aws_byte_cursor *doc);
+int aws_xml_parser_init(
+    struct aws_xml_parser *parser,
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor *doc,
+    size_t max_depth);
 
 AWS_AUTH_API
 void aws_xml_parser_clean_up(struct aws_xml_parser *parser);
