@@ -32,6 +32,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
+    struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_credentials *cached_credentials;
     struct aws_mutex lock;
     uint64_t refresh_interval_in_ns;
@@ -127,11 +128,10 @@ static int s_cached_credentials_provider_get_credentials_async(
     bool should_submit_query = false;
     bool perform_callback = false;
     struct aws_credentials *credentials = NULL;
-    bool is_shutting_down = aws_atomic_load_int(&provider->shutting_down) != 0;
 
     aws_mutex_lock(&impl->lock);
 
-    if (current_time < impl->next_refresh_time || is_shutting_down) {
+    if (current_time < impl->next_refresh_time) {
         perform_callback = true;
         credentials = aws_credentials_new_copy(provider->allocator, impl->cached_credentials);
     } else {
@@ -183,7 +183,7 @@ static int s_cached_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_cached_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_cached_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_cached *impl = provider->impl;
     if (impl == NULL) {
         return;
@@ -191,26 +191,45 @@ static void s_cached_credentials_provider_clean_up(struct aws_credentials_provid
 
     aws_credentials_provider_release(impl->source);
 
+    /* Clean up memory, mutex, credentials, etc... in the shutdown callback below */
+}
+
+static void s_on_credentials_provider_shutdown(void *user_data) {
+    struct aws_credentials_provider *provider = user_data;
+    if (provider == NULL) {
+        return;
+    }
+
+    struct aws_credentials_provider_cached *impl = provider->impl;
+    if (impl == NULL) {
+        return;
+    }
+
+    /* The wrapped provider has shut down, invoke its shutdown callback if there was one */
+    if (impl->source_shutdown_options.shutdown_callback != NULL) {
+        impl->source_shutdown_options.shutdown_callback(impl->source_shutdown_options.shutdown_user_data);
+    }
+
+    /* Invoke our own shutdown callback */
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
     if (impl->cached_credentials != NULL) {
         aws_credentials_destroy(impl->cached_credentials);
     }
 
     aws_mutex_clean_up(&impl->lock);
-}
 
-static void s_cached_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
-    struct aws_credentials_provider_cached *impl = provider->impl;
-    aws_credentials_provider_shutdown(impl->source);
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_vtable = {
     .get_credentials = s_cached_credentials_provider_get_credentials_async,
-    .clean_up = s_cached_credentials_provider_clean_up,
-    .shutdown = s_cached_credentials_provider_shutdown};
+    .destroy = s_cached_credentials_provider_destroy,
+};
 
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_cached_options *options) {
+    const struct aws_credentials_provider_cached_options *options) {
 
     AWS_ASSERT(options->source != NULL);
 
@@ -262,6 +281,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     } else {
         impl->clock_fn = &aws_high_res_clock_get_ticks;
     }
+
+    /*
+     * Save the wrapped provider's shutdown callback and then swap it with our own.
+     */
+    impl->source_shutdown_options = impl->source->shutdown_options;
+    impl->source->shutdown_options.shutdown_callback = s_on_credentials_provider_shutdown;
+    impl->source->shutdown_options.shutdown_user_data = provider;
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 

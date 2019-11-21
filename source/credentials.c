@@ -142,23 +142,15 @@ void aws_credentials_destroy(struct aws_credentials *credentials) {
 
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     if (provider != NULL) {
-        /* allow this to be null to support partial construction cleanup */
-        if (provider->vtable->clean_up) {
-            provider->vtable->clean_up(provider);
-        }
-
-        aws_mem_release(provider->allocator, provider);
+        provider->vtable->destroy(provider);
     }
 }
 
-void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider) {
-    aws_atomic_store_int(&provider->shutting_down, 1);
-
-    AWS_ASSERT(provider->vtable->shutdown);
-    provider->vtable->shutdown(provider);
-}
-
 void aws_credentials_provider_release(struct aws_credentials_provider *provider) {
+    if (provider == NULL) {
+        return;
+    }
+
     size_t old_value = aws_atomic_fetch_sub(&provider->ref_count, 1);
     if (old_value == 1) {
         aws_credentials_provider_destroy(provider);
@@ -215,7 +207,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
  */
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_default_options *options) {
+    const struct aws_credentials_provider_chain_default_options *options) {
+
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
     struct aws_credentials_provider *imds_provider = NULL;
@@ -224,10 +217,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     struct aws_credentials_provider *providers[3];
     AWS_ZERO_ARRAY(providers);
-
     size_t index = 0;
 
-    environment_provider = aws_credentials_provider_new_environment(allocator);
+    struct aws_credentials_provider_environment_options environment_options;
+    AWS_ZERO_STRUCT(environment_options);
+
+    environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
+
     if (environment_provider == NULL) {
         goto on_error;
     }
@@ -264,9 +260,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      * Transfer ownership
      */
     aws_credentials_provider_release(environment_provider);
-    if (profile_provider) {
-        aws_credentials_provider_release(profile_provider);
-    }
+    aws_credentials_provider_release(profile_provider);
     aws_credentials_provider_release(imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options;
@@ -274,6 +268,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     cached_options.source = chain_provider;
     cached_options.refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS;
+    cached_options.shutdown_options = options->shutdown_options;
 
     cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
     if (cached_provider == NULL) {

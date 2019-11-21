@@ -131,7 +131,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_profile_file_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_profile_file_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_profile_file_impl *impl = provider->impl;
     if (impl == NULL) {
         return;
@@ -140,12 +140,16 @@ static void s_profile_file_credentials_provider_clean_up(struct aws_credentials_
     aws_string_destroy(impl->config_file_path);
     aws_string_destroy(impl->credentials_file_path);
     aws_string_destroy(impl->profile_name);
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_profile_file_vtable = {
     .get_credentials = s_profile_file_credentials_provider_get_credentials_async,
-    .clean_up = s_profile_file_credentials_provider_clean_up,
-    .shutdown = aws_credentials_provider_shutdown_nil};
+    .destroy = s_profile_file_credentials_provider_destroy,
+};
 
 /* load a purely config/credentials file based provider. */
 static struct aws_credentials_provider *s_create_profile_based_provider(
@@ -153,6 +157,7 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     struct aws_string *credentials_file_path,
     struct aws_string *config_file_path,
     struct aws_string *profile_name) {
+
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_profile_file_impl *impl = NULL;
 
@@ -186,7 +191,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     struct aws_profile *profile,
     struct aws_string *credentials_file_path,
     struct aws_string *config_file_path,
-    struct aws_credentials_provider_profile_options *options) {
+    const struct aws_credentials_provider_profile_options *options) {
     struct aws_credentials_provider *provider = NULL;
 
     AWS_LOGF_INFO(
@@ -277,7 +282,11 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             aws_credentials_provider_release(imds_provider);
 
         } else if (aws_string_eq_byte_cursor_ignore_case(credential_source_property->value, &s_environment_name)) {
-            struct aws_credentials_provider *env_provider = aws_credentials_provider_new_environment(allocator);
+            struct aws_credentials_provider_environment_options env_options;
+            AWS_ZERO_STRUCT(env_options);
+
+            struct aws_credentials_provider *env_provider =
+                aws_credentials_provider_new_environment(allocator, &env_options);
 
             if (!env_provider) {
                 return NULL;
@@ -300,7 +309,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
 
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_profile_options *options) {
+    const struct aws_credentials_provider_profile_options *options) {
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_profile_collection *config_profiles = NULL;
@@ -379,6 +388,10 @@ on_finished:
     aws_string_destroy(credentials_file_path);
     aws_string_destroy(config_file_path);
     aws_string_destroy(profile_name);
+
+    if (provider) {
+        provider->shutdown_options = options->shutdown_options;
+    }
 
     return provider;
 }

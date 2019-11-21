@@ -292,8 +292,12 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
-    struct aws_credentials_provider *static_provider =
-        aws_credentials_provider_new_static(allocator, s_access_key_cur, s_secret_key_cur, s_session_token_cur);
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
@@ -369,8 +373,12 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
-    struct aws_credentials_provider *static_provider =
-        aws_credentials_provider_new_static(allocator, s_access_key_cur, s_secret_key_cur, s_session_token_cur);
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
@@ -438,8 +446,12 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
-    struct aws_credentials_provider *static_provider =
-        aws_credentials_provider_new_static(allocator, s_access_key_cur, s_secret_key_cur, s_session_token_cur);
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
@@ -490,8 +502,12 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
 
-    struct aws_credentials_provider *static_provider =
-        aws_credentials_provider_new_static(allocator, s_access_key_cur, s_secret_key_cur, s_session_token_cur);
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,

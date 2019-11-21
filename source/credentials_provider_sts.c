@@ -16,7 +16,7 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/xml_parser.h>
 #include <aws/auth/signable.h>
-#include <aws/auth/signer.h>
+#include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
 #include <aws/common/mutex.h>
 #include <aws/common/string.h>
@@ -72,13 +72,13 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
 
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_signer *signer;
     struct aws_string *assume_role_profile;
     struct aws_string *role_session_name;
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
+    struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_credentials_provider_system_vtable *function_table;
     bool owns_ctx;
 };
@@ -453,8 +453,8 @@ static int s_sts_get_creds(
     provider_user_data->signing_config.service = s_service_name;
     provider_user_data->signing_config.use_double_uri_encode = false;
 
-    if (aws_signer_sign_request(
-            sts_impl->signer,
+    if (aws_sign_request_aws(
+            provider->allocator,
             provider_user_data->signable,
             (struct aws_signing_config_base *)&provider_user_data->signing_config,
             s_on_signing_complete,
@@ -478,7 +478,37 @@ error:
     return AWS_OP_ERR;
 }
 
-void s_clean_up(struct aws_credentials_provider *provider) {
+static void s_on_credentials_provider_shutdown(void *user_data) {
+    struct aws_credentials_provider *provider = user_data;
+    if (provider == NULL) {
+        return;
+    }
+
+    struct aws_credentials_provider_sts_impl *impl = provider->impl;
+    if (impl == NULL) {
+        return;
+    }
+
+    /* The wrapped provider has shut down, invoke its shutdown callback if there was one */
+    if (impl->source_shutdown_options.shutdown_callback != NULL) {
+        impl->source_shutdown_options.shutdown_callback(impl->source_shutdown_options.shutdown_user_data);
+    }
+
+    /* Invoke our own shutdown callback */
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_string_destroy(impl->role_session_name);
+    aws_string_destroy(impl->assume_role_profile);
+
+    if (impl->owns_ctx) {
+        aws_tls_ctx_destroy(impl->ctx);
+    }
+
+    aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
+}
+
+void s_destroy(struct aws_credentials_provider *provider) {
     AWS_LOGF_TRACE(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): cleaning up credentials provider", (void *)provider);
 
     struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
@@ -487,28 +517,12 @@ void s_clean_up(struct aws_credentials_provider *provider) {
         sts_impl->function_table->aws_http_connection_manager_release(sts_impl->connection_manager);
     }
 
-    if (sts_impl->signer) {
-        aws_signer_destroy(sts_impl->signer);
-    }
-
     aws_credentials_provider_release(sts_impl->provider);
-
-    aws_string_destroy(sts_impl->role_session_name);
-    aws_string_destroy(sts_impl->assume_role_profile);
-
-    if (sts_impl->owns_ctx) {
-        aws_tls_ctx_destroy(sts_impl->ctx);
-    }
-
-    aws_tls_connection_options_clean_up(&sts_impl->connection_options);
-
-    AWS_ZERO_STRUCT(*sts_impl);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vtable = {
     .get_credentials = s_sts_get_creds,
-    .clean_up = s_clean_up,
-    .shutdown = aws_credentials_provider_shutdown_nil,
+    .destroy = s_destroy,
 };
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
@@ -616,16 +630,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     impl->provider = options->creds_provider;
     aws_credentials_provider_acquire(impl->provider);
-    impl->signer = aws_signer_new_aws(allocator);
-
-    if (!impl->signer) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): failed to create a SigV4 signer with error %s",
-            (void *)provider,
-            aws_error_debug_str(aws_last_error()));
-        goto cleanup_provider;
-    }
 
     aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
 
@@ -665,6 +669,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
             aws_error_debug_str(aws_last_error()));
         goto cleanup_provider;
     }
+
+    /*
+     * Save the wrapped provider's shutdown callback and then swap it with our own.
+     */
+    impl->source_shutdown_options = impl->provider->shutdown_options;
+    impl->provider->shutdown_options.shutdown_callback = s_on_credentials_provider_shutdown;
+    impl->provider->shutdown_options.shutdown_user_data = provider;
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 
