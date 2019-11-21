@@ -86,6 +86,7 @@ struct aws_credentials_provider_sts_impl {
 struct sts_creds_provider_user_data {
     struct aws_allocator *allocator;
     struct aws_credentials_provider *provider;
+    struct aws_credentials *credentials;
     aws_on_get_credentials_callback_fn *callback;
     struct aws_http_connection *connection;
     struct aws_byte_buf payload_body;
@@ -98,6 +99,18 @@ struct sts_creds_provider_user_data {
 };
 
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
+    user_data->callback(user_data->credentials, user_data->user_data);
+
+    if (user_data->credentials) {
+        aws_credentials_destroy(user_data->credentials);
+    }
+
+    if (user_data->connection) {
+        struct aws_credentials_provider_sts_impl *provider_impl = user_data->provider->impl;
+        provider_impl->function_table->aws_http_connection_manager_release_connection(
+            provider_impl->connection_manager, user_data->connection);
+    }
+
     aws_credentials_provider_release(user_data->provider);
 
     if (user_data->signable) {
@@ -223,7 +236,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
 
-    struct aws_credentials *credentials = NULL;
     if (provider_impl->function_table->aws_http_stream_get_incoming_response_status(stream, &http_response_code)) {
         goto finish;
     }
@@ -241,39 +253,36 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
             goto finish;
         }
 
-        credentials = aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
-        AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(credentials=%p): parsing credentials", (void *)credentials);
-        credentials->allocator = provider_user_data->allocator;
-        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, credentials)) {
+        provider_user_data->credentials =
+            aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(credentials=%p): parsing credentials",
+            (void *)provider_user_data->credentials);
+        provider_user_data->credentials->allocator = provider_user_data->allocator;
+        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, provider_user_data->credentials)) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "{credentials=%p): parsing failed with error %s",
-                (void *)credentials,
+                (void *)provider_user_data->credentials,
                 aws_error_debug_str(aws_last_error()));
             goto finish;
         }
 
         aws_xml_parser_clean_up(&xml_parser);
 
-        if (!(credentials->access_key_id && credentials->secret_access_key && credentials->session_token)) {
+        if (!(provider_user_data->credentials->access_key_id && provider_user_data->credentials->secret_access_key &&
+              provider_user_data->credentials->session_token)) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): credentials document was corrupted, treating as an error.",
                 (void *)provider_user_data->provider);
-            aws_credentials_destroy(credentials);
-            credentials = NULL;
+            aws_credentials_destroy(provider_user_data->credentials);
+            provider_user_data->credentials = NULL;
         }
     }
 
 finish:
-    provider_user_data->callback(credentials, provider_user_data->user_data);
-
-    if (credentials) {
-        aws_credentials_destroy(credentials);
-    }
-
-    provider_impl->function_table->aws_http_connection_manager_release_connection(
-        provider_impl->connection_manager, provider_user_data->connection);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -295,8 +304,7 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
     provider_user_data->connection = connection;
 
     if (aws_byte_buf_init(&provider_user_data->output_buf, provider_impl->provider->allocator, 2048)) {
-        provider_impl->function_table->aws_http_connection_manager_release_connection(
-            provider_impl->connection_manager, connection);
+        goto error;
     }
 
     struct aws_http_make_request_options options = {
@@ -313,14 +321,11 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
     struct aws_http_stream *stream =
         provider_impl->function_table->aws_http_connection_make_request(connection, &options);
     if (!stream) {
-        provider_impl->function_table->aws_http_connection_manager_release_connection(
-            provider_impl->connection_manager, connection);
         goto error;
     }
 
     return;
 error:
-    provider_user_data->callback(NULL, provider_user_data->user_data);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -352,7 +357,6 @@ void s_on_signing_complete(struct aws_signing_result *result, int error_code, vo
     return;
 
 error:
-    provider_user_data->callback(NULL, provider_user_data->user_data);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -468,9 +472,9 @@ error:
         aws_error_debug_str(aws_last_error()));
     if (provider_user_data) {
         s_clean_up_user_data(provider_user_data);
+    } else {
+        callback(NULL, user_data);
     }
-
-    callback(NULL, user_data);
     return AWS_OP_ERR;
 }
 
