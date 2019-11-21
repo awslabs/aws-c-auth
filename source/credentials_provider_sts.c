@@ -30,15 +30,22 @@
 
 #include <inttypes.h>
 
-static struct aws_byte_cursor s_host_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host");
-static struct aws_byte_cursor s_host_name_val = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com");
-static struct aws_byte_cursor s_content_type = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type");
-static struct aws_byte_cursor s_content_type_val =
-    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded");
-static struct aws_byte_cursor s_api_version = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version");
-static struct aws_byte_cursor s_api_version_val = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15");
+static struct aws_http_header s_host_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
+};
+
+static struct aws_http_header s_content_type_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
+};
+
+static struct aws_http_header s_api_version_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15"),
+};
+
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
-static struct aws_byte_cursor s_method = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("POST");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
 static struct aws_byte_cursor s_service_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts");
@@ -376,30 +383,15 @@ static int s_sts_get_creds(
         goto error;
     }
 
-    struct aws_http_header host_header = {
-        .name = s_host_name,
-        .value = s_host_name_val,
-    };
-
-    if (aws_http_message_add_header(provider_user_data->message, host_header)) {
+    if (aws_http_message_add_header(provider_user_data->message, s_host_header)) {
         goto error;
     }
 
-    struct aws_http_header content_type_header = {
-        .name = s_content_type,
-        .value = s_content_type_val,
-    };
-
-    if (aws_http_message_add_header(provider_user_data->message, content_type_header)) {
+    if (aws_http_message_add_header(provider_user_data->message, s_content_type_header)) {
         goto error;
     }
 
-    struct aws_http_header api_version_header = {
-        .name = s_api_version,
-        .value = s_api_version_val,
-    };
-
-    if (aws_http_message_add_header(provider_user_data->message, api_version_header)) {
+    if (aws_http_message_add_header(provider_user_data->message, s_api_version_header)) {
         goto error;
     }
 
@@ -434,7 +426,7 @@ static int s_sts_get_creds(
 
     aws_http_message_set_body_stream(provider_user_data->message, provider_user_data->input_stream);
 
-    if (aws_http_message_set_request_method(provider_user_data->message, s_method)) {
+    if (aws_http_message_set_request_method(provider_user_data->message, aws_http_method_post)) {
         goto error;
     }
 
@@ -469,6 +461,11 @@ static int s_sts_get_creds(
     return AWS_OP_SUCCESS;
 
 error:
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): error occurred while creating an http request for signing: %s",
+        (void *)provider_user_data->provider,
+        aws_error_debug_str(aws_last_error()));
     if (provider_user_data) {
         s_clean_up_user_data(provider_user_data);
     }
