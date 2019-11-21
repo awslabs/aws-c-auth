@@ -269,18 +269,17 @@ struct aws_signing_state_aws *aws_signing_state_new(
     state->config = *config;
     aws_credentials_provider_acquire(state->config.credentials_provider);
 
-    /* Fix up our copy of the signing config to point to our copies of dynamic memory. */
-    state->region = aws_string_new_from_array(allocator, config->region.ptr, config->region.len);
-    if (state->region == NULL) {
+    if (aws_byte_buf_init(&state->region_service_buffer, allocator, config->region.len + config->service.len)) {
         goto on_error;
     }
-    state->config.region = aws_byte_cursor_from_string(state->region);
 
-    state->service = aws_string_new_from_array(allocator, config->service.ptr, config->service.len);
-    if (state->service == NULL) {
+    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.region)) {
         goto on_error;
     }
-    state->config.service = aws_byte_cursor_from_string(state->service);
+
+    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.service)) {
+        goto on_error;
+    }
 
     state->signable = signable;
     state->on_complete = on_complete;
@@ -314,8 +313,7 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
 
     aws_credentials_provider_release(state->config.credentials_provider);
 
-    aws_string_destroy(state->region);
-    aws_string_destroy(state->service);
+    aws_byte_buf_clean_up(&state->region_service_buffer);
 
     aws_byte_buf_clean_up(&state->canonical_request);
     aws_byte_buf_clean_up(&state->string_to_sign);

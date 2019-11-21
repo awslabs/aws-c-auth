@@ -49,9 +49,7 @@ void aws_credentials_provider_init_base(
 }
 
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider) {
-    if (provider) {
-        if (provider->shutdown_options.shutdown_callback) {
-            provider->shutdown_options.shutdown_callback(provider->shutdown_options.shutdown_user_data);
-        }
+    if (provider && provider->shutdown_options.shutdown_callback) {
+        provider->shutdown_options.shutdown_callback(provider->shutdown_options.shutdown_user_data);
     }
 }

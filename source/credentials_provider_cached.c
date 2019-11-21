@@ -229,7 +229,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_
 
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_cached_options *options) {
+    const struct aws_credentials_provider_cached_options *options) {
 
     AWS_ASSERT(options->source != NULL);
 

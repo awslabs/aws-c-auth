@@ -557,7 +557,7 @@ static void s_on_connection_manager_shutdown(void *user_data) {
 
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_imds_options *options) {
+    const struct aws_credentials_provider_imds_options *options) {
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_imds_impl *impl = NULL;

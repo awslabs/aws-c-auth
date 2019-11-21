@@ -175,7 +175,7 @@ int aws_credentials_provider_get_credentials(
  */
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_default_options *options) {
+    const struct aws_credentials_provider_chain_default_options *options) {
 
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;

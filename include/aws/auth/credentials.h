@@ -188,7 +188,7 @@ int aws_credentials_provider_get_credentials(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_static_options *options);
+    const struct aws_credentials_provider_static_options *options);
 
 /*
  * A provider that returns credentials sourced from the environment variables:
@@ -200,7 +200,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_environment(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_environment_options *options);
+    const struct aws_credentials_provider_environment_options *options);
 
 /*
  * A provider that functions as a caching decorating of another provider.
@@ -214,7 +214,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_cached_options *options);
+    const struct aws_credentials_provider_cached_options *options);
 
 /*
  * A provider that sources credentials from key-value profiles loaded from the aws credentials
@@ -224,7 +224,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_profile_options *options);
+    const struct aws_credentials_provider_profile_options *options);
 
 /*
  * A provider that sources credentials from an ordered sequence of providers, with the overall result
@@ -235,7 +235,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_options *options);
+    const struct aws_credentials_provider_chain_options *options);
 
 /*
  * A provider that sources credentials from the ec2 instance metadata service
@@ -243,7 +243,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_imds_options *options);
+    const struct aws_credentials_provider_imds_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
@@ -261,7 +261,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_default_options *options);
+    const struct aws_credentials_provider_chain_default_options *options);
 
 AWS_EXTERN_C_END
 

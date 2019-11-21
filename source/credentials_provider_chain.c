@@ -176,7 +176,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_chain_v
 
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_options *options) {
+    const struct aws_credentials_provider_chain_options *options) {
 
     if (options->provider_count == 0) {
         return NULL;

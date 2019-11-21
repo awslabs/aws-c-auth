@@ -45,8 +45,7 @@ struct aws_signing_state_aws {
     void *userdata;
 
     struct aws_signing_config_aws config;
-    struct aws_string *region;
-    struct aws_string *service;
+    struct aws_byte_buf region_service_buffer;
 
     struct aws_signing_result result;
     struct aws_credentials *credentials;
