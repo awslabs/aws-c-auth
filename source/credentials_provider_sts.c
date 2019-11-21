@@ -625,7 +625,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
 
-    if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &s_host_name_val)) {
+    if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &s_host_header.value)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to create a tls connection options with error %s",
@@ -642,7 +642,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     struct aws_http_connection_manager_options connection_manager_options = {
         .bootstrap = options->bootstrap,
-        .host = s_host_name_val,
+        .host = s_host_header.value,
         .initial_window_size = SIZE_MAX,
         .max_connections = 2,
         .port = 443,
