@@ -34,7 +34,7 @@ static struct aws_byte_cursor s_default_session_name_pfx =
 static struct aws_byte_cursor s_ec2_imds_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Ec2InstanceMetadata");
 static struct aws_byte_cursor s_environment_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Environment");
 
-#define s_max_session_name_len ((size_t)64)
+#define MAX_SESSION_NAME_LEN ((size_t)64)
 
 struct aws_credentials_provider_profile_file_impl {
     struct aws_string *config_file_path;
@@ -206,19 +206,19 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         aws_profile_get_property(profile, s_credential_source_name);
 
     struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
-    char session_name_array[s_max_session_name_len + 1];
+    char session_name_array[MAX_SESSION_NAME_LEN + 1];
     AWS_ZERO_ARRAY(session_name_array);
 
     if (role_session_name) {
         size_t to_write = role_session_name->value->len;
-        if (to_write > s_max_session_name_len) {
+        if (to_write > MAX_SESSION_NAME_LEN) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "static: session_name property is %d bytes long, "
                 "but the max is %d. Truncating",
                 (int)role_session_name->value->len,
-                (int)s_max_session_name_len);
-            to_write = s_max_session_name_len;
+                (int)MAX_SESSION_NAME_LEN);
+            to_write = MAX_SESSION_NAME_LEN;
         }
         memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
     } else {

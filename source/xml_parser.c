@@ -18,8 +18,8 @@
 #include <aws/common/array_list.h>
 
 static const size_t s_max_document_depth = 20;
-#define s_max_name_len ((size_t)256)
-#define s_node_close_overhead ((size_t)3)
+#define MAX_NAME_LEN ((size_t)256)
+#define NODE_CLOSE_OVERHEAD ((size_t)3)
 
 struct cb_stack_data {
     aws_xml_parser_on_node_encountered_fn *cb;
@@ -172,13 +172,13 @@ int s_advance_to_closing_tag(
     struct aws_byte_cursor *out_body) {
     /* currently the max node name is 256 characters. This is arbitrary, but should be enough
      * for our uses. If we ever generalize this, we'll have to come back and rethink this. */
-    uint8_t name_close[s_max_name_len + s_node_close_overhead] = {0};
-    uint8_t name_open[s_max_name_len + s_node_close_overhead] = {0};
+    uint8_t name_close[MAX_NAME_LEN + NODE_CLOSE_OVERHEAD] = {0};
+    uint8_t name_open[MAX_NAME_LEN + NODE_CLOSE_OVERHEAD] = {0};
 
     struct aws_byte_buf closing_cmp_buf = aws_byte_buf_from_empty_array(name_close, sizeof(name_close));
     struct aws_byte_buf open_cmp_buf = aws_byte_buf_from_empty_array(name_open, sizeof(name_open));
 
-    size_t closing_name_len = node->name.len + s_node_close_overhead;
+    size_t closing_name_len = node->name.len + NODE_CLOSE_OVERHEAD;
 
     if (closing_name_len > node->doc_at_body.len) {
         parser->error = aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
