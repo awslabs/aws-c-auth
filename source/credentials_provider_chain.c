@@ -17,8 +17,19 @@
 
 #include <aws/auth/private/credentials_utils.h>
 
+struct aws_credentials_provider_chain_shutdown_callback_record {
+    struct aws_credentials_provider *provider_chain;
+    struct aws_credentials_provider *original_provider;
+    struct aws_credentials_provider_shutdown_options original_shutdown_options;
+};
+
 struct aws_credentials_provider_chain_impl {
     struct aws_array_list providers;
+
+    /* list of aws_credentials_provider_chain_shutdown_callback_record */
+    struct aws_array_list provider_shutdown_callbacks;
+
+    struct aws_atomic_var shutdown_count;
 };
 
 struct aws_credentials_provider_chain_user_data {
@@ -35,9 +46,8 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
     size_t provider_count = aws_array_list_length(&impl->providers);
-    bool is_shutting_down = aws_atomic_load_int(&provider->shutting_down) != 0;
 
-    if (credentials != NULL || wrapped_user_data->current_provider_index + 1 >= provider_count || is_shutting_down) {
+    if (credentials != NULL || wrapped_user_data->current_provider_index + 1 >= provider_count) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Credentials provider chain ending query on chain member %zu with %s credentials",
@@ -113,7 +123,7 @@ static int s_credentials_provider_chain_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_credentials_provider_chain_clean_up(struct aws_credentials_provider *provider) {
+static void s_credentials_provider_chain_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
     if (impl == NULL) {
         return;
@@ -129,30 +139,44 @@ static void s_credentials_provider_chain_clean_up(struct aws_credentials_provide
         aws_credentials_provider_release(chain_member);
     }
 
-    aws_array_list_clean_up(&impl->providers);
+    /* cleanup provider and shutdown callback lists when all callbacks have completed below */
 }
 
-static void s_credentials_provider_chain_shutdown(struct aws_credentials_provider *provider) {
-    struct aws_credentials_provider_chain_impl *impl = provider->impl;
-    size_t provider_count = aws_array_list_length(&impl->providers);
-    for (size_t i = 0; i < provider_count; ++i) {
-        struct aws_credentials_provider *chain_member = NULL;
-        if (aws_array_list_get_at(&impl->providers, &chain_member, i)) {
-            continue;
-        }
+static void s_on_sub_provider_shutdown_completed(void *user_data) {
+    struct aws_credentials_provider_chain_shutdown_callback_record *shutdown_callback_record = user_data;
 
-        aws_credentials_provider_shutdown(chain_member);
+    /* invoke the sub providers callback if there is one */
+    if (shutdown_callback_record->original_shutdown_options.shutdown_callback) {
+        shutdown_callback_record->original_shutdown_options.shutdown_callback(
+            shutdown_callback_record->original_shutdown_options.shutdown_user_data);
     }
+
+    struct aws_credentials_provider *provider = shutdown_callback_record->provider_chain;
+    struct aws_credentials_provider_chain_impl *impl = shutdown_callback_record->provider_chain->impl;
+
+    /* has everything finished shutting down? */
+    size_t old_value = aws_atomic_fetch_add(&impl->shutdown_count, 1);
+    if (old_value + 1 != aws_array_list_length(&impl->providers)) {
+        return;
+    }
+
+    /* Invoke our own shutdown callback */
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_array_list_clean_up(&impl->providers);
+    aws_array_list_clean_up(&impl->provider_shutdown_callbacks);
+
+    aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_chain_vtable = {
     .get_credentials = s_credentials_provider_chain_get_credentials_async,
-    .clean_up = s_credentials_provider_chain_clean_up,
-    .shutdown = s_credentials_provider_chain_shutdown};
+    .destroy = s_credentials_provider_chain_destroy,
+};
 
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_options *options) {
+    const struct aws_credentials_provider_chain_options *options) {
 
     if (options->provider_count == 0) {
         return NULL;
@@ -178,8 +202,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_chain_vtable, impl);
 
+    aws_atomic_init_int(&impl->shutdown_count, 0);
+
     if (aws_array_list_init_dynamic(
             &impl->providers, allocator, options->provider_count, sizeof(struct aws_credentials_provider *))) {
+        goto on_error;
+    }
+
+    if (aws_array_list_init_dynamic(
+            &impl->provider_shutdown_callbacks,
+            allocator,
+            options->provider_count,
+            sizeof(struct aws_credentials_provider_chain_shutdown_callback_record))) {
         goto on_error;
     }
 
@@ -189,8 +223,43 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
             goto on_error;
         }
 
+        struct aws_credentials_provider_chain_shutdown_callback_record shutdown_callback_record;
+        AWS_ZERO_STRUCT(shutdown_callback_record);
+
+        shutdown_callback_record.provider_chain = provider;
+        shutdown_callback_record.original_provider = sub_provider;
+        shutdown_callback_record.original_shutdown_options = sub_provider->shutdown_options;
+
+        if (aws_array_list_push_back(&impl->provider_shutdown_callbacks, &shutdown_callback_record)) {
+            goto on_error;
+        }
+
+        /*
+         * we redirect the sub providers shutdown callback to us in a separate loop once all the memory in
+         * the shutdown callback record list has been allocated.  We use pointers to those records as the
+         * user data for the callback.  This requires that the provider lists be immutable after
+         * construction (which they are)
+         */
+
         aws_credentials_provider_acquire(sub_provider);
     }
+
+    /*
+     * All of the callback records have been allocated, we can now safely get pointers to them knowing they
+     * aren't going to get moved.
+     */
+    for (size_t i = 0; i < options->provider_count; ++i) {
+        struct aws_credentials_provider_chain_shutdown_callback_record *shutdown_callback_record = NULL;
+        if (aws_array_list_get_at_ptr(&impl->provider_shutdown_callbacks, (void **)&shutdown_callback_record, i)) {
+            goto on_error;
+        }
+
+        shutdown_callback_record->original_provider->shutdown_options.shutdown_callback =
+            s_on_sub_provider_shutdown_completed;
+        shutdown_callback_record->original_provider->shutdown_options.shutdown_user_data = shutdown_callback_record;
+    }
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 

@@ -122,6 +122,9 @@ AWS_EXTERN_C_BEGIN
 AWS_AUTH_API
 const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm);
 
+AWS_AUTH_API
+int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *config);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_SIGNING_CONFIG_H */

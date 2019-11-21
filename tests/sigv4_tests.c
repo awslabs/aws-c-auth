@@ -18,7 +18,7 @@
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/aws_signing.h>
 #include <aws/auth/signable.h>
-#include <aws/auth/signer.h>
+#include <aws/auth/signing.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/string.h>
 #include <aws/io/file_utils.h>
@@ -407,6 +407,21 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_SUCCESS(
         s_initialize_test_from_file(&signable, &config, allocator, &test_contents, test_name, parent_folder));
 
+    struct aws_byte_cursor session_token;
+    if (credentials->session_token) {
+        session_token = aws_byte_cursor_from_string(credentials->session_token);
+    } else {
+        AWS_ZERO_STRUCT(session_token);
+    }
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
+        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
+        .session_token = session_token,
+    };
+
+    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
     /* Get constants and expected values */
     struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
     struct aws_byte_cursor expected_auth_header = aws_byte_cursor_from_buf(&test_contents.expected_auth_header);
@@ -472,24 +487,10 @@ static int s_do_sigv4_test_suite_test(
 
     /* 2 - validate the public API */
     {
-        struct aws_signer *signer = aws_signer_new_aws(allocator);
-
-        struct aws_byte_cursor session_token;
-        if (credentials->session_token) {
-            session_token = aws_byte_cursor_from_string(credentials->session_token);
-        } else {
-            AWS_ZERO_STRUCT(session_token);
-        }
-        config.credentials_provider = aws_credentials_provider_new_static(
-            allocator,
-            aws_byte_cursor_from_string(credentials->access_key_id),
-            aws_byte_cursor_from_string(credentials->secret_access_key),
-            session_token);
-
         struct sigv4_signer_waiter waiter;
         ASSERT_SUCCESS(s_sigv4_signer_waiter_init(&waiter));
 
-        ASSERT_SUCCESS(aws_signer_sign_request(signer, signable, (void *)&config, s_sigv4_signing_complete, &waiter));
+        ASSERT_SUCCESS(aws_sign_request_aws(allocator, signable, (void *)&config, s_sigv4_signing_complete, &waiter));
 
         s_sigv4_signer_wait(&waiter);
 
@@ -503,12 +504,13 @@ static int s_do_sigv4_test_suite_test(
             expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
 
         s_sigv4_signer_waiter_clean_up(&waiter);
-        aws_signer_destroy(signer);
     }
 
     /* 3 - sign via query param and check for expected query params.  We don't have an X-Amz-Signature value to check
      * though so just make sure it exists */
     {
+        config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM;
+
         struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
         ASSERT_NOT_NULL(signing_state);
 
@@ -516,8 +518,6 @@ static int s_do_sigv4_test_suite_test(
         signing_state->credentials = credentials;
 
         struct aws_signing_result *result = &signing_state->result;
-
-        config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM;
 
         ASSERT_NOT_NULL(signing_state);
         ASSERT_SUCCESS(aws_signing_build_canonical_request(signing_state));
@@ -683,12 +683,19 @@ static int s_do_header_skip_test(
 
     config.should_sign_param = should_sign;
 
-    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
-    ASSERT_NOT_NULL(signing_state);
-
     struct aws_credentials *credentials =
         aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
     ASSERT_NOT_NULL(credentials);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
+        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
+    };
+
+    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
+    ASSERT_NOT_NULL(signing_state);
 
     signing_state->credentials = credentials;
 
@@ -699,6 +706,8 @@ static int s_do_header_skip_test(
         test_contents.expected_canonical_request.len,
         signing_state->canonical_request.buffer,
         signing_state->canonical_request.len);
+
+    aws_credentials_provider_release(config.credentials_provider);
 
     aws_signing_state_destroy(signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
@@ -821,12 +830,19 @@ static int s_do_forbidden_header_param_test(
         s_initialize_test_from_cursor(&signable, &config, allocator, &test_contents, &request_cursor, NULL, false) ==
         AWS_OP_SUCCESS);
 
-    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
-    ASSERT_NOT_NULL(signing_state);
-
     struct aws_credentials *credentials =
         aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
     ASSERT_NOT_NULL(credentials);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
+        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
+    };
+
+    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
+    ASSERT_NOT_NULL(signing_state);
 
     signing_state->credentials = credentials;
 
@@ -834,6 +850,7 @@ static int s_do_forbidden_header_param_test(
     ASSERT_TRUE(aws_last_error() == expected_error);
 
     aws_signing_state_destroy(signing_state);
+    aws_credentials_provider_release(config.credentials_provider);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
     aws_credentials_destroy(credentials);
     aws_signable_destroy(signable);

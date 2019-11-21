@@ -33,12 +33,16 @@ static int s_static_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
-static void s_static_credentials_provider_clean_up(struct aws_credentials_provider *provider) {
+static void s_static_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials *credentials = provider->impl;
 
     if (credentials != NULL) {
         aws_credentials_destroy(credentials);
     }
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_mem_release(provider->allocator, provider);
 }
 
 /*
@@ -47,14 +51,12 @@ static void s_static_credentials_provider_clean_up(struct aws_credentials_provid
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_static_vtable = {
     .get_credentials = s_static_credentials_provider_get_credentials_async,
-    .clean_up = s_static_credentials_provider_clean_up,
-    .shutdown = aws_credentials_provider_shutdown_nil};
+    .destroy = s_static_credentials_provider_destroy,
+};
 
 struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor access_key_id,
-    struct aws_byte_cursor secret_access_key,
-    struct aws_byte_cursor session_token) {
+    const struct aws_credentials_provider_static_options *options) {
 
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
@@ -64,12 +66,17 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
     AWS_ZERO_STRUCT(*provider);
 
     struct aws_credentials *credentials = aws_credentials_new_from_cursors(
-        allocator, &access_key_id, &secret_access_key, session_token.len ? &session_token : NULL);
+        allocator,
+        &options->access_key_id,
+        &options->secret_access_key,
+        options->session_token.len ? &options->session_token : NULL);
     if (credentials == NULL) {
         goto on_new_credentials_failure;
     }
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_static_vtable, credentials);
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 

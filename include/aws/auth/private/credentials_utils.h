@@ -101,7 +101,7 @@ AWS_AUTH_API
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider);
 
 AWS_AUTH_API
-void aws_credentials_provider_shutdown_nil(struct aws_credentials_provider *provider);
+void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
 
 AWS_EXTERN_C_END
 

@@ -24,3 +24,29 @@ const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm
 
     return "Unknown";
 }
+
+int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *config) {
+    if (config == NULL) {
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    }
+
+    if (config->region.len == 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Signing config is missing a region identifier", (void *)config);
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    }
+
+    if (config->service.len == 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Signing config is missing a service identifier", (void *)config);
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    }
+
+    if (config->credentials_provider == NULL) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING,
+            "(id=%p) Signing config is missing a credentials provider or credentials",
+            (void *)config);
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    }
+
+    return AWS_OP_SUCCESS;
+}

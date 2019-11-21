@@ -46,7 +46,9 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER,
         "Attempt to sign an http request that includes a header that signing may add"),
-        
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_INVALID_CONFIGURATION,
+        "Attempt to sign an http request with an invalid signing configuration"),        
 };
 /* clang-format on */
 

@@ -17,7 +17,7 @@
  */
 
 #include <aws/auth/auth.h>
-#include <aws/auth/signer.h>
+#include <aws/auth/signing.h>
 
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
@@ -41,9 +41,11 @@ struct aws_signing_state_aws {
     struct aws_allocator *allocator;
 
     const struct aws_signable *signable;
-    const struct aws_signing_config_aws *config;
-    aws_signer_signing_complete_fn *on_complete;
+    aws_signing_complete_fn *on_complete;
     void *userdata;
+
+    struct aws_signing_config_aws config;
+    struct aws_byte_buf region_service_buffer;
 
     struct aws_signing_result result;
     struct aws_credentials *credentials;
@@ -67,9 +69,9 @@ AWS_EXTERN_C_BEGIN
 AWS_AUTH_API
 struct aws_signing_state_aws *aws_signing_state_new(
     struct aws_allocator *allocator,
-    const struct aws_signing_config_aws *context,
+    const struct aws_signing_config_aws *config,
     const struct aws_signable *signable,
-    aws_signer_signing_complete_fn *on_complete,
+    aws_signing_complete_fn *on_complete,
     void *userdata);
 
 AWS_AUTH_API
