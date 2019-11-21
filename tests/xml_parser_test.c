@@ -224,6 +224,7 @@ bool s_preamble_and_attributes(struct aws_xml_parser *parser, struct aws_xml_nod
 }
 
 static int s_xml_parser_preamble_and_attributes_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(preamble_and_attributes);
     struct aws_xml_parser parser;
@@ -313,6 +314,7 @@ bool s_nested_node(struct aws_xml_parser *parser, struct aws_xml_node *node, voi
 }
 
 static int s_xml_parser_nested_node_same_name_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(nested_nodes_same_name_doc);
     struct aws_xml_parser parser;
@@ -350,6 +352,7 @@ bool s_nested_node_deep_recursion(struct aws_xml_parser *parser, struct aws_xml_
 }
 
 static int s_xml_parser_nested_node_deep_recursion_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(nested_nodes_deep_recursion_doc);
     struct aws_xml_parser parser;
@@ -384,6 +387,7 @@ bool s_too_many_attributes(struct aws_xml_parser *parser, struct aws_xml_node *n
 }
 
 static int s_xml_parser_too_many_attributes_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
     struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(too_many_attributes);
     struct aws_xml_parser parser;

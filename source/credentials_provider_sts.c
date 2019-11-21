@@ -372,7 +372,7 @@ static int s_sts_get_creds(
         aws_mem_calloc(provider->allocator, 1, sizeof(struct sts_creds_provider_user_data));
 
     if (!provider_user_data) {
-        goto error;
+        return AWS_OP_ERR;
     }
 
     provider_user_data->allocator = provider->allocator;
