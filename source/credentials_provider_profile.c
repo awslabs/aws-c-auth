@@ -370,7 +370,7 @@ on_finished:
     }
 
     if (!returned_provider && provider) {
-        aws_credentials_provider_destroy(provider);
+        aws_credentials_provider_release(provider);
     }
 
     return returned_provider;

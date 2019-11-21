@@ -1199,6 +1199,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
             }
         }
 
+        /* reset the input stream for sending */
         if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
             goto on_cleanup;
         }

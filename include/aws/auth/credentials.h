@@ -27,6 +27,8 @@ struct aws_client_bootstrap;
 struct aws_credentials_provider_http_function_table;
 struct aws_string;
 
+static const uint16_t aws_sts_assume_role_default_duration_secs = 900;
+
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
  */

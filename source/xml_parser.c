@@ -42,24 +42,31 @@ int aws_xml_parser_init(
         parser->max_depth = max_depth;
     }
 
-    aws_array_list_init_dynamic(&parser->cb_stack, allocator, 4, sizeof(struct cb_stack_data));
+    if (aws_array_list_init_dynamic(&parser->callback_stack, allocator, 4, sizeof(struct cb_stack_data))) {
+        return AWS_OP_ERR;
+    }
+
     return AWS_OP_SUCCESS;
 }
 
 void aws_xml_parser_clean_up(struct aws_xml_parser *parser) {
     if (parser->allocator) {
-        aws_array_list_clean_up(&parser->cb_stack);
+        aws_array_list_clean_up(&parser->callback_stack);
         AWS_ZERO_STRUCT(parser);
     }
 }
 
 int s_node_next_sibling(struct aws_xml_parser *parser);
 
-static bool s_trim_quotes_fn(uint8_t value) {
-    return value == '\"';
+static bool s_double_quote_fn(uint8_t value) {
+    return value == '"';
 }
 
-/* load the node declaration line, parsing node name and attributes. */
+/* load the node declaration line, parsing node name and attributes.
+ *
+ * something of the form:
+ * <NodeName Attribute1=Value1 Attribute2=Value2 ...>
+ * */
 static int s_load_node_decl(
     struct aws_xml_parser *parser,
     struct aws_byte_cursor *decl_body,
@@ -107,7 +114,7 @@ static int s_load_node_decl(
             if (!aws_byte_cursor_split_on_char(&attribute_pair, '=', &att_val_pair_lst)) {
                 struct aws_xml_attribute attribute = {
                     .name = att_val_pair[0],
-                    .value = aws_byte_cursor_trim_pred(&att_val_pair[1], s_trim_quotes_fn),
+                    .value = aws_byte_cursor_trim_pred(&att_val_pair[1], s_double_quote_fn),
                 };
                 aws_array_list_push_back(&node->attributes, &attribute);
             }
@@ -122,7 +129,7 @@ int aws_xml_parser_parse(
     aws_xml_parser_on_node_encountered_fn *on_node_encountered,
     void *user_data) {
 
-    aws_array_list_clear(&parser->cb_stack);
+    aws_array_list_clear(&parser->callback_stack);
 
     /* burn everything that precedes the actual xml nodes. */
     while (parser->doc.len) {
@@ -155,7 +162,7 @@ int aws_xml_parser_parse(
         .user_data = user_data,
     };
 
-    AWS_FATAL_ASSERT(!aws_array_list_push_back(&parser->cb_stack, &stack_data));
+    AWS_FATAL_ASSERT(!aws_array_list_push_back(&parser->callback_stack, &stack_data));
     return s_node_next_sibling(parser);
 }
 
@@ -244,13 +251,13 @@ int aws_xml_node_traverse(
         .user_data = user_data,
     };
 
-    size_t doc_depth = aws_array_list_length(&parser->cb_stack);
+    size_t doc_depth = aws_array_list_length(&parser->callback_stack);
     if (doc_depth >= parser->max_depth) {
         parser->error = aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
         return AWS_OP_ERR;
     }
 
-    if (aws_array_list_push_back(&parser->cb_stack, &stack_data)) {
+    if (aws_array_list_push_back(&parser->callback_stack, &stack_data)) {
         parser->error = aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
         return AWS_OP_ERR;
     }
@@ -312,7 +319,7 @@ int aws_xml_node_traverse(
         return parser->error;
     }
 
-    aws_array_list_pop_back(&parser->cb_stack);
+    aws_array_list_pop_back(&parser->callback_stack);
     return parser->error;
 }
 
@@ -347,7 +354,7 @@ int s_node_next_sibling(struct aws_xml_parser *parser) {
 
     struct cb_stack_data stack_data;
     AWS_ZERO_STRUCT(stack_data);
-    aws_array_list_back(&parser->cb_stack, &stack_data);
+    aws_array_list_back(&parser->callback_stack, &stack_data);
     parser->stop_parsing = !stack_data.cb(parser, &sibling_node, stack_data.user_data);
 
     /* if the user simply returned while skipping the node altogether, go ahead and do the skip over. */

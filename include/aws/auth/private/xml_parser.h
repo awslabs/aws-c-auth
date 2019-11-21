@@ -50,7 +50,7 @@ typedef bool(
 struct aws_xml_parser {
     struct aws_allocator *allocator;
     struct aws_byte_cursor doc;
-    struct aws_array_list cb_stack;
+    struct aws_array_list callback_stack;
     /* maximum of 10 attributes */
     struct aws_xml_attribute attributes[10];
     /* splits on attributes and node name, so (10 attributes + 1 name) * 2 */

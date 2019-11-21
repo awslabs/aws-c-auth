@@ -58,7 +58,8 @@ static struct aws_credentials_provider_http_function_table s_default_function_ta
     .aws_http_connection_make_request = aws_http_connection_make_request,
     .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close};
+    .aws_http_connection_close = aws_http_connection_close,
+    };
 
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
@@ -260,7 +261,7 @@ finish:
     s_clean_up_user_data(provider_user_data);
 }
 
-/* called upon aquiring a connection from the pool */
+/* called upon acquiring a connection from the pool */
 static void s_on_connection_setup_fn(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
@@ -307,7 +308,7 @@ error:
     s_clean_up_user_data(provider_user_data);
 }
 
-/* called once sigv4 signing is complete. This isn 't called if MTLS is used. */
+/* called once sigv4 signing is complete. */
 void s_on_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
     (void)result;
     (void)error_code;
@@ -483,13 +484,8 @@ void s_clean_up(struct aws_credentials_provider *provider) {
         aws_credentials_provider_release(sts_impl->provider);
     }
 
-    if (sts_impl->role_session_name) {
-        aws_string_destroy(sts_impl->role_session_name);
-    }
-
-    if (sts_impl->assume_role_profile) {
-        aws_string_destroy(sts_impl->assume_role_profile);
-    }
+    aws_string_destroy(sts_impl->role_session_name);
+    aws_string_destroy(sts_impl->assume_role_profile);
 
     if (sts_impl->owns_ctx) {
         aws_tls_ctx_destroy(sts_impl->ctx);
@@ -598,8 +594,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
 
     impl->duration_seconds = options->duration_seconds;
 
-    if (impl->duration_seconds < 900) {
-        impl->duration_seconds = 900;
+    /* minimum for STS is 900 seconds*/
+    if (impl->duration_seconds < aws_sts_assume_role_default_duration_secs) {
+        impl->duration_seconds = aws_sts_assume_role_default_duration_secs;
     }
 
     AWS_LOGF_DEBUG(

@@ -192,8 +192,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     AWS_ZERO_STRUCT(cached_options);
 
     /* minimum for STS is 900 seconds*/
-    if (options->duration_seconds < 900) {
-        options->duration_seconds = 900;
+    if (options->duration_seconds < aws_sts_assume_role_default_duration_secs) {
+        options->duration_seconds = aws_sts_assume_role_default_duration_secs;
     }
 
     /* give a 30 second grace period to avoid latency problems at the caching layer*/
@@ -205,13 +205,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     cached_options.source = direct_provider;
 
     struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
-
-    if (cached_provider == NULL) {
-        aws_credentials_provider_destroy(direct_provider);
-        return NULL;
-    }
-
     aws_credentials_provider_release(direct_provider);
+
     return cached_provider;
 }
 

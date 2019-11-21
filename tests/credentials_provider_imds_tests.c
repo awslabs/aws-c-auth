@@ -27,7 +27,7 @@
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 
-struct aws_mock_sts_tester {
+struct aws_mock_imds_tester {
     struct aws_byte_buf first_request_uri;
     struct aws_byte_buf second_request_uri;
 
@@ -45,7 +45,7 @@ struct aws_mock_sts_tester {
     bool has_received_credentials_callback;
 };
 
-static struct aws_mock_sts_tester s_tester;
+static struct aws_mock_imds_tester s_tester;
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
