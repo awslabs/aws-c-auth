@@ -481,7 +481,9 @@ static int s_profile_credentials_provider_new_destroy_defaults_test(struct aws_a
     AWS_ZERO_STRUCT(options);
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
 
-    aws_credentials_provider_release(provider);
+    if (provider) {
+        aws_credentials_provider_release(provider);
+    }
 
     return 0;
 }
