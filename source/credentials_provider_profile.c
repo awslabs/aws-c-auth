@@ -30,9 +30,11 @@ AWS_STRING_FROM_LITERAL(s_credential_source_name, "credential_source");
 AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
 
 static struct aws_byte_cursor s_default_session_name_pfx =
-    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime_profile-config");
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime-profile-config");
 static struct aws_byte_cursor s_ec2_imds_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Ec2InstanceMetadata");
 static struct aws_byte_cursor s_environment_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Environment");
+
+#define s_max_session_name_len ((size_t)64)
 
 struct aws_credentials_provider_profile_file_impl {
     struct aws_string *config_file_path;
@@ -242,13 +244,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             aws_profile_get_property(profile, s_credential_source_name);
 
         struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
-        char session_name_array[65];
+        char session_name_array[s_max_session_name_len + 1];
         AWS_ZERO_ARRAY(session_name_array);
 
         if (role_session_name) {
             size_t to_write = role_session_name->value->len;
-            if (to_write > 64) {
-                to_write = 64;
+            if (to_write > s_max_session_name_len) {
+                AWS_LOGF_WARN(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p) session_name property is %d bytes long, "
+                    "but the max is %d. Truncating",
+                    (void *)provider,
+                    (int)role_session_name->value->len,
+                    (int)s_max_session_name_len);
+                to_write = s_max_session_name_len;
             }
             memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
         } else {
@@ -287,7 +296,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 
             sts_options.creds_provider = provider;
 
-            struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &sts_options);
+            struct aws_credentials_provider *sts_provider =
+                aws_credentials_provider_new_sts_cached(allocator, &sts_options);
+
+            aws_credentials_provider_release(provider);
 
             if (!sts_provider) {
                 AWS_LOGF_ERROR(
@@ -321,10 +333,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 
                 sts_options.creds_provider = imds_provider;
                 struct aws_credentials_provider *sts_provider =
-                    aws_credentials_provider_new_sts(allocator, &sts_options);
+                    aws_credentials_provider_new_sts_cached(allocator, &sts_options);
 
+                aws_credentials_provider_release(imds_provider);
                 if (!sts_provider) {
-                    aws_credentials_provider_release(imds_provider);
                     goto on_finished;
                 }
                 returned_provider = sts_provider;
@@ -339,10 +351,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 
                 sts_options.creds_provider = env_provider;
                 struct aws_credentials_provider *sts_provider =
-                    aws_credentials_provider_new_sts(allocator, &sts_options);
+                    aws_credentials_provider_new_sts_cached(allocator, &sts_options);
+
+                aws_credentials_provider_release(env_provider);
 
                 if (!sts_provider) {
-                    aws_credentials_provider_release(env_provider);
                     goto on_finished;
                 }
                 returned_provider = sts_provider;

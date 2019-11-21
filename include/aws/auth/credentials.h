@@ -24,10 +24,10 @@
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
-struct aws_credentials_provider_http_function_table;
+struct aws_credentials_provider_system_vtable;
 struct aws_string;
 
-static const uint16_t aws_sts_assume_role_default_duration_secs = 900;
+extern const uint16_t aws_sts_assume_role_default_duration_secs;
 
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
@@ -79,7 +79,7 @@ struct aws_credentials_provider_profile_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_http_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_cached_options {
@@ -97,7 +97,7 @@ struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_http_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_sts_options {
@@ -109,7 +109,7 @@ struct aws_credentials_provider_sts_options {
     uint16_t duration_seconds;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_http_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_chain_default_options {
@@ -227,17 +227,17 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
  * A provider assumes an IAM role via. STS AssumeRole() API. Caches the result until options.duration expires.
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_sts(
+struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_sts_options *options);
 
 /*
  * A provider assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
  * upon each call to aws_credentials_provider_get_credentials(). If you very likely don't want this behavior,
- * prefer aws_credentials_provider_new_sts() instead.
+ * prefer aws_credentials_provider_new_sts_cached() instead.
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
+struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_sts_options *options);
 

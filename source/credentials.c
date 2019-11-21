@@ -179,10 +179,10 @@ int aws_credentials_provider_get_credentials(
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
 
-struct aws_credentials_provider *aws_credentials_provider_new_sts(
+struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_sts_options *options) {
-    struct aws_credentials_provider *direct_provider = aws_credentials_provider_new_sts_direct(allocator, options);
+    struct aws_credentials_provider *direct_provider = aws_credentials_provider_new_sts(allocator, options);
 
     if (!direct_provider) {
         return NULL;
@@ -264,9 +264,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      * Transfer ownership
      */
     aws_credentials_provider_release(environment_provider);
-    if (profile_provider) {
-        aws_credentials_provider_release(profile_provider);
-    }
+    aws_credentials_provider_release(profile_provider);
     aws_credentials_provider_release(imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options;
@@ -302,9 +300,7 @@ on_error:
         aws_credentials_provider_release(chain_provider);
     } else {
         aws_credentials_provider_release(imds_provider);
-        if (profile_provider) {
-            aws_credentials_provider_release(profile_provider);
-        }
+        aws_credentials_provider_release(profile_provider);
         aws_credentials_provider_release(environment_provider);
     }
 

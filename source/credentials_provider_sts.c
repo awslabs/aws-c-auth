@@ -50,7 +50,9 @@ static struct aws_byte_cursor s_assume_role_session_token_name = AWS_BYTE_CUR_IN
 static struct aws_byte_cursor s_assume_role_secret_key_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SecretAccessKey");
 static struct aws_byte_cursor s_assume_role_access_key_id_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AccessKeyId");
 
-static struct aws_credentials_provider_http_function_table s_default_function_table = {
+const uint16_t aws_sts_assume_role_default_duration_secs = 900;
+
+static struct aws_credentials_provider_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
@@ -70,7 +72,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_credentials_provider *provider;
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
-    struct aws_credentials_provider_http_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
     bool owns_ctx;
 };
 
@@ -89,6 +91,8 @@ struct sts_creds_provider_user_data {
 };
 
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
+    aws_credentials_provider_release(user_data->provider);
+
     if (user_data->signable) {
         aws_signable_destroy(user_data->signable);
     }
@@ -234,6 +238,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(credentials=%p): parsing credentials", (void *)credentials);
         credentials->allocator = provider_user_data->allocator;
         if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, credentials)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "{credentials=%p): parsing failed with error %s",
+                (void *)credentials,
+                aws_error_debug_str(aws_last_error()));
             goto finish;
         }
 
@@ -357,6 +366,7 @@ static int s_sts_get_creds(
 
     provider_user_data->allocator = provider->allocator;
     provider_user_data->provider = provider;
+    aws_credentials_provider_acquire(provider);
     provider_user_data->callback = callback;
     provider_user_data->user_data = user_data;
 
@@ -480,9 +490,7 @@ void s_clean_up(struct aws_credentials_provider *provider) {
         aws_signer_destroy(sts_impl->signer);
     }
 
-    if (sts_impl->provider) {
-        aws_credentials_provider_release(sts_impl->provider);
-    }
+    aws_credentials_provider_release(sts_impl->provider);
 
     aws_string_destroy(sts_impl->role_session_name);
     aws_string_destroy(sts_impl->assume_role_profile);
@@ -502,7 +510,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
     .shutdown = aws_credentials_provider_shutdown_nil,
 };
 
-struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
+struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_sts_options *options) {
     struct aws_credentials_provider *provider = NULL;
@@ -606,6 +614,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
         impl->duration_seconds);
 
     impl->provider = options->creds_provider;
+    aws_credentials_provider_acquire(impl->provider);
     impl->signer = aws_signer_new_aws(allocator);
 
     if (!impl->signer) {
@@ -659,7 +668,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_direct(
     return provider;
 
 cleanup_provider:
-    aws_credentials_provider_destroy(provider);
+    aws_credentials_provider_release(provider);
 
     return NULL;
 }

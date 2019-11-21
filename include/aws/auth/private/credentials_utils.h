@@ -60,7 +60,7 @@ typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connectio
 /*
  * Table of all downstream http functions used by the imds credentials provider.  Allows for simple mocking.
  */
-struct aws_credentials_provider_http_function_table {
+struct aws_credentials_provider_system_vtable {
     aws_http_connection_manager_new_fn *aws_http_connection_manager_new;
     aws_http_connection_manager_release_fn *aws_http_connection_manager_release;
 
