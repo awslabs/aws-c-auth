@@ -22,7 +22,7 @@
 
 #ifdef _MSC_VER
 /* fopen, fprintf etc... */
-#    pragma warning( push )
+#    pragma warning(push)
 #    pragma warning(disable : 4996)
 #endif
 
@@ -54,7 +54,7 @@ static int aws_create_profile_file(const struct aws_string *file_name, const str
 }
 
 #ifdef _MSC_VER
-#    pragma warning( pop )
+#    pragma warning(pop)
 #endif
 
 #endif /* SHARED_CREDENTIALS_TEST_DEFINITIONS_H */

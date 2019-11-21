@@ -59,7 +59,7 @@ static struct aws_credentials_provider_http_function_table s_default_function_ta
     .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close,
-    };
+};
 
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
