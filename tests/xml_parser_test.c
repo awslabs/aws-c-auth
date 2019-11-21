@@ -298,7 +298,14 @@ const char *nested_nodes_same_name_doc = "<?xml version=\"1.0\" encoding=\"UTF-8
                                          " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
                                          "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\"> "
                                          "<Node>\n"
-                                         "<Node>TestBody</Node><Node>TestBody2</Node>\n"
+                                         "    <Node>\n"
+                                         "        <Node>\n"
+                                         "            <Node>TestBody</Node>\n"
+                                         "        </Node>\n"
+                                         "     </Node>\n"
+                                         "     <Node>\n"
+                                         "         <Node>TestBody2</Node>\n"
+                                         "     </Node>\n"
                                          "</Node>";
 
 struct nested_node_capture {
@@ -326,7 +333,14 @@ static int s_xml_parser_nested_node_same_name_test(struct aws_allocator *allocat
 
     ASSERT_SUCCESS(aws_xml_parser_parse(&parser, s_nested_node, &capture));
 
-    const char *expected_body = "\n<Node>TestBody</Node><Node>TestBody2</Node>\n";
+    const char *expected_body = "\n    <Node>\n"
+                                "        <Node>\n"
+                                "            <Node>TestBody</Node>\n"
+                                "        </Node>\n"
+                                "     </Node>\n"
+                                "     <Node>\n"
+                                "         <Node>TestBody2</Node>\n"
+                                "     </Node>\n";
 
     ASSERT_BIN_ARRAYS_EQUALS(expected_body, strlen(expected_body), capture.node_body.ptr, capture.node_body.len);
 
@@ -401,3 +415,39 @@ static int s_xml_parser_too_many_attributes_test(struct aws_allocator *allocator
 }
 
 AWS_TEST_CASE(xml_parser_too_many_attributes_test, s_xml_parser_too_many_attributes_test)
+
+const char *node_name_too_long =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<!DOCTYPE html \n"
+    " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
+    "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\"> "
+    "<abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghi"
+    "jklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrs"
+    "tuvwxyzabcdefghijklmnopqrstuvwxyz>"
+    "</"
+    "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghij"
+    "klmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrst"
+    "uvwxyzabcdefghijklmnopqrstuvwxyz>";
+
+bool s_too_long(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    (void)parser;
+    (void)node;
+    (void)user_data;
+    return true;
+}
+
+static int s_xml_parser_name_too_long_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(node_name_too_long);
+    struct aws_xml_parser parser;
+
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
+
+    ASSERT_ERROR(AWS_ERROR_MALFORMED_INPUT_STRING, aws_xml_parser_parse(&parser, s_too_long, NULL));
+
+    aws_xml_parser_clean_up(&parser);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(xml_parser_name_too_long_test, s_xml_parser_name_too_long_test)

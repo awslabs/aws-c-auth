@@ -202,36 +202,43 @@ int s_advance_to_closing_tag(
     aws_byte_buf_append(&closing_cmp_buf, &node->name);
     aws_byte_buf_append(&closing_cmp_buf, &close_bracket);
 
-    while (true) {
-        struct aws_byte_cursor to_find_close = aws_byte_cursor_from_buf(&closing_cmp_buf);
-        struct aws_byte_cursor close_find_result;
-        AWS_ZERO_STRUCT(close_find_result);
+    size_t depth_count = 1;
+    struct aws_byte_cursor to_find_open = aws_byte_cursor_from_buf(&open_cmp_buf);
+    struct aws_byte_cursor to_find_close = aws_byte_cursor_from_buf(&closing_cmp_buf);
+    struct aws_byte_cursor close_find_result;
+    AWS_ZERO_STRUCT(close_find_result);
+    do {
         if (aws_byte_cursor_find_exact(&parser->doc, &to_find_close, &close_find_result)) {
             return aws_raise_error(AWS_ERROR_MALFORMED_INPUT_STRING);
         }
 
         /* if we find an opening node with the same name, before the closing tag keep going. */
-        struct aws_byte_cursor to_find_open = aws_byte_cursor_from_buf(&open_cmp_buf);
         struct aws_byte_cursor open_find_result;
         AWS_ZERO_STRUCT(open_find_result);
-        if (!aws_byte_cursor_find_exact(&parser->doc, &to_find_open, &open_find_result)) {
-            if (open_find_result.ptr < close_find_result.ptr) {
-                size_t skip_len = close_find_result.ptr - parser->doc.ptr;
-                aws_byte_cursor_advance(&parser->doc, skip_len + 1);
-                continue;
+
+        while (parser->doc.len) {
+            if (!aws_byte_cursor_find_exact(&parser->doc, &to_find_open, &open_find_result)) {
+                if (open_find_result.ptr < close_find_result.ptr) {
+                    size_t skip_len = open_find_result.ptr - parser->doc.ptr;
+                    aws_byte_cursor_advance(&parser->doc, skip_len + 1);
+                    depth_count++;
+                    continue;
+                }
             }
+            size_t skip_len = close_find_result.ptr - parser->doc.ptr;
+            aws_byte_cursor_advance(&parser->doc, skip_len + closing_cmp_buf.len);
+            depth_count--;
+            break;
         }
+    } while (depth_count > 0);
 
-        size_t len = close_find_result.ptr - node->doc_at_body.ptr;
+    size_t len = close_find_result.ptr - node->doc_at_body.ptr;
 
-        aws_byte_cursor_advance(&parser->doc, len + closing_cmp_buf.len);
-
-        if (out_body) {
-            *out_body = aws_byte_cursor_from_array(node->doc_at_body.ptr, len);
-        }
-
-        return parser->error;
+    if (out_body) {
+        *out_body = aws_byte_cursor_from_array(node->doc_at_body.ptr, len);
     }
+
+    return parser->error;
 }
 
 int aws_xml_node_as_body(struct aws_xml_parser *parser, struct aws_xml_node *node, struct aws_byte_cursor *out_body) {
