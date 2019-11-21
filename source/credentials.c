@@ -264,7 +264,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      * Transfer ownership
      */
     aws_credentials_provider_release(environment_provider);
-    aws_credentials_provider_release(profile_provider);
+    if (profile_provider) {
+        aws_credentials_provider_release(profile_provider);
+    }
     aws_credentials_provider_release(imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options;
