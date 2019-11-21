@@ -137,7 +137,7 @@ bool s_sibling_with_text_root_node(struct aws_xml_parser *parser, struct aws_xml
 }
 
 bool s_root_with_child_siblings(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
-    struct child_text_capture *capture = user_data;
+    struct sibling_text_capture *capture = user_data;
 
     capture->error |= aws_xml_node_traverse(parser, node, s_sibling_with_text_root_node, user_data);
     return true;
