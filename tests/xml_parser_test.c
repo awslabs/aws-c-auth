@@ -366,3 +366,34 @@ static int s_xml_parser_nested_node_deep_recursion_test(struct aws_allocator *al
 }
 
 AWS_TEST_CASE(xml_parser_nested_node_deep_recursion_test, s_xml_parser_nested_node_deep_recursion_test)
+
+const char *too_many_attributes = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                                  "<!DOCTYPE html \n"
+                                  " PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n"
+                                  "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\"> "
+                                  "<rootNode attribute1=\"abc\" attribute2=\"def\" attribute3=\"def\" "
+                                  "attribute4=\"def\" attribute5=\"def\" attribute6=\"def\" attribute7=\"def\" "
+                                  "attribute8=\"def\" attribute9=\"def\" attribute10=\"def\" attribute11=\"def\">\n"
+                                  "</rootNode>";
+
+bool s_too_many_attributes(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
+    (void)parser;
+    (void)node;
+    (void)user_data;
+    return true;
+}
+
+static int s_xml_parser_too_many_attributes_test(struct aws_allocator *allocator, void *ctx) {
+
+    struct aws_byte_cursor test_doc = aws_byte_cursor_from_c_str(too_many_attributes);
+    struct aws_xml_parser parser;
+
+    ASSERT_SUCCESS(aws_xml_parser_init(&parser, allocator, &test_doc, 0));
+
+    ASSERT_ERROR(AWS_ERROR_MALFORMED_INPUT_STRING, aws_xml_parser_parse(&parser, s_too_many_attributes, NULL));
+
+    aws_xml_parser_clean_up(&parser);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(xml_parser_too_many_attributes_test, s_xml_parser_too_many_attributes_test)
