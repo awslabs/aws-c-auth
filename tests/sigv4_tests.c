@@ -21,12 +21,14 @@
 #include <aws/auth/signing.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/string.h>
+#include <aws/http/request_response.h>
 #include <aws/io/file_utils.h>
 #include <aws/io/stream.h>
 #include <aws/io/uri.h>
 
 #include <ctype.h>
 
+#include "credentials_provider_utils.h"
 #include "test_signable.h"
 
 struct sigv4_test_suite_contents {
@@ -958,3 +960,55 @@ static int s_sigv4_fail_signed_headers_param_test(struct aws_allocator *allocato
         allocator, s_amz_signed_headers_param_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
 }
 AWS_TEST_CASE(sigv4_fail_signed_headers_param_test, s_sigv4_fail_signed_headers_param_test);
+
+struct null_credentials_state {
+    struct aws_signing_result *result;
+    int error_code;
+};
+
+static void s_null_credentials_on_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
+
+    struct null_credentials_state *state = userdata;
+    state->result = result;
+    state->error_code = error_code;
+}
+
+static int s_signer_null_credentials_test(struct aws_allocator *allocator, void *ctx) {
+
+    struct get_credentials_mock_result results = {
+        .credentials = NULL,
+        .error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS,
+    };
+
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
+
+    struct aws_signing_config_aws config = {
+        .config_type = AWS_SIGNING_CONFIG_AWS,
+        .algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER,
+        .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticbuttservice"),
+    };
+    config.credentials_provider = aws_credentials_provider_new_mock(allocator, &results, 1, NULL);
+    aws_date_time_init_now(&config.date);
+
+    struct null_credentials_state state;
+    AWS_ZERO_STRUCT(state);
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        signable,
+        (struct aws_signing_config_base *)&config,
+        s_null_credentials_on_signing_complete,
+        &state));
+
+    ASSERT_PTR_EQUALS(NULL, state.result);
+    ASSERT_INT_EQUALS(AWS_AUTH_SIGNING_NO_CREDENTIALS, state.error_code);
+
+    aws_credentials_provider_release(config.credentials_provider);
+    aws_signable_destroy(signable);
+    aws_http_message_release(request);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);

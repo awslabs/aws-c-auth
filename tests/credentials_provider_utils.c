@@ -166,7 +166,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_vtable;
     provider->impl = impl;
-    provider->shutdown_options = *shutdown_options;
+    if (shutdown_options) {
+        provider->shutdown_options = *shutdown_options;
+    } else {
+        AWS_ZERO_STRUCT(provider->shutdown_options);
+    }
     aws_atomic_store_int(&provider->ref_count, 1);
 
     return provider;
@@ -361,7 +365,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_async_vtable;
     provider->impl = impl;
-    provider->shutdown_options = *shutdown_options;
+    if (shutdown_options) {
+        provider->shutdown_options = *shutdown_options;
+    } else {
+        AWS_ZERO_STRUCT(provider->shutdown_options);
+    }
     aws_atomic_store_int(&provider->ref_count, 1);
 
     return provider;
@@ -445,7 +453,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_null_vtable;
     provider->impl = NULL;
-    provider->shutdown_options = *shutdown_options;
+    if (shutdown_options) {
+        provider->shutdown_options = *shutdown_options;
+    } else {
+        AWS_ZERO_STRUCT(provider->shutdown_options);
+    }
     aws_atomic_store_int(&provider->ref_count, 1);
 
     return provider;

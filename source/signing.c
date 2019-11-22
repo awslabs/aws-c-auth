@@ -32,6 +32,8 @@ int aws_sign_request_aws(
     aws_signing_complete_fn *on_complete,
     void *userdata) {
 
+    AWS_PRECONDITION(base_config);
+
     if (base_config->config_type != AWS_SIGNING_CONFIG_AWS) {
         return aws_raise_error(AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION);
     }
@@ -58,10 +60,19 @@ cleanup:
 
 void s_aws_signing_on_get_credentials(struct aws_credentials *credentials, void *user_data) {
     struct aws_signing_state_aws *state = user_data;
-    state->credentials = credentials;
 
     struct aws_signing_result *result = NULL;
     int error_code = AWS_ERROR_SUCCESS;
+
+    if (!credentials) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING, "(id=%p) Credentials Provider provided no credentials", (void *)state->signable);
+
+        error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+        goto cleanup;
+    }
+
+    state->credentials = credentials;
 
     if (aws_signing_build_canonical_request(state)) {
         AWS_LOGF_ERROR(
