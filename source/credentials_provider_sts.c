@@ -30,6 +30,13 @@
 
 #include <inttypes.h>
 
+#ifdef _MSC_VER
+/* allow non-constant declared initializers. */
+#    pragma warning(disable : 4204)
+/* allow passing of address of automatic variable */
+#    pragma warning(disable : 4221)
+#endif
+
 static struct aws_http_header s_host_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
@@ -159,7 +166,7 @@ static int s_write_body_to_buffer(struct aws_credentials_provider *provider, str
 
     char duration_seconds[6];
     AWS_ZERO_ARRAY(duration_seconds);
-    sprintf(duration_seconds, "%" PRIu16, provider_impl->duration_seconds);
+    snprintf(duration_seconds, sizeof(duration_seconds), "%" PRIu16, provider_impl->duration_seconds);
     working_cur = aws_byte_cursor_from_c_str(duration_seconds);
     if (aws_byte_buf_append_dynamic(body, &working_cur)) {
         return AWS_OP_ERR;
@@ -409,7 +416,7 @@ static int s_sts_get_creds(
 
     char content_length[21];
     AWS_ZERO_ARRAY(content_length);
-    sprintf(content_length, "%" PRIu64, (uint64_t)provider_user_data->payload_body.len);
+    snprintf(content_length, sizeof(content_length), "%" PRIu64, (uint64_t)provider_user_data->payload_body.len);
 
     struct aws_http_header content_len_header = {
         .name = s_content_length,

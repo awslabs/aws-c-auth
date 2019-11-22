@@ -20,6 +20,11 @@
 #include <aws/common/process.h>
 #include <aws/common/string.h>
 
+#ifdef _MSC_VER
+/* allow non-constant declared initializers. */
+#    pragma warning(disable : 4204)
+#endif
+
 /*
  * Profile provider implementation
  */
@@ -223,7 +228,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
     } else {
         memcpy(session_name_array, s_default_session_name_pfx.ptr, s_default_session_name_pfx.len);
-        sprintf(session_name_array + s_default_session_name_pfx.len, "-%d", aws_get_pid());
+        snprintf(session_name_array + s_default_session_name_pfx.len, sizeof(session_name_array), "-%d", aws_get_pid());
     }
 
     AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: computed session_name as %s", session_name_array);

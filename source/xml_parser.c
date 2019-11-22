@@ -17,6 +17,11 @@
 
 #include <aws/common/array_list.h>
 
+#ifdef _MSC_VER
+/* allow non-constant declared initializers. */
+#    pragma warning(disable : 4204)
+#endif
+
 static const size_t s_max_document_depth = 20;
 #define MAX_NAME_LEN ((size_t)256)
 #define NODE_CLOSE_OVERHEAD ((size_t)3)
