@@ -1,4 +1,3 @@
-
 #ifndef AWS_AUTH_CREDENTIALS_H
 #define AWS_AUTH_CREDENTIALS_H
 
@@ -25,8 +24,10 @@
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
-struct aws_credentials_provider_imds_function_table;
+struct aws_credentials_provider_system_vtable;
 struct aws_string;
+
+extern const uint16_t aws_sts_assume_role_default_duration_secs;
 
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
@@ -99,6 +100,10 @@ struct aws_credentials_provider_profile_options {
     struct aws_byte_cursor profile_name_override;
     struct aws_byte_cursor config_file_name_override;
     struct aws_byte_cursor credentials_file_name_override;
+    struct aws_client_bootstrap *bootstrap;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_cached_options {
@@ -119,7 +124,20 @@ struct aws_credentials_provider_imds_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_imds_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
+};
+
+struct aws_credentials_provider_sts_options {
+    struct aws_client_bootstrap *bootstrap;
+    struct aws_tls_ctx *tls_ctx;
+    struct aws_credentials_provider *creds_provider;
+    struct aws_byte_cursor role_arn;
+    struct aws_byte_cursor session_name;
+    uint16_t duration_seconds;
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_chain_default_options {
@@ -225,6 +243,24 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_profile_options *options);
+
+/*
+ * A provider assumes an IAM role via. STS AssumeRole() API. Caches the result until options.duration expires.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options);
+
+/*
+ * A provider assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
+ * upon each call to aws_credentials_provider_get_credentials(). If you very likely don't want this behavior,
+ * prefer aws_credentials_provider_new_sts_cached() instead.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options);
 
 /*
  * A provider that sources credentials from an ordered sequence of providers, with the overall result

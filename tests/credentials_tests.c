@@ -23,11 +23,10 @@
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/http/http.h>
-#include <aws/io/file_utils.h>
 
 #include <credentials_provider_utils.h>
 
-#include <errno.h>
+#include "shared_credentials_test_definitions.h"
 
 #ifdef _MSC_VER
 #    pragma warning(disable : 4996)
@@ -207,10 +206,6 @@ static int s_static_credentials_provider_basic_test(struct aws_allocator *alloca
 }
 
 AWS_TEST_CASE(static_credentials_provider_basic_test, s_static_credentials_provider_basic_test);
-
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
 
 static int s_environment_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -604,7 +599,9 @@ static int s_profile_credentials_provider_new_destroy_defaults_test(struct aws_a
 
     aws_credentials_provider_release(provider);
 
-    s_aws_wait_for_provider_shutdown_callback();
+    if (provider) {
+        s_aws_wait_for_provider_shutdown_callback();
+    }
 
     s_aws_credentials_shutdown_checker_clean_up();
 
@@ -647,28 +644,6 @@ static int s_profile_credentials_provider_new_destroy_overrides_test(struct aws_
 AWS_TEST_CASE(
     profile_credentials_provider_new_destroy_overrides_test,
     s_profile_credentials_provider_new_destroy_overrides_test);
-
-int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
-    FILE *fp = fopen(aws_string_c_str(file_name), "w");
-    if (fp == NULL) {
-        return aws_translate_and_raise_io_error(errno);
-    }
-
-    int result = fprintf(fp, "%s", aws_string_c_str(file_contents));
-    fclose(fp);
-
-    if (result < 0) {
-        return aws_translate_and_raise_io_error(errno);
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-AWS_STATIC_STRING_FROM_LITERAL(s_config_file_name, "./.config_test");
-AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_name, "./.credentials_test");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
-AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
 
 typedef int(s_verify_credentials_callback_fn)(struct aws_get_credentials_test_callback_result *callback_results);
 

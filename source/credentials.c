@@ -15,6 +15,7 @@
 
 #include <aws/auth/credentials.h>
 
+#include <aws/common/clock.h>
 #include <aws/common/string.h>
 
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
@@ -170,6 +171,37 @@ int aws_credentials_provider_get_credentials(
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
 
+struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options) {
+    struct aws_credentials_provider *direct_provider = aws_credentials_provider_new_sts(allocator, options);
+
+    if (!direct_provider) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options;
+    AWS_ZERO_STRUCT(cached_options);
+
+    /* minimum for STS is 900 seconds*/
+    if (options->duration_seconds < aws_sts_assume_role_default_duration_secs) {
+        options->duration_seconds = aws_sts_assume_role_default_duration_secs;
+    }
+
+    /* give a 30 second grace period to avoid latency problems at the caching layer*/
+    uint64_t cache_timeout_seconds = options->duration_seconds - 30;
+
+    cached_options.source = direct_provider;
+    cached_options.refresh_time_in_milliseconds =
+        aws_timestamp_convert(cache_timeout_seconds, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
+    cached_options.source = direct_provider;
+
+    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
+    aws_credentials_provider_release(direct_provider);
+
+    return cached_provider;
+}
+
 /*
  * Default provider chain implementation
  */
@@ -183,19 +215,26 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
 
+    struct aws_credentials_provider *providers[3];
+    AWS_ZERO_ARRAY(providers);
+    size_t index = 0;
+
     struct aws_credentials_provider_environment_options environment_options;
     AWS_ZERO_STRUCT(environment_options);
 
     environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
+
     if (environment_provider == NULL) {
         goto on_error;
     }
 
+    providers[index++] = environment_provider;
+
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
-    if (profile_provider == NULL) {
-        goto on_error;
+    if (profile_provider != NULL) {
+        providers[index++] = profile_provider;
     }
 
     struct aws_credentials_provider_imds_options imds_options;
@@ -206,10 +245,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         goto on_error;
     }
 
-    struct aws_credentials_provider *providers[] = {environment_provider, profile_provider, imds_provider};
+    providers[index] = imds_provider;
     struct aws_credentials_provider_chain_options chain_options;
     AWS_ZERO_STRUCT(chain_options);
-    chain_options.provider_count = AWS_ARRAY_SIZE(providers);
+    chain_options.provider_count = index;
     chain_options.providers = providers;
 
     chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);
