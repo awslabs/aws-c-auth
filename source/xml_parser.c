@@ -129,6 +129,7 @@ int aws_xml_parser_parse(
     aws_xml_parser_on_node_encountered_fn *on_node_encountered,
     void *user_data) {
 
+    AWS_ASSUME(on_node_encountered);
     aws_array_list_clear(&parser->callback_stack);
 
     /* burn everything that precedes the actual xml nodes. */
@@ -251,7 +252,7 @@ int aws_xml_node_traverse(
     struct aws_xml_node *node,
     aws_xml_parser_on_node_encountered_fn *on_node_encountered,
     void *user_data) {
-
+    AWS_ASSUME(on_node_encountered);
     node->processed = true;
     struct cb_stack_data stack_data = {
         .cb = on_node_encountered,
@@ -362,6 +363,8 @@ int s_node_next_sibling(struct aws_xml_parser *parser) {
     struct cb_stack_data stack_data;
     AWS_ZERO_STRUCT(stack_data);
     aws_array_list_back(&parser->callback_stack, &stack_data);
+    AWS_FATAL_ASSERT(stack_data.cb);
+
     parser->stop_parsing = !stack_data.cb(parser, &sibling_node, stack_data.user_data);
 
     /* if the user simply returned while skipping the node altogether, go ahead and do the skip over. */
