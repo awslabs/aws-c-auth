@@ -58,7 +58,6 @@ static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_L
 static struct aws_byte_cursor s_service_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts");
 static struct aws_byte_cursor s_assume_role_root_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AssumeRoleResponse");
 static struct aws_byte_cursor s_assume_role_result_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AssumeRoleResult");
-static struct aws_byte_cursor s_assumed_role_user_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AssumedRoleUser");
 static struct aws_byte_cursor s_assume_role_credentials_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Credentials");
 static struct aws_byte_cursor s_assume_role_session_token_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SessionToken");
 static struct aws_byte_cursor s_assume_role_secret_key_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SecretAccessKey");
@@ -200,7 +199,6 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_root_name) ||
         aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_result_name) ||
-        aws_byte_cursor_eq_ignore_case(&node->name, &s_assumed_role_user_name) ||
         aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_credentials_name)) {
         return aws_xml_node_traverse(parser, node, s_on_node_encountered_fn, user_data);
     }
