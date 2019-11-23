@@ -974,6 +974,7 @@ static void s_null_credentials_on_signing_complete(struct aws_signing_result *re
 }
 
 static int s_signer_null_credentials_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
 
     struct get_credentials_mock_result results = {
         .credentials = NULL,
