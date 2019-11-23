@@ -157,6 +157,7 @@ add_test_case(sigv4_fail_date_param_test)
 add_test_case(sigv4_fail_credential_param_test)
 add_test_case(sigv4_fail_algorithm_param_test)
 add_test_case(sigv4_fail_signed_headers_param_test)
+add_test_case(signer_null_credentials_test)
 
 set(TEST_BINARY_NAME ${CMAKE_PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
