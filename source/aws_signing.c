@@ -1023,7 +1023,7 @@ static int s_build_canonical_stable_header_list(
     /*
      * x-amz-content-sha256 (optional)
      */
-    if (state->config.sign_body) {
+    if (state->config.sign_body || state->config.use_unsigned_payload_for_hash) {
         struct stable_header content_hash_header = {
             .original_index = additional_header_index++,
             .header = {.name = aws_byte_cursor_from_string(g_aws_signing_content_header_name),
@@ -1092,7 +1092,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     const size_t signable_header_count = aws_array_list_length(signable_header_list);
     size_t total_sign_headers_count = signable_header_count + 1; /* for X-Amz-Credentials */
 
-    if (state->config.sign_body) {
+    if (state->config.sign_body || state->config.use_unsigned_payload_for_hash) {
         total_sign_headers_count += 1;
     }
 
@@ -1177,67 +1177,75 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
 
     AWS_ASSERT(payload_hash_buffer->len == 0);
 
-    int result = AWS_OP_ERR;
-
-    struct aws_hash *hash = aws_sha256_new(allocator);
-    if (hash == NULL) {
-        return AWS_OP_ERR;
-    }
-
+    struct aws_byte_buf digest_buffer = aws_byte_buf_from_c_str("UNSIGNED-PAYLOAD");
     struct aws_byte_buf body_buffer;
     AWS_ZERO_STRUCT(body_buffer);
+    struct aws_hash *hash = NULL;
 
-    struct aws_byte_buf digest_buffer;
-    AWS_ZERO_STRUCT(digest_buffer);
+    int result = AWS_OP_ERR;
+    if (!state->config.use_unsigned_payload_for_hash) {
+        hash = aws_sha256_new(allocator);
+        AWS_ZERO_STRUCT(digest_buffer);
 
-    if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
-        aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
-        goto on_cleanup;
-    }
+        if (hash == NULL) {
+            return AWS_OP_ERR;
+        }
 
-    struct aws_input_stream *payload_stream = NULL;
-    if (aws_signable_get_payload_stream(signable, &payload_stream)) {
-        goto on_cleanup;
-    }
-
-    if (payload_stream != NULL) {
-        if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+        if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
+            aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
             goto on_cleanup;
         }
 
-        struct aws_stream_status payload_status;
-        AWS_ZERO_STRUCT(payload_status);
+        struct aws_input_stream *payload_stream = NULL;
+        if (aws_signable_get_payload_stream(signable, &payload_stream)) {
+            goto on_cleanup;
+        }
 
-        while (!payload_status.is_end_of_stream) {
-            /* reset the temporary body buffer; we can calculate the hash in window chunks */
-            body_buffer.len = 0;
-            aws_input_stream_read(payload_stream, &body_buffer);
-            if (body_buffer.len > 0) {
-                struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
-                aws_hash_update(hash, &body_cursor);
+        if (payload_stream != NULL && state->config.sign_body) {
+            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+                goto on_cleanup;
             }
 
-            if (aws_input_stream_get_status(payload_stream, &payload_status)) {
+            struct aws_stream_status payload_status;
+            AWS_ZERO_STRUCT(payload_status);
+
+            while (!payload_status.is_end_of_stream) {
+                /* reset the temporary body buffer; we can calculate the hash in window chunks */
+                body_buffer.len = 0;
+                aws_input_stream_read(payload_stream, &body_buffer);
+                if (body_buffer.len > 0) {
+                    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
+                    aws_hash_update(hash, &body_cursor);
+                }
+
+                if (aws_input_stream_get_status(payload_stream, &payload_status)) {
+                    goto on_cleanup;
+                }
+            }
+
+            /* reset the input stream for sending */
+            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
                 goto on_cleanup;
             }
         }
 
-        /* reset the input stream for sending */
-        if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+        if (aws_hash_finalize(hash, &digest_buffer, 0)) {
             goto on_cleanup;
         }
-    }
-
-    if (aws_hash_finalize(hash, &digest_buffer, 0)) {
-        goto on_cleanup;
     }
 
     /*
      * cache the payload hash into the state
      */
     struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
-    if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
-        goto on_cleanup;
+    if (!state->config.use_unsigned_payload_for_hash) {
+        if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
+            goto on_cleanup;
+        }
+    } else {
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &digest_cursor)) {
+            goto on_cleanup;
+        }
     }
 
     result = AWS_OP_SUCCESS;
@@ -1247,7 +1255,9 @@ on_cleanup:
     aws_byte_buf_clean_up(&digest_buffer);
     aws_byte_buf_clean_up(&body_buffer);
 
-    aws_hash_destroy(hash);
+    if (hash) {
+        aws_hash_destroy(hash);
+    }
 
     return result;
 }

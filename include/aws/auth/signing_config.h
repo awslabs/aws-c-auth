@@ -115,6 +115,9 @@ struct aws_signing_config_aws {
      * nothing
      */
     bool sign_body;
+
+    /* this is only used for S3 and it's different than the sign_body flag */
+    bool use_unsigned_payload_for_hash;
 };
 
 AWS_EXTERN_C_BEGIN
