@@ -51,6 +51,12 @@ enum aws_signing_algorithm {
     AWS_SIGNING_ALGORITHM_COUNT
 };
 
+enum aws_body_signing_config_type {
+    AWS_BODY_SIGNING_OFF,
+    AWS_BODY_SIGNING_ON,
+    AWS_BODY_SIGNING_UNSIGNED_PAYLOAD,
+};
+
 /*
  * A configuration structure for use in AWS-related signing.  Currently covers sigv4 only, but is not required to.
  */
@@ -111,13 +117,11 @@ struct aws_signing_config_aws {
     bool should_normalize_uri_path;
 
     /*
-     * If true adds the x-amz-content-sha256 header (with appropriate value) to the canonical request, otherwise does
-     * nothing
+     * If AWS_BODY_SIGNING_ON adds the x-amz-content-sha256 header (with sha256 hash of the payload) to the canonical
+     * request. If AWS_BODY_SIGNING_UNSIGNED_PAYLOAD, "UNSIGNED-PAYLOAD" is used for the x-amz-content-sha256 header,
+     * otherwise no paylod signing will take place.
      */
-    bool sign_body;
-
-    /* this is only used for S3 and it's different than the sign_body flag */
-    bool use_unsigned_payload_for_hash;
+    enum aws_body_signing_config_type body_signing_type;
 };
 
 AWS_EXTERN_C_BEGIN

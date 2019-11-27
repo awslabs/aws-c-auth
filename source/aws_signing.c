@@ -1023,7 +1023,7 @@ static int s_build_canonical_stable_header_list(
     /*
      * x-amz-content-sha256 (optional)
      */
-    if (state->config.sign_body || state->config.use_unsigned_payload_for_hash) {
+    if (state->config.body_signing_type >= AWS_BODY_SIGNING_ON) {
         struct stable_header content_hash_header = {
             .original_index = additional_header_index++,
             .header = {.name = aws_byte_cursor_from_string(g_aws_signing_content_header_name),
@@ -1092,7 +1092,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     const size_t signable_header_count = aws_array_list_length(signable_header_list);
     size_t total_sign_headers_count = signable_header_count + 1; /* for X-Amz-Credentials */
 
-    if (state->config.sign_body || state->config.use_unsigned_payload_for_hash) {
+    if (state->config.body_signing_type >= AWS_BODY_SIGNING_ON) {
         total_sign_headers_count += 1;
     }
 
@@ -1183,7 +1183,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (!state->config.use_unsigned_payload_for_hash) {
+    if (state->config.body_signing_type != AWS_BODY_SIGNING_UNSIGNED_PAYLOAD) {
         hash = aws_sha256_new(allocator);
         AWS_ZERO_STRUCT(digest_buffer);
 
@@ -1201,7 +1201,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
             goto on_cleanup;
         }
 
-        if (payload_stream != NULL && state->config.sign_body) {
+        if (payload_stream != NULL && state->config.body_signing_type == AWS_BODY_SIGNING_ON) {
             if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
                 goto on_cleanup;
             }
@@ -1238,7 +1238,7 @@ static int s_build_canonical_payload_hash(struct aws_signing_state_aws *state) {
      * cache the payload hash into the state
      */
     struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
-    if (!state->config.use_unsigned_payload_for_hash) {
+    if (state->config.body_signing_type != AWS_BODY_SIGNING_UNSIGNED_PAYLOAD) {
         if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
             goto on_cleanup;
         }
