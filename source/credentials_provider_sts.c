@@ -450,7 +450,7 @@ static int s_sts_get_creds(
     }
 
     provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
-    provider_user_data->signing_config.sign_body = true;
+    provider_user_data->signing_config.body_signing_type = AWS_BODY_SIGNING_ON;
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
     provider_user_data->signing_config.credentials_provider = sts_impl->provider;
     aws_date_time_init_now(&provider_user_data->signing_config.date);
