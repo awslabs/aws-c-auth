@@ -290,7 +290,11 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -371,7 +375,11 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -444,7 +452,11 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -500,7 +512,11 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -570,7 +586,11 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_config_file);
     ASSERT_SUCCESS(aws_create_profile_file(s_credentials_file_name, config_contents));
@@ -668,7 +688,11 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_env_source_config_file);
     ASSERT_SUCCESS(aws_create_profile_file(s_credentials_file_name, config_contents));
