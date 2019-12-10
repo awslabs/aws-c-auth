@@ -28,6 +28,7 @@ string(REPLACE ";" "${AWS_MODULE_DIR};" AWS_MODULE_PATH "${CMAKE_PREFIX_PATH}${A
 list(APPEND CMAKE_MODULE_PATH ${AWS_MODULE_PATH})
 
 include(AwsCFlags)
+include(AwsCheckHeaders)
 include(AwsSharedLibSetup)
 include(AwsSanitizers)
 
@@ -83,6 +84,7 @@ file(GLOB AUTH_SRC
 add_library(${CMAKE_PROJECT_NAME} ${LIBTYPE} ${AUTH_HEADERS} ${AUTH_SRC})
 aws_set_common_properties(${CMAKE_PROJECT_NAME})
 aws_prepare_symbol_visibility_args(${CMAKE_PROJECT_NAME} "AWS_AUTH")
+aws_check_headers(${CMAKE_PROJECT_NAME} ${AUTH_HEADERS})
 
 aws_add_sanitizers(${CMAKE_PROJECT_NAME})
 
