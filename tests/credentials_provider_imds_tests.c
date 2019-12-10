@@ -745,7 +745,11 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = bootstrap,
@@ -805,7 +809,11 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
     struct aws_host_resolver resolver;
     aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
 
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &el_group, &resolver, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &el_group,
+        .host_resolver = &resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = bootstrap,
