@@ -324,6 +324,8 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
     aws_byte_buf_clean_up(&state->access_credential_scope);
     aws_byte_buf_clean_up(&state->date);
 
+    aws_credentials_destroy(state->credentials);
+
     aws_mem_release(state->allocator, state);
 }
 

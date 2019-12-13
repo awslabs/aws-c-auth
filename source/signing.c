@@ -72,7 +72,7 @@ void s_aws_signing_on_get_credentials(struct aws_credentials *credentials, void 
         goto cleanup;
     }
 
-    state->credentials = credentials;
+    state->credentials = aws_credentials_new_copy(state->allocator, credentials);
 
     if (aws_signing_build_canonical_request(state)) {
         AWS_LOGF_ERROR(
