@@ -112,7 +112,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         "(id=%p) Cached credentials provider notifying pending queries of new credentials",
         (void *)provider);
 
-    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials);
+    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, impl->cached_credentials);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(
