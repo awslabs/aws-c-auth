@@ -329,6 +329,8 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
         goto error;
     }
 
+    provider_impl->function_table->aws_http_stream_release(stream);
+
     return;
 error:
     s_clean_up_user_data(provider_user_data);
