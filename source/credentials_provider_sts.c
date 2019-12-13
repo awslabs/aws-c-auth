@@ -95,7 +95,6 @@ struct sts_creds_provider_user_data {
     struct aws_credentials *credentials;
     aws_on_get_credentials_callback_fn *callback;
     struct aws_http_connection *connection;
-    struct aws_http_stream *stream;
     struct aws_byte_buf payload_body;
     struct aws_input_stream *input_stream;
     struct aws_signable *signable;
@@ -110,11 +109,6 @@ static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data)
 
     if (user_data->credentials) {
         aws_credentials_destroy(user_data->credentials);
-    }
-
-    if (user_data->stream) {
-        struct aws_credentials_provider_sts_impl *provider_impl = user_data->provider->impl;
-        provider_impl->function_table->aws_http_stream_release(user_data->stream);
     }
 
     if (user_data->connection) {

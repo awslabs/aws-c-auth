@@ -433,7 +433,7 @@ static int s_do_sigv4_test_suite_test(
         ASSERT_NOT_NULL(signing_state);
 
         ASSERT_NOT_NULL(credentials);
-        signing_state->credentials = aws_credentials_new_copy(allocator, credentials);
+        signing_state->credentials = credentials;
 
         struct aws_signing_result *result = &signing_state->result;
 
@@ -517,7 +517,7 @@ static int s_do_sigv4_test_suite_test(
         ASSERT_NOT_NULL(signing_state);
 
         ASSERT_NOT_NULL(credentials);
-        signing_state->credentials = aws_credentials_new_copy(allocator, credentials);
+        signing_state->credentials = credentials;
 
         struct aws_signing_result *result = &signing_state->result;
 
@@ -699,7 +699,7 @@ static int s_do_header_skip_test(
     struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
     ASSERT_NOT_NULL(signing_state);
 
-    signing_state->credentials = aws_credentials_new_copy(allocator, credentials);
+    signing_state->credentials = credentials;
 
     ASSERT_SUCCESS(aws_signing_build_canonical_request(signing_state));
 
@@ -846,7 +846,7 @@ static int s_do_forbidden_header_param_test(
     struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
     ASSERT_NOT_NULL(signing_state);
 
-    signing_state->credentials = aws_credentials_new_copy(allocator, credentials);
+    signing_state->credentials = credentials;
 
     ASSERT_FAILS(aws_signing_build_canonical_request(signing_state));
     ASSERT_TRUE(aws_last_error() == expected_error);
