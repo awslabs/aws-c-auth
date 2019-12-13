@@ -329,10 +329,13 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
         .on_complete = s_on_stream_complete_fn,
     };
 
-    provider_user_data->stream = provider_impl->function_table->aws_http_connection_make_request(connection, &options);
-    if (!provider_user_data->stream) {
+    struct aws_http_stream *stream =
+        provider_impl->function_table->aws_http_connection_make_request(connection, &options);
+    if (!stream) {
         goto error;
     }
+
+    provider_impl->function_table->aws_http_stream_release(stream);
 
     return;
 error:
