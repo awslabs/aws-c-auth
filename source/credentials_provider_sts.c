@@ -113,7 +113,8 @@ static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data)
     }
 
     if (user_data->stream) {
-        aws_http_stream_release(user_data->stream);
+        struct aws_credentials_provider_sts_impl *provider_impl = user_data->provider->impl;
+        provider_impl->function_table->aws_http_stream_release(user_data->stream);
     }
 
     if (user_data->connection) {
