@@ -1426,7 +1426,7 @@ static int s_build_canonical_request_sigv4(struct aws_signing_state_aws *state) 
     }
 
     struct aws_byte_cursor header_block_cursor = aws_byte_cursor_from_buf(&state->canonical_header_block);
-    if (aws_byte_buf_append(&state->canonical_request, &header_block_cursor)) {
+    if (aws_byte_buf_append_dynamic(&state->canonical_request, &header_block_cursor)) {
         goto cleanup;
     }
 
