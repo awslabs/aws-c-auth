@@ -16,6 +16,7 @@
  */
 
 #include <aws/common/string.h>
+#include <aws/common/uuid.h>
 #include <aws/io/file_utils.h>
 
 #include <errno.h>
@@ -26,14 +27,30 @@
 #    pragma warning(disable : 4996)
 #endif
 
-AWS_STATIC_STRING_FROM_LITERAL(s_config_file_name, "./.config_test");
-AWS_STATIC_STRING_FROM_LITERAL(s_credentials_file_name, "./.credentials_test");
 AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
+
+static struct aws_string *aws_create_process_unique_file_name(struct aws_allocator *allocator) {
+    char file_name_storage[64] = {0};
+    struct aws_byte_buf filename_buf = aws_byte_buf_from_empty_array(file_name_storage, sizeof(file_name_storage));
+
+#ifndef WIN32
+    AWS_FATAL_ASSERT(aws_byte_buf_write_from_whole_cursor(&filename_buf, aws_byte_cursor_from_c_str("./")));
+#endif
+
+    AWS_FATAL_ASSERT(
+        aws_byte_buf_write_from_whole_cursor(&filename_buf, aws_byte_cursor_from_c_str("config_creds_test")));
+
+    struct aws_uuid uuid;
+    AWS_FATAL_ASSERT(aws_uuid_init(&uuid) == AWS_OP_SUCCESS);
+    AWS_FATAL_ASSERT(aws_uuid_to_str(&uuid, &filename_buf) == AWS_OP_SUCCESS);
+
+    return aws_string_new_from_array(allocator, filename_buf.buffer, filename_buf.len);
+}
 
 static int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
     (void)s_session_token_env_var;

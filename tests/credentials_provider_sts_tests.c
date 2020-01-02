@@ -593,12 +593,16 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_config_file);
-    ASSERT_SUCCESS(aws_create_profile_file(s_credentials_file_name, config_contents));
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(creds_file_str, config_contents));
     aws_string_destroy(config_contents);
 
     struct aws_credentials_provider_profile_options options = {
-        .config_file_name_override = aws_byte_cursor_from_string(s_config_file_name),
-        .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name),
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = bootstrap,
         .function_table = &s_mock_function_table,
@@ -611,6 +615,9 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NOT_NULL(provider);
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -637,7 +644,6 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_payload.ptr, s_expected_payload.len, s_tester.request_body.buffer, s_tester.request_body.len);
 
-    remove(aws_string_c_str(s_credentials_file_name));
     aws_credentials_provider_release(provider);
 
     s_aws_sts_tester_cleanup();
@@ -695,12 +701,16 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_env_source_config_file);
-    ASSERT_SUCCESS(aws_create_profile_file(s_credentials_file_name, config_contents));
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(creds_file_str, config_contents));
     aws_string_destroy(config_contents);
 
     struct aws_credentials_provider_profile_options options = {
-        .config_file_name_override = aws_byte_cursor_from_string(s_config_file_name),
-        .credentials_file_name_override = aws_byte_cursor_from_string(s_credentials_file_name),
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = bootstrap,
         .function_table = &s_mock_function_table,
@@ -713,6 +723,9 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NOT_NULL(provider);
+
+    aws_string_destroy(creds_file_str);
+    aws_string_destroy(config_file_str);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -739,7 +752,6 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_payload.ptr, s_expected_payload.len, s_tester.request_body.buffer, s_tester.request_body.len);
 
-    remove(aws_string_c_str(s_credentials_file_name));
     aws_credentials_provider_release(provider);
 
     s_aws_sts_tester_cleanup();
