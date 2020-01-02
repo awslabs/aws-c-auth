@@ -649,9 +649,9 @@ typedef int(s_verify_credentials_callback_fn)(struct aws_get_credentials_test_ca
 
 static int s_do_credentials_provider_profile_test(
     struct aws_allocator *allocator,
-    const struct aws_byte_cursor *config_file_path,
+    const struct aws_string *config_file_path,
     const struct aws_string *config_contents,
-    const struct aws_byte_cursor *creds_file_path,
+    const struct aws_string *creds_file_path,
     const struct aws_string *credentials_contents,
     struct aws_credentials_provider_profile_options *options,
     s_verify_credentials_callback_fn verifier,
@@ -668,13 +668,8 @@ static int s_do_credentials_provider_profile_test(
         aws_unset_environment_value(s_default_credentials_path_env_variable_name);
     }
 
-    struct aws_string *config_file_str =
-        aws_string_new_from_array(allocator, config_file_path->ptr, config_file_path->len);
-    struct aws_string *creds_file_str =
-        aws_string_new_from_array(allocator, creds_file_path->ptr, creds_file_path->len);
-
-    if (aws_create_profile_file(config_file_str, config_contents) ||
-        aws_create_profile_file(creds_file_str, credentials_contents)) {
+    if (aws_create_profile_file(config_file_path, config_contents) ||
+        aws_create_profile_file(creds_file_path, credentials_contents)) {
         return AWS_OP_ERR;
     }
 
@@ -682,9 +677,6 @@ static int s_do_credentials_provider_profile_test(
     if (provider == NULL) {
         return AWS_OP_ERR;
     }
-
-    aws_string_destroy(config_file_str);
-    aws_string_destroy(creds_file_str);
 
     struct aws_get_credentials_test_callback_result callback_results;
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
@@ -729,17 +721,12 @@ int s_verify_default_credentials_callback(struct aws_get_credentials_test_callba
 static int s_profile_credentials_provider_default_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    char config_file_storage[64] = {0};
-    char creds_file_storage[64] = {0};
-
-    struct aws_byte_cursor config_file_cur =
-        aws_create_process_unique_file_name(config_file_storage, sizeof(config_file_storage));
-    struct aws_byte_cursor creds_file_cur =
-        aws_create_process_unique_file_name(creds_file_storage, sizeof(creds_file_storage));
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
 
     struct aws_credentials_provider_profile_options options = {
-        .config_file_name_override = config_file_cur,
-        .credentials_file_name_override = creds_file_cur,
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -747,15 +734,20 @@ static int s_profile_credentials_provider_default_test(struct aws_allocator *all
             },
     };
 
-    return s_do_credentials_provider_profile_test(
+    ASSERT_SUCCESS(s_do_credentials_provider_profile_test(
         allocator,
-        &config_file_cur,
+        config_file_str,
         s_config_contents,
-        &creds_file_cur,
+        creds_file_str,
         s_credentials_contents,
         &options,
         s_verify_default_credentials_callback,
-        true);
+        true));
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+
+    return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_provider_default_test);
@@ -775,13 +767,12 @@ int s_verify_nondefault_credentials_callback(struct aws_get_credentials_test_cal
 static int s_profile_credentials_provider_nondefault_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    char config_file_storage[64] = {0};
-    char creds_file_storage[64] = {0};
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
     struct aws_credentials_provider_profile_options options = {
-        .config_file_name_override =
-            aws_create_process_unique_file_name(config_file_storage, sizeof(config_file_storage)),
-        .credentials_file_name_override =
-            aws_create_process_unique_file_name(creds_file_storage, sizeof(creds_file_storage)),
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_string(s_foo_profile),
         .shutdown_options =
             {
@@ -790,15 +781,19 @@ static int s_profile_credentials_provider_nondefault_test(struct aws_allocator *
             },
     };
 
-    return s_do_credentials_provider_profile_test(
+    ASSERT_SUCCESS(s_do_credentials_provider_profile_test(
         allocator,
-        &options.config_file_name_override,
+        config_file_str,
         s_config_contents,
-        &options.credentials_file_name_override,
+        creds_file_str,
         s_credentials_contents,
         &options,
         s_verify_nondefault_credentials_callback,
-        true);
+        true));
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+    return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(profile_credentials_provider_nondefault_test, s_profile_credentials_provider_nondefault_test);
@@ -811,24 +806,14 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
      */
     aws_set_environment_value(s_default_profile_env_variable_name, s_foo_profile);
 
-    char config_file_storage[64] = {0};
-    char creds_file_storage[64] = {0};
-    struct aws_byte_cursor config_file_cur =
-        aws_create_process_unique_file_name(config_file_storage, sizeof(config_file_storage));
-    struct aws_byte_cursor creds_file_cur =
-        aws_create_process_unique_file_name(creds_file_storage, sizeof(creds_file_storage));
-
-    struct aws_string *config_file_str = aws_string_new_from_array(allocator, config_file_cur.ptr, config_file_cur.len);
-    struct aws_string *creds_file_str = aws_string_new_from_array(allocator, creds_file_cur.ptr, creds_file_cur.len);
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
 
     /*
      * Redirect config and credentials files by environment
      */
     aws_set_environment_value(s_default_config_path_env_variable_name, config_file_str);
     aws_set_environment_value(s_default_credentials_path_env_variable_name, creds_file_str);
-
-    aws_string_destroy(config_file_str);
-    aws_string_destroy(creds_file_str);
 
     struct aws_credentials_provider_profile_options options = {
         .shutdown_options =
@@ -838,15 +823,19 @@ static int s_profile_credentials_provider_environment_test(struct aws_allocator 
             },
     };
 
-    return s_do_credentials_provider_profile_test(
+    ASSERT_SUCCESS(s_do_credentials_provider_profile_test(
         allocator,
-        &config_file_cur,
+        config_file_str,
         s_config_contents,
-        &creds_file_cur,
+        creds_file_str,
         s_credentials_contents,
         &options,
         s_verify_nondefault_credentials_callback,
-        false);
+        false));
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+    return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(profile_credentials_provider_environment_test, s_profile_credentials_provider_environment_test);
