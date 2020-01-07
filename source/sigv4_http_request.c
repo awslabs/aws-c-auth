@@ -17,7 +17,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/signable.h>
-#include <aws/auth/signer.h>
+#include <aws/auth/signing.h>
 #include <aws/auth/signing_result.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/mutex.h>
@@ -308,47 +308,64 @@ on_error:
 /*
  * Utility struct/API to let us wait on credentials resolution
  */
-struct aws_credentials_waiter {
+struct aws_signing_waiter {
     struct aws_mutex lock;
     struct aws_condition_variable signal;
-    struct aws_credentials *credentials;
     bool done;
+
+    struct aws_allocator *allocator;
+    struct aws_http_message *request;
+    int error_code;
 };
 
-static int s_aws_credentials_waiter_init(struct aws_credentials_waiter *waiter) {
+static int s_aws_signing_waiter_init(
+    struct aws_signing_waiter *waiter,
+    struct aws_allocator *allocator,
+    struct aws_http_message *request) {
+
+    waiter->allocator = allocator;
+    waiter->request = request;
+    waiter->error_code = AWS_ERROR_SUCCESS;
+
     if (aws_mutex_init(&waiter->lock)) {
         return AWS_OP_ERR;
     }
 
     if (aws_condition_variable_init(&waiter->signal)) {
+        aws_mutex_clean_up(&waiter->lock);
         return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_credentials_waiter_clean_up(struct aws_credentials_waiter *waiter) {
+static void s_aws_signing_waiter_clean_up(struct aws_signing_waiter *waiter) {
     aws_mutex_clean_up(&waiter->lock);
     aws_condition_variable_clean_up(&waiter->signal);
-    aws_credentials_destroy(waiter->credentials);
 }
 
-void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
-    struct aws_credentials_waiter *waiter = user_data;
+void s_sign_callback(struct aws_signing_result *result, int error_code, void *user_data) {
+    struct aws_signing_waiter *waiter = user_data;
     aws_mutex_lock(&waiter->lock);
+
+    waiter->error_code = error_code;
+
+    if (result) {
+        aws_apply_signing_result_to_http_request(waiter->request, waiter->allocator, result);
+    }
+
     waiter->done = true;
-    waiter->credentials = aws_credentials_new_copy(credentials->allocator, credentials);
     aws_condition_variable_notify_one(&waiter->signal);
     aws_mutex_unlock(&waiter->lock);
 }
 
 bool s_wait_predicate(void *user_data) {
-    struct aws_credentials_waiter *waiter = user_data;
+    struct aws_signing_waiter *waiter = user_data;
 
     return waiter->done;
 }
 
-void s_aws_credentials_waiter_wait_on_credentials(struct aws_credentials_waiter *waiter) {
+void s_aws_signing_waiter_wait_on_credentials(struct aws_signing_waiter *waiter) {
     aws_mutex_lock(&waiter->lock);
     if (!waiter->done) {
         aws_condition_variable_wait_pred(&waiter->signal, &waiter->lock, s_wait_predicate, waiter);
@@ -369,14 +386,13 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
 
-    struct aws_credentials_waiter credentials_waiter;
-    AWS_ZERO_STRUCT(credentials_waiter);
+    struct aws_signing_waiter signing_waiter;
+    AWS_ZERO_STRUCT(signing_waiter);
 
     struct aws_credentials_provider_profile_options provider_options;
     AWS_ZERO_STRUCT(provider_options);
 
     struct aws_signable *signable = NULL;
-    struct aws_signer *signer = NULL;
     struct aws_credentials_provider *provider = NULL;
 
     aws_auth_library_init(allocator);
@@ -386,11 +402,6 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
      */
     signable = aws_signable_new_http_request(allocator, request);
     if (signable == NULL) {
-        goto done;
-    }
-
-    signer = aws_signer_new_aws(allocator);
-    if (signer == NULL) {
         goto done;
     }
 
@@ -406,12 +417,9 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     /*
      * Initialize credentials waiter and wait for credentials resolution
      */
-    if (s_aws_credentials_waiter_init(&credentials_waiter)) {
+    if (s_aws_signing_waiter_init(&signing_waiter, allocator, request)) {
         goto done;
     }
-
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, &credentials_waiter);
-    s_aws_credentials_waiter_wait_on_credentials(&credentials_waiter);
 
     /*
      * Pull out required context key-value pairs: region and service
@@ -432,33 +440,37 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     /*
      * configure the signing request
      */
-    config.credentials = credentials_waiter.credentials;
+    config.credentials_provider = provider;
     config.config_type = AWS_SIGNING_CONFIG_AWS;
     config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
     config.region = aws_byte_cursor_from_string(region);
     config.service = aws_byte_cursor_from_string(service);
     config.use_double_uri_encode = true;
     config.should_normalize_uri_path = true;
-    config.sign_body = false;
+    config.body_signing_type = AWS_BODY_SIGNING_OFF;
 
     aws_date_time_init_now(&config.date);
 
     /*
      * Perform the signing process and apply the result to the request
      */
-    if (aws_signer_sign_request(signer, signable, (void *)&config, &signing_result)) {
+    if (aws_sign_request_aws(
+            allocator, signable, (struct aws_signing_config_base *)&config, s_sign_callback, &config)) {
         goto done;
     }
 
-    aws_apply_signing_result_to_http_request(request, allocator, &signing_result);
+    s_aws_signing_waiter_wait_on_credentials(&signing_waiter);
 
-    result = AWS_OP_SUCCESS;
+    if (signing_waiter.error_code) {
+        result = aws_raise_error(signing_waiter.error_code);
+    } else {
+        result = AWS_OP_SUCCESS;
+    }
 
 done:
 
-    s_aws_credentials_waiter_clean_up(&credentials_waiter);
+    s_aws_signing_waiter_clean_up(&signing_waiter);
     aws_credentials_provider_release(provider);
-    aws_signer_destroy(signer);
     aws_signable_destroy(signable);
 
     aws_signing_result_clean_up(&signing_result);

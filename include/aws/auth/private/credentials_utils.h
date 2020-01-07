@@ -58,9 +58,10 @@ typedef void(aws_http_stream_release_fn)(struct aws_http_stream *stream);
 typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connection);
 
 /*
- * Table of all downstream http functions used by the imds credentials provider.  Allows for simple mocking.
+ * Table of all downstream http functions used by the credentials providers that make http calls. Allows for simple
+ * mocking.
  */
-struct aws_credentials_provider_imds_function_table {
+struct aws_credentials_provider_system_vtable {
     aws_http_connection_manager_new_fn *aws_http_connection_manager_new;
     aws_http_connection_manager_release_fn *aws_http_connection_manager_release;
 
@@ -101,7 +102,7 @@ AWS_AUTH_API
 void aws_credentials_provider_destroy(struct aws_credentials_provider *provider);
 
 AWS_AUTH_API
-void aws_credentials_provider_shutdown_nil(struct aws_credentials_provider *provider);
+void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
 
 AWS_EXTERN_C_END
 

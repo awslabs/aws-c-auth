@@ -85,11 +85,12 @@ static void s_aws_signable_test_clean_up(struct aws_signable *signable) {
     }
 }
 
-static struct aws_signable_vtable s_signable_test_vtable = {.get_property = s_aws_signable_test_get_property,
-                                                            .get_property_list = s_aws_signable_test_get_property_list,
-                                                            .get_payload_stream =
-                                                                s_aws_signable_test_get_payload_stream,
-                                                            .clean_up = s_aws_signable_test_clean_up};
+static struct aws_signable_vtable s_signable_test_vtable = {
+    .get_property = s_aws_signable_test_get_property,
+    .get_property_list = s_aws_signable_test_get_property_list,
+    .get_payload_stream = s_aws_signable_test_get_payload_stream,
+    .clean_up = s_aws_signable_test_clean_up,
+};
 
 struct aws_signable *aws_signable_new_test(
     struct aws_allocator *allocator,

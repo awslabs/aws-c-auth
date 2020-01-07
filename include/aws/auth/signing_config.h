@@ -23,7 +23,7 @@
 
 struct aws_credentials;
 
-typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name);
+typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name, void *userdata);
 
 /*
  * A primitive RTTI indicator for signing configuration structs
@@ -51,6 +51,12 @@ enum aws_signing_algorithm {
     AWS_SIGNING_ALGORITHM_COUNT
 };
 
+enum aws_body_signing_config_type {
+    AWS_BODY_SIGNING_OFF,
+    AWS_BODY_SIGNING_ON,
+    AWS_BODY_SIGNING_UNSIGNED_PAYLOAD,
+};
+
 /*
  * A configuration structure for use in AWS-related signing.  Currently covers sigv4 only, but is not required to.
  */
@@ -67,9 +73,9 @@ struct aws_signing_config_aws {
     enum aws_signing_algorithm algorithm;
 
     /*
-     * AWS credentials to sign with
+     * AWS credentials provider to fetch signing credentials with
      */
-    struct aws_credentials *credentials;
+    struct aws_credentials_provider *credentials_provider;
 
     /*
      * The region to sign against
@@ -96,6 +102,7 @@ struct aws_signing_config_aws {
      * the internal check (skips x-amzn-trace-id, user-agent) and this function (if defined).
      */
     aws_should_sign_param_fn *should_sign_param;
+    void *should_sign_param_ud;
 
     /*
      * We assume the uri will be encoded once in preparation for transmission.  Certain services
@@ -110,16 +117,20 @@ struct aws_signing_config_aws {
     bool should_normalize_uri_path;
 
     /*
-     * If true adds the x-amz-content-sha256 header (with appropriate value) to the canonical request, otherwise does
-     * nothing
+     * If AWS_BODY_SIGNING_ON adds the x-amz-content-sha256 header (with sha256 hash of the payload) to the canonical
+     * request. If AWS_BODY_SIGNING_UNSIGNED_PAYLOAD, "UNSIGNED-PAYLOAD" is used for the x-amz-content-sha256 header,
+     * otherwise no paylod signing will take place.
      */
-    bool sign_body;
+    enum aws_body_signing_config_type body_signing_type;
 };
 
 AWS_EXTERN_C_BEGIN
 
 AWS_AUTH_API
 const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm);
+
+AWS_AUTH_API
+int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *config);
 
 AWS_EXTERN_C_END
 

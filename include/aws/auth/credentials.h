@@ -1,4 +1,3 @@
-
 #ifndef AWS_AUTH_CREDENTIALS_H
 #define AWS_AUTH_CREDENTIALS_H
 
@@ -25,8 +24,10 @@
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
-struct aws_credentials_provider_imds_function_table;
+struct aws_credentials_provider_system_vtable;
 struct aws_string;
+
+extern const uint16_t aws_sts_assume_role_default_duration_secs;
 
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
@@ -46,13 +47,25 @@ typedef int(aws_credentials_provider_get_credentials_fn)(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
-typedef void(aws_credentials_provider_clean_up_fn)(struct aws_credentials_provider *provider);
-typedef void(aws_credentials_provider_shutdown_fn)(struct aws_credentials_provider *provider);
+typedef void(aws_credentials_provider_destroy_fn)(struct aws_credentials_provider *provider);
 
 struct aws_credentials_provider_vtable {
     aws_credentials_provider_get_credentials_fn *get_credentials;
-    aws_credentials_provider_clean_up_fn *clean_up;
-    aws_credentials_provider_shutdown_fn *shutdown;
+    aws_credentials_provider_destroy_fn *destroy;
+};
+
+typedef void(aws_credentials_provider_shutdown_completed_fn)(void *user_data);
+
+/*
+ * All credentials providers support an optional shutdown callback that
+ * gets invoked, with appropriate user data, when the resources used by the provider
+ * are no longer in use.  For example, the imds provider uses this to
+ * signal when it is no longer using the client bootstrap used in its
+ * internal connection manager.
+ */
+struct aws_credentials_provider_shutdown_options {
+    aws_credentials_provider_shutdown_completed_fn *shutdown_callback;
+    void *shutdown_user_data;
 };
 
 /*
@@ -62,8 +75,8 @@ struct aws_credentials_provider_vtable {
 struct aws_credentials_provider {
     struct aws_credentials_provider_vtable *vtable;
     struct aws_allocator *allocator;
+    struct aws_credentials_provider_shutdown_options shutdown_options;
     void *impl;
-    struct aws_atomic_var shutting_down;
     struct aws_atomic_var ref_count;
 };
 
@@ -71,31 +84,64 @@ struct aws_credentials_provider {
  * Config structs for creating all the different credentials providers
  */
 
+struct aws_credentials_provider_static_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    struct aws_byte_cursor access_key_id;
+    struct aws_byte_cursor secret_access_key;
+    struct aws_byte_cursor session_token;
+};
+
+struct aws_credentials_provider_environment_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+};
+
 struct aws_credentials_provider_profile_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_byte_cursor profile_name_override;
     struct aws_byte_cursor config_file_name_override;
     struct aws_byte_cursor credentials_file_name_override;
+    struct aws_client_bootstrap *bootstrap;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_cached_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_credentials_provider *source;
     uint64_t refresh_time_in_milliseconds;
     aws_io_clock_fn *clock_fn;
 };
 
 struct aws_credentials_provider_chain_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_credentials_provider **providers;
     size_t provider_count;
 };
 
 struct aws_credentials_provider_imds_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_imds_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
+};
+
+struct aws_credentials_provider_sts_options {
+    struct aws_client_bootstrap *bootstrap;
+    struct aws_tls_ctx *tls_ctx;
+    struct aws_credentials_provider *creds_provider;
+    struct aws_byte_cursor role_arn;
+    struct aws_byte_cursor session_name;
+    uint16_t duration_seconds;
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_chain_default_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
 };
 
@@ -130,14 +176,6 @@ void aws_credentials_destroy(struct aws_credentials *credentials);
  */
 
 /*
- * Signal a provider (and all linked providers) to cancel pending queries and
- * stop accepting new ones.  Useful to hasten shutdown time if you know the provider
- * is going away.
- */
-AWS_AUTH_API
-void aws_credentials_provider_shutdown(struct aws_credentials_provider *provider);
-
-/*
  * Release a reference to a credentials provider
  */
 AWS_AUTH_API
@@ -168,9 +206,7 @@ int aws_credentials_provider_get_credentials(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor access_key_id,
-    struct aws_byte_cursor secret_access_key,
-    struct aws_byte_cursor session_token);
+    const struct aws_credentials_provider_static_options *options);
 
 /*
  * A provider that returns credentials sourced from the environment variables:
@@ -180,7 +216,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
  * AWS_SESSION_TOKEN
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_environment(struct aws_allocator *allocator);
+struct aws_credentials_provider *aws_credentials_provider_new_environment(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_environment_options *options);
 
 /*
  * A provider that functions as a caching decorating of another provider.
@@ -194,7 +232,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(struct
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_cached_options *options);
+    const struct aws_credentials_provider_cached_options *options);
 
 /*
  * A provider that sources credentials from key-value profiles loaded from the aws credentials
@@ -204,7 +242,25 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_profile_options *options);
+    const struct aws_credentials_provider_profile_options *options);
+
+/*
+ * A provider assumes an IAM role via. STS AssumeRole() API. Caches the result until options.duration expires.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options);
+
+/*
+ * A provider assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
+ * upon each call to aws_credentials_provider_get_credentials(). If you very likely don't want this behavior,
+ * prefer aws_credentials_provider_new_sts_cached() instead.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_sts_options *options);
 
 /*
  * A provider that sources credentials from an ordered sequence of providers, with the overall result
@@ -215,7 +271,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_options *options);
+    const struct aws_credentials_provider_chain_options *options);
 
 /*
  * A provider that sources credentials from the ec2 instance metadata service
@@ -223,7 +279,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_imds_options *options);
+    const struct aws_credentials_provider_imds_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
@@ -241,7 +297,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_chain_default_options *options);
+    const struct aws_credentials_provider_chain_default_options *options);
 
 AWS_EXTERN_C_END
 

@@ -22,56 +22,24 @@
 #include <aws/auth/signing_result.h>
 
 struct aws_signable;
-struct aws_signer;
 
-typedef int(aws_signer_sign_request_fn)(
-    struct aws_signer *signer,
-    const struct aws_signable *signable,
-    const struct aws_signing_config_base *base_config,
-    struct aws_signing_result *result);
-typedef void(aws_signer_clean_up_fn)(struct aws_signer *signer);
-
-struct aws_signer_vtable {
-    aws_signer_sign_request_fn *sign_request;
-    aws_signer_clean_up_fn *clean_up;
-};
-
-/*
- * An object that can take an http request and return a set of changes to the request (header/query param) necessary
- * for the request to be authorized, according to an associated signing process.
+/**
+ * Gets called by the signing function when the signing is complete.
+ *
+ * Note that result will be destroyed after this function returns, so either copy it,
+ * or do all necessary adjustments inside the callback.
  */
-struct aws_signer {
-    struct aws_allocator *allocator;
-    struct aws_signer_vtable *vtable;
-    void *impl;
-};
+typedef void(aws_signing_complete_fn)(struct aws_signing_result *result, int error_code, void *userdata);
 
 AWS_EXTERN_C_BEGIN
 
 /*
- * Destroys all resources associated with a signer
- */
-AWS_AUTH_API
-void aws_signer_destroy(struct aws_signer *signer);
-
-/*
  * Takes an http request and a per-signer-type configuration struct and computes the changes to the request necessary
  * for compliance with the signer's signing algorithm.
- */
-AWS_AUTH_API
-int aws_signer_sign_request(
-    struct aws_signer *signer,
-    const struct aws_signable *signable,
-    const struct aws_signing_config_base *base_config,
-    struct aws_signing_result *result);
-
-/*
- * Creates a new signer that performs AWS http request signing.  Requires an instance of
- * the aws_signing_config_aws struct when signing.
  *
- * This signer currently supports only the sigv4 algorithm.
+ * This signing function currently supports only the sigv4 algorithm.
  *
- * When using this signer to sign AWS http requests:
+ * When using this signing function to sign AWS http requests:
  *
  *   (1) Do not add the following headers to requests before signing:
  *      x-amz-content-sha256,
@@ -88,11 +56,15 @@ int aws_signer_sign_request(
  * In all cases, the signing result will tell exactly what header and/or query params to add to the request
  * to become a fully-signed AWS http request.
  *
- * These restrictions can be relaxed, if necessary, in the future, but they don't unreasonable and
- * relaxing them adds non-trivial complexity.
+ * These restrictions can be relaxed, if necessary, in the future.
  */
 AWS_AUTH_API
-struct aws_signer *aws_signer_new_aws(struct aws_allocator *allocator);
+int aws_sign_request_aws(
+    struct aws_allocator *allocator,
+    const struct aws_signable *signable,
+    const struct aws_signing_config_base *base_config,
+    aws_signing_complete_fn *on_complete,
+    void *userdata);
 
 AWS_EXTERN_C_END
 

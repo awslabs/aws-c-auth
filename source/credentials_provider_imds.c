@@ -36,10 +36,10 @@
 
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_credentials_provider_imds_function_table *function_table;
+    struct aws_credentials_provider_system_vtable *function_table;
 };
 
-static struct aws_credentials_provider_imds_function_table s_default_function_table = {
+static struct aws_credentials_provider_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
@@ -293,6 +293,10 @@ static int s_imds_on_incoming_headers_fn(
     (void)header_array;
     (void)num_headers;
 
+    if (header_block != AWS_HTTP_HEADER_BLOCK_MAIN) {
+        return AWS_OP_SUCCESS;
+    }
+
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
     if (header_block == AWS_HTTP_HEADER_BLOCK_MAIN) {
         if (imds_user_data->status_code == 0) {
@@ -527,23 +531,33 @@ error:
     return AWS_OP_ERR;
 }
 
-static void s_credentials_provider_imds_clean_up(struct aws_credentials_provider *provider) {
+static void s_credentials_provider_imds_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_imds_impl *impl = provider->impl;
     if (impl == NULL) {
         return;
     }
 
     impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
+
+    /* freeing the provider takes place in the shutdown callback below */
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_imds_vtable = {
     .get_credentials = s_credentials_provider_imds_get_credentials_async,
-    .clean_up = s_credentials_provider_imds_clean_up,
-    .shutdown = aws_credentials_provider_shutdown_nil};
+    .destroy = s_credentials_provider_imds_destroy,
+};
+
+static void s_on_connection_manager_shutdown(void *user_data) {
+    struct aws_credentials_provider *provider = user_data;
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_mem_release(provider->allocator, provider);
+}
 
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_imds_options *options) {
+    const struct aws_credentials_provider_imds_options *options) {
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_imds_impl *impl = NULL;
@@ -581,6 +595,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     manager_options.host = aws_byte_cursor_from_string(s_imds_host);
     manager_options.port = 80;
     manager_options.max_connections = 2;
+    manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
+    manager_options.shutdown_complete_user_data = provider;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
@@ -591,6 +607,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     if (impl->connection_manager == NULL) {
         goto on_error;
     }
+
+    provider->shutdown_options = options->shutdown_options;
 
     return provider;
 
