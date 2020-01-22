@@ -52,7 +52,7 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
 /*
  * It takes two http requests to get IMDS credentials.  This tracks which request we're on.
  */
-enum aws_imds_query_state { AWS_IMDS_QS_ROLE_NAME, AWS_IMDS_QS_ROLE_CREDENTIALS };
+enum aws_imds_query_state { AWS_IMDS_QS_ROLE_NAME, AWS_IMDS_QS_ROLE_CREDENTIALS, AWS_IMDS_QS_MAX };
 
 /*
  * Tracking structure for each outstanding async query to an imds provider
@@ -71,6 +71,8 @@ struct aws_credentials_provider_imds_user_data {
     struct aws_byte_buf current_result;
     int status_code;
 };
+
+static void s_imds_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data);
 
 static void s_aws_credentials_provider_imds_user_data_destroy(
     struct aws_credentials_provider_imds_user_data *user_data) {
@@ -333,6 +335,11 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
     impl->function_table->aws_http_stream_release(stream);
 
+    if (imds_user_data->connection != NULL) {
+        impl->function_table->aws_http_connection_manager_release_connection(
+            impl->connection_manager, imds_user_data->connection);
+        imds_user_data->connection = NULL;
+    }
     /*
      * On anything other than a 200, nullify the response and pretend there was
      * an error
@@ -342,11 +349,23 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
         error_code = AWS_ERROR_HTTP_UNKNOWN;
     }
 
-    if (error_code == AWS_ERROR_SUCCESS && imds_user_data->query_state == AWS_IMDS_QS_ROLE_NAME) {
-        imds_user_data->query_state = AWS_IMDS_QS_ROLE_CREDENTIALS;
-        s_imds_query_instance_role_credentials(imds_user_data);
-    } else {
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "IMDS Credentials stream complete with error code %d and query state %d",
+        error_code,
+        imds_user_data->query_state);
+
+    ++imds_user_data->query_state;
+
+    if (error_code != AWS_ERROR_SUCCESS || imds_user_data->query_state == AWS_IMDS_QS_MAX) {
         s_imds_finalize_get_credentials_query(imds_user_data);
+    } else {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "IMDS Credentials - getting new connection for query state %d",
+            imds_user_data->query_state);
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_imds_on_acquire_connection, user_data);
     }
 }
 
@@ -499,9 +518,14 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
     }
 
     imds_user_data->connection = connection;
-    imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME;
 
-    s_imds_query_instance_role_name(imds_user_data);
+    if (imds_user_data->query_state == AWS_IMDS_QS_ROLE_NAME) {
+        s_imds_query_instance_role_name(imds_user_data);
+    } else if (imds_user_data->query_state == AWS_IMDS_QS_ROLE_CREDENTIALS) {
+        s_imds_query_instance_role_credentials(imds_user_data);
+    } else {
+        AWS_FATAL_ASSERT(false);
+    }
 }
 
 static int s_credentials_provider_imds_get_credentials_async(
@@ -518,6 +542,8 @@ static int s_credentials_provider_imds_get_credentials_async(
     }
 
     aws_credentials_provider_acquire(provider);
+
+    wrapped_user_data->query_state = AWS_IMDS_QS_ROLE_NAME;
 
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_imds_on_acquire_connection, wrapped_user_data);
