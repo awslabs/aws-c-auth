@@ -988,6 +988,7 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
 
     aws_http_library_init(allocator);
 
+    s_aws_credentials_shutdown_checker_init();
     /*
      * Do a basic environment provider test, but use the default provider chain
      */
@@ -1025,6 +1026,7 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
 
     aws_credentials_provider_release(provider);
 
+    s_aws_credentials_shutdown_checker_clean_up();
     aws_http_library_clean_up();
 
     return 0;
