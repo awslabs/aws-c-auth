@@ -37,6 +37,40 @@ struct aws_credentials {
     struct aws_string *access_key_id;
     struct aws_string *secret_access_key;
     struct aws_string *session_token;
+
+    /*
+     * A timepoint, in milliseconds since epoch, at which the credentials should no longer be used because they
+     * will have expired.
+     *
+     * It is useful to differentiate between "Good forever"/"Indefinite" and "I don't know"/"Unknown"
+     *
+     * A value of 0 should be interepreted as "unknown (and indefinite)"
+     * Any sufficiently large value (UINT64_MAX for example) should be interpreted as "Good forever"
+     *
+     * The primary purpose of this value is to allow providers to communicate to the caching provider any
+     * additional constraints on how the sourced credentials should be used (STS).  After refreshing the cached
+     * credentials, the caching provider uses the following calculation to determine the next requery time:
+     *
+     *   next_requery_time = now + cached_expiration_config;
+     *   if (cached_creds->expiration_timepoint_ms > 0 && cached_creds->expiration_timepoint_ms < next_requery_time) {
+     *       next_requery_time = cached_creds->expiration_timepoint_ms;
+     *
+     *  The cached provider may, at its discretion, use a smaller requery time to avoid edge-case scenarios where
+     *  credential expiration becomes a race condition.
+     *
+     * The following leaf providers always set this value to 0:
+     *    static
+     *    environment
+     *    imds
+     *    profile_config*
+     *
+     *  * - profile config may invoke sts which will set a non-zero value
+     *
+     *  The following leaf providers set this value to non-zero:
+     *    sts - value is based on current time + options->duration_seconds
+     *
+     */
+    uint64_t expiration_timepoint_ms;
 };
 
 struct aws_credentials_provider;
