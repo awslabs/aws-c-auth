@@ -157,7 +157,7 @@ static int s_cached_credentials_provider_get_credentials_async(
         aws_credentials_provider_get_credentials(
             impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
 
-    } else {
+    } else if (!perform_callback) {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Cached credentials provider has expired credentials.  Waiting on existing query.",

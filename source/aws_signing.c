@@ -52,6 +52,73 @@
 #define INITIAL_QUERY_FRAGMENT_COUNT 5
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
+
+/*
+ * current aws-c-auth signing contract
+ * ---------------------------
+ *
+ * (1) What properties, if any, of an http request cause the signer to fail?
+ *
+ *   Always fail signing if any of the following headers are present:
+ *
+ *     x-amz-content-sha256
+ *     X-Amz-Date
+ *     Authorization
+ *
+ *   Always fail signing if any of the following query params are present:
+ *
+ *     X-Amz-Signature
+ *     X-Amz-Date
+ *     X-Amz-Credential
+ *     X-Amz-Algorithm
+ *     X-Amz-SignedHeaders
+ *
+ * (2) What (fixed) properties of an http request does the signer ignore while signing?
+ *
+ *   Always exclude the following headers from signing:
+ *
+ *     x-amzn-trace-id
+ *     UserAgent
+ *     connection
+ *     sec-websocket-key
+ *     sec-websocket-protocol
+ *     sec-websocket-version
+ *     upgrade
+ *
+ * (3) In what ways can the user customize the behavior of the signer?
+ *
+ *   Every signing attempt takes a configuration object that includes the following:
+ *     region
+ *     service
+ *     timestamp
+ *     ShouldSignParam() - Ignore any header or query param that fails callback
+ *     double_uri_encode [boolean]
+ *     normalize_uri_path [boolean]
+ *     body_signing [Off, UnsignedPayload, On]
+ *
+ * (4) What transformation, if any, does the signer apply to the request?
+ *
+ *   Always add the following header to the request:
+ *
+ *     X-Amz-Date (uses supplied timestamp in signing config)
+ *
+ *   If signing via headers, add the following headers to the request:
+ *
+ *     x-amz-content-sha256 (but only if body signing is not Off)
+ *     Authorization
+ *     X-Amz-Security-Token (if present in credentials)
+ *
+ *   If signing via query params, add the following query params to the request:
+ *
+ *     X-Amz-Signature
+ *     X-Amz-Date
+ *     X-Amz-Credential
+ *     X-Amz-Algorithm
+ *     X-Amz-SignedHeaders
+ *     X-Amz-Security-Token (if present in credentials)
+ *
+ */
+
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_query_param_name, "X-Amz-Signature");
