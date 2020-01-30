@@ -37,6 +37,36 @@ struct aws_credentials {
     struct aws_string *access_key_id;
     struct aws_string *secret_access_key;
     struct aws_string *session_token;
+
+    /*
+     * A timepoint, in seconds since epoch, at which the credentials should no longer be used because they
+     * will have expired.
+     *
+     *
+     * The primary purpose of this value is to allow providers to communicate to the caching provider any
+     * additional constraints on how the sourced credentials should be used (STS).  After refreshing the cached
+     * credentials, the caching provider uses the following calculation to determine the next requery time:
+     *
+     *   next_requery_time = now + cached_expiration_config;
+     *   if (cached_creds->expiration_timepoint_seconds < next_requery_time) {
+     *       next_requery_time = cached_creds->expiration_timepoint_seconds;
+     *
+     *  The cached provider may, at its discretion, use a smaller requery time to avoid edge-case scenarios where
+     *  credential expiration becomes a race condition.
+     *
+     * The following leaf providers always set this value to UINT64_MAX (indefinite):
+     *    static
+     *    environment
+     *    imds
+     *    profile_config*
+     *
+     *  * - profile_config may invoke sts which will use a non-max value
+     *
+     *  The following leaf providers set this value to a sensible timepoint:
+     *    sts - value is based on current time + options->duration_seconds
+     *
+     */
+    uint64_t expiration_timepoint_seconds;
 };
 
 struct aws_credentials_provider;
@@ -136,8 +166,9 @@ struct aws_credentials_provider_sts_options {
     uint16_t duration_seconds;
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
-    /* For mocking the http layer in tests, leave NULL otherwise */
+    /* For mocking, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;
+    aws_io_clock_fn *clock_fn;
 };
 
 struct aws_credentials_provider_chain_default_options {
@@ -243,14 +274,6 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_profile_options *options);
-
-/*
- * A provider assumes an IAM role via. STS AssumeRole() API. Caches the result until options.duration expires.
- */
-AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
-    struct aws_allocator *allocator,
-    struct aws_credentials_provider_sts_options *options);
 
 /*
  * A provider assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials

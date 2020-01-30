@@ -315,7 +315,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
 
-    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts_cached(allocator, &options);
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
     aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
 
@@ -400,7 +400,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
     s_tester.mock_body = aws_byte_buf_from_c_str(malformed_creds_doc);
     s_tester.mock_response_code = 200;
 
-    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts_cached(allocator, &options);
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
     aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
 
@@ -476,7 +476,7 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
 
     s_tester.fail_connection = true;
 
-    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts_cached(allocator, &options);
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
     aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
 
@@ -536,7 +536,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
 
     s_tester.mock_response_code = 529;
 
-    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts_cached(allocator, &options);
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
     aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
 

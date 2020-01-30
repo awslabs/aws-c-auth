@@ -52,6 +52,62 @@
 #define INITIAL_QUERY_FRAGMENT_COUNT 5
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
+/*
+ * current aws-c-auth signing contract
+ * ---------------------------
+ *
+ * What properties, if any, of an http request cause the signer to fail?
+ *
+ *   Always fail signing if any of the following headers are present:
+ *
+ *     x-amz-content-sha256
+ *     X-Amz-Date
+ *     Authorization
+ *
+ *   Always fail signing if any of the following query params are present:
+ *
+ *     X-Amz-Signature
+ *     X-Amz-Date
+ *     X-Amz-Credential
+ *     X-Amz-Algorithm
+ *     X-Amz-SignedHeaders
+ *
+ * What (fixed) properties of an http request does the signer ignore while signing?
+ *
+ *   Always exclude the following headers from signing:
+ *
+ *     x-amzn-trace-id
+ *     UserAgent
+ *     connection
+ *     sec-websocket-key
+ *     sec-websocket-protocol
+ *     sec-websocket-version
+ *     upgrade
+ *
+ *
+ * What transformation, if any, does the signer apply to the request?
+ *
+ *   Always add the following header to the request:
+ *
+ *     X-Amz-Date (uses supplied timestamp in signing config)
+ *
+ *   If signing via headers, add the following headers to the request:
+ *
+ *     x-amz-content-sha256 (but only if body signing is not Off)
+ *     Authorization
+ *     X-Amz-Security-Token (if present in credentials)
+ *
+ *   If signing via query params, add the following query params to the request:
+ *
+ *     X-Amz-Signature
+ *     X-Amz-Date
+ *     X-Amz-Credential
+ *     X-Amz-Algorithm
+ *     X-Amz-SignedHeaders
+ *     X-Amz-Security-Token (if present in credentials)
+ *
+ */
+
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_query_param_name, "X-Amz-Signature");

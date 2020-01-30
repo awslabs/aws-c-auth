@@ -61,8 +61,12 @@ struct aws_credentials *aws_credentials_new(
 
 struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials) {
     if (credentials != NULL) {
-        return aws_credentials_new(
+        struct aws_credentials *copy = aws_credentials_new(
             allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);
+
+        copy->expiration_timepoint_seconds = credentials->expiration_timepoint_seconds;
+
+        return copy;
     }
 
     return NULL;
@@ -106,6 +110,8 @@ struct aws_credentials *aws_credentials_new_from_cursors(
             goto error;
         }
     }
+
+    credentials->expiration_timepoint_seconds = UINT64_MAX;
 
     return credentials;
 
@@ -169,37 +175,6 @@ int aws_credentials_provider_get_credentials(
     AWS_ASSERT(provider->vtable->get_credentials);
 
     return provider->vtable->get_credentials(provider, callback, user_data);
-}
-
-struct aws_credentials_provider *aws_credentials_provider_new_sts_cached(
-    struct aws_allocator *allocator,
-    struct aws_credentials_provider_sts_options *options) {
-    struct aws_credentials_provider *direct_provider = aws_credentials_provider_new_sts(allocator, options);
-
-    if (!direct_provider) {
-        return NULL;
-    }
-
-    struct aws_credentials_provider_cached_options cached_options;
-    AWS_ZERO_STRUCT(cached_options);
-
-    /* minimum for STS is 900 seconds*/
-    if (options->duration_seconds < aws_sts_assume_role_default_duration_secs) {
-        options->duration_seconds = aws_sts_assume_role_default_duration_secs;
-    }
-
-    /* give a 30 second grace period to avoid latency problems at the caching layer*/
-    uint64_t cache_timeout_seconds = options->duration_seconds - 30;
-
-    cached_options.source = direct_provider;
-    cached_options.refresh_time_in_milliseconds =
-        aws_timestamp_convert(cache_timeout_seconds, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
-    cached_options.source = direct_provider;
-
-    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
-    aws_credentials_provider_release(direct_provider);
-
-    return cached_provider;
 }
 
 /*
