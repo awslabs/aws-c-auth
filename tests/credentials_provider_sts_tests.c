@@ -249,10 +249,10 @@ static void s_cleanup_creds_callback_data(void) {
 
 static void s_aws_sts_tester_cleanup(void) {
 
+    s_cleanup_creds_callback_data();
+
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
-
-    s_cleanup_creds_callback_data();
 
     aws_byte_buf_clean_up(&s_tester.mock_body);
 
