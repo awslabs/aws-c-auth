@@ -14,6 +14,7 @@
  */
 
 #include <aws/auth/credentials.h>
+#include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
@@ -28,6 +29,7 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/testing/aws_test_harness.h>
 
+#include "credentials_provider_utils.h"
 #include "shared_credentials_test_definitions.h"
 
 struct aws_mock_sts_tester {
@@ -48,6 +50,12 @@ struct aws_mock_sts_tester {
     bool has_received_credentials_callback;
 
     bool fail_connection;
+
+    struct aws_event_loop_group el_group;
+
+    struct aws_host_resolver resolver;
+
+    struct aws_client_bootstrap *bootstrap;
 };
 
 static struct aws_mock_sts_tester s_tester;
@@ -199,6 +207,8 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     AWS_ZERO_STRUCT(s_tester);
     s_tester.allocator = allocator;
 
+    aws_auth_library_init(allocator);
+
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
@@ -207,7 +217,34 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    aws_event_loop_group_default_init(&s_tester.el_group, allocator, 0);
+
+    aws_host_resolver_init_default(&s_tester.resolver, allocator, 10, &s_tester.el_group);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &s_tester.el_group,
+        .host_resolver = &s_tester.resolver,
+    };
+    s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+
     return AWS_OP_SUCCESS;
+}
+
+static void s_cleanup_creds_callback_data(void) {
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.has_received_credentials_callback = false;
+
+    if (s_tester.credentials) {
+        aws_credentials_destroy(s_tester.credentials);
+        s_tester.credentials = NULL;
+    }
+
+    aws_byte_buf_clean_up(&s_tester.method);
+    aws_byte_buf_clean_up(&s_tester.request_path);
+    aws_byte_buf_clean_up(&s_tester.host_header);
+    aws_byte_buf_clean_up(&s_tester.request_body);
+
+    aws_mutex_unlock(&s_tester.lock);
 }
 
 static void s_aws_sts_tester_cleanup(void) {
@@ -215,15 +252,15 @@ static void s_aws_sts_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
 
-    if (s_tester.credentials) {
-        aws_credentials_destroy(s_tester.credentials);
-    }
+    s_cleanup_creds_callback_data();
 
-    aws_byte_buf_clean_up(&s_tester.host_header);
-    aws_byte_buf_clean_up(&s_tester.method);
-    aws_byte_buf_clean_up(&s_tester.request_path);
     aws_byte_buf_clean_up(&s_tester.mock_body);
-    aws_byte_buf_clean_up(&s_tester.request_body);
+
+    aws_client_bootstrap_release(s_tester.bootstrap);
+    aws_host_resolver_clean_up(&s_tester.resolver);
+    aws_event_loop_group_clean_up(&s_tester.el_group);
+
+    aws_auth_library_clean_up();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -281,20 +318,7 @@ static struct aws_byte_cursor s_expected_payload =
 static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_auth_library_init(allocator);
     s_aws_sts_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 0);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -305,13 +329,15 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
+        .clock_fn = mock_aws_get_time,
     };
 
+    mock_aws_set_time(0);
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
 
@@ -325,6 +351,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
     ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
     ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
     ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
+    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
 
     const char *expected_method = "POST";
     ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
@@ -346,11 +373,6 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
     aws_credentials_provider_release(static_provider);
     s_aws_sts_tester_cleanup();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
@@ -366,20 +388,7 @@ static const char *malformed_creds_doc = "<AssumeRoleResponse xmlns=\"who cares\
 static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_auth_library_init(allocator);
     s_aws_sts_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 0);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -390,13 +399,15 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
+        .clock_fn = mock_aws_get_time,
     };
 
+    mock_aws_set_time(0);
     s_tester.mock_body = aws_byte_buf_from_c_str(malformed_creds_doc);
     s_tester.mock_response_code = 200;
 
@@ -428,11 +439,6 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
     aws_credentials_provider_release(static_provider);
     s_aws_sts_tester_cleanup();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
@@ -443,20 +449,7 @@ AWS_TEST_CASE(
 static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_auth_library_init(allocator);
     s_aws_sts_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 0);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -467,12 +460,15 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
+        .clock_fn = mock_aws_get_time,
     };
+
+    mock_aws_set_time(0);
 
     s_tester.fail_connection = true;
 
@@ -488,11 +484,6 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
     aws_credentials_provider_release(static_provider);
     s_aws_sts_tester_cleanup();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
@@ -503,20 +494,7 @@ AWS_TEST_CASE(
 static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_auth_library_init(allocator);
     s_aws_sts_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 0);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_credentials_provider_static_options static_options = {
         .access_key_id = s_access_key_cur,
@@ -527,13 +505,15 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
+        .clock_fn = mock_aws_get_time,
     };
 
+    mock_aws_set_time(0);
     s_tester.mock_response_code = 529;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
@@ -548,11 +528,6 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
     aws_credentials_provider_release(static_provider);
     s_aws_sts_tester_cleanup();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
@@ -572,25 +547,11 @@ static const char *s_soure_profile_config_file = "[default]\n"
 static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_auth_library_init(allocator);
-
     aws_unset_environment_value(s_default_profile_env_variable_name);
     aws_unset_environment_value(s_default_config_path_env_variable_name);
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 0);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_config_file);
 
@@ -604,11 +565,9 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
         .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
     };
-
-    s_aws_sts_tester_init(allocator);
 
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
@@ -648,11 +607,6 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
 
     s_aws_sts_tester_cleanup();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
@@ -677,8 +631,6 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
     void *ctx) {
     (void)ctx;
 
-    aws_auth_library_init(allocator);
-
     aws_unset_environment_value(s_default_profile_env_variable_name);
     aws_unset_environment_value(s_default_config_path_env_variable_name);
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
@@ -687,18 +639,6 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
     aws_set_environment_value(s_secret_access_key_env_var, s_env_secret_access_key_val);
 
     s_aws_sts_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 0);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 10, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_env_source_config_file);
 
@@ -712,11 +652,9 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
         .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
     };
-
-    s_aws_sts_tester_init(allocator);
 
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
@@ -756,14 +694,103 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
 
     s_aws_sts_tester_cleanup();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_environment_succeeds,
     s_credentials_provider_sts_from_profile_config_environment_succeeds_fn)
+
+/*
+ * In this test, we set up a cached provider with a longer and out-of-sync refresh period than the sts
+ * provider that it wraps.  We verify that the cached provider factors in the shorter-lived sts credentials
+ * properly and refreshes when the credentials expire and not when the cache would expire.
+ */
+static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .clock_fn = mock_aws_get_time,
+    };
+
+    mock_aws_set_time(0);
+    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    struct aws_credentials_provider_cached_options cached_options = {
+        .clock_fn = mock_aws_get_time, .refresh_time_in_milliseconds = 1200 * 1000, .source = sts_provider};
+    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_NOT_NULL(s_tester.credentials);
+    ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
+    ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
+    ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
+    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
+
+    const char *expected_method = "POST";
+    ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
+
+    const char *expected_path = "/";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_path, strlen(expected_path), s_tester.request_path.buffer, s_tester.request_path.len);
+
+    ASSERT_TRUE(s_tester.had_auth_header);
+
+    const char *expected_host_header = "sts.amazonaws.com";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_host_header, strlen(expected_host_header), s_tester.host_header.buffer, s_tester.host_header.len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_payload.ptr, s_expected_payload.len, s_tester.request_body.buffer, s_tester.request_body.len);
+
+    /* advance time to a little before expiration, verify we get creds with the same expiration */
+    mock_aws_set_time(aws_timestamp_convert(800, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL));
+
+    s_cleanup_creds_callback_data();
+
+    aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
+
+    /* advance time to after expiration but before cached provider timeout, verify we get new creds */
+    mock_aws_set_time(aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL));
+
+    s_cleanup_creds_callback_data();
+
+    aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 1801);
+
+    aws_credentials_provider_release(cached_provider);
+    aws_credentials_provider_release(sts_provider);
+    aws_credentials_provider_release(static_provider);
+
+    s_aws_sts_tester_cleanup();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(credentials_provider_sts_cache_expiration_conflict, s_credentials_provider_sts_cache_expiration_conflict)
