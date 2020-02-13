@@ -20,6 +20,7 @@
 #include <aws/auth/signing.h>
 #include <aws/cal/hash.h>
 #include <aws/cal/hmac.h>
+#include <aws/common/bigint.h>
 #include <aws/common/date_time.h>
 #include <aws/common/encoding.h>
 #include <aws/common/string.h>
@@ -73,6 +74,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_body_streaming_aws4_hmac_sha256_events, "STREAM
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sha256_empty_string,
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_sigv4_algorithm, "AWS4-HMAC-SHA256");
+AWS_STATIC_STRING_FROM_LITERAL(s_sigv4a_algorithm, "AWS4-ECDSA-P256-SHA256");
 
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
@@ -1991,6 +1995,173 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
 cleanup:
     aws_byte_buf_clean_up(&uri_encoded_buf);
     aws_byte_buf_clean_up(&authorization_value);
+
+    return result;
+}
+
+#define SIGV4A_FIXED_INPUT_SIZE_OVERESTIMATE 256
+
+static int s_aws_init_fixed_input_buffer(
+    struct aws_byte_buf *fixed_input,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials) {
+
+    if (aws_byte_buf_init(fixed_input, allocator, SIGV4A_FIXED_INPUT_SIZE_OVERESTIMATE)) {
+        return AWS_OP_ERR;
+    }
+
+    /*
+     * A placeholder value that's not actually part of the fixed input string
+     *
+     * Later we hmac both (0 || FixedInput) and (1 || FixedInput).  By prepending this byte (and setting it to 1
+     * before the second hmac), we prevent some useless copying.
+     */
+    if (s_append_character_to_byte_buf(fixed_input, 0)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor sigv4a_algorithm_cursor = aws_byte_cursor_from_string(s_sigv4a_algorithm);
+    if (aws_byte_buf_append(fixed_input, &sigv4a_algorithm_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(fixed_input, 0)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_string(credentials->access_key_id);
+    if (aws_byte_buf_append(fixed_input, &access_key_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(fixed_input, 0x01)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(fixed_input, 0x40)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_aws_init_k_pair(
+    struct aws_byte_buf *k_pair,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials,
+    struct aws_byte_buf *fixed_input) {
+    if (aws_byte_buf_init(k_pair, allocator, AWS_SHA256_HMAC_LEN * 2)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor secret_cursor = aws_byte_cursor_from_string(credentials->secret_access_key);
+    struct aws_byte_cursor fixed_input_cursor = aws_byte_cursor_from_buf(fixed_input);
+
+    if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, k_pair, 0)) {
+        return AWS_OP_ERR;
+    }
+
+    /* Flip the first byte of the fixed input from 0 to 1.  Repeat. */
+    fixed_input->buffer[0] = 1;
+
+    if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, k_pair, 0)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+static const char *s_ecc_private_key_group_divisor =
+    "0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFE";
+
+static int s_aws_derive_ecc_private_key(
+    struct aws_bigint *private_key_value,
+    struct aws_allocator *allocator,
+    struct aws_byte_buf *k_pair) {
+    struct aws_byte_cursor c_cursor = aws_byte_cursor_from_buf(k_pair);
+    c_cursor.len = 40;
+
+    struct aws_bigint c;
+    if (aws_bigint_init_from_cursor(&c, allocator, c_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    int result = AWS_OP_ERR;
+    struct aws_bigint divisor;
+    AWS_ZERO_STRUCT(divisor);
+
+    struct aws_bigint remainder;
+    AWS_ZERO_STRUCT(remainder);
+
+    struct aws_bigint one;
+    AWS_ZERO_STRUCT(one);
+
+    if (aws_bigint_init_from_hex(&divisor, allocator, aws_byte_cursor_from_c_str(s_ecc_private_key_group_divisor))) {
+        goto done;
+    }
+
+    if (aws_bigint_init_from_uint64(&remainder, allocator, 0)) {
+        goto done;
+    }
+
+    if (aws_bigint_divide(NULL, &remainder, &c, &divisor)) {
+        goto done;
+    }
+
+    if (aws_bigint_init_from_uint64(&one, allocator, 1)) {
+        goto done;
+    }
+
+    if (aws_bigint_add(private_key_value, &remainder, &one)) {
+        goto done;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_bigint_clean_up(&c);
+    aws_bigint_clean_up(&divisor);
+    aws_bigint_clean_up(&remainder);
+    aws_bigint_clean_up(&one);
+
+    return result;
+}
+
+int aws_credentials_derive_sigv4a_ecc_key(struct aws_credentials *credentials, struct aws_byte_buf *output_buffer) {
+    struct aws_allocator *allocator = credentials->allocator;
+    if (credentials == NULL || output_buffer == NULL) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf fixed_input;
+    AWS_ZERO_STRUCT(fixed_input);
+    if (s_aws_init_fixed_input_buffer(&fixed_input, allocator, credentials)) {
+        goto done;
+    }
+
+    struct aws_byte_buf k_pair;
+    AWS_ZERO_STRUCT(k_pair);
+    if (s_aws_init_k_pair(&k_pair, allocator, credentials, &fixed_input)) {
+        goto done;
+    }
+
+    AWS_FATAL_ASSERT(k_pair.len == AWS_SHA256_HMAC_LEN * 2);
+
+    struct aws_bigint private_key_value;
+    AWS_ZERO_STRUCT(private_key_value);
+    if (s_aws_derive_ecc_private_key(&private_key_value, allocator, &k_pair)) {
+        goto done;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_byte_buf_clean_up(&k_pair);
+    aws_byte_buf_clean_up(&fixed_input);
 
     return result;
 }
