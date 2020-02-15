@@ -18,6 +18,7 @@
 #include <aws/auth/credentials.h>
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
+#include <aws/cal/ecc.h>
 #include <aws/cal/hash.h>
 #include <aws/cal/hmac.h>
 #include <aws/common/bigint.h>
@@ -2128,7 +2129,9 @@ done:
     return result;
 }
 
-int aws_credentials_derive_sigv4a_ecc_key(struct aws_credentials *credentials, struct aws_byte_buf *output_buffer) {
+int aws_credentials_derive_sigv4a_ecdsa_p256_key(
+    struct aws_credentials *credentials,
+    struct aws_byte_buf *output_buffer) {
     struct aws_allocator *allocator = credentials->allocator;
     if (credentials == NULL || output_buffer == NULL) {
         return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
@@ -2138,21 +2141,29 @@ int aws_credentials_derive_sigv4a_ecc_key(struct aws_credentials *credentials, s
 
     struct aws_byte_buf fixed_input;
     AWS_ZERO_STRUCT(fixed_input);
+
+    struct aws_byte_buf k_pair;
+    AWS_ZERO_STRUCT(k_pair);
+
+    struct aws_bigint private_key_value;
+    AWS_ZERO_STRUCT(private_key_value);
+
     if (s_aws_init_fixed_input_buffer(&fixed_input, allocator, credentials)) {
         goto done;
     }
 
-    struct aws_byte_buf k_pair;
-    AWS_ZERO_STRUCT(k_pair);
     if (s_aws_init_k_pair(&k_pair, allocator, credentials, &fixed_input)) {
         goto done;
     }
 
     AWS_FATAL_ASSERT(k_pair.len == AWS_SHA256_HMAC_LEN * 2);
 
-    struct aws_bigint private_key_value;
-    AWS_ZERO_STRUCT(private_key_value);
     if (s_aws_derive_ecc_private_key(&private_key_value, allocator, &k_pair)) {
+        goto done;
+    }
+
+    size_t key_length = aws_ecc_key_coordinate_byte_size_from_curve_name(AWS_CAL_ECDSA_P256);
+    if (aws_bigint_bytebuf_append_as_big_endian(&private_key_value, output_buffer, key_length)) {
         goto done;
     }
 
@@ -2160,6 +2171,7 @@ int aws_credentials_derive_sigv4a_ecc_key(struct aws_credentials *credentials, s
 
 done:
 
+    aws_bigint_clean_up(&private_key_value);
     aws_byte_buf_clean_up(&k_pair);
     aws_byte_buf_clean_up(&fixed_input);
 

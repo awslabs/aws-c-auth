@@ -472,13 +472,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
 /*
  * Takes a pair of AWS credentials and performs the sigv4a key expansion algorithm to generate a unique
- * ecc key pair based on the credentials.  The ecc key is written to the buffer in DER format.
+ * ecc P256 key pair based on the credentials.  The ecc key is written to the buffer in DER format.
  *
  * Sigv4a signing takes the raw DER-encoded ecc key as an optional parameter in signing (if not present,
  * key expansion will be done for the caller before signing).
  */
 AWS_AUTH_API
-int aws_credentials_derive_sigv4a_ecc_key(struct aws_credentials *credentials, struct aws_byte_buf *output_buffer);
+int aws_credentials_derive_sigv4a_ecdsa_p256_key(
+    struct aws_credentials *credentials,
+    struct aws_byte_buf *output_buffer);
 
 AWS_EXTERN_C_END
 
