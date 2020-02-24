@@ -2014,10 +2014,10 @@ static int s_aws_init_fixed_input_buffer(
     /*
      * A placeholder value that's not actually part of the fixed input string
      *
-     * Later we hmac both (0 || FixedInput) and (1 || FixedInput).  By prepending this byte (and setting it to 1
+     * Later we hmac both (1 || FixedInput) and (2 || FixedInput).  By prepending this byte (and setting it to 1
      * before the second hmac), we prevent some useless copying.
      */
-    if (s_append_character_to_byte_buf(fixed_input, 0)) {
+    if (s_append_character_to_byte_buf(fixed_input, 1)) {
         return AWS_OP_ERR;
     }
 
@@ -2062,8 +2062,8 @@ static int s_aws_init_k_pair(
         return AWS_OP_ERR;
     }
 
-    /* Flip the first byte of the fixed input from 0 to 1.  Repeat. */
-    fixed_input->buffer[0] = 1;
+    /* Flip the first byte of the fixed input from 1 to 2.  Repeat HMAC. */
+    fixed_input->buffer[0] = 2;
 
     if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, k_pair, 0)) {
         return AWS_OP_ERR;
