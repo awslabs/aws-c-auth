@@ -16,6 +16,7 @@
 #include <aws/testing/aws_test_harness.h>
 
 #include <aws/auth/credentials.h>
+#include <aws/cal/ecc.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/environment.h>
@@ -1072,3 +1073,21 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
 }
 
 AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_default_basic_test);
+
+static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials *creds = aws_credentials_new(
+        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value);
+
+    struct aws_ecc_key_pair *derived_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, creds);
+
+    ASSERT_TRUE(derived_key != NULL);
+
+    aws_ecc_key_pair_destroy(derived_key);
+    aws_credentials_destroy(creds);
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_derive_ecc_key_create_destroy, s_credentials_derive_ecc_key_create_destroy);

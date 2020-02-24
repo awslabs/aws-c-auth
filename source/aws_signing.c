@@ -2129,15 +2129,16 @@ done:
     return result;
 }
 
-int aws_credentials_derive_sigv4a_ecdsa_p256_key(
-    struct aws_credentials *credentials,
-    struct aws_byte_buf *output_buffer) {
-    struct aws_allocator *allocator = credentials->allocator;
-    if (credentials == NULL || output_buffer == NULL) {
-        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials) {
+
+    if (credentials == NULL) {
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
     }
 
-    int result = AWS_OP_ERR;
+    struct aws_ecc_key_pair *ecc_key_pair = NULL;
 
     struct aws_byte_buf fixed_input;
     AWS_ZERO_STRUCT(fixed_input);
@@ -2147,6 +2148,9 @@ int aws_credentials_derive_sigv4a_ecdsa_p256_key(
 
     struct aws_bigint private_key_value;
     AWS_ZERO_STRUCT(private_key_value);
+
+    struct aws_byte_buf private_key_buf;
+    AWS_ZERO_STRUCT(private_key_buf);
 
     if (s_aws_init_fixed_input_buffer(&fixed_input, allocator, credentials)) {
         goto done;
@@ -2158,22 +2162,32 @@ int aws_credentials_derive_sigv4a_ecdsa_p256_key(
 
     AWS_FATAL_ASSERT(k_pair.len == AWS_SHA256_HMAC_LEN * 2);
 
+    if (aws_bigint_init_from_uint64(&private_key_value, allocator, 0)) {
+        goto done;
+    }
+
     if (s_aws_derive_ecc_private_key(&private_key_value, allocator, &k_pair)) {
         goto done;
     }
 
     size_t key_length = aws_ecc_key_coordinate_byte_size_from_curve_name(AWS_CAL_ECDSA_P256);
-    if (aws_bigint_bytebuf_append_as_big_endian(&private_key_value, output_buffer, key_length)) {
+    if (aws_byte_buf_init(&private_key_buf, allocator, key_length)) {
         goto done;
     }
 
-    result = AWS_OP_SUCCESS;
+    if (aws_bigint_bytebuf_append_as_big_endian(&private_key_value, &private_key_buf, key_length)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor private_key_cursor = aws_byte_cursor_from_buf(&private_key_buf);
+    ecc_key_pair = aws_ecc_key_pair_new_from_private_key(allocator, AWS_CAL_ECDSA_P256, &private_key_cursor);
 
 done:
 
+    aws_byte_buf_clean_up(&private_key_buf);
     aws_bigint_clean_up(&private_key_value);
     aws_byte_buf_clean_up(&k_pair);
     aws_byte_buf_clean_up(&fixed_input);
 
-    return result;
+    return ecc_key_pair;
 }

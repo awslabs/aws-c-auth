@@ -204,6 +204,8 @@ add_test_case(sigv4_fail_signed_headers_param_test)
 add_test_case(signer_null_credentials_test)
 add_test_case(sigv4_chunked_signing_test)
 
+add_test_case(credentials_derive_ecc_key_create_destroy)
+
 set(TEST_BINARY_NAME ${PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 

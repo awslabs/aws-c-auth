@@ -478,9 +478,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
  * key expansion will be done for the caller before signing).
  */
 AWS_AUTH_API
-int aws_credentials_derive_sigv4a_ecdsa_p256_key(
-    struct aws_credentials *credentials,
-    struct aws_byte_buf *output_buffer);
+struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials);
 
 AWS_EXTERN_C_END
 
