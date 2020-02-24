@@ -222,6 +222,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     }
 
     providers[index] = imds_provider;
+
+    AWS_FATAL_ASSERT(index < AWS_ARRAY_SIZE(providers));
+
     struct aws_credentials_provider_chain_options chain_options;
     AWS_ZERO_STRUCT(chain_options);
     chain_options.provider_count = index;
