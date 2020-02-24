@@ -259,7 +259,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             return NULL;
         }
 
-        provider = aws_credentials_provider_new_sts_cached(allocator, &sts_options);
+        provider = aws_credentials_provider_new_sts(allocator, &sts_options);
 
         aws_credentials_provider_release(sts_options.creds_provider);
 
@@ -286,7 +286,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             }
 
             sts_options.creds_provider = imds_provider;
-            provider = aws_credentials_provider_new_sts_cached(allocator, &sts_options);
+            provider = aws_credentials_provider_new_sts(allocator, &sts_options);
 
             aws_credentials_provider_release(imds_provider);
 
@@ -302,7 +302,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             }
 
             sts_options.creds_provider = env_provider;
-            provider = aws_credentials_provider_new_sts_cached(allocator, &sts_options);
+            provider = aws_credentials_provider_new_sts(allocator, &sts_options);
 
             aws_credentials_provider_release(env_provider);
         } else {

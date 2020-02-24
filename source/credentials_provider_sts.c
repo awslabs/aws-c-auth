@@ -18,6 +18,7 @@
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
+#include <aws/common/clock.h>
 #include <aws/common/mutex.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
@@ -87,6 +88,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_credentials_provider_system_vtable *function_table;
     bool owns_ctx;
+    aws_io_clock_fn *clock_fn;
 };
 
 struct sts_creds_provider_user_data {
@@ -260,6 +262,15 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
         provider_user_data->credentials =
             aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
+
+        uint64_t now = UINT64_MAX;
+        if (provider_impl->clock_fn(&now) != AWS_OP_SUCCESS) {
+            goto finish;
+        }
+
+        uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
+        provider_user_data->credentials->expiration_timepoint_seconds = now_seconds + provider_impl->duration_seconds;
+
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(credentials=%p): parsing credentials",
@@ -623,6 +634,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         aws_string_c_str(impl->assume_role_profile));
 
     impl->duration_seconds = options->duration_seconds;
+
+    if (options->clock_fn != NULL) {
+        impl->clock_fn = options->clock_fn;
+    } else {
+        impl->clock_fn = aws_sys_clock_get_ticks;
+    }
 
     /* minimum for STS is 900 seconds*/
     if (impl->duration_seconds < aws_sts_assume_role_default_duration_secs) {

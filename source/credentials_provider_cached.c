@@ -30,6 +30,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 
 */
 
+#define REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS 30
+
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
@@ -72,14 +74,29 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
 
     aws_linked_list_swap_contents(&pending_queries, &impl->pending_queries);
 
+    uint64_t next_refresh_time_in_ns = UINT64_MAX;
+
     if (impl->refresh_interval_in_ns > 0) {
         uint64_t now = 0;
         if (!impl->clock_fn(&now)) {
-            impl->next_refresh_time = now + impl->refresh_interval_in_ns;
+            next_refresh_time_in_ns = now + impl->refresh_interval_in_ns;
         }
-    } else {
-        impl->next_refresh_time = UINT64_MAX;
     }
+
+    if (credentials && credentials->expiration_timepoint_seconds < UINT64_MAX) {
+        if (credentials->expiration_timepoint_seconds >= REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS) {
+            uint64_t early_refresh_time_ns = aws_timestamp_convert(
+                credentials->expiration_timepoint_seconds - REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS,
+                AWS_TIMESTAMP_SECS,
+                AWS_TIMESTAMP_NANOS,
+                NULL);
+            if (early_refresh_time_ns < next_refresh_time_in_ns) {
+                next_refresh_time_in_ns = early_refresh_time_ns;
+            }
+        }
+    }
+
+    impl->next_refresh_time = next_refresh_time_in_ns;
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -131,7 +148,7 @@ static int s_cached_credentials_provider_get_credentials_async(
 
     aws_mutex_lock(&impl->lock);
 
-    if (current_time < impl->next_refresh_time) {
+    if (impl->cached_credentials != NULL && current_time < impl->next_refresh_time) {
         perform_callback = true;
         credentials = aws_credentials_new_copy(provider->allocator, impl->cached_credentials);
     } else {
@@ -157,7 +174,7 @@ static int s_cached_credentials_provider_get_credentials_async(
         aws_credentials_provider_get_credentials(
             impl->source, s_cached_credentials_provider_get_credentials_async_callback, provider);
 
-    } else {
+    } else if (!perform_callback) {
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) Cached credentials provider has expired credentials.  Waiting on existing query.",
