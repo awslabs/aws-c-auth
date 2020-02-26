@@ -157,6 +157,35 @@ struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_system_vtable *function_table;
 };
 
+/*
+ * ECS creds provider can be used to access creds via either
+ * relative uri to a fixed endpoint http://169.254.170.2,
+ * or via a full uri specified by environment variables:
+ * AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+ * AWS_CONTAINER_CREDENTIALS_FULL_URI
+ * AWS_CONTAINER_AUTHORIZATION_TOKEN
+ * If both relative uri and absolute uri are set, relative uri
+ * has higher priority. Token is used in auth header but only for
+ * absolute uri.
+ * While above information is used in request only, endpoint info
+ * is needed when creating ecs provider to initiate the connection
+ * manager, more specifically, host and http scheme (tls or not)
+ * from endpoint are needed.
+ */
+struct aws_credentials_provider_ecs_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    struct aws_client_bootstrap *bootstrap;
+
+    struct aws_byte_cursor host;
+    struct aws_byte_cursor path_and_query;
+    struct aws_byte_cursor auth_token;
+    /* it is also used to deterine the port: 443 or 80 */
+    bool use_tls;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
+};
+
 struct aws_credentials_provider_sts_options {
     struct aws_client_bootstrap *bootstrap;
     struct aws_tls_ctx *tls_ctx;
@@ -303,6 +332,14 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_imds_options *options);
+
+/*
+ * A provider that sources credentials from the ecs role credentials service
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.

@@ -16,7 +16,9 @@
 #include <aws/auth/credentials.h>
 
 #include <aws/common/clock.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
+#include <aws/io/uri.h>
 
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
 
@@ -177,6 +179,11 @@ int aws_credentials_provider_get_credentials(
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
 
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_full_uri, "AWS_CONTAINER_CREDENTIALS_FULL_URI");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token, "AWS_CONTAINER_AUTHORIZATION_TOKEN");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_host, "169.254.170.2");
+AWS_STATIC_STRING_FROM_LITERAL(s_ec2_creds_env_disable, "AWS_EC2_METADATA_DISABLED");
 /*
  * Default provider chain implementation
  */
@@ -186,6 +193,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *ecs_provider = NULL;
     struct aws_credentials_provider *imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
@@ -199,8 +207,17 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
 
+    bool success = true;
+    struct aws_string *ecs_relative_uri = NULL;
+    aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &ecs_relative_uri);
+    struct aws_string *ecs_full_uri = NULL;
+    aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &ecs_full_uri);
+    struct aws_string *ec2_imds_disable = NULL;
+    aws_get_environment_value(allocator, s_ec2_creds_env_disable, &ec2_imds_disable);
+
     if (environment_provider == NULL) {
-        goto on_error;
+        success = false;
+        goto on_ret;
     }
 
     providers[index++] = environment_provider;
@@ -213,26 +230,70 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         providers[index++] = profile_provider;
     }
 
-    struct aws_credentials_provider_imds_options imds_options;
-    AWS_ZERO_STRUCT(imds_options);
-    imds_options.bootstrap = options->bootstrap;
-    imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
-    if (imds_provider == NULL) {
-        goto on_error;
-    }
+    if (ecs_relative_uri && ecs_relative_uri->len) {
+        struct aws_credentials_provider_ecs_options ecs_options;
+        AWS_ZERO_STRUCT(ecs_options);
+        ecs_options.bootstrap = options->bootstrap;
+        ecs_options.host = aws_byte_cursor_from_string(s_ecs_host);
+        ecs_options.path_and_query = aws_byte_cursor_from_string(ecs_relative_uri);
+        ecs_options.use_tls = false;
+        ecs_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
+        if (ecs_provider == NULL) {
+            success = false;
+            goto on_ret;
+        }
+        providers[index] = ecs_provider;
 
-    providers[index] = imds_provider;
+    } else if (ecs_full_uri && ecs_full_uri->len) {
+        struct aws_uri uri;
+        struct aws_byte_cursor uri_cstr = aws_byte_cursor_from_string(ecs_full_uri);
+        if (AWS_OP_ERR == aws_uri_init_parse(&uri, allocator, &uri_cstr)) {
+            success = false;
+            goto on_ret;
+        }
+
+        struct aws_string *ecs_token = NULL;
+        aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_token);
+        struct aws_credentials_provider_ecs_options ecs_options;
+        AWS_ZERO_STRUCT(ecs_options);
+        ecs_options.bootstrap = options->bootstrap;
+        ecs_options.host = uri.host_name;
+        ecs_options.path_and_query = uri.path_and_query;
+        ecs_options.use_tls = aws_byte_cursor_eq_c_str_ignore_case(&(uri.scheme), "HTTPS");
+        if (ecs_token->len) {
+            ecs_options.auth_token = aws_byte_cursor_from_string(ecs_token);
+        }
+        ecs_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
+        aws_string_destroy(ecs_token);
+        if (ecs_provider == NULL) {
+            success = false;
+            goto on_ret;
+        }
+        providers[index] = ecs_provider;
+
+    } else if (ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false")) {
+        struct aws_credentials_provider_imds_options imds_options;
+        AWS_ZERO_STRUCT(imds_options);
+        imds_options.bootstrap = options->bootstrap;
+        imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
+        if (imds_provider == NULL) {
+            success = false;
+            goto on_ret;
+        }
+        providers[index] = imds_provider;
+    }
 
     AWS_FATAL_ASSERT(index < AWS_ARRAY_SIZE(providers));
 
     struct aws_credentials_provider_chain_options chain_options;
     AWS_ZERO_STRUCT(chain_options);
-    chain_options.provider_count = index;
+    chain_options.provider_count = index + 1;
     chain_options.providers = providers;
 
     chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);
     if (chain_provider == NULL) {
-        goto on_error;
+        success = false;
+        goto on_ret;
     }
 
     /*
@@ -240,7 +301,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
-    aws_credentials_provider_release(imds_provider);
+    if (ecs_provider) {
+        aws_credentials_provider_release(ecs_provider);
+    } else if (imds_provider) {
+        aws_credentials_provider_release(imds_provider);
+    }
 
     struct aws_credentials_provider_cached_options cached_options;
     AWS_ZERO_STRUCT(cached_options);
@@ -251,7 +316,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
     if (cached_provider == NULL) {
-        goto on_error;
+        success = false;
+        goto on_ret;
     }
 
     /*
@@ -259,10 +325,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      */
     aws_credentials_provider_release(chain_provider);
 
-    return cached_provider;
+on_ret:
 
-on_error:
+    aws_string_destroy(ecs_full_uri);
+    aws_string_destroy(ecs_relative_uri);
+    aws_string_destroy(ec2_imds_disable);
 
+    if (success) {
+        return cached_provider;
+    }
     /*
      * Have to be a bit more careful than normal with this clean up pattern since the chain/cache will
      * recursively destroy the other providers via ref release.
