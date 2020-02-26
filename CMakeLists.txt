@@ -93,6 +93,8 @@ aws_add_sanitizers(${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION 1.0.0)
 set_target_properties(${PROJECT_NAME} PROPERTIES SOVERSION 0unstable)
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE -DCJSON_HIDE_SYMBOLS)
+
 if (BUILD_RELOCATABLE_BINARIES)
     target_compile_definitions(${PROJECT_NAME} PRIVATE "-DCOMPAT_MODE")
 endif()
