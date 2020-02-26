@@ -302,11 +302,11 @@ struct aws_signing_state_aws *aws_signing_state_new(
         aws_credentials_acquire(state->config.credentials);
     }
 
-    if (aws_byte_buf_init(&state->region_service_buffer, allocator, config->region.len + config->service.len)) {
+    if (aws_byte_buf_init(&state->region_service_buffer, allocator, config->region_config.len + config->service.len)) {
         goto on_error;
     }
 
-    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.region)) {
+    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.region_config)) {
         goto on_error;
     }
 
@@ -1419,7 +1419,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (aws_byte_buf_append_dynamic(dest, &config->region)) {
+    if (aws_byte_buf_append_dynamic(dest, &config->region_config)) {
         return AWS_OP_ERR;
     }
 
@@ -1732,7 +1732,7 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
 
     struct aws_byte_cursor chained_key_cursor = aws_byte_cursor_from_buf(&output);
     output.len = 0; /* necessary evil part 1*/
-    if (aws_sha256_hmac_compute(allocator, &chained_key_cursor, &config->region, &output, 0)) {
+    if (aws_sha256_hmac_compute(allocator, &chained_key_cursor, &config->region_config, &output, 0)) {
         goto cleanup;
     }
 
@@ -2014,7 +2014,7 @@ static int s_aws_init_fixed_input_buffer(
     /*
      * A placeholder value that's not actually part of the fixed input string
      *
-     * Later we hmac both (1 || FixedInput) and (2 || FixedInput).  By prepending this byte (and setting it to 1
+     * Later we hmac both (1 || FixedInput) and (2 || FixedInput).  By prepending this byte (and setting it to 2
      * before the second hmac), we prevent some useless copying.
      */
     if (s_append_character_to_byte_buf(fixed_input, 1)) {

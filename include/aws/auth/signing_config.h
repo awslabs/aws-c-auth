@@ -147,8 +147,10 @@ struct aws_signing_config_aws {
      */
     enum aws_signature_type signature_type;
 
-    /**
-     * The region to sign against
+    /*
+     * Region-related configuration
+     *   (1) If Sigv4, the region to sign against
+     *   (2) If Sigv4a, the value of the X-amzn-region-set header (added in signing)
      */
     struct aws_byte_cursor region;
 
@@ -198,31 +200,53 @@ struct aws_signing_config_aws {
      */
     enum aws_signed_body_header_type signed_body_header;
 
-    /*
-     * Signing key control:
-     *
-     *   (1) If "credentials" is valid, use it
-     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
-     *   (3) Else fail
-     *
-     */
-
-    /**
-     * AWS Credentials to sign with.
-     */
-    struct aws_credentials *credentials;
-
-    /**
-     * AWS credentials provider to fetch credentials from.
-     */
-    struct aws_credentials_provider *credentials_provider;
-
     /**
      * If non-zero and the signing transform is query param, then signing will add X-Amz-Expires to the query
      * string, equal to the value specified here.  If this value is zero or if header signing is being used then
      * this parameter has no effect.
      */
     uint64_t expiration_in_seconds;
+
+    /*
+     * Signing key control:
+     *
+     * If requested algorithm is sigv4:
+     *   (1) If "credentials" is valid, use it
+     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
+     *   (3) Else fail
+     *
+     * If requested algorithm is sigv4 asymmetric:
+     *   (1) If "ecc_signing_key" is valid, use it
+     *   (2) Else If "credentials" is valid, derive a signing key via
+     *       aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials() and use the result
+     *   (3) Else If "credentials_provider" is valid, query credentials from the provider, derive a signing key from
+     *       the result, and use the derived key
+     *   (4) Else fail
+     *
+     *   Note that any step that fails (other than "is something valid") causes the whole process to fail.  For example,
+     *   if credentials is valid (rule 2) but the key derivation procedure fails for some reason, we do *NOT* fall
+     * through to (3), we instead fail completely.
+     *
+     *   Key derivation is not cheap, and so users are encourage to cache derived ecc signing keys relative
+     *   to aws credential instances.
+     */
+
+    /*
+     * Ecc key to use as part of an asymmetric sigv4 signing process.
+     */
+    struct aws_ecc_key_pair *ecc_signing_key;
+
+    /*
+     * AWS Credentials to sign with.  If the signing algorithm is asymmetric sigv4, then the ecc key pair will be
+     * derived from the credentials.
+     */
+    struct aws_credentials *credentials;
+
+    /*
+     * AWS credentials provider to fetch credentials from.  If the signing algorithm is asymmetric sigv4, then the
+     * ecc key pair will be derived from the fetched credentials.
+     */
+    struct aws_credentials_provider *credentials_provider;
 };
 
 AWS_EXTERN_C_BEGIN
