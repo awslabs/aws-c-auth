@@ -572,6 +572,8 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
         0);
 
     aws_credentials_provider_release(cached_provider);
+    ASSERT_TRUE(aws_atomic_load_int(&(cached_provider->ref_count)) == 0);
+    ASSERT_TRUE(aws_atomic_load_int(&(mock_provider->ref_count)) == 0);
 
     s_aws_wait_for_provider_shutdown_callback();
 
