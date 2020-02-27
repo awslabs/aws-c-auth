@@ -1077,15 +1077,15 @@ AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_de
 static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials *creds = aws_credentials_new(
-        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value);
+    struct aws_credentials *creds = aws_credentials_new_from_string(
+        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value, UINT64_MAX);
 
     struct aws_ecc_key_pair *derived_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, creds);
 
     ASSERT_TRUE(derived_key != NULL);
 
-    aws_ecc_key_pair_destroy(derived_key);
-    aws_credentials_destroy(creds);
+    aws_ecc_key_pair_release(derived_key);
+    aws_credentials_release(creds);
 
     return 0;
 }

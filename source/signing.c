@@ -142,7 +142,17 @@ int aws_sign_request_aws(
     }
 
     bool can_sign_immediately = false;
-    if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
+    if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        if (signing_state->config.credentials != NULL && signing_state->config.ecc_signing_key == NULL) {
+            signing_state->config.ecc_signing_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+                signing_state->allocator, signing_state->config.credentials);
+            if (signing_state->config.ecc_signing_key == NULL) {
+                goto on_error;
+            }
+        }
+
+        can_sign_immediately = signing_state->config.ecc_signing_key != NULL;
+    } else if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
         can_sign_immediately = signing_state->config.credentials != NULL;
     }
 

@@ -64,6 +64,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires");
+AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_header_name, "x-amz-region-set");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
@@ -95,6 +96,7 @@ static struct aws_byte_cursor s_upgrade_header_name;
 static struct aws_byte_cursor s_amz_content_sha256_header_name;
 static struct aws_byte_cursor s_amz_date_header_name;
 static struct aws_byte_cursor s_authorization_header_name;
+static struct aws_byte_cursor s_region_set_header_name;
 
 static struct aws_byte_cursor s_amz_signature_param_name;
 static struct aws_byte_cursor s_amz_date_param_name;
@@ -182,6 +184,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_header_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_region_set_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     if (aws_hash_table_init(
             &s_forbidden_params,
             allocator,
@@ -252,6 +259,10 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
+            break;
+
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            *cursor = aws_byte_cursor_from_string(s_sigv4a_algorithm);
             break;
 
         default:
@@ -353,6 +364,7 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
     aws_signing_result_clean_up(&state->result);
 
     aws_credentials_provider_release(state->config.credentials_provider);
+    aws_ecc_key_pair_release(state->config.ecc_signing_key);
     aws_credentials_release(state->config.credentials);
 
     aws_byte_buf_clean_up(&state->region_service_buffer);
@@ -1103,6 +1115,22 @@ static int s_build_canonical_stable_header_list(
         *out_required_capacity += g_aws_signing_content_header_name->len + state->payload_hash.len;
     }
 
+    /*
+     * x-amz-region-set
+     */
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        struct stable_header region_set_header = {
+            .original_index = additional_header_index++,
+            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_region_set_header_name),
+                       .value = state->config.region_config}};
+
+        if (aws_array_list_push_back(stable_header_list, &region_set_header)) {
+            return AWS_OP_ERR;
+        }
+
+        *out_required_capacity += g_aws_signing_content_header_name->len + state->payload_hash.len;
+    }
+
     *out_required_capacity += aws_array_list_length(stable_header_list) * 2; /*  ':' + '\n' per header */
 
     return AWS_OP_SUCCESS;
@@ -1166,6 +1194,10 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
     if (session_token_cursor.len > 0) {
         total_sign_headers_count += 1; /* for X-Amz-Security-Token */
+    }
+
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        total_sign_headers_count += 1; /* for x-amz-region-set */
     }
 
     struct aws_array_list headers;
@@ -1422,12 +1454,14 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (aws_byte_buf_append_dynamic(dest, &config->region)) {
-        return AWS_OP_ERR;
-    }
+    if (config->algorithm != AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        if (aws_byte_buf_append_dynamic(dest, &config->region)) {
+            return AWS_OP_ERR;
+        }
 
-    if (s_append_character_to_byte_buf(dest, '/')) {
-        return AWS_OP_ERR;
+        if (s_append_character_to_byte_buf(dest, '/')) {
+            return AWS_OP_ERR;
+        }
     }
 
     if (aws_byte_buf_append_dynamic(dest, &config->service)) {
@@ -1803,12 +1837,58 @@ cleanup:
 }
 
 /*
+ * Appends a hex-encoding of the final signature value from the sigv4a signing process to a buffer
+ */
+static int s_append_sigv4a_signature_value(struct aws_signing_state_aws *state, struct aws_byte_buf *dest) {
+    struct aws_allocator *allocator = state->allocator;
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf sha256_digest;
+    AWS_ZERO_STRUCT(sha256_digest);
+    struct aws_byte_buf ecdsa_digest;
+    AWS_ZERO_STRUCT(ecdsa_digest);
+
+    if (aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN) ||
+        aws_byte_buf_init(&ecdsa_digest, allocator, aws_ecc_key_pair_signature_length(state->config.ecc_signing_key))) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor string_to_sign_cursor = aws_byte_cursor_from_buf(&state->string_to_sign);
+    if (aws_sha256_compute(allocator, &string_to_sign_cursor, &sha256_digest, 0)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor sha256_digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
+    if (aws_ecc_key_pair_sign_message(state->config.ecc_signing_key, &sha256_digest_cursor, &ecdsa_digest)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor ecdsa_digest_cursor = aws_byte_cursor_from_buf(&ecdsa_digest);
+    if (aws_hex_encode_append_dynamic(&ecdsa_digest_cursor, dest)) {
+        goto cleanup;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+
+    aws_byte_buf_clean_up(&sha256_digest);
+    aws_byte_buf_clean_up(&ecdsa_digest);
+
+    return result;
+}
+
+/*
  * Appends a final signature value to a buffer based on the requested signing algorithm
  */
 int s_calculate_signature_value(struct aws_signing_state_aws *state) {
     switch (state->config.algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
             return s_calculate_sigv4_signature_value(state);
+
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            return s_append_sigv4a_signature_value(state, dest);
 
         default:
             return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM);

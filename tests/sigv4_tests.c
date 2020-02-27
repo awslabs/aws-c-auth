@@ -408,6 +408,7 @@ static int s_do_sigv4_test_suite_test(
 
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
+    config.credentials = credentials;
 
     ASSERT_SUCCESS(
         s_initialize_test_from_file(&signable, &config, allocator, &test_contents, test_name, parent_folder));
@@ -662,8 +663,13 @@ static int s_do_header_skip_test(
 
     struct aws_signable *signable = NULL;
 
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
+    ASSERT_NOT_NULL(credentials);
+
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
+    config.credentials = credentials;
 
     struct aws_byte_cursor request_cursor = aws_byte_cursor_from_string(request_contents);
     struct aws_byte_cursor expected_canonical_request_cursor = aws_byte_cursor_from_string(expected_canonical_request);
@@ -806,8 +812,13 @@ static int s_do_forbidden_header_param_test(
 
     struct aws_signable *signable = NULL;
 
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
+    ASSERT_NOT_NULL(credentials);
+
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
+    config.credentials = credentials;
 
     struct aws_byte_cursor request_cursor = aws_byte_cursor_from_string(request_contents);
 
