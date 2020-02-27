@@ -30,7 +30,6 @@ struct aws_string;
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
 
 struct aws_credentials;
-
 struct aws_credentials_provider;
 
 typedef void(aws_on_get_credentials_callback_fn)(struct aws_credentials *credentials, int error_code, void *user_data);

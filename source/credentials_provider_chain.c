@@ -58,6 +58,14 @@ static void s_aws_provider_chain_member_callback(struct aws_credentials *credent
             error_code);
 
         goto on_terminate_chain;
+    } else {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Credentials provider chain callback %zu invoked with %s credentials and error code %d",
+            (void *)provider,
+            wrapped_user_data->current_provider_index + 1,
+            (credentials != NULL) ? "valid" : "invalid",
+            error_code);
     }
 
     AWS_LOGF_DEBUG(

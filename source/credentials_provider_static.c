@@ -35,7 +35,6 @@ static int s_static_credentials_provider_get_credentials_async(
 
 static void s_static_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials *credentials = provider->impl;
-
     aws_credentials_release(credentials);
     aws_credentials_provider_invoke_shutdown_callback(provider);
     aws_mem_release(provider->allocator, provider);

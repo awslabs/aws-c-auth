@@ -78,7 +78,7 @@ static int s_credentials_copy_test(struct aws_allocator *allocator, void *ctx) {
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_session_token_test_value);
     ASSERT_TRUE(aws_credentials_get_session_token(credentials).ptr != aws_credentials_get_session_token(source).ptr);
-
+    
     aws_credentials_release(credentials);
     aws_credentials_release(source);
 

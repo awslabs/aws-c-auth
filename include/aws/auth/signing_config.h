@@ -46,6 +46,7 @@ struct aws_signing_config_base {
  */
 enum aws_signing_algorithm {
     AWS_SIGNING_ALGORITHM_V4,
+    AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC,
 };
 
 /**
@@ -210,12 +211,12 @@ struct aws_signing_config_aws {
     /*
      * Signing key control:
      *
-     * If requested algorithm is sigv4:
+     * If requested version is sigv4:
      *   (1) If "credentials" is valid, use it
      *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
      *   (3) Else fail
      *
-     * If requested algorithm is sigv4 asymmetric:
+     * If requested version is sigv4 asymmetric:
      *   (1) If "ecc_signing_key" is valid, use it
      *   (2) Else If "credentials" is valid, derive a signing key via
      *       aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials() and use the result
@@ -225,7 +226,7 @@ struct aws_signing_config_aws {
      *
      *   Note that any step that fails (other than "is something valid") causes the whole process to fail.  For example,
      *   if credentials is valid (rule 2) but the key derivation procedure fails for some reason, we do *NOT* fall
-     * through to (3), we instead fail completely.
+     *   through to (3), we instead fail completely.
      *
      *   Key derivation is not cheap, and so users are encourage to cache derived ecc signing keys relative
      *   to aws credential instances.
@@ -256,6 +257,8 @@ const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm
 
 AWS_AUTH_API
 int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *config);
+
+AWS_AUTH_API
 
 AWS_EXTERN_C_END
 

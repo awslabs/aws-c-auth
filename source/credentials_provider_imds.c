@@ -189,6 +189,7 @@ void s_imds_user_data_release(struct imds_user_data *user_data) {
     if (user_data == NULL) {
         return;
     }
+
     size_t old_value = aws_atomic_fetch_sub(&user_data->ref_count, 1);
     if (old_value == 1) {
         s_imds_user_data_destroy(user_data);

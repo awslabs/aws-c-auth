@@ -85,7 +85,6 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE,
         "Attempt to sign a streaming item without supplying a previous signature"),
-
 };
 /* clang-format on */
 

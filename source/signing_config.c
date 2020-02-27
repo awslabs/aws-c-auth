@@ -20,6 +20,9 @@ const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm
         case AWS_SIGNING_ALGORITHM_V4:
             return "SigV4";
 
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            return "SigV4Asymmetric";
+
         default:
             break;
     }
@@ -81,6 +84,16 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
             }
             break;
 
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            if (config->credentials == NULL && config->credentials_provider == NULL &&
+                config->ecc_signing_key == NULL) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "(id=%p) Sigv4 asymmetric signing config is missing an ecc key, a credentials provider, or "
+                    "credentials",
+                    (void *)config);
+                return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+            }
         default:
             return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }

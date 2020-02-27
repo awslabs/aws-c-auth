@@ -293,6 +293,9 @@ struct aws_signing_state_aws *aws_signing_state_new(
 
     /* Make our own copy of the signing config */
     state->config = *config;
+    if (state->config.ecc_signing_key != NULL) {
+        aws_ecc_key_pair_acquire(state->config.ecc_signing_key);
+    }
 
     if (state->config.credentials_provider != NULL) {
         aws_credentials_provider_acquire(state->config.credentials_provider);
@@ -302,11 +305,11 @@ struct aws_signing_state_aws *aws_signing_state_new(
         aws_credentials_acquire(state->config.credentials);
     }
 
-    if (aws_byte_buf_init(&state->region_service_buffer, allocator, config->region_config.len + config->service.len)) {
+    if (aws_byte_buf_init(&state->region_service_buffer, allocator, config->region.len + config->service.len)) {
         goto on_error;
     }
 
-    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.region_config)) {
+    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.region)) {
         goto on_error;
     }
 
@@ -1419,7 +1422,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (aws_byte_buf_append_dynamic(dest, &config->region_config)) {
+    if (aws_byte_buf_append_dynamic(dest, &config->region)) {
         return AWS_OP_ERR;
     }
 
@@ -1596,7 +1599,6 @@ cleanup:
  * string-to-sign payload that replaces the hashed canonical request in those signing procedures.
  */
 int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
-
     if (aws_date_time_to_utc_time_str(&state->config.date, AWS_DATE_FORMAT_ISO_8601_BASIC, &state->date)) {
         return AWS_OP_ERR;
     }
@@ -1701,7 +1703,6 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
     AWS_ZERO_STRUCT(date_buf);
 
     struct aws_byte_cursor secret_access_key_cursor = aws_credentials_get_secret_access_key(state->config.credentials);
-
     if (aws_byte_buf_init(&secret_key, allocator, s_secret_key_prefix->len + secret_access_key_cursor.len) ||
         aws_byte_buf_init(&output, allocator, AWS_SHA256_LEN) ||
         aws_byte_buf_init(&date_buf, allocator, AWS_DATE_TIME_STR_MAX_LEN)) {
@@ -1732,7 +1733,7 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
 
     struct aws_byte_cursor chained_key_cursor = aws_byte_cursor_from_buf(&output);
     output.len = 0; /* necessary evil part 1*/
-    if (aws_sha256_hmac_compute(allocator, &chained_key_cursor, &config->region_config, &output, 0)) {
+    if (aws_sha256_hmac_compute(allocator, &chained_key_cursor, &config->region, &output, 0)) {
         goto cleanup;
     }
 
@@ -1955,7 +1956,6 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
         if (session_token_cursor.len > 0) {
             struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
-
             const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
 
             /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers
@@ -2030,7 +2030,7 @@ static int s_aws_init_fixed_input_buffer(
         return AWS_OP_ERR;
     }
 
-    struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_string(credentials->access_key_id);
+    struct aws_byte_cursor access_key_cursor = aws_credentials_get_access_key_id(credentials);
     if (aws_byte_buf_append(fixed_input, &access_key_cursor)) {
         return AWS_OP_ERR;
     }
@@ -2055,7 +2055,7 @@ static int s_aws_init_k_pair(
         return AWS_OP_ERR;
     }
 
-    struct aws_byte_cursor secret_cursor = aws_byte_cursor_from_string(credentials->secret_access_key);
+    struct aws_byte_cursor secret_cursor = aws_credentials_get_secret_access_key(credentials);
     struct aws_byte_cursor fixed_input_cursor = aws_byte_cursor_from_buf(fixed_input);
 
     if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, k_pair, 0)) {

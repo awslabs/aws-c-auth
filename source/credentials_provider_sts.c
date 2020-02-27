@@ -115,8 +115,8 @@ struct sts_creds_provider_user_data {
     struct aws_signing_config_aws signing_config;
     struct aws_http_message *message;
     struct aws_byte_buf output_buf;
-
     struct aws_retry_token *retry_token;
+
     int error_code;
     void *user_data;
 };
