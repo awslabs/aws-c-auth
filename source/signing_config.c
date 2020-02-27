@@ -94,6 +94,8 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
                     (void *)config);
                 return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
             }
+            break;
+
         default:
             return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }

@@ -1419,6 +1419,7 @@ static int s_append_credential_scope_terminator(enum aws_signing_algorithm algor
 
     switch (algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
             terminator_cursor = aws_byte_cursor_from_string(s_credential_scope_sigv4_terminator);
             break;
 
