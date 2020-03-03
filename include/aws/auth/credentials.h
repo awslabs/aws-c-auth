@@ -140,6 +140,8 @@ struct aws_credentials_provider_cached_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_credentials_provider *source;
     uint64_t refresh_time_in_milliseconds;
+
+    /* For mocking, leave NULL otherwise */
     aws_io_clock_fn *high_res_clock_fn;
     aws_io_clock_fn *system_clock_fn;
 };
