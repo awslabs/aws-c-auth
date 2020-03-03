@@ -140,7 +140,8 @@ struct aws_credentials_provider_cached_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_credentials_provider *source;
     uint64_t refresh_time_in_milliseconds;
-    aws_io_clock_fn *clock_fn;
+    aws_io_clock_fn *high_res_clock_fn;
+    aws_io_clock_fn *system_clock_fn;
 };
 
 struct aws_credentials_provider_chain_options {
@@ -168,7 +169,7 @@ struct aws_credentials_provider_sts_options {
 
     /* For mocking, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;
-    aws_io_clock_fn *clock_fn;
+    aws_io_clock_fn *system_clock_fn;
 };
 
 struct aws_credentials_provider_chain_default_options {

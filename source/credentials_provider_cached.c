@@ -30,7 +30,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 
 */
 
-#define REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS 30
+#define REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS 10
 
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
@@ -39,7 +39,8 @@ struct aws_credentials_provider_cached {
     struct aws_mutex lock;
     uint64_t refresh_interval_in_ns;
     uint64_t next_refresh_time;
-    aws_io_clock_fn *clock_fn;
+    aws_io_clock_fn *high_res_clock_fn;
+    aws_io_clock_fn *system_clock_fn;
     struct aws_linked_list pending_queries;
 };
 
@@ -76,22 +77,32 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
 
     uint64_t next_refresh_time_in_ns = UINT64_MAX;
 
-    if (impl->refresh_interval_in_ns > 0) {
-        uint64_t now = 0;
-        if (!impl->clock_fn(&now)) {
-            next_refresh_time_in_ns = now + impl->refresh_interval_in_ns;
+    uint64_t high_res_now = 0;
+    if (!impl->high_res_clock_fn(&high_res_now)) {
+        if (impl->refresh_interval_in_ns > 0) {
+            next_refresh_time_in_ns = high_res_now + impl->refresh_interval_in_ns;
         }
-    }
 
-    if (credentials && credentials->expiration_timepoint_seconds < UINT64_MAX) {
-        if (credentials->expiration_timepoint_seconds >= REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS) {
-            uint64_t early_refresh_time_ns = aws_timestamp_convert(
-                credentials->expiration_timepoint_seconds - REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS,
-                AWS_TIMESTAMP_SECS,
-                AWS_TIMESTAMP_NANOS,
-                NULL);
-            if (early_refresh_time_ns < next_refresh_time_in_ns) {
-                next_refresh_time_in_ns = early_refresh_time_ns;
+        if (credentials && credentials->expiration_timepoint_seconds < UINT64_MAX) {
+            uint64_t system_now = 0;
+            if (!impl->system_clock_fn(&system_now)) {
+
+                uint64_t system_now_seconds =
+                    aws_timestamp_convert(system_now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
+                if (credentials->expiration_timepoint_seconds >=
+                    system_now_seconds + REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS) {
+                    uint64_t early_refresh_time_ns = high_res_now;
+                    early_refresh_time_ns += aws_timestamp_convert(
+                        credentials->expiration_timepoint_seconds - system_now_seconds -
+                            REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS,
+                        AWS_TIMESTAMP_SECS,
+                        AWS_TIMESTAMP_NANOS,
+                        NULL);
+
+                    if (early_refresh_time_ns < next_refresh_time_in_ns) {
+                        next_refresh_time_in_ns = early_refresh_time_ns;
+                    }
+                }
             }
         }
     }
@@ -140,7 +151,7 @@ static int s_cached_credentials_provider_get_credentials_async(
     struct aws_credentials_provider_cached *impl = provider->impl;
 
     uint64_t current_time = 0;
-    impl->clock_fn(&current_time);
+    impl->high_res_clock_fn(&current_time);
 
     bool should_submit_query = false;
     bool perform_callback = false;
@@ -293,10 +304,16 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
         impl->refresh_interval_in_ns = 0;
     }
 
-    if (options->clock_fn != NULL) {
-        impl->clock_fn = options->clock_fn;
+    if (options->high_res_clock_fn != NULL) {
+        impl->high_res_clock_fn = options->high_res_clock_fn;
     } else {
-        impl->clock_fn = &aws_high_res_clock_get_ticks;
+        impl->high_res_clock_fn = &aws_high_res_clock_get_ticks;
+    }
+
+    if (options->system_clock_fn != NULL) {
+        impl->system_clock_fn = options->system_clock_fn;
+    } else {
+        impl->system_clock_fn = &aws_sys_clock_get_ticks;
     }
 
     /*
