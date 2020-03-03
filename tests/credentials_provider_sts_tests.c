@@ -334,10 +334,10 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
-        .clock_fn = mock_aws_get_time,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
-    mock_aws_set_time(0);
+    mock_aws_set_system_time(0);
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
 
@@ -404,10 +404,10 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
-        .clock_fn = mock_aws_get_time,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
-    mock_aws_set_time(0);
+    mock_aws_set_system_time(0);
     s_tester.mock_body = aws_byte_buf_from_c_str(malformed_creds_doc);
     s_tester.mock_response_code = 200;
 
@@ -465,10 +465,10 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
-        .clock_fn = mock_aws_get_time,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
-    mock_aws_set_time(0);
+    mock_aws_set_system_time(0);
 
     s_tester.fail_connection = true;
 
@@ -510,10 +510,10 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
-        .clock_fn = mock_aws_get_time,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
-    mock_aws_set_time(0);
+    mock_aws_set_system_time(0);
     s_tester.mock_response_code = 529;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
@@ -701,6 +701,8 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_environment_succeeds,
     s_credentials_provider_sts_from_profile_config_environment_succeeds_fn)
 
+#define HIGH_RES_BASE_TIME_NS 101000000000ULL
+
 /*
  * In this test, we set up a cached provider with a longer and out-of-sync refresh period than the sts
  * provider that it wraps.  We verify that the cached provider factors in the shorter-lived sts credentials
@@ -725,17 +727,23 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
         .function_table = &s_mock_function_table,
-        .clock_fn = mock_aws_get_time,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
-    mock_aws_set_time(0);
+    /* make sure high res time and system time are sufficiently diverged that a mistake in the
+     * respective calculations would fail the test */
+    mock_aws_set_system_time(0);
+    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS);
+
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
-    struct aws_credentials_provider_cached_options cached_options = {
-        .clock_fn = mock_aws_get_time, .refresh_time_in_milliseconds = 1200 * 1000, .source = sts_provider};
+    struct aws_credentials_provider_cached_options cached_options = {.system_clock_fn = mock_aws_get_system_time,
+                                                                     .high_res_clock_fn = mock_aws_get_high_res_time,
+                                                                     .refresh_time_in_milliseconds = 1200 * 1000,
+                                                                     .source = sts_provider};
     struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
 
     aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
@@ -764,8 +772,10 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_payload.ptr, s_expected_payload.len, s_tester.request_body.buffer, s_tester.request_body.len);
 
-    /* advance time to a little before expiration, verify we get creds with the same expiration */
-    mock_aws_set_time(aws_timestamp_convert(800, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL));
+    /* advance each time to a little before expiration, verify we get creds with the same expiration */
+    uint64_t eight_hundred_seconds_in_ns = aws_timestamp_convert(800, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    mock_aws_set_system_time(eight_hundred_seconds_in_ns);
+    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + eight_hundred_seconds_in_ns);
 
     s_cleanup_creds_callback_data();
 
@@ -774,8 +784,11 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     s_aws_wait_for_credentials_result();
     ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
 
-    /* advance time to after expiration but before cached provider timeout, verify we get new creds */
-    mock_aws_set_time(aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL));
+    /* advance each time to after expiration but before cached provider timeout, verify we get new creds */
+    uint64_t nine_hundred_and_one_seconds_in_ns =
+        aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    mock_aws_set_system_time(nine_hundred_and_one_seconds_in_ns);
+    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + nine_hundred_and_one_seconds_in_ns);
 
     s_cleanup_creds_callback_data();
 

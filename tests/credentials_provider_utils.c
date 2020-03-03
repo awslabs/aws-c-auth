@@ -386,28 +386,53 @@ on_query_list_init_failure:
 }
 
 /*
- * mock clock
+ * mock system clock
  */
 
-static struct aws_mutex clock_sync = AWS_MUTEX_INIT;
-static uint64_t clock_time = 0;
+static struct aws_mutex system_clock_sync = AWS_MUTEX_INIT;
+static uint64_t system_clock_time = 0;
 
-int mock_aws_get_time(uint64_t *current_time) {
-    aws_mutex_lock(&clock_sync);
+int mock_aws_get_system_time(uint64_t *current_time) {
+    aws_mutex_lock(&system_clock_sync);
 
-    *current_time = clock_time;
+    *current_time = system_clock_time;
 
-    aws_mutex_unlock(&clock_sync);
+    aws_mutex_unlock(&system_clock_sync);
 
     return AWS_OP_SUCCESS;
 }
 
-void mock_aws_set_time(uint64_t current_time) {
-    aws_mutex_lock(&clock_sync);
+void mock_aws_set_system_time(uint64_t current_time) {
+    aws_mutex_lock(&system_clock_sync);
 
-    clock_time = current_time;
+    system_clock_time = current_time;
 
-    aws_mutex_unlock(&clock_sync);
+    aws_mutex_unlock(&system_clock_sync);
+}
+
+/*
+ * mock high res clock
+ */
+
+static struct aws_mutex high_res_clock_sync = AWS_MUTEX_INIT;
+static uint64_t high_res_clock_time = 0;
+
+int mock_aws_get_high_res_time(uint64_t *current_time) {
+    aws_mutex_lock(&high_res_clock_sync);
+
+    *current_time = high_res_clock_time;
+
+    aws_mutex_unlock(&high_res_clock_sync);
+
+    return AWS_OP_SUCCESS;
+}
+
+void mock_aws_set_high_res_time(uint64_t current_time) {
+    aws_mutex_lock(&high_res_clock_sync);
+
+    high_res_clock_time = current_time;
+
+    aws_mutex_unlock(&high_res_clock_sync);
 }
 
 /*

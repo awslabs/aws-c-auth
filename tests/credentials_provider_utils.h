@@ -96,10 +96,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 /*
- * Simple global clock mock
+ * Simple global clock mocks
  */
-int mock_aws_get_time(uint64_t *current_time);
-void mock_aws_set_time(uint64_t current_time);
+int mock_aws_get_system_time(uint64_t *current_time);
+void mock_aws_set_system_time(uint64_t current_time);
+
+int mock_aws_get_high_res_time(uint64_t *current_time);
+void mock_aws_set_high_res_time(uint64_t current_time);
 
 /*
  * Credentials provider that always returns NULL.  Useful for chain tests.
