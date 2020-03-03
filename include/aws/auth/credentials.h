@@ -155,7 +155,8 @@ struct aws_credentials_provider_chain_options {
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
-
+    /* if not set, the default value means token required */
+    bool token_not_required;
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;
 };

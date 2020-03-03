@@ -91,7 +91,7 @@ static void s_aws_credentials_provider_ecs_user_data_destroy(struct aws_credenti
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
     }
-
+    aws_credentials_provider_release(user_data->ecs_provider);
     aws_mem_release(user_data->allocator, user_data);
 }
 
@@ -108,6 +108,7 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
 
     wrapped_user_data->allocator = ecs_provider->allocator;
     wrapped_user_data->ecs_provider = ecs_provider;
+    aws_credentials_provider_acquire(ecs_provider);
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
@@ -279,9 +280,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
     ecs_user_data->original_callback(credentials, ecs_user_data->original_user_data);
 
     /* clean up */
-    struct aws_credentials_provider *provider = ecs_user_data->ecs_provider;
     s_aws_credentials_provider_ecs_user_data_destroy(ecs_user_data);
-    aws_credentials_provider_release(provider);
     aws_credentials_destroy(credentials);
 }
 
@@ -515,8 +514,6 @@ static int s_credentials_provider_ecs_get_credentials_async(
     if (wrapped_user_data == NULL) {
         goto error;
     }
-
-    aws_credentials_provider_acquire(provider);
 
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_ecs_on_acquire_connection, wrapped_user_data);
