@@ -88,7 +88,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_credentials_provider_system_vtable *function_table;
     bool owns_ctx;
-    aws_io_clock_fn *clock_fn;
+    aws_io_clock_fn *system_clock_fn;
 };
 
 struct sts_creds_provider_user_data {
@@ -264,7 +264,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
             aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
 
         uint64_t now = UINT64_MAX;
-        if (provider_impl->clock_fn(&now) != AWS_OP_SUCCESS) {
+        if (provider_impl->system_clock_fn(&now) != AWS_OP_SUCCESS) {
             goto finish;
         }
 
@@ -635,10 +635,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     impl->duration_seconds = options->duration_seconds;
 
-    if (options->clock_fn != NULL) {
-        impl->clock_fn = options->clock_fn;
+    if (options->system_clock_fn != NULL) {
+        impl->system_clock_fn = options->system_clock_fn;
     } else {
-        impl->clock_fn = aws_sys_clock_get_ticks;
+        impl->system_clock_fn = aws_sys_clock_get_ticks;
     }
 
     /* minimum for STS is 900 seconds*/
