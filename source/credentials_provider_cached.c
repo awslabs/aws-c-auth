@@ -166,7 +166,7 @@ static int s_cached_credentials_provider_get_credentials_async(
         struct aws_credentials_query *query =
             aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_query));
         if (query != NULL) {
-            aws_credentials_query_init(query, provider, callback, user_data);
+            aws_credentials_query_init(query, callback, user_data);
             should_submit_query = aws_linked_list_empty(&impl->pending_queries);
             aws_linked_list_push_back(&impl->pending_queries, &query->node);
         } else {

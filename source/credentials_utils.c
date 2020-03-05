@@ -17,22 +17,15 @@
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
-    struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn *callback,
     void *user_data) {
     AWS_ZERO_STRUCT(*query);
-
-    query->provider = provider;
     query->user_data = user_data;
     query->callback = callback;
-
-    aws_credentials_provider_acquire(provider);
 }
 
 void aws_credentials_query_clean_up(struct aws_credentials_query *query) {
-    if (query != NULL) {
-        aws_credentials_provider_release(query->provider);
-    }
+    (void)query;
 }
 
 void aws_credentials_provider_init_base(

@@ -216,7 +216,7 @@ static int s_async_mock_credentials_provider_get_credentials_async(
     struct aws_credentials_query query;
     AWS_ZERO_STRUCT(query);
 
-    aws_credentials_query_init(&query, provider, callback, user_data);
+    aws_credentials_query_init(&query, callback, user_data);
 
     aws_array_list_push_back(&impl->queries, &query);
 
@@ -229,8 +229,6 @@ static void s_async_mock_credentials_provider_destroy(struct aws_credentials_pro
     struct aws_credentials_provider_mock_async_impl *impl =
         (struct aws_credentials_provider_mock_async_impl *)provider->impl;
 
-    aws_credentials_provider_invoke_shutdown_callback(provider);
-
     aws_mutex_lock(&impl->controller->sync);
     impl->controller->should_quit = true;
     aws_condition_variable_notify_one(&impl->controller->signal);
@@ -241,6 +239,8 @@ static void s_async_mock_credentials_provider_destroy(struct aws_credentials_pro
 
     aws_array_list_clean_up(&impl->queries);
     aws_array_list_clean_up(&impl->mock_results);
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
 
     aws_mem_release(provider->allocator, provider);
 }

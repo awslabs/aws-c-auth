@@ -84,7 +84,6 @@ AWS_EXTERN_C_BEGIN
 AWS_AUTH_API
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
-    struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn *callback,
     void *user_data);
 
