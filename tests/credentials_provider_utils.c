@@ -263,6 +263,10 @@ static void mock_async_background_thread_function(void *arg) {
     bool done = false;
     aws_mutex_lock(&impl->controller->sync);
 
+    /*
+     * We need to make all of our callbacks outside the lock, in order to avoid deadlock
+     * To make that easier, we keep this array list around and swap the callbacks we need to make into it
+     */
     struct aws_array_list temp_queries;
     AWS_FATAL_ASSERT(
         aws_array_list_init_dynamic(&temp_queries, impl->queries.alloc, 10, sizeof(struct aws_credentials_query)) ==
@@ -291,11 +295,16 @@ static void mock_async_background_thread_function(void *arg) {
                 AWS_FATAL_ASSERT(false);
             }
 
+            /*
+             * move the callbacks we need to complete into the temporary list so that we can
+             * safely use them outside the lock (we cannot safely use impl->queries outside the lock)
+             */
             aws_array_list_swap_contents(&temp_queries, &impl->queries);
             aws_array_list_clear(&impl->queries);
 
             aws_mutex_unlock(&impl->controller->sync);
 
+            /* make the callbacks, not holding the lock */
             for (size_t i = 0; i < callback_count; ++i) {
                 struct aws_credentials_query query;
                 AWS_ZERO_STRUCT(query);
@@ -309,6 +318,7 @@ static void mock_async_background_thread_function(void *arg) {
                 aws_credentials_query_clean_up(&query);
             }
 
+            /* relock and re-enter the loop (with immediate wait) or exit and clean up */
             aws_mutex_lock(&impl->controller->sync);
 
             impl->next_result++;
