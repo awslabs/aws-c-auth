@@ -119,13 +119,9 @@ static bool s_parse_by_character_predicate(
     struct aws_byte_cursor *parsed,
     size_t maximum_allowed) {
 
-    struct aws_byte_cursor result;
-    result.ptr = start->ptr;
-    result.len = 0;
-
     uint8_t *current_ptr = start->ptr;
     uint8_t *end_ptr = start->ptr + start->len;
-    if (maximum_allowed > 0 && maximum_allowed < result.len) {
+    if (maximum_allowed > 0 && maximum_allowed < start->len) {
         end_ptr = start->ptr + maximum_allowed;
     }
 
