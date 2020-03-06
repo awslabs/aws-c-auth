@@ -64,7 +64,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires");
-AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_header_name, "x-amz-region-set");
+AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_name, "X-Amz-Region-Set");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
@@ -184,7 +184,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    s_region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_header_name);
+    s_region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
     if (aws_hash_table_put(&s_forbidden_headers, &s_region_set_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
@@ -254,15 +254,15 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
     switch (state->config.signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
-            *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
+                *cursor = aws_byte_cursor_from_string(s_sigv4_algorithm);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_sigv4a_algorithm);
+            }
             break;
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
-            break;
-
-        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
-            *cursor = aws_byte_cursor_from_string(s_sigv4a_algorithm);
             break;
 
         default:
@@ -801,6 +801,18 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         }
     }
 
+    /* X-Amz-Region-Set */
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        struct aws_uri_param region_set_param = {
+            .key = aws_byte_cursor_from_string(g_aws_signing_region_set_name),
+            .value = state->config.region,
+        };
+
+        if (s_add_authorization_query_param_with_encoding(state, query_params, &region_set_param, &uri_encoded_value)) {
+            goto done;
+        }
+    }
+
     result = AWS_OP_SUCCESS;
 
 done:
@@ -1097,6 +1109,22 @@ static int s_build_canonical_stable_header_list(
         }
 
         *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
+
+        /*
+         * x-amz-region-set
+         */
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            struct stable_header region_set_header = {
+                .original_index = additional_header_index++,
+                .header = {.name = aws_byte_cursor_from_string(g_aws_signing_region_set_name),
+                           .value = state->config.region}};
+
+            if (aws_array_list_push_back(stable_header_list, &region_set_header)) {
+                return AWS_OP_ERR;
+            }
+
+            *out_required_capacity += g_aws_signing_region_set_name->len + state->config.region.len;
+        }
     }
 
     /*
@@ -1113,22 +1141,6 @@ static int s_build_canonical_stable_header_list(
         }
 
         *out_required_capacity += g_aws_signing_content_header_name->len + state->payload_hash.len;
-    }
-
-    /*
-     * x-amz-region-set
-     */
-    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        struct stable_header region_set_header = {
-            .original_index = additional_header_index++,
-            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_region_set_header_name),
-                       .value = state->config.region_config}};
-
-        if (aws_array_list_push_back(stable_header_list, &region_set_header)) {
-            return AWS_OP_ERR;
-        }
-
-        *out_required_capacity += g_aws_signing_region_set_header_name->len + state->config.region_config.len;
     }
 
     *out_required_capacity += aws_array_list_length(stable_header_list) * 2; /*  ':' + '\n' per header */
@@ -1795,7 +1807,7 @@ cleanup:
 }
 
 /*
- * Appends a hex-encoding of the final signature value from the sigv4 signing process to a buffer
+ * Calculates the hex-encoding of the final signature value from the sigv4 signing process
  */
 static int s_calculate_sigv4_signature_value(struct aws_signing_state_aws *state) {
     struct aws_allocator *allocator = state->allocator;
@@ -1838,9 +1850,9 @@ cleanup:
 }
 
 /*
- * Appends a hex-encoding of the final signature value from the sigv4a signing process to a buffer
+ * Calculates the hex-encoding of the final signature value from the sigv4a signing process
  */
-static int s_append_sigv4a_signature_value(struct aws_signing_state_aws *state, struct aws_byte_buf *dest) {
+static int s_calculate_sigv4a_signature_value(struct aws_signing_state_aws *state) {
     struct aws_allocator *allocator = state->allocator;
 
     int result = AWS_OP_ERR;
@@ -1867,7 +1879,7 @@ static int s_append_sigv4a_signature_value(struct aws_signing_state_aws *state, 
     }
 
     struct aws_byte_cursor ecdsa_digest_cursor = aws_byte_cursor_from_buf(&ecdsa_digest);
-    if (aws_hex_encode_append_dynamic(&ecdsa_digest_cursor, dest)) {
+    if (aws_hex_encode_append_dynamic(&ecdsa_digest_cursor, &state->signature)) {
         goto cleanup;
     }
 
@@ -1890,7 +1902,7 @@ int s_calculate_signature_value(struct aws_signing_state_aws *state) {
             return s_calculate_sigv4_signature_value(state);
 
         case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
-            return s_append_sigv4a_signature_value(state, dest);
+            return s_calculate_sigv4a_signature_value(state);
 
         default:
             return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM);
@@ -2067,13 +2079,12 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
 
     /* add x-amz-region-set header to the result if sigv4a */
     if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        struct aws_byte_cursor region_set_header_name =
-            aws_byte_cursor_from_string(g_aws_signing_region_set_header_name);
+        struct aws_byte_cursor region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
         if (aws_signing_result_append_property_list(
                 &state->result,
                 g_aws_http_headers_property_list_name,
                 &region_set_header_name,
-                &state->config.region_config)) {
+                &state->config.region)) {
             return AWS_OP_ERR;
         }
     }

@@ -38,10 +38,48 @@
 #include "test_signable.h"
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecc_key_filename, "key.pem");
-AWS_STATIC_STRING_FROM_LITERAL(s_canonical_request_filename, "canonical-request.txt");
-AWS_STATIC_STRING_FROM_LITERAL(s_string_to_sign_filename, "string-to-sign.txt");
+AWS_STATIC_STRING_FROM_LITERAL(s_header_canonical_request_filename, "header-canonical-request.txt");
+AWS_STATIC_STRING_FROM_LITERAL(s_header_string_to_sign_filename, "header-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_signed_request_filename, "header-signed-request.txt");
+AWS_STATIC_STRING_FROM_LITERAL(s_query_canonical_request_filename, "query-canonical-request.txt");
+AWS_STATIC_STRING_FROM_LITERAL(s_query_string_to_sign_filename, "query-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_query_signed_request_filename, "query-signed-request.txt");
+
+static const struct aws_string *s_get_canonical_request_filename(enum aws_signing_request_transform transform) {
+    switch (transform) {
+        case AWS_SRT_HEADER:
+            return s_header_canonical_request_filename;
+        case AWS_SRT_QUERY_PARAM:
+            return s_query_canonical_request_filename;
+
+        default:
+            return NULL;
+    }
+}
+
+static const struct aws_string *s_get_string_to_sign_filename(enum aws_signing_request_transform transform) {
+    switch (transform) {
+        case AWS_SRT_HEADER:
+            return s_header_string_to_sign_filename;
+        case AWS_SRT_QUERY_PARAM:
+            return s_query_string_to_sign_filename;
+
+        default:
+            return NULL;
+    }
+}
+
+static const struct aws_string *s_get_signed_request_filename(enum aws_signing_request_transform transform) {
+    switch (transform) {
+        case AWS_SRT_HEADER:
+            return s_header_signed_request_filename;
+        case AWS_SRT_QUERY_PARAM:
+            return s_query_signed_request_filename;
+
+        default:
+            return NULL;
+    }
+}
 
 struct v4a_test_case_contents {
     struct aws_allocator *allocator;
@@ -50,8 +88,7 @@ struct v4a_test_case_contents {
     struct aws_byte_buf key;
     struct aws_byte_buf expected_canonical_request;
     struct aws_byte_buf expected_string_to_sign;
-    struct aws_byte_buf sample_header_signed_request;
-    struct aws_byte_buf sample_query_signed_request;
+    struct aws_byte_buf sample_signed_request;
 };
 
 static int s_load_test_case_file(
@@ -70,6 +107,7 @@ static int s_v4a_test_case_context_init_from_file_set(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
+    enum aws_signing_request_transform transform,
     bool missing_optional_files_is_failure) {
 
     AWS_ZERO_STRUCT(*contents);
@@ -88,13 +126,13 @@ static int s_v4a_test_case_context_init_from_file_set(
             allocator,
             parent_folder,
             test_name,
-            aws_string_c_str(s_canonical_request_filename),
+            aws_string_c_str(s_get_canonical_request_filename(transform)),
             &contents->expected_canonical_request) ||
         s_load_test_case_file(
             allocator,
             parent_folder,
             test_name,
-            aws_string_c_str(s_string_to_sign_filename),
+            aws_string_c_str(s_get_string_to_sign_filename(transform)),
             &contents->expected_string_to_sign)) {
 
         if (missing_optional_files_is_failure) {
@@ -107,14 +145,8 @@ static int s_v4a_test_case_context_init_from_file_set(
         allocator,
         parent_folder,
         test_name,
-        aws_string_c_str(s_header_signed_request_filename),
-        &contents->sample_header_signed_request);
-    s_load_test_case_file(
-        allocator,
-        parent_folder,
-        test_name,
-        aws_string_c_str(s_query_signed_request_filename),
-        &contents->sample_query_signed_request);
+        aws_string_c_str(s_get_signed_request_filename(transform)),
+        &contents->sample_signed_request);
 
     return AWS_OP_SUCCESS;
 }
@@ -126,8 +158,7 @@ static void s_v4a_test_case_contents_clean_up(struct v4a_test_case_contents *con
         aws_byte_buf_clean_up(&contents->key);
         aws_byte_buf_clean_up(&contents->expected_canonical_request);
         aws_byte_buf_clean_up(&contents->expected_string_to_sign);
-        aws_byte_buf_clean_up(&contents->sample_header_signed_request);
-        aws_byte_buf_clean_up(&contents->sample_query_signed_request);
+        aws_byte_buf_clean_up(&contents->sample_signed_request);
 
         contents->allocator = NULL;
     }
@@ -398,14 +429,26 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
 
     context->signable = aws_signable_new_http_request(context->allocator, context->request);
 
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_array_list_clean_up(&request_lines);
+
+    return result;
+}
+
+static int s_v4a_test_context_init_signing_config(
+    struct v4a_test_context *context,
+    enum aws_signing_request_transform transform) {
     context->config = aws_mem_calloc(context->allocator, 1, sizeof(struct aws_signing_config_aws));
     if (context->config == NULL) {
-        goto done;
+        return AWS_OP_ERR;
     }
 
     context->config->config_type = AWS_SIGNING_CONFIG_AWS;
     context->config->algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
-    context->config->transform = AWS_SRT_HEADER;
+    context->config->transform = transform;
     context->config->region_config = aws_byte_cursor_from_string(context->region_config);
     context->config->service = aws_byte_cursor_from_string(context->service);
     context->config->use_double_uri_encode = true;
@@ -420,16 +463,10 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
 
     context->signing_state = aws_signing_state_new(context->allocator, context->config, context->signable, NULL, NULL);
     if (context->signing_state == NULL) {
-        goto done;
+        return AWS_OP_ERR;
     }
 
-    result = AWS_OP_SUCCESS;
-
-done:
-
-    aws_array_list_clean_up(&request_lines);
-
-    return result;
+    return AWS_OP_SUCCESS;
 }
 
 static int s_v4a_test_context_parse_key(struct v4a_test_context *context) {
@@ -484,7 +521,8 @@ static int s_v4a_test_context_init(
     struct v4a_test_context *context,
     struct aws_allocator *allocator,
     const char *parent_folder,
-    const char *test_name) {
+    const char *test_name,
+    enum aws_signing_request_transform transform) {
 
     AWS_ZERO_STRUCT(*context);
     context->allocator = allocator;
@@ -496,7 +534,12 @@ static int s_v4a_test_context_init(
     aws_string_destroy(should_generate);
 
     if (s_v4a_test_case_context_init_from_file_set(
-            &context->test_case_data, allocator, parent_folder, test_name, !context->should_generate_test_case)) {
+            &context->test_case_data,
+            allocator,
+            parent_folder,
+            test_name,
+            transform,
+            !context->should_generate_test_case)) {
         return AWS_OP_ERR;
     }
 
@@ -510,6 +553,10 @@ static int s_v4a_test_context_init(
     }
 
     if (s_v4a_test_context_parse_request_file(context)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_v4a_test_context_init_signing_config(context, transform)) {
         return AWS_OP_ERR;
     }
 
@@ -795,12 +842,18 @@ static int s_generate_test_case(
         /* 1b - generate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
         ASSERT_SUCCESS(s_write_test_file(
-            parent_folder, test_name, s_canonical_request_filename, &signing_state->canonical_request));
+            parent_folder,
+            test_name,
+            s_get_canonical_request_filename(test_context->config->transform),
+            &signing_state->canonical_request));
 
         /* 1c- generate string to sign */
         ASSERT_TRUE(aws_signing_build_string_to_sign(signing_state) == AWS_OP_SUCCESS);
-        ASSERT_SUCCESS(
-            s_write_test_file(parent_folder, test_name, s_string_to_sign_filename, &signing_state->string_to_sign));
+        ASSERT_SUCCESS(s_write_test_file(
+            parent_folder,
+            test_name,
+            s_get_string_to_sign_filename(test_context->config->transform),
+            &signing_state->string_to_sign));
     }
 
     return AWS_OP_SUCCESS;
@@ -854,11 +907,12 @@ static int s_check_test_case(struct v4a_test_context *test_context, const char *
 static int s_do_sigv4a_test_internal(
     struct aws_allocator *allocator,
     const char *parent_folder,
-    const char *test_name) {
+    const char *test_name,
+    enum aws_signing_request_transform transform) {
     struct v4a_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
 
-    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name));
+    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name, transform));
 
     if (test_context.should_generate_test_case) {
         ASSERT_SUCCESS(s_generate_test_case(&test_context, parent_folder, test_name));
@@ -928,15 +982,18 @@ static int s_check_signed_request(struct v4a_test_context *test_context, struct 
     return AWS_OP_SUCCESS;
 }
 
-static int s_do_sigv4a_test_header_signing(
+static int s_do_sigv4a_test_signing(
     struct aws_allocator *allocator,
     const char *parent_folder,
-    const char *test_name) {
+    const char *test_name,
+    enum aws_signing_request_transform transform) {
+
+    ASSERT_SUCCESS(s_do_sigv4a_test_internal(allocator, parent_folder, test_name, transform));
+
     struct v4a_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
 
-    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name));
-    test_context.config->transform = AWS_SRT_HEADER;
+    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name, transform));
 
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator, test_context.signable, (void *)test_context.config, s_on_signing_complete, &test_context));
@@ -944,38 +1001,10 @@ static int s_do_sigv4a_test_header_signing(
     s_wait_on_signing_complete(&test_context);
 
     if (test_context.should_generate_test_case) {
-        ASSERT_SUCCESS(
-            s_write_signed_request_to_file(&test_context, parent_folder, test_name, s_header_signed_request_filename));
+        ASSERT_SUCCESS(s_write_signed_request_to_file(
+            &test_context, parent_folder, test_name, s_get_signed_request_filename(transform)));
     } else {
-        ASSERT_SUCCESS(
-            s_check_signed_request(&test_context, &test_context.test_case_data.sample_header_signed_request));
-    }
-
-    s_v4a_test_context_clean_up(&test_context);
-
-    return AWS_OP_SUCCESS;
-}
-
-static int s_do_sigv4a_test_query_signing(
-    struct aws_allocator *allocator,
-    const char *parent_folder,
-    const char *test_name) {
-    struct v4a_test_context test_context;
-    AWS_ZERO_STRUCT(test_context);
-
-    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name));
-    test_context.config->transform = AWS_SRT_QUERY_PARAM;
-
-    ASSERT_SUCCESS(aws_sign_request_aws(
-        allocator, test_context.signable, (void *)test_context.config, s_on_signing_complete, &test_context));
-
-    s_wait_on_signing_complete(&test_context);
-
-    if (test_context.should_generate_test_case) {
-        ASSERT_SUCCESS(
-            s_write_signed_request_to_file(&test_context, parent_folder, test_name, s_query_signed_request_filename));
-    } else {
-        ASSERT_SUCCESS(s_check_signed_request(&test_context, &test_context.test_case_data.sample_query_signed_request));
+        ASSERT_SUCCESS(s_check_signed_request(&test_context, &test_context.test_case_data.sample_signed_request));
     }
 
     s_v4a_test_context_clean_up(&test_context);
@@ -988,9 +1017,8 @@ static int s_do_sigv4a_test_case(struct aws_allocator *allocator, const char *te
     /* Set up everything */
     aws_auth_library_init(allocator);
 
-    ASSERT_SUCCESS(s_do_sigv4a_test_internal(allocator, parent_folder, test_name));
-    ASSERT_SUCCESS(s_do_sigv4a_test_header_signing(allocator, parent_folder, test_name));
-    ASSERT_SUCCESS(s_do_sigv4a_test_query_signing(allocator, parent_folder, test_name));
+    ASSERT_SUCCESS(s_do_sigv4a_test_signing(allocator, parent_folder, test_name, AWS_SRT_HEADER));
+    ASSERT_SUCCESS(s_do_sigv4a_test_signing(allocator, parent_folder, test_name, AWS_SRT_QUERY_PARAM));
 
     aws_auth_library_clean_up();
 
