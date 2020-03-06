@@ -206,6 +206,8 @@ add_test_case(sigv4_chunked_signing_test)
 
 add_test_case(credentials_derive_ecc_key_create_destroy)
 
+add_test_case(sigv4a_get_vanilla_test)
+
 set(TEST_BINARY_NAME ${PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
@@ -213,6 +215,10 @@ generate_test_driver(${TEST_BINARY_NAME})
 add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/aws-sig-v4-test-suite ${CMAKE_CURRENT_BINARY_DIR})
+
+add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/aws-signing-test-suite ${CMAKE_CURRENT_BINARY_DIR})
 
 file(GLOB FUZZ_TESTS "fuzz/*.c")
 aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")

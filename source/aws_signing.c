@@ -1128,7 +1128,7 @@ static int s_build_canonical_stable_header_list(
             return AWS_OP_ERR;
         }
 
-        *out_required_capacity += g_aws_signing_content_header_name->len + state->payload_hash.len;
+        *out_required_capacity += g_aws_signing_region_set_header_name->len + state->config.region_config.len;
     }
 
     *out_required_capacity += aws_array_list_length(stable_header_list) * 2; /*  ':' + '\n' per header */
@@ -1845,13 +1845,14 @@ static int s_append_sigv4a_signature_value(struct aws_signing_state_aws *state, 
 
     int result = AWS_OP_ERR;
 
-    struct aws_byte_buf sha256_digest;
-    AWS_ZERO_STRUCT(sha256_digest);
     struct aws_byte_buf ecdsa_digest;
     AWS_ZERO_STRUCT(ecdsa_digest);
 
-    if (aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN) ||
-        aws_byte_buf_init(&ecdsa_digest, allocator, aws_ecc_key_pair_signature_length(state->config.ecc_signing_key))) {
+    struct aws_byte_buf sha256_digest;
+    AWS_ZERO_STRUCT(sha256_digest);
+
+    if (aws_byte_buf_init(&ecdsa_digest, allocator, aws_ecc_key_pair_signature_length(state->config.ecc_signing_key)) ||
+        aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN)) {
         goto cleanup;
     }
 
@@ -1874,8 +1875,8 @@ static int s_append_sigv4a_signature_value(struct aws_signing_state_aws *state, 
 
 cleanup:
 
-    aws_byte_buf_clean_up(&sha256_digest);
     aws_byte_buf_clean_up(&ecdsa_digest);
+    aws_byte_buf_clean_up(&sha256_digest);
 
     return result;
 }
@@ -2061,6 +2062,19 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
                     &state->result, property_list_name, &session_token_name, &session_token_cursor)) {
                 goto cleanup;
             }
+        }
+    }
+
+    /* add x-amz-region-set header to the result if sigv4a */
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        struct aws_byte_cursor region_set_header_name =
+            aws_byte_cursor_from_string(g_aws_signing_region_set_header_name);
+        if (aws_signing_result_append_property_list(
+                &state->result,
+                g_aws_http_headers_property_list_name,
+                &region_set_header_name,
+                &state->config.region_config)) {
+            return AWS_OP_ERR;
         }
     }
 

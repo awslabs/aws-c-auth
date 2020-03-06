@@ -287,7 +287,7 @@ static int s_initialize_test_from_cursor(
     return s_initialize_test_from_contents(signable, config, allocator, contents, skip_date_header);
 }
 
-struct aws_byte_cursor s_get_value_from_result(
+static struct aws_byte_cursor s_get_value_from_result(
     const struct aws_array_list *pair_list,
     const struct aws_byte_cursor *name) {
     struct aws_byte_cursor result;
