@@ -173,7 +173,6 @@ struct v4a_test_context {
     struct aws_string *timestamp;
     struct aws_credentials *credentials;
     struct aws_input_stream *payload_stream;
-    struct aws_array_list header_set;
     struct aws_ecc_key_pair *ecc_key;
 
     struct aws_signable *signable;
@@ -194,7 +193,6 @@ static void s_v4a_test_context_clean_up(struct v4a_test_context *context) {
     s_v4a_test_case_contents_clean_up(&context->test_case_data);
 
     aws_http_message_release(context->request);
-    aws_array_list_clean_up(&context->header_set);
     aws_input_stream_destroy(context->payload_stream);
     aws_ecc_key_pair_release(context->ecc_key);
 
@@ -306,21 +304,31 @@ done:
     return result;
 }
 
-static int s_v4a_test_context_parse_request_file(struct v4a_test_context *context) {
+static struct aws_http_message *s_v4a_test_context_parse_request(
+    struct v4a_test_context *context,
+    struct aws_byte_buf *request_buffer,
+    bool skip_date_header) {
     int result = AWS_OP_ERR;
 
     struct aws_array_list request_lines;
     AWS_ZERO_STRUCT(request_lines);
     if (aws_array_list_init_dynamic(&request_lines, context->allocator, 10, sizeof(struct aws_byte_cursor))) {
-        return AWS_OP_ERR;
+        return NULL;
     }
 
-    context->request = aws_http_message_new_request(context->allocator);
-    if (context->request == NULL) {
+    struct aws_array_list header_set;
+    AWS_ZERO_STRUCT(header_set);
+    if (aws_array_list_init_dynamic(
+            &header_set, context->allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
         goto done;
     }
 
-    struct aws_byte_cursor request_cursor = aws_byte_cursor_from_buf(&context->test_case_data.request);
+    struct aws_http_message *request = aws_http_message_new_request(context->allocator);
+    if (request == NULL) {
+        goto done;
+    }
+
+    struct aws_byte_cursor request_cursor = aws_byte_cursor_from_buf(request_buffer);
     if (aws_byte_cursor_split_on_char(&request_cursor, '\n', &request_lines)) {
         goto done;
     }
@@ -342,7 +350,7 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
         goto done;
     }
 
-    aws_http_message_set_request_method(context->request, method_cursor);
+    aws_http_message_set_request_method(request, method_cursor);
 
     aws_byte_cursor_advance(&first_line, method_cursor.len + 1);
 
@@ -350,7 +358,7 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
     struct aws_byte_cursor uri_cursor = first_line;
     uri_cursor.len -= 9;
 
-    aws_http_message_set_request_path(context->request, uri_cursor);
+    aws_http_message_set_request_path(request, uri_cursor);
 
     /* headers */
     size_t line_index = 1;
@@ -368,11 +376,11 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
 
         if (isspace(*current_line.ptr)) {
             /* multi-line header, append the entire line to the most recent header's value */
-            size_t current_header_count = aws_array_list_length(&context->header_set);
+            size_t current_header_count = aws_array_list_length(&header_set);
             AWS_FATAL_ASSERT(current_header_count > 0);
 
             struct aws_signable_property_list_pair *current_header;
-            if (aws_array_list_get_at_ptr(&context->header_set, (void **)&current_header, current_header_count - 1)) {
+            if (aws_array_list_get_at_ptr(&header_set, (void **)&current_header, current_header_count - 1)) {
                 goto done;
             }
 
@@ -389,23 +397,23 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
             current_header.value = current_line;
 
             struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(g_aws_signing_date_name);
-            if (!aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor)) {
-                aws_array_list_push_back(&context->header_set, &current_header);
+            if (!aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor) || !skip_date_header) {
+                aws_array_list_push_back(&header_set, &current_header);
             }
         }
     }
 
-    size_t header_count = aws_array_list_length(&context->header_set);
+    size_t header_count = aws_array_list_length(&header_set);
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_signable_property_list_pair property_header;
-        aws_array_list_get_at(&context->header_set, &property_header, i);
+        aws_array_list_get_at(&header_set, &property_header, i);
 
         struct aws_http_header header = {
             .name = property_header.name,
             .value = property_header.value,
         };
 
-        aws_http_message_add_header(context->request, header);
+        aws_http_message_add_header(request, header);
     }
 
     /* body */
@@ -424,23 +432,30 @@ static int s_v4a_test_context_parse_request_file(struct v4a_test_context *contex
             goto done;
         }
 
-        aws_http_message_set_body_stream(context->request, context->payload_stream);
+        aws_http_message_set_body_stream(request, context->payload_stream);
     }
-
-    context->signable = aws_signable_new_http_request(context->allocator, context->request);
 
     result = AWS_OP_SUCCESS;
 
 done:
 
     aws_array_list_clean_up(&request_lines);
+    aws_array_list_clean_up(&header_set);
 
-    return result;
+    if (result == AWS_OP_ERR) {
+        aws_http_message_release(request);
+        return NULL;
+    }
+
+    return request;
 }
 
 static int s_v4a_test_context_init_signing_config(
     struct v4a_test_context *context,
     enum aws_signing_request_transform transform) {
+
+    context->signable = aws_signable_new_http_request(context->allocator, context->request);
+
     context->config = aws_mem_calloc(context->allocator, 1, sizeof(struct aws_signing_config_aws));
     if (context->config == NULL) {
         return AWS_OP_ERR;
@@ -543,16 +558,12 @@ static int s_v4a_test_context_init(
         return AWS_OP_ERR;
     }
 
-    if (aws_array_list_init_dynamic(
-            &context->header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
-        return AWS_OP_ERR;
-    }
-
     if (s_v4a_test_context_parse_context_file(context)) {
         return AWS_OP_ERR;
     }
 
-    if (s_v4a_test_context_parse_request_file(context)) {
+    context->request = s_v4a_test_context_parse_request(context, &context->test_case_data.request, true);
+    if (context->request == NULL) {
         return AWS_OP_ERR;
     }
 
@@ -756,25 +767,10 @@ static int s_write_test_file(
     return AWS_OP_SUCCESS;
 }
 
-static int s_validate_authorization_value(struct v4a_test_context *test_context) {
-
-    struct aws_signing_state_aws *signing_state = test_context->signing_state;
-    struct aws_array_list *headers = NULL;
-    ASSERT_TRUE(
-        aws_signing_result_get_property_list(&signing_state->result, g_aws_http_headers_property_list_name, &headers) ==
-        AWS_OP_SUCCESS);
-
-    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
-    struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
-    ASSERT_TRUE(auth_header_value.len > 0);
-
-    struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
-    struct aws_byte_cursor signature_value_cursor;
-    AWS_ZERO_STRUCT(signature_value_cursor);
-    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&auth_header_value, &signature_key_cursor, &signature_value_cursor));
-    aws_byte_cursor_advance(&signature_value_cursor, signature_key_cursor.len);
-
-    ASSERT_TRUE(signature_value_cursor.len > 0);
+static int s_validate_authorization_value(
+    struct v4a_test_context *test_context,
+    struct aws_byte_cursor string_to_sign_cursor,
+    struct aws_byte_cursor signature_value_cursor) {
 
     size_t binary_length = 0;
     if (aws_hex_compute_decoded_len(signature_value_cursor.len, &binary_length)) {
@@ -798,7 +794,6 @@ static int s_validate_authorization_value(struct v4a_test_context *test_context)
         goto done;
     }
 
-    struct aws_byte_cursor string_to_sign_cursor = aws_byte_cursor_from_buf(&signing_state->string_to_sign);
     if (aws_sha256_compute(test_context->allocator, &string_to_sign_cursor, &sha256_digest, 0)) {
         goto done;
     }
@@ -816,6 +811,61 @@ done:
     aws_byte_buf_clean_up(&sha256_digest);
 
     return result;
+}
+
+static int s_validate_internal_header_authorization(struct v4a_test_context *test_context) {
+
+    struct aws_signing_state_aws *signing_state = test_context->signing_state;
+    struct aws_array_list *headers = NULL;
+    ASSERT_TRUE(
+        aws_signing_result_get_property_list(&signing_state->result, g_aws_http_headers_property_list_name, &headers) ==
+        AWS_OP_SUCCESS);
+
+    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
+    struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
+    ASSERT_TRUE(auth_header_value.len > 0);
+
+    struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
+    struct aws_byte_cursor signature_value_cursor;
+    AWS_ZERO_STRUCT(signature_value_cursor);
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&auth_header_value, &signature_key_cursor, &signature_value_cursor));
+    aws_byte_cursor_advance(&signature_value_cursor, signature_key_cursor.len);
+
+    ASSERT_TRUE(signature_value_cursor.len > 0);
+
+    return s_validate_authorization_value(
+        test_context, aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign), signature_value_cursor);
+}
+
+static int s_validate_internal_query_authorization(struct v4a_test_context *test_context) {
+
+    struct aws_signing_state_aws *signing_state = test_context->signing_state;
+    struct aws_array_list *params = NULL;
+    ASSERT_SUCCESS(aws_signing_result_get_property_list(
+        &signing_state->result, g_aws_http_query_params_property_list_name, &params));
+    ASSERT_NOT_NULL(params);
+
+    struct aws_byte_cursor auth_query_param_name =
+        aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
+
+    struct aws_byte_cursor signature_value_cursor = s_get_value_from_result(params, &auth_query_param_name);
+    ASSERT_TRUE(signature_value_cursor.len > 0); /* Is there are least something? */
+
+    return s_validate_authorization_value(
+        test_context, aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign), signature_value_cursor);
+}
+
+static int s_validate_internal_authorization(struct v4a_test_context *test_context) {
+    switch (test_context->config->transform) {
+        case AWS_SRT_HEADER:
+            return s_validate_internal_header_authorization(test_context);
+
+        case AWS_SRT_QUERY_PARAM:
+            return s_validate_internal_query_authorization(test_context);
+
+        default:
+            return AWS_OP_ERR;
+    }
 }
 
 static int s_generate_test_case(
@@ -898,7 +948,7 @@ static int s_check_test_case(struct v4a_test_context *test_context, const char *
 
         /* 1d - validate authorization value against itself */
         ASSERT_TRUE(aws_signing_build_authorization_value(signing_state) == AWS_OP_SUCCESS);
-        ASSERT_SUCCESS(s_validate_authorization_value(test_context));
+        ASSERT_SUCCESS(s_validate_internal_authorization(test_context));
     }
 
     return AWS_OP_SUCCESS;
@@ -908,7 +958,9 @@ static int s_do_sigv4a_test_internal(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
-    enum aws_signing_request_transform transform) {
+    enum aws_signing_request_transform transform,
+    struct aws_byte_buf *out_string_to_sign) {
+
     struct v4a_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
 
@@ -919,6 +971,10 @@ static int s_do_sigv4a_test_internal(
     } else {
         ASSERT_SUCCESS(s_check_test_case(&test_context, parent_folder, test_name));
     }
+
+    struct aws_byte_cursor string_to_sign_cursor =
+        aws_byte_cursor_from_buf(&test_context.signing_state->string_to_sign);
+    aws_byte_buf_append_dynamic(out_string_to_sign, &string_to_sign_cursor);
 
     s_v4a_test_context_clean_up(&test_context);
 
@@ -945,16 +1001,16 @@ static int s_write_signed_request_to_file(
     ASSERT_SUCCESS(aws_http_message_get_request_path(test_context->request, &path_cursor));
 
     fprintf(
-        fp, PRInSTR " " PRInSTR " HTTP/1.1\r\n", AWS_BYTE_CURSOR_PRI(method_cursor), AWS_BYTE_CURSOR_PRI(path_cursor));
+        fp, PRInSTR " " PRInSTR " HTTP/1.1\n", AWS_BYTE_CURSOR_PRI(method_cursor), AWS_BYTE_CURSOR_PRI(path_cursor));
     size_t header_count = aws_http_message_get_header_count(test_context->request);
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_http_header header;
         AWS_ZERO_STRUCT(header);
         ASSERT_SUCCESS(aws_http_message_get_header(test_context->request, &header, i));
-        fprintf(fp, PRInSTR ":" PRInSTR "\r\n", AWS_BYTE_CURSOR_PRI(header.name), AWS_BYTE_CURSOR_PRI(header.value));
+        fprintf(fp, PRInSTR ":" PRInSTR "\n", AWS_BYTE_CURSOR_PRI(header.name), AWS_BYTE_CURSOR_PRI(header.value));
     }
 
-    fprintf(fp, "\r\n");
+    fprintf(fp, "\n");
 
     if (test_context->payload_stream) {
         int64_t stream_length = 0;
@@ -975,9 +1031,257 @@ static int s_write_signed_request_to_file(
     return AWS_OP_SUCCESS;
 }
 
-static int s_check_signed_request(struct v4a_test_context *test_context, struct aws_byte_buf *expected_request) {
-    (void)test_context;
-    (void)expected_request;
+static int s_check_header_value(struct aws_http_message *request, struct aws_http_header *expected_header) {
+    size_t header_count = aws_http_message_get_header_count(request);
+    for (size_t i = 0; i < header_count; ++i) {
+        struct aws_http_header header;
+        AWS_ZERO_STRUCT(header);
+
+        ASSERT_SUCCESS(aws_http_message_get_header(request, &header, i));
+
+        if (aws_byte_cursor_eq_ignore_case(&header.name, &expected_header->name)) {
+            ASSERT_BIN_ARRAYS_EQUALS(
+                header.value.ptr, header.value.len, expected_header->value.ptr, expected_header->value.len);
+            return AWS_OP_SUCCESS;
+        }
+    }
+
+    return AWS_OP_ERR;
+}
+
+static int s_check_query_authorization(
+    struct v4a_test_context *test_context,
+    struct aws_byte_cursor signed_path,
+    struct aws_byte_cursor expected_path,
+    struct aws_byte_buf *string_to_sign) {
+
+    struct aws_uri signed_uri;
+    ASSERT_SUCCESS(aws_uri_init_parse(&signed_uri, test_context->allocator, &signed_path));
+
+    struct aws_uri expected_uri;
+    ASSERT_SUCCESS(aws_uri_init_parse(&expected_uri, test_context->allocator, &expected_path));
+
+    ASSERT_BIN_ARRAYS_EQUALS(signed_uri.path.ptr, signed_uri.path.len, expected_uri.path.ptr, expected_uri.path.len);
+
+    struct aws_array_list signed_params;
+    ASSERT_SUCCESS(
+        aws_array_list_init_dynamic(&signed_params, test_context->allocator, 10, sizeof(struct aws_uri_param)));
+    ASSERT_SUCCESS(aws_uri_query_string_params(&signed_uri, &signed_params));
+
+    struct aws_array_list expected_params;
+    ASSERT_SUCCESS(
+        aws_array_list_init_dynamic(&expected_params, test_context->allocator, 10, sizeof(struct aws_uri_param)));
+    ASSERT_SUCCESS(aws_uri_query_string_params(&expected_uri, &expected_params));
+
+    ASSERT_TRUE(aws_array_list_length(&signed_params) == aws_array_list_length(&expected_params));
+
+    struct aws_byte_cursor signature_cursor = aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
+
+    size_t signed_param_count = aws_array_list_length(&signed_params);
+    for (size_t i = 0; i < signed_param_count; ++i) {
+        struct aws_uri_param signed_param;
+        aws_array_list_get_at(&signed_params, &signed_param, i);
+
+        if (aws_byte_cursor_eq_ignore_case(&signed_param.key, &signature_cursor)) {
+            ASSERT_SUCCESS(s_validate_authorization_value(
+                test_context, aws_byte_cursor_from_buf(string_to_sign), signed_param.value));
+        } else {
+            bool found = false;
+            for (size_t j = 0; j < signed_param_count; ++j) {
+                struct aws_uri_param expected_param;
+                aws_array_list_get_at(&expected_params, &expected_param, j);
+                if (aws_byte_cursor_eq_ignore_case(&signed_param.key, &expected_param.key)) {
+                    ASSERT_TRUE(aws_byte_cursor_eq_ignore_case(&signed_param.value, &expected_param.value));
+                    found = true;
+                    break;
+                }
+            }
+
+            ASSERT_TRUE(found);
+        }
+    }
+
+    aws_uri_clean_up(&signed_uri);
+    aws_uri_clean_up(&expected_uri);
+    aws_array_list_clean_up(&signed_params);
+    aws_array_list_clean_up(&expected_params);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_get_authorization_pair(
+    const struct aws_byte_cursor *authorization_value,
+    const struct aws_byte_cursor name,
+    struct aws_byte_cursor value_end,
+    struct aws_byte_cursor *value_out) {
+    struct aws_byte_cursor value_start_cursor;
+    AWS_ZERO_STRUCT(value_start_cursor);
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(authorization_value, &name, &value_start_cursor));
+    aws_byte_cursor_advance(&value_start_cursor, name.len);
+
+    struct aws_byte_cursor value_end_cursor;
+    AWS_ZERO_STRUCT(value_end_cursor);
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&value_start_cursor, &value_end, &value_end_cursor));
+
+    *value_out = value_start_cursor;
+    value_out->len = value_end_cursor.ptr - value_start_cursor.ptr;
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_compare_authorization_pair(
+    const struct aws_byte_cursor *signed_value,
+    const struct aws_byte_cursor *expected_value,
+    const struct aws_byte_cursor name) {
+    struct aws_byte_cursor signed_pair_value;
+    AWS_ZERO_STRUCT(signed_pair_value);
+    ASSERT_SUCCESS(s_get_authorization_pair(signed_value, name, aws_byte_cursor_from_c_str(", "), &signed_pair_value));
+
+    struct aws_byte_cursor expected_pair_value;
+    AWS_ZERO_STRUCT(expected_pair_value);
+    ASSERT_SUCCESS(
+        s_get_authorization_pair(expected_value, name, aws_byte_cursor_from_c_str(", "), &expected_pair_value));
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        signed_pair_value.ptr, signed_pair_value.len, expected_pair_value.ptr, expected_pair_value.len);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_check_header_authorization(
+    struct v4a_test_context *test_context,
+    struct aws_http_header *header,
+    struct aws_http_message *expected_request,
+    struct aws_byte_buf *string_to_sign) {
+    struct aws_byte_cursor signed_authorization_value = header->value;
+
+    struct aws_byte_cursor expected_authorization_value;
+    AWS_ZERO_STRUCT(expected_authorization_value);
+
+    size_t expected_header_count = aws_http_message_get_header_count(expected_request);
+    for (size_t i = 0; i < expected_header_count; ++i) {
+        struct aws_http_header expected_header;
+        AWS_ZERO_STRUCT(expected_header);
+
+        if (aws_http_message_get_header(expected_request, &expected_header, i)) {
+            continue;
+        }
+
+        if (aws_byte_cursor_eq_c_str_ignore_case(&expected_header.name, "Authorization")) {
+            expected_authorization_value = expected_header.value;
+            break;
+        }
+    }
+
+    ASSERT_TRUE(expected_authorization_value.len > 0);
+
+    struct aws_byte_cursor space_cursor = aws_byte_cursor_from_c_str(" ");
+
+    struct aws_byte_cursor signed_space_cursor;
+    AWS_ZERO_STRUCT(signed_space_cursor);
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&signed_authorization_value, &space_cursor, &signed_space_cursor));
+    struct aws_byte_cursor signed_algorithm_cursor = {
+        .ptr = signed_authorization_value.ptr,
+        .len = signed_space_cursor.ptr - signed_authorization_value.ptr,
+    };
+
+    struct aws_byte_cursor expected_space_cursor;
+    AWS_ZERO_STRUCT(expected_space_cursor);
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&expected_authorization_value, &space_cursor, &expected_space_cursor));
+    struct aws_byte_cursor expected_algorithm_cursor = {
+        .ptr = expected_authorization_value.ptr,
+        .len = expected_space_cursor.ptr - expected_authorization_value.ptr,
+    };
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        signed_algorithm_cursor.ptr,
+        signed_algorithm_cursor.len,
+        expected_algorithm_cursor.ptr,
+        expected_algorithm_cursor.len);
+
+    ASSERT_SUCCESS(s_compare_authorization_pair(
+        &signed_authorization_value, &expected_authorization_value, aws_byte_cursor_from_c_str("Credential=")));
+    ASSERT_SUCCESS(s_compare_authorization_pair(
+        &signed_authorization_value, &expected_authorization_value, aws_byte_cursor_from_c_str("SignedHeaders=")));
+
+    struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
+
+    struct aws_byte_cursor signed_signature_value;
+    AWS_ZERO_STRUCT(signed_signature_value);
+    ASSERT_SUCCESS(
+        aws_byte_cursor_find_exact(&signed_authorization_value, &signature_key_cursor, &signed_signature_value));
+    aws_byte_cursor_advance(&signed_signature_value, signature_key_cursor.len);
+    ASSERT_SUCCESS(
+        s_validate_authorization_value(test_context, aws_byte_cursor_from_buf(string_to_sign), signed_signature_value));
+
+    struct aws_byte_cursor expected_signature_value;
+    AWS_ZERO_STRUCT(expected_signature_value);
+    ASSERT_SUCCESS(
+        aws_byte_cursor_find_exact(&expected_authorization_value, &signature_key_cursor, &expected_signature_value));
+    aws_byte_cursor_advance(&expected_signature_value, signature_key_cursor.len);
+    ASSERT_SUCCESS(s_validate_authorization_value(
+        test_context, aws_byte_cursor_from_buf(string_to_sign), expected_signature_value));
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_check_signed_request(
+    struct v4a_test_context *test_context,
+    struct aws_byte_buf *expected_request_buffer,
+    struct aws_byte_buf *string_to_sign) {
+
+    struct aws_http_message *expected_request =
+        s_v4a_test_context_parse_request(test_context, expected_request_buffer, false);
+    ASSERT_NOT_NULL(expected_request);
+
+    /* method */
+    struct aws_byte_cursor signed_method;
+    AWS_ZERO_STRUCT(signed_method);
+    aws_http_message_get_request_method(test_context->request, &signed_method);
+
+    struct aws_byte_cursor expected_method;
+    AWS_ZERO_STRUCT(expected_method);
+    aws_http_message_get_request_method(expected_request, &expected_method);
+
+    ASSERT_BIN_ARRAYS_EQUALS(expected_method.ptr, expected_method.len, signed_method.ptr, signed_method.len);
+
+    /* path + query string */
+    struct aws_byte_cursor signed_path;
+    AWS_ZERO_STRUCT(signed_path);
+    aws_http_message_get_request_path(test_context->request, &signed_path);
+
+    struct aws_byte_cursor expected_path;
+    AWS_ZERO_STRUCT(expected_path);
+    aws_http_message_get_request_path(expected_request, &expected_path);
+
+    if (test_context->config->transform == AWS_SRT_QUERY_PARAM) {
+        ASSERT_SUCCESS(s_check_query_authorization(test_context, signed_path, expected_path, string_to_sign));
+    } else {
+        ASSERT_BIN_ARRAYS_EQUALS(expected_path.ptr, expected_path.len, signed_path.ptr, signed_path.len);
+    }
+
+    /* headers */
+    size_t signed_header_count = aws_http_message_get_header_count(test_context->request);
+    size_t expected_header_count = aws_http_message_get_header_count(expected_request);
+    ASSERT_TRUE(signed_header_count == expected_header_count);
+
+    for (size_t i = 0; i < signed_header_count; ++i) {
+        struct aws_http_header header;
+        AWS_ZERO_STRUCT(header);
+
+        if (aws_http_message_get_header(test_context->request, &header, i)) {
+            continue;
+        }
+
+        if (test_context->config->transform == AWS_SRT_HEADER &&
+            aws_byte_cursor_eq_c_str_ignore_case(&header.name, "Authorization")) {
+            ASSERT_SUCCESS(s_check_header_authorization(test_context, &header, expected_request, string_to_sign));
+        } else {
+            ASSERT_SUCCESS(s_check_header_value(expected_request, &header));
+        }
+    }
+
+    aws_http_message_release(expected_request);
 
     return AWS_OP_SUCCESS;
 }
@@ -988,7 +1292,12 @@ static int s_do_sigv4a_test_signing(
     const char *test_name,
     enum aws_signing_request_transform transform) {
 
-    ASSERT_SUCCESS(s_do_sigv4a_test_internal(allocator, parent_folder, test_name, transform));
+    struct aws_byte_buf string_to_sign;
+    if (aws_byte_buf_init(&string_to_sign, allocator, 1024)) {
+        return AWS_OP_ERR;
+    }
+
+    ASSERT_SUCCESS(s_do_sigv4a_test_internal(allocator, parent_folder, test_name, transform, &string_to_sign));
 
     struct v4a_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
@@ -1004,10 +1313,13 @@ static int s_do_sigv4a_test_signing(
         ASSERT_SUCCESS(s_write_signed_request_to_file(
             &test_context, parent_folder, test_name, s_get_signed_request_filename(transform)));
     } else {
-        ASSERT_SUCCESS(s_check_signed_request(&test_context, &test_context.test_case_data.sample_signed_request));
+        ASSERT_SUCCESS(
+            s_check_signed_request(&test_context, &test_context.test_case_data.sample_signed_request, &string_to_sign));
     }
 
     s_v4a_test_context_clean_up(&test_context);
+
+    aws_byte_buf_clean_up(&string_to_sign);
 
     return AWS_OP_SUCCESS;
 }
