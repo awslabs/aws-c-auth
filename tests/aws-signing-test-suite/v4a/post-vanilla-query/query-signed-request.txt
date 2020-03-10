@@ -1,0 +1,5 @@
+POST /?Param1=value1&X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host&X-Amz-Region-Set=us-east-1&X-Amz-Signature=304502201c4209052f5721da13878ccc4eac72c061b51a7c5753ef29b4ac29537b4fe73b0221009596450085a18dc6d6d133da88659420118fea3eec3e0511b1454ed2fe90bfc8 HTTP/1.1
+Host:example.amazonaws.com
+X-Amz-Date:20150830T123600Z
+X-Amz-Region-Set:us-east-1
+

@@ -45,6 +45,17 @@ def parse_arguments():
 
     return args
 
+def merge_dicts(source, destination):
+    for key, value in source.items():
+        if isinstance(value, dict):
+            # get node or create one
+            node = destination.setdefault(key, {})
+            merge_dicts(value, node)
+        else:
+            destination[key] = value
+
+    return destination
+
 def generate_test_case(source_dir, dest_dir, test_name, context_map):    
     source_request_filename = os.path.join(source_dir, test_name + ".req")
     if not os.path.exists(source_request_filename):
@@ -57,7 +68,7 @@ def generate_test_case(source_dir, dest_dir, test_name, context_map):
     shutil.copyfile(source_request_filename, dest_request_filename)
 
     test_context = copy.deepcopy(base_context)
-    test_context.update(context_map)
+    test_context = merge_dicts(context_map, test_context)
 
     context_contents = json.dumps(test_context, sort_keys=True, indent=4)
 
@@ -76,12 +87,23 @@ unnormalized_context = {
     "normalize" : False
 }
 
-def generate_tests(source_dir, dest_dir, suffix, context_map):
-    normalized_dir = os.path.join(source_dir, "normalized-path")
+token_context = {
+    "normalize" : True,
+    "credentials" : {
+        "token" : "6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267"
+    }    
+}
+
+def generate_tests(source_dir, dest_dir, suffix, default_context_map):
     for root_dir, dir_names, file_names in os.walk( source_dir ):
         if root_dir == source_dir:
             for dir_name in dir_names:
                 test_case_source_dir = os.path.join(root_dir, dir_name)
+
+                context_map = default_context_map
+                if dir_name == "get-vanilla-with-session-token":
+                    context_map = token_context
+                    
                 v4_test_case_dest_dir = os.path.join(dest_dir, "v4", dir_name + suffix)
                 v4a_test_case_dest_dir = os.path.join(dest_dir, "v4a", dir_name + suffix)
 
@@ -106,6 +128,9 @@ def main():
     pdb.set_trace()
         
     generate_tests(source_dir, dest_dir, "", normalized_context)
+
+    post_sts_token_dir = os.path.join(source_dir, "post-sts-token")
+    generate_tests(post_sts_token_dir, dest_dir, "", normalized_context)
 
     normalize_dir = os.path.join(source_dir, "normalize-path")
     generate_tests(normalize_dir, dest_dir, "-normalized", normalized_context)

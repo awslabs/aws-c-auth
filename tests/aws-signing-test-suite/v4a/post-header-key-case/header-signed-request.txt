@@ -1,0 +1,7 @@
+POST / HTTP/1.1
+Host:example.amazonaws.com
+x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=304502210083f29f7d38b234c57551984da5810c5090fc5657212e96dbeb5d485ffe13856b02200fa02a97056d8a83e57b42478b7755713ddad5cd93bad0c6a1d0386ff073d77d
+X-Amz-Date:20150830T123600Z
+X-Amz-Region-Set:us-east-1
+

@@ -172,6 +172,7 @@ struct v4a_test_context {
     struct aws_string *service;
     struct aws_string *timestamp;
     struct aws_credentials *credentials;
+    bool should_normalize;
     struct aws_input_stream *payload_stream;
     struct aws_ecc_key_pair *ecc_key;
 
@@ -218,6 +219,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "token");
 AWS_STATIC_STRING_FROM_LITERAL(s_region_name, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_service_name, "service");
 AWS_STATIC_STRING_FROM_LITERAL(s_timestamp_name, "timestamp");
+AWS_STATIC_STRING_FROM_LITERAL(s_normalize_name, "normalize");
 
 static int s_v4a_test_context_parse_context_file(struct v4a_test_context *context) {
     struct aws_byte_buf *document = &context->test_case_data.context;
@@ -293,6 +295,13 @@ static int s_v4a_test_context_parse_context_file(struct v4a_test_context *contex
         goto done;
     }
 
+    cJSON *normalize_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_normalize_name));
+    if (normalize_node == NULL || !cJSON_IsBool(normalize_node)) {
+        goto done;
+    }
+
+    context->should_normalize = cJSON_IsTrue(normalize_node);
+
     result = AWS_OP_SUCCESS;
 
 done:
@@ -304,16 +313,21 @@ done:
     return result;
 }
 
-static struct aws_http_message *s_v4a_test_context_parse_request(
+static int s_v4a_test_context_parse_request(
     struct v4a_test_context *context,
     struct aws_byte_buf *request_buffer,
-    bool skip_date_header) {
+    bool skip_date_header,
+    struct aws_http_message **out_request,
+    struct aws_input_stream **out_body_stream) {
     int result = AWS_OP_ERR;
+
+    *out_request = NULL;
+    *out_body_stream = NULL;
 
     struct aws_array_list request_lines;
     AWS_ZERO_STRUCT(request_lines);
     if (aws_array_list_init_dynamic(&request_lines, context->allocator, 10, sizeof(struct aws_byte_cursor))) {
-        return NULL;
+        return AWS_OP_ERR;
     }
 
     struct aws_array_list header_set;
@@ -323,6 +337,7 @@ static struct aws_http_message *s_v4a_test_context_parse_request(
         goto done;
     }
 
+    struct aws_input_stream *body_stream = NULL;
     struct aws_http_message *request = aws_http_message_new_request(context->allocator);
     if (request == NULL) {
         goto done;
@@ -427,12 +442,12 @@ static struct aws_http_message *s_v4a_test_context_parse_request(
         /* body length is the end of the whole request (pointer) minus the start of the body pointer */
         body_cursor.len = (request_cursor.ptr + request_cursor.len - body_cursor.ptr);
 
-        context->payload_stream = aws_input_stream_new_from_cursor(context->allocator, &body_cursor);
-        if (context->payload_stream == NULL) {
+        body_stream = aws_input_stream_new_from_cursor(context->allocator, &body_cursor);
+        if (body_stream == NULL) {
             goto done;
         }
 
-        aws_http_message_set_body_stream(request, context->payload_stream);
+        aws_http_message_set_body_stream(request, body_stream);
     }
 
     result = AWS_OP_SUCCESS;
@@ -444,10 +459,13 @@ done:
 
     if (result == AWS_OP_ERR) {
         aws_http_message_release(request);
-        return NULL;
+        aws_input_stream_destroy(body_stream);
+    } else {
+        *out_request = request;
+        *out_body_stream = body_stream;
     }
 
-    return request;
+    return result;
 }
 
 static int s_v4a_test_context_init_signing_config(
@@ -467,7 +485,7 @@ static int s_v4a_test_context_init_signing_config(
     context->config->region_config = aws_byte_cursor_from_string(context->region_config);
     context->config->service = aws_byte_cursor_from_string(context->service);
     context->config->use_double_uri_encode = true;
-    context->config->should_normalize_uri_path = true;
+    context->config->should_normalize_uri_path = context->should_normalize;
     context->config->body_signing_type = AWS_BODY_SIGNING_OFF;
     context->config->credentials = context->credentials;
 
@@ -562,8 +580,8 @@ static int s_v4a_test_context_init(
         return AWS_OP_ERR;
     }
 
-    context->request = s_v4a_test_context_parse_request(context, &context->test_case_data.request, true);
-    if (context->request == NULL) {
+    if (s_v4a_test_context_parse_request(
+            context, &context->test_case_data.request, true, &context->request, &context->payload_stream)) {
         return AWS_OP_ERR;
     }
 
@@ -888,6 +906,7 @@ static int s_generate_test_case(
         }
 
         signing_state->config.ecc_signing_key = test_context->ecc_key;
+        aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
 
         /* 1b - generate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
@@ -929,6 +948,7 @@ static int s_check_test_case(struct v4a_test_context *test_context, const char *
         }
 
         signing_state->config.ecc_signing_key = test_context->ecc_key;
+        aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
 
         /* 1b -  validate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
@@ -1024,6 +1044,8 @@ static int s_write_signed_request_to_file(
         ASSERT_TRUE(stream_buf.len == (size_t)stream_length);
 
         fprintf(fp, PRInSTR, AWS_BYTE_BUF_PRI(stream_buf));
+
+        aws_byte_buf_clean_up(&stream_buf);
     }
 
     fclose(fp);
@@ -1040,13 +1062,14 @@ static int s_check_header_value(struct aws_http_message *request, struct aws_htt
         ASSERT_SUCCESS(aws_http_message_get_header(request, &header, i));
 
         if (aws_byte_cursor_eq_ignore_case(&header.name, &expected_header->name)) {
-            ASSERT_BIN_ARRAYS_EQUALS(
-                header.value.ptr, header.value.len, expected_header->value.ptr, expected_header->value.len);
-            return AWS_OP_SUCCESS;
+            if (aws_byte_cursor_eq(&header.value, &expected_header->value)) {
+                aws_http_message_erase_header(request, i);
+                return AWS_OP_SUCCESS;
+            }
         }
     }
 
-    return AWS_OP_ERR;
+    ASSERT_TRUE(false);
 }
 
 static int s_check_query_authorization(
@@ -1230,8 +1253,11 @@ static int s_check_signed_request(
     struct aws_byte_buf *expected_request_buffer,
     struct aws_byte_buf *string_to_sign) {
 
-    struct aws_http_message *expected_request =
-        s_v4a_test_context_parse_request(test_context, expected_request_buffer, false);
+    struct aws_http_message *expected_request = NULL;
+    struct aws_input_stream *body_stream = NULL;
+
+    ASSERT_SUCCESS(s_v4a_test_context_parse_request(
+        test_context, expected_request_buffer, false, &expected_request, &body_stream));
     ASSERT_NOT_NULL(expected_request);
 
     /* method */
@@ -1282,6 +1308,7 @@ static int s_check_signed_request(
     }
 
     aws_http_message_release(expected_request);
+    aws_input_stream_destroy(body_stream);
 
     return AWS_OP_SUCCESS;
 }
@@ -1344,4 +1371,42 @@ static int s_do_sigv4a_test_case(struct aws_allocator *allocator, const char *te
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4a_##test_name##_test, s_sigv4a_##test_name##_test);
 
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_header_key_duplicate, "get-header-key-duplicate");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_header_value_multiline, "get-header-value-multiline");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_header_value_order, "get-header-value-order");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_header_value_trim, "get-header-value-trim");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_unreserved, "get-unreserved");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_utf8, "get-utf8");
 DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla, "get-vanilla");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_empty_query_key, "get-vanilla-empty-query-key");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_query, "get-vanilla-query");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_query_order_key_case, "get-vanilla-query-order-key-case");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_unreserved, "get-vanilla-query-unreserved");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_utf8_query, "get-vanilla-utf8-query");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_header_key_case, "post-header-key-case");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_header_key_sort, "post-header-key-sort");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_header_value_case, "post-header-value-case");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_vanilla, "post-vanilla");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_vanilla_empty_query_value, "post-vanilla-empty-query-value");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_vanilla_query, "post-vanilla-query");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_x_www_form_urlencoded, "post-x-www-form-urlencoded");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www-form-urlencoded-parameters");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_with_session_token, "get-vanilla-with-session-token");
+
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_sts_header_after, "post-sts-header-after");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_sts_header_before, "post-sts-header-before");
+
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_relative_normalized, "get-relative-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_relative_unnormalized, "get-relative-unnormalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_relative_relative_normalized, "get-relative-relative-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_relative_relative_unnormalized, "get-relative-relative-unnormalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slash_normalized, "get-slash-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slash_unnormalized, "get-slash-unnormalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slash_dot_slash_normalized, "get-slash-dot-slash-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slash_dot_slash_unnormalized, "get-slash-dot-slash-unnormalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slash_pointless_dot_normalized, "get-slash-pointless-dot-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slash_pointless_dot_unnormalized, "get-slash-pointless-dot-unnormalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slashes_normalized, "get-slashes-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_slashes_unnormalized, "get-slashes-unnormalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_space_normalized, "get-space-normalized");
+DECLARE_SIGV4A_TEST_SUITE_CASE(get_space_unnormalized, "get-space-unnormalized");
