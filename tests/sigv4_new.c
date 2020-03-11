@@ -121,7 +121,7 @@ static int s_v4_test_case_context_init_from_file_set(
 
     if (algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
         s_load_test_case_file(
-                allocator, parent_folder, test_name, aws_string_c_str(s_ecc_key_filename), &contents->key);
+            allocator, parent_folder, test_name, aws_string_c_str(s_ecc_key_filename), &contents->key);
     }
 
     s_load_test_case_file(
@@ -314,7 +314,6 @@ done:
 static int s_v4_test_context_parse_request(
     struct v4_test_context *context,
     struct aws_byte_buf *request_buffer,
-    bool skip_date_header,
     struct aws_http_message **out_request,
     struct aws_input_stream **out_body_stream) {
     int result = AWS_OP_ERR;
@@ -409,10 +408,7 @@ static int s_v4_test_context_parse_request(
             aws_byte_cursor_advance(&current_line, current_header.name.len + 1);
             current_header.value = current_line;
 
-            struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(g_aws_signing_date_name);
-            if (!aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor) || !skip_date_header) {
-                aws_array_list_push_back(&header_set, &current_header);
-            }
+            aws_array_list_push_back(&header_set, &current_header);
         }
     }
 
@@ -567,12 +563,7 @@ static int s_v4_test_context_init(
     aws_string_destroy(should_generate);
 
     if (s_v4_test_case_context_init_from_file_set(
-            &context->test_case_data,
-            allocator,
-            parent_folder,
-            test_name,
-            algorithm,
-            transform)) {
+            &context->test_case_data, allocator, parent_folder, test_name, algorithm, transform)) {
         return AWS_OP_ERR;
     }
 
@@ -581,7 +572,7 @@ static int s_v4_test_context_init(
     }
 
     if (s_v4_test_context_parse_request(
-            context, &context->test_case_data.request, true, &context->request, &context->payload_stream)) {
+            context, &context->test_case_data.request, &context->request, &context->payload_stream)) {
         return AWS_OP_ERR;
     }
 
@@ -785,7 +776,7 @@ static int s_write_test_file(
     return AWS_OP_SUCCESS;
 }
 
-static int s_validate_authorization_value(
+static int s_validate_v4a_authorization_value(
     struct v4_test_context *test_context,
     struct aws_byte_cursor string_to_sign_cursor,
     struct aws_byte_cursor signature_value_cursor) {
@@ -818,8 +809,8 @@ static int s_validate_authorization_value(
 
     struct aws_byte_cursor binary_signature_cursor =
         aws_byte_cursor_from_array(binary_signature.buffer, binary_signature.len);
-    struct aws_byte_cursor message_cursor = aws_byte_cursor_from_buf(&sha256_digest);
-    ASSERT_SUCCESS(aws_ecc_key_pair_verify_signature(test_context->ecc_key, &message_cursor, &binary_signature_cursor));
+    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
+    ASSERT_SUCCESS(aws_ecc_key_pair_verify_signature(test_context->ecc_key, &digest_cursor, &binary_signature_cursor));
 
     result = AWS_OP_SUCCESS;
 
@@ -831,7 +822,7 @@ done:
     return result;
 }
 
-static int s_validate_internal_header_authorization(struct v4_test_context *test_context) {
+static int s_validate_piecewise_header_authorization(struct v4_test_context *test_context) {
 
     struct aws_signing_state_aws *signing_state = test_context->signing_state;
     struct aws_array_list *headers = NULL;
@@ -843,19 +834,50 @@ static int s_validate_internal_header_authorization(struct v4_test_context *test
     struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
     ASSERT_TRUE(auth_header_value.len > 0);
 
-    struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
-    struct aws_byte_cursor signature_value_cursor;
-    AWS_ZERO_STRUCT(signature_value_cursor);
-    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&auth_header_value, &signature_key_cursor, &signature_value_cursor));
-    aws_byte_cursor_advance(&signature_value_cursor, signature_key_cursor.len);
+    if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
+        struct aws_byte_cursor signature_value_cursor;
+        AWS_ZERO_STRUCT(signature_value_cursor);
+        ASSERT_SUCCESS(aws_byte_cursor_find_exact(&auth_header_value, &signature_key_cursor, &signature_value_cursor));
+        aws_byte_cursor_advance(&signature_value_cursor, signature_key_cursor.len);
 
-    ASSERT_TRUE(signature_value_cursor.len > 0);
+        ASSERT_TRUE(signature_value_cursor.len > 0);
 
-    return s_validate_authorization_value(
-        test_context, aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign), signature_value_cursor);
+        ASSERT_SUCCESS(s_validate_v4a_authorization_value(
+            test_context,
+            aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign),
+            signature_value_cursor));
+    } else {
+        struct aws_http_message *message = NULL;
+        struct aws_input_stream *body_stream = NULL;
+        bool found = false;
+
+        ASSERT_SUCCESS(s_v4_test_context_parse_request(
+            test_context, &test_context->test_case_data.sample_signed_request, &message, &body_stream));
+        size_t header_count = aws_http_message_get_header_count(message);
+        for (size_t i = 0; i < header_count; ++i) {
+            struct aws_http_header header;
+            AWS_ZERO_STRUCT(header);
+
+            ASSERT_SUCCESS(aws_http_message_get_header(message, &header, i));
+            if (aws_byte_cursor_eq(&header.name, &auth_header_name)) {
+                ASSERT_BIN_ARRAYS_EQUALS(
+                    header.value.ptr, header.value.len, auth_header_value.ptr, auth_header_value.len);
+                found = true;
+                break;
+            }
+        }
+
+        ASSERT_TRUE(found);
+
+        aws_http_message_release(message);
+        aws_input_stream_destroy(body_stream);
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
-static int s_validate_internal_query_authorization(struct v4_test_context *test_context) {
+static int s_validate_piecewise_query_authorization(struct v4_test_context *test_context) {
 
     struct aws_signing_state_aws *signing_state = test_context->signing_state;
     struct aws_array_list *params = NULL;
@@ -869,17 +891,67 @@ static int s_validate_internal_query_authorization(struct v4_test_context *test_
     struct aws_byte_cursor signature_value_cursor = s_get_value_from_result(params, &auth_query_param_name);
     ASSERT_TRUE(signature_value_cursor.len > 0); /* Is there are least something? */
 
-    return s_validate_authorization_value(
-        test_context, aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign), signature_value_cursor);
+    if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        ASSERT_SUCCESS(s_validate_v4a_authorization_value(
+            test_context,
+            aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign),
+            signature_value_cursor));
+    } else {
+        struct aws_http_message *message = NULL;
+        struct aws_input_stream *body_stream = NULL;
+
+        ASSERT_SUCCESS(s_v4_test_context_parse_request(
+            test_context, &test_context->test_case_data.sample_signed_request, &message, &body_stream));
+
+        struct aws_byte_cursor expected_path_cursor;
+        AWS_ZERO_STRUCT(expected_path_cursor);
+        ASSERT_SUCCESS(aws_http_message_get_request_path(message, &expected_path_cursor));
+
+        struct aws_uri uri;
+        AWS_ZERO_STRUCT(uri);
+        ASSERT_SUCCESS(aws_uri_init_parse(&uri, test_context->allocator, &expected_path_cursor));
+
+        struct aws_array_list query_params;
+        AWS_ZERO_STRUCT(query_params);
+        ASSERT_SUCCESS(
+            aws_array_list_init_dynamic(&query_params, test_context->allocator, 10, sizeof(struct aws_uri_param)));
+        ASSERT_SUCCESS(aws_uri_query_string_params(&uri, &query_params));
+
+        struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("X-Amz-Signature");
+        bool found = false;
+        size_t param_count = aws_array_list_length(&query_params);
+        for (size_t i = 0; i < param_count; ++i) {
+            struct aws_uri_param param;
+            AWS_ZERO_STRUCT(param);
+
+            ASSERT_SUCCESS(aws_array_list_get_at(&query_params, &param, i));
+
+            if (aws_byte_cursor_eq(&param.key, &signature_key_cursor)) {
+                ASSERT_BIN_ARRAYS_EQUALS(
+                    signature_value_cursor.ptr, signature_value_cursor.len, param.value.ptr, param.value.len);
+                found = true;
+                break;
+            }
+        }
+
+        ASSERT_TRUE(found);
+
+        aws_http_message_release(message);
+        aws_input_stream_destroy(body_stream);
+        aws_uri_clean_up(&uri);
+        aws_array_list_clean_up(&query_params);
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
-static int s_validate_internal_authorization(struct v4_test_context *test_context) {
+static int s_validate_piecewise_authorization(struct v4_test_context *test_context) {
     switch (test_context->config->transform) {
         case AWS_SRT_HEADER:
-            return s_validate_internal_header_authorization(test_context);
+            return s_validate_piecewise_header_authorization(test_context);
 
         case AWS_SRT_QUERY_PARAM:
-            return s_validate_internal_query_authorization(test_context);
+            return s_validate_piecewise_query_authorization(test_context);
 
         default:
             return AWS_OP_ERR;
@@ -897,7 +969,7 @@ static int s_generate_test_case(
         if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
             if (test_context->credentials != NULL) {
                 struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-                        test_context->allocator, test_context->credentials);
+                    test_context->allocator, test_context->credentials);
                 ASSERT_NOT_NULL(derived_ecc_key);
                 ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
 
@@ -930,17 +1002,19 @@ static int s_generate_test_case(
     return AWS_OP_SUCCESS;
 }
 
-static int s_check_test_case(struct v4_test_context *test_context, const char *parent_folder, const char *test_name) {
+static int s_check_piecewise_test_case(
+    struct v4_test_context *test_context,
+    const char *parent_folder,
+    const char *test_name) {
     {
         struct aws_signing_state_aws *signing_state = test_context->signing_state;
 
-        ASSERT_TRUE(test_context->ecc_key != NULL);
-
         /* 1a - validate ecc key if credentials present */
         if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            ASSERT_TRUE(test_context->ecc_key != NULL);
             if (test_context->credentials != NULL) {
                 struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-                        test_context->allocator, test_context->credentials);
+                    test_context->allocator, test_context->credentials);
                 ASSERT_NOT_NULL(derived_ecc_key);
 
                 ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
@@ -972,19 +1046,18 @@ static int s_check_test_case(struct v4_test_context *test_context, const char *p
 
         /* 1d - validate authorization value against itself */
         ASSERT_TRUE(aws_signing_build_authorization_value(signing_state) == AWS_OP_SUCCESS);
-        ASSERT_SUCCESS(s_validate_internal_authorization(test_context));
+        ASSERT_SUCCESS(s_validate_piecewise_authorization(test_context));
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static int s_do_sigv4_test_internal(
+static int s_do_sigv4_test_piecewise(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
     enum aws_signing_algorithm algorithm,
-    enum aws_signing_request_transform transform,
-    struct aws_byte_buf *out_string_to_sign) {
+    enum aws_signing_request_transform transform) {
 
     struct v4_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
@@ -994,12 +1067,8 @@ static int s_do_sigv4_test_internal(
     if (test_context.should_generate_test_case) {
         ASSERT_SUCCESS(s_generate_test_case(&test_context, parent_folder, test_name));
     } else {
-        ASSERT_SUCCESS(s_check_test_case(&test_context, parent_folder, test_name));
+        ASSERT_SUCCESS(s_check_piecewise_test_case(&test_context, parent_folder, test_name));
     }
-
-    struct aws_byte_cursor string_to_sign_cursor =
-        aws_byte_cursor_from_buf(&test_context.signing_state->string_to_sign);
-    aws_byte_buf_append_dynamic(out_string_to_sign, &string_to_sign_cursor);
 
     s_v4_test_context_clean_up(&test_context);
 
@@ -1080,8 +1149,7 @@ static int s_check_header_value(struct aws_http_message *request, struct aws_htt
 static int s_check_query_authorization(
     struct v4_test_context *test_context,
     struct aws_byte_cursor signed_path,
-    struct aws_byte_cursor expected_path,
-    struct aws_byte_buf *string_to_sign) {
+    struct aws_byte_cursor expected_path) {
 
     struct aws_uri signed_uri;
     ASSERT_SUCCESS(aws_uri_init_parse(&signed_uri, test_context->allocator, &signed_path));
@@ -1110,9 +1178,12 @@ static int s_check_query_authorization(
         struct aws_uri_param signed_param;
         aws_array_list_get_at(&signed_params, &signed_param, i);
 
-        if (aws_byte_cursor_eq_ignore_case(&signed_param.key, &signature_cursor)) {
-            ASSERT_SUCCESS(s_validate_authorization_value(
-                test_context, aws_byte_cursor_from_buf(string_to_sign), signed_param.value));
+        if (aws_byte_cursor_eq_ignore_case(&signed_param.key, &signature_cursor) &&
+            test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            ASSERT_SUCCESS(s_validate_v4a_authorization_value(
+                test_context,
+                aws_byte_cursor_from_buf(&test_context->test_case_data.expected_string_to_sign),
+                signed_param.value));
         } else {
             bool found = false;
             for (size_t j = 0; j < signed_param_count; ++j) {
@@ -1179,8 +1250,7 @@ static int s_compare_authorization_pair(
 static int s_check_header_authorization(
     struct v4_test_context *test_context,
     struct aws_http_header *header,
-    struct aws_http_message *expected_request,
-    struct aws_byte_buf *string_to_sign) {
+    struct aws_http_message *expected_request) {
     struct aws_byte_cursor signed_authorization_value = header->value;
 
     struct aws_byte_cursor expected_authorization_value;
@@ -1232,6 +1302,7 @@ static int s_check_header_authorization(
     ASSERT_SUCCESS(s_compare_authorization_pair(
         &signed_authorization_value, &expected_authorization_value, aws_byte_cursor_from_c_str("SignedHeaders=")));
 
+    struct aws_byte_buf *string_to_sign = &test_context->test_case_data.expected_string_to_sign;
     struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
 
     struct aws_byte_cursor signed_signature_value;
@@ -1239,30 +1310,27 @@ static int s_check_header_authorization(
     ASSERT_SUCCESS(
         aws_byte_cursor_find_exact(&signed_authorization_value, &signature_key_cursor, &signed_signature_value));
     aws_byte_cursor_advance(&signed_signature_value, signature_key_cursor.len);
-    ASSERT_SUCCESS(
-        s_validate_authorization_value(test_context, aws_byte_cursor_from_buf(string_to_sign), signed_signature_value));
+    ASSERT_SUCCESS(s_validate_v4a_authorization_value(
+        test_context, aws_byte_cursor_from_buf(string_to_sign), signed_signature_value));
 
     struct aws_byte_cursor expected_signature_value;
     AWS_ZERO_STRUCT(expected_signature_value);
     ASSERT_SUCCESS(
         aws_byte_cursor_find_exact(&expected_authorization_value, &signature_key_cursor, &expected_signature_value));
     aws_byte_cursor_advance(&expected_signature_value, signature_key_cursor.len);
-    ASSERT_SUCCESS(s_validate_authorization_value(
+    ASSERT_SUCCESS(s_validate_v4a_authorization_value(
         test_context, aws_byte_cursor_from_buf(string_to_sign), expected_signature_value));
 
     return AWS_OP_SUCCESS;
 }
 
-static int s_check_signed_request(
-    struct v4_test_context *test_context,
-    struct aws_byte_buf *expected_request_buffer,
-    struct aws_byte_buf *string_to_sign) {
+static int s_check_signed_request(struct v4_test_context *test_context, struct aws_byte_buf *expected_request_buffer) {
 
     struct aws_http_message *expected_request = NULL;
     struct aws_input_stream *body_stream = NULL;
 
-    ASSERT_SUCCESS(s_v4_test_context_parse_request(
-            test_context, expected_request_buffer, false, &expected_request, &body_stream));
+    ASSERT_SUCCESS(
+        s_v4_test_context_parse_request(test_context, expected_request_buffer, &expected_request, &body_stream));
     ASSERT_NOT_NULL(expected_request);
 
     /* method */
@@ -1286,7 +1354,7 @@ static int s_check_signed_request(
     aws_http_message_get_request_path(expected_request, &expected_path);
 
     if (test_context->config->transform == AWS_SRT_QUERY_PARAM) {
-        ASSERT_SUCCESS(s_check_query_authorization(test_context, signed_path, expected_path, string_to_sign));
+        ASSERT_SUCCESS(s_check_query_authorization(test_context, signed_path, expected_path));
     } else {
         ASSERT_BIN_ARRAYS_EQUALS(expected_path.ptr, expected_path.len, signed_path.ptr, signed_path.len);
     }
@@ -1305,8 +1373,9 @@ static int s_check_signed_request(
         }
 
         if (test_context->config->transform == AWS_SRT_HEADER &&
-            aws_byte_cursor_eq_c_str_ignore_case(&header.name, "Authorization")) {
-            ASSERT_SUCCESS(s_check_header_authorization(test_context, &header, expected_request, string_to_sign));
+            aws_byte_cursor_eq_c_str_ignore_case(&header.name, "Authorization") &&
+            test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            ASSERT_SUCCESS(s_check_header_authorization(test_context, &header, expected_request));
         } else {
             ASSERT_SUCCESS(s_check_header_value(expected_request, &header));
         }
@@ -1325,12 +1394,7 @@ static int s_do_sigv4_test_signing(
     enum aws_signing_algorithm algorithm,
     enum aws_signing_request_transform transform) {
 
-    struct aws_byte_buf string_to_sign;
-    if (aws_byte_buf_init(&string_to_sign, allocator, 1024)) {
-        return AWS_OP_ERR;
-    }
-
-    ASSERT_SUCCESS(s_do_sigv4_test_internal(allocator, parent_folder, test_name, algorithm, transform, &string_to_sign));
+    ASSERT_SUCCESS(s_do_sigv4_test_piecewise(allocator, parent_folder, test_name, algorithm, transform));
 
     struct v4_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
@@ -1346,13 +1410,10 @@ static int s_do_sigv4_test_signing(
         ASSERT_SUCCESS(s_write_signed_request_to_file(
             &test_context, parent_folder, test_name, s_get_signed_request_filename(transform)));
     } else {
-        ASSERT_SUCCESS(
-            s_check_signed_request(&test_context, &test_context.test_case_data.sample_signed_request, &string_to_sign));
+        ASSERT_SUCCESS(s_check_signed_request(&test_context, &test_context.test_case_data.sample_signed_request));
     }
 
     s_v4_test_context_clean_up(&test_context);
-
-    aws_byte_buf_clean_up(&string_to_sign);
 
     return AWS_OP_SUCCESS;
 }
@@ -1362,8 +1423,10 @@ static int s_do_sigv4a_test_case(struct aws_allocator *allocator, const char *te
     /* Set up everything */
     aws_auth_library_init(allocator);
 
-    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC, AWS_SRT_HEADER));
-    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC, AWS_SRT_QUERY_PARAM));
+    ASSERT_SUCCESS(s_do_sigv4_test_signing(
+        allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC, AWS_SRT_HEADER));
+    ASSERT_SUCCESS(s_do_sigv4_test_signing(
+        allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC, AWS_SRT_QUERY_PARAM));
 
     aws_auth_library_clean_up();
 
@@ -1422,8 +1485,10 @@ static int s_do_sigv4_test_case(struct aws_allocator *allocator, const char *tes
     /* Set up everything */
     aws_auth_library_init(allocator);
 
-    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4, AWS_SRT_HEADER));
-    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4, AWS_SRT_QUERY_PARAM));
+    ASSERT_SUCCESS(
+        s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4, AWS_SRT_HEADER));
+    ASSERT_SUCCESS(
+        s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4, AWS_SRT_QUERY_PARAM));
 
     aws_auth_library_clean_up();
 
