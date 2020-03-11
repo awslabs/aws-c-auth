@@ -311,9 +311,9 @@ done:
     return result;
 }
 
-static int s_v4_test_context_parse_request(
-    struct v4_test_context *context,
-    struct aws_byte_buf *request_buffer,
+static int s_parse_request(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor request_cursor,
     struct aws_http_message **out_request,
     struct aws_input_stream **out_body_stream) {
     int result = AWS_OP_ERR;
@@ -323,24 +323,22 @@ static int s_v4_test_context_parse_request(
 
     struct aws_array_list request_lines;
     AWS_ZERO_STRUCT(request_lines);
-    if (aws_array_list_init_dynamic(&request_lines, context->allocator, 10, sizeof(struct aws_byte_cursor))) {
+    if (aws_array_list_init_dynamic(&request_lines, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
     }
 
     struct aws_array_list header_set;
     AWS_ZERO_STRUCT(header_set);
-    if (aws_array_list_init_dynamic(
-            &header_set, context->allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
+    if (aws_array_list_init_dynamic(&header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
         goto done;
     }
 
     struct aws_input_stream *body_stream = NULL;
-    struct aws_http_message *request = aws_http_message_new_request(context->allocator);
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
     if (request == NULL) {
         goto done;
     }
 
-    struct aws_byte_cursor request_cursor = aws_byte_cursor_from_buf(request_buffer);
     if (aws_byte_cursor_split_on_char(&request_cursor, '\n', &request_lines)) {
         goto done;
     }
@@ -436,7 +434,7 @@ static int s_v4_test_context_parse_request(
         /* body length is the end of the whole request (pointer) minus the start of the body pointer */
         body_cursor.len = (request_cursor.ptr + request_cursor.len - body_cursor.ptr);
 
-        body_stream = aws_input_stream_new_from_cursor(context->allocator, &body_cursor);
+        body_stream = aws_input_stream_new_from_cursor(allocator, &body_cursor);
         if (body_stream == NULL) {
             goto done;
         }
@@ -571,8 +569,11 @@ static int s_v4_test_context_init(
         return AWS_OP_ERR;
     }
 
-    if (s_v4_test_context_parse_request(
-            context, &context->test_case_data.request, &context->request, &context->payload_stream)) {
+    if (s_parse_request(
+            context->allocator,
+            aws_byte_cursor_from_buf(&context->test_case_data.request),
+            &context->request,
+            &context->payload_stream)) {
         return AWS_OP_ERR;
     }
 
@@ -1163,8 +1164,8 @@ static int s_check_signed_request(struct v4_test_context *test_context, struct a
     struct aws_http_message *expected_request = NULL;
     struct aws_input_stream *body_stream = NULL;
 
-    ASSERT_SUCCESS(
-        s_v4_test_context_parse_request(test_context, expected_request_buffer, &expected_request, &body_stream));
+    ASSERT_SUCCESS(s_parse_request(
+        test_context->allocator, aws_byte_cursor_from_buf(expected_request_buffer), &expected_request, &body_stream));
     ASSERT_NOT_NULL(expected_request);
 
     /* method */
@@ -1375,3 +1376,345 @@ DECLARE_SIGV4_TEST_SUITE_CASE(get_slashes_normalized, "get-slashes-normalized");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_slashes_unnormalized, "get-slashes-unnormalized");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_space_normalized, "get-space-normalized");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_space_unnormalized, "get-space-unnormalized");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_service, "service");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_region, "us-east-1");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_access_key_id, "AKIDEXAMPLE");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_secret_access_key, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_date, "2015-08-30T12:36:00Z");
+
+static int s_do_header_skip_test(
+    struct aws_allocator *allocator,
+    aws_should_sign_param_fn *should_sign,
+    const struct aws_string *request_contents,
+    const struct aws_string *expected_canonical_request) {
+
+    aws_auth_library_init(allocator);
+
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
+    ASSERT_NOT_NULL(credentials);
+
+    struct aws_signing_config_aws config;
+    AWS_ZERO_STRUCT(config);
+    config.credentials = credentials;
+    config.algorithm = AWS_SIGNING_ALGORITHM_V4;
+    config.transform = AWS_SRT_HEADER;
+    config.region_config = aws_byte_cursor_from_string(s_test_suite_region);
+    config.service = aws_byte_cursor_from_string(s_test_suite_service);
+    config.should_sign_param = should_sign;
+
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
+    ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(&config.date, &date_cursor, AWS_DATE_FORMAT_ISO_8601));
+
+    struct aws_http_message *message = NULL;
+    struct aws_input_stream *body_stream = NULL;
+    ASSERT_SUCCESS(s_parse_request(allocator, aws_byte_cursor_from_string(request_contents), &message, &body_stream));
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, message);
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
+    ASSERT_NOT_NULL(signing_state);
+
+    ASSERT_SUCCESS(aws_signing_build_canonical_request(signing_state));
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_canonical_request->bytes,
+        expected_canonical_request->len,
+        signing_state->canonical_request.buffer,
+        signing_state->canonical_request.len);
+
+    aws_input_stream_destroy(body_stream);
+    aws_http_message_release(message);
+    aws_signing_state_destroy(signing_state);
+    aws_credentials_release(credentials);
+    aws_signable_destroy(signable);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_xray_header_request,
+    "GET / HTTP/1.1\n"
+    "Host:example.amazonaws.com\n"
+    "x-amzn-trace-id:fsdbofdshfdsjkjhfs\n\n");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_xray_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static int s_sigv4_skip_xray_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator, NULL, s_skip_xray_header_request, s_skip_xray_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_xray_header_test, s_sigv4_skip_xray_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_user_agent_header_request,
+    "GET / HTTP/1.1\n"
+    "Useragent:c sdk v1.0\n"
+    "Host:example.amazonaws.com\n\n");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_user_agent_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static int s_sigv4_skip_user_agent_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator, NULL, s_skip_user_agent_header_request, s_skip_user_agent_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_user_agent_header_test, s_sigv4_skip_user_agent_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_custom_header_request,
+    "GET / HTTP/1.1\n"
+    "MyHeader:Blahblah\n"
+    "Host:example.amazonaws.com\n"
+    "AnotherHeader:Oof\n\n");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_custom_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static bool s_should_sign_header(const struct aws_byte_cursor *name, void *userdata) {
+    (void)userdata;
+
+    struct aws_byte_cursor my_header_cursor = aws_byte_cursor_from_c_str("myheader");
+    struct aws_byte_cursor another_header_cursor = aws_byte_cursor_from_c_str("anOtherHeader");
+
+    if (aws_byte_cursor_eq_ignore_case(name, &my_header_cursor) ||
+        aws_byte_cursor_eq_ignore_case(name, &another_header_cursor)) {
+        return false;
+    }
+
+    return true;
+}
+
+static int s_sigv4_skip_custom_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator, s_should_sign_header, s_skip_custom_header_request, s_skip_custom_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_custom_header_test, s_sigv4_skip_custom_header_test);
+
+static int s_do_forbidden_header_param_test(
+    struct aws_allocator *allocator,
+    const struct aws_string *request_contents,
+    enum aws_auth_errors expected_error) {
+
+    aws_auth_library_init(allocator);
+
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
+    ASSERT_NOT_NULL(credentials);
+
+    struct aws_signing_config_aws config;
+    AWS_ZERO_STRUCT(config);
+    config.credentials = credentials;
+    config.algorithm = AWS_SIGNING_ALGORITHM_V4;
+    config.transform = AWS_SRT_HEADER;
+    config.region_config = aws_byte_cursor_from_string(s_test_suite_region);
+    config.service = aws_byte_cursor_from_string(s_test_suite_service);
+
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
+    ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(&config.date, &date_cursor, AWS_DATE_FORMAT_ISO_8601));
+
+    struct aws_http_message *message = NULL;
+    struct aws_input_stream *body_stream = NULL;
+    ASSERT_SUCCESS(s_parse_request(allocator, aws_byte_cursor_from_string(request_contents), &message, &body_stream));
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, message);
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
+    ASSERT_NOT_NULL(signing_state);
+
+    ASSERT_FAILS(aws_signing_build_canonical_request(signing_state));
+    ASSERT_TRUE(aws_last_error() == expected_error);
+
+    aws_input_stream_destroy(body_stream);
+    aws_http_message_release(message);
+
+    aws_signing_state_destroy(signing_state);
+    aws_credentials_release(credentials);
+    aws_signable_destroy(signable);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_date_header_request,
+    "GET / HTTP/1.1\n"
+    "Host:example.amazonaws.com\n"
+    "X-Amz-Date:20150830T123600Z");
+
+static int s_sigv4_fail_date_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_date_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+}
+AWS_TEST_CASE(sigv4_fail_date_header_test, s_sigv4_fail_date_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_content_sha256_header_request,
+    "GET / HTTP/1.1\n"
+    "Host:example.amazonaws.com\n"
+    "x-amz-content-sha256:lieslieslies");
+
+static int s_sigv4_fail_content_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_content_sha256_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+}
+AWS_TEST_CASE(sigv4_fail_content_header_test, s_sigv4_fail_content_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_authorization_header_request,
+    "GET / HTTP/1.1\n"
+    "Host:example.amazonaws.com\n"
+    "Authorization:lieslieslies");
+
+static int s_sigv4_fail_authorization_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_authorization_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+}
+AWS_TEST_CASE(sigv4_fail_authorization_header_test, s_sigv4_fail_authorization_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_signature_param_request,
+    "GET /?X-Amz-Signature=Something HTTP/1.1\n"
+    "Host:example.amazonaws.com\n");
+
+static int s_sigv4_fail_signature_param_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_signature_param_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
+}
+AWS_TEST_CASE(sigv4_fail_signature_param_test, s_sigv4_fail_signature_param_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_date_param_request,
+    "GET /?X-Amz-Date=Tomorrow HTTP/1.1\n"
+    "Host:example.amazonaws.com\n");
+
+static int s_sigv4_fail_date_param_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_date_param_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
+}
+AWS_TEST_CASE(sigv4_fail_date_param_test, s_sigv4_fail_date_param_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_credential_param_request,
+    "GET /?X-Amz-Credential=TopSekrit HTTP/1.1\n"
+    "Host:example.amazonaws.com\n");
+
+static int s_sigv4_fail_credential_param_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_credential_param_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
+}
+AWS_TEST_CASE(sigv4_fail_credential_param_test, s_sigv4_fail_credential_param_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_algorithm_param_request,
+    "GET /?X-Amz-Algorithm=BubbleSort HTTP/1.1\n"
+    "Host:example.amazonaws.com\n");
+
+static int s_sigv4_fail_algorithm_param_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_algorithm_param_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
+}
+AWS_TEST_CASE(sigv4_fail_algorithm_param_test, s_sigv4_fail_algorithm_param_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_amz_signed_headers_param_request,
+    "GET /?X-Amz-SignedHeaders=UserAgent HTTP/1.1\n"
+    "Host:example.amazonaws.com\n");
+
+static int s_sigv4_fail_signed_headers_param_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_amz_signed_headers_param_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_QUERY_PARAM);
+}
+AWS_TEST_CASE(sigv4_fail_signed_headers_param_test, s_sigv4_fail_signed_headers_param_test);
+
+struct null_credentials_state {
+    struct aws_signing_result *result;
+    int error_code;
+};
+
+static void s_null_credentials_on_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
+
+    struct null_credentials_state *state = userdata;
+    state->result = result;
+    state->error_code = error_code;
+}
+
+static int s_signer_null_credentials_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct get_credentials_mock_result results = {
+        .credentials = NULL,
+        .error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS,
+    };
+
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
+
+    struct aws_signing_config_aws config = {
+        .config_type = AWS_SIGNING_CONFIG_AWS,
+        .algorithm = AWS_SIGNING_ALGORITHM_V4,
+        .transform = AWS_SRT_HEADER,
+        .region_config = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
+    };
+    config.credentials_provider = aws_credentials_provider_new_mock(allocator, &results, 1, NULL);
+    aws_date_time_init_now(&config.date);
+
+    struct null_credentials_state state;
+    AWS_ZERO_STRUCT(state);
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        signable,
+        (struct aws_signing_config_base *)&config,
+        s_null_credentials_on_signing_complete,
+        &state));
+
+    ASSERT_PTR_EQUALS(NULL, state.result);
+    ASSERT_INT_EQUALS(AWS_AUTH_SIGNING_NO_CREDENTIALS, state.error_code);
+
+    aws_credentials_provider_release(config.credentials_provider);
+    aws_signable_destroy(signable);
+    aws_http_message_release(request);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);
