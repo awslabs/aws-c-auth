@@ -374,7 +374,9 @@ static int s_imds_on_incoming_headers_fn(
 static void s_imds_query_token(struct aws_credentials_provider_imds_user_data *aws_credentials_provider_imds_user_data);
 static void s_imds_query_instance_role_name(struct aws_credentials_provider_imds_user_data *imds_user_data);
 static void s_imds_query_instance_role_credentials(struct aws_credentials_provider_imds_user_data *imds_user_data);
-
+static bool s_isspace(unsigned char c) {
+    return isspace((int)c) != 0;
+}
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
 
@@ -400,7 +402,7 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
             impl->token_required = false;
         } else {
             imds_user_data->token = aws_byte_cursor_from_buf(&(imds_user_data->current_result));
-            aws_byte_cursor_trim_pred(&(imds_user_data->token), (bool (*)(unsigned char))isspace);
+            aws_byte_cursor_trim_pred(&(imds_user_data->token), s_isspace);
             if (imds_user_data->token.len == 0) {
                 impl->token_required = false;
             }
