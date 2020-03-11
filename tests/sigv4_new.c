@@ -625,34 +625,6 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
     aws_mutex_unlock(&context->lock);
 }
 
-static struct aws_byte_cursor s_get_value_from_result(
-    const struct aws_array_list *pair_list,
-    const struct aws_byte_cursor *name) {
-    struct aws_byte_cursor result;
-    AWS_ZERO_STRUCT(result);
-
-    size_t pair_count = aws_array_list_length(pair_list);
-    for (size_t i = 0; i < pair_count; ++i) {
-        struct aws_signing_result_property pair;
-        AWS_ZERO_STRUCT(pair);
-        if (aws_array_list_get_at(pair_list, &pair, i)) {
-            continue;
-        }
-
-        if (pair.name == NULL) {
-            continue;
-        }
-
-        struct aws_byte_cursor pair_name_cursor = aws_byte_cursor_from_string(pair.name);
-        if (aws_byte_cursor_eq_ignore_case(&pair_name_cursor, name)) {
-            result = aws_byte_cursor_from_string(pair.value);
-            break;
-        }
-    }
-
-    return result;
-}
-
 #define DEFAULT_BUFFER_SIZE 1024
 #define BASE64_CHARS_PER_LINE 80
 
@@ -822,142 +794,6 @@ done:
     return result;
 }
 
-static int s_validate_piecewise_header_authorization(struct v4_test_context *test_context) {
-
-    struct aws_signing_state_aws *signing_state = test_context->signing_state;
-    struct aws_array_list *headers = NULL;
-    ASSERT_TRUE(
-        aws_signing_result_get_property_list(&signing_state->result, g_aws_http_headers_property_list_name, &headers) ==
-        AWS_OP_SUCCESS);
-
-    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
-    struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
-    ASSERT_TRUE(auth_header_value.len > 0);
-
-    if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("Signature=");
-        struct aws_byte_cursor signature_value_cursor;
-        AWS_ZERO_STRUCT(signature_value_cursor);
-        ASSERT_SUCCESS(aws_byte_cursor_find_exact(&auth_header_value, &signature_key_cursor, &signature_value_cursor));
-        aws_byte_cursor_advance(&signature_value_cursor, signature_key_cursor.len);
-
-        ASSERT_TRUE(signature_value_cursor.len > 0);
-
-        ASSERT_SUCCESS(s_validate_v4a_authorization_value(
-            test_context,
-            aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign),
-            signature_value_cursor));
-    } else {
-        struct aws_http_message *message = NULL;
-        struct aws_input_stream *body_stream = NULL;
-        bool found = false;
-
-        ASSERT_SUCCESS(s_v4_test_context_parse_request(
-            test_context, &test_context->test_case_data.sample_signed_request, &message, &body_stream));
-        size_t header_count = aws_http_message_get_header_count(message);
-        for (size_t i = 0; i < header_count; ++i) {
-            struct aws_http_header header;
-            AWS_ZERO_STRUCT(header);
-
-            ASSERT_SUCCESS(aws_http_message_get_header(message, &header, i));
-            if (aws_byte_cursor_eq(&header.name, &auth_header_name)) {
-                ASSERT_BIN_ARRAYS_EQUALS(
-                    header.value.ptr, header.value.len, auth_header_value.ptr, auth_header_value.len);
-                found = true;
-                break;
-            }
-        }
-
-        ASSERT_TRUE(found);
-
-        aws_http_message_release(message);
-        aws_input_stream_destroy(body_stream);
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-static int s_validate_piecewise_query_authorization(struct v4_test_context *test_context) {
-
-    struct aws_signing_state_aws *signing_state = test_context->signing_state;
-    struct aws_array_list *params = NULL;
-    ASSERT_SUCCESS(aws_signing_result_get_property_list(
-        &signing_state->result, g_aws_http_query_params_property_list_name, &params));
-    ASSERT_NOT_NULL(params);
-
-    struct aws_byte_cursor auth_query_param_name =
-        aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
-
-    struct aws_byte_cursor signature_value_cursor = s_get_value_from_result(params, &auth_query_param_name);
-    ASSERT_TRUE(signature_value_cursor.len > 0); /* Is there are least something? */
-
-    if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        ASSERT_SUCCESS(s_validate_v4a_authorization_value(
-            test_context,
-            aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign),
-            signature_value_cursor));
-    } else {
-        struct aws_http_message *message = NULL;
-        struct aws_input_stream *body_stream = NULL;
-
-        ASSERT_SUCCESS(s_v4_test_context_parse_request(
-            test_context, &test_context->test_case_data.sample_signed_request, &message, &body_stream));
-
-        struct aws_byte_cursor expected_path_cursor;
-        AWS_ZERO_STRUCT(expected_path_cursor);
-        ASSERT_SUCCESS(aws_http_message_get_request_path(message, &expected_path_cursor));
-
-        struct aws_uri uri;
-        AWS_ZERO_STRUCT(uri);
-        ASSERT_SUCCESS(aws_uri_init_parse(&uri, test_context->allocator, &expected_path_cursor));
-
-        struct aws_array_list query_params;
-        AWS_ZERO_STRUCT(query_params);
-        ASSERT_SUCCESS(
-            aws_array_list_init_dynamic(&query_params, test_context->allocator, 10, sizeof(struct aws_uri_param)));
-        ASSERT_SUCCESS(aws_uri_query_string_params(&uri, &query_params));
-
-        struct aws_byte_cursor signature_key_cursor = aws_byte_cursor_from_c_str("X-Amz-Signature");
-        bool found = false;
-        size_t param_count = aws_array_list_length(&query_params);
-        for (size_t i = 0; i < param_count; ++i) {
-            struct aws_uri_param param;
-            AWS_ZERO_STRUCT(param);
-
-            ASSERT_SUCCESS(aws_array_list_get_at(&query_params, &param, i));
-
-            if (aws_byte_cursor_eq(&param.key, &signature_key_cursor)) {
-                ASSERT_BIN_ARRAYS_EQUALS(
-                    signature_value_cursor.ptr, signature_value_cursor.len, param.value.ptr, param.value.len);
-                found = true;
-                break;
-            }
-        }
-
-        ASSERT_TRUE(found);
-
-        aws_http_message_release(message);
-        aws_input_stream_destroy(body_stream);
-        aws_uri_clean_up(&uri);
-        aws_array_list_clean_up(&query_params);
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-static int s_validate_piecewise_authorization(struct v4_test_context *test_context) {
-    switch (test_context->config->transform) {
-        case AWS_SRT_HEADER:
-            return s_validate_piecewise_header_authorization(test_context);
-
-        case AWS_SRT_QUERY_PARAM:
-            return s_validate_piecewise_query_authorization(test_context);
-
-        default:
-            return AWS_OP_ERR;
-    }
-}
-
 static int s_generate_test_case(
     struct v4_test_context *test_context,
     const char *parent_folder,
@@ -1044,9 +880,7 @@ static int s_check_piecewise_test_case(
             signing_state->string_to_sign.buffer,
             signing_state->string_to_sign.len);
 
-        /* 1d - validate authorization value against itself */
-        ASSERT_TRUE(aws_signing_build_authorization_value(signing_state) == AWS_OP_SUCCESS);
-        ASSERT_SUCCESS(s_validate_piecewise_authorization(test_context));
+        /* authorization values checked in the end-to-end tests */
     }
 
     return AWS_OP_SUCCESS;
