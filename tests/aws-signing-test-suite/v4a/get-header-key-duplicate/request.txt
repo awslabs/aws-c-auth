@@ -3,4 +3,3 @@ Host:example.amazonaws.com
 My-Header1:value2
 My-Header1:value2
 My-Header1:value1
-X-Amz-Date:20150830T123600Z

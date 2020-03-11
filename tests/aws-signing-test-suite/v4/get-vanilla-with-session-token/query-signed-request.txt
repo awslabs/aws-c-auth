@@ -1,0 +1,4 @@
+GET /?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fus-east-1%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host%3Bx-amz-security-token&X-Amz-Security-Token=6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267&X-Amz-Signature=58942d6ed4ef704a9fa35c520bae406f1c81816fa488893276ee940e69a94a2b&X-Amz-Security-Token=6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267 HTTP/1.1
+Host:example.amazonaws.com
+X-Amz-Date:20150830T123600Z
+

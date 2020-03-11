@@ -615,6 +615,10 @@ static int s_do_sigv4_test_suite_test(
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
 
+DECLARE_SIGV4_TEST_SUITE_CASE(get_header_key_duplicate_derp, "get-header-key-duplicate");
+DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(get_relative_derp, "get-relative", "normalize-path");
+DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(get_vanilla_with_session_token_derp, "get-vanilla-with-session-token");
+#ifdef NEVER
 DECLARE_SIGV4_TEST_SUITE_CASE(get_header_key_duplicate, "get-header-key-duplicate");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_multiline, "get-header-value-multiline");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_order, "get-header-value-order");
@@ -649,6 +653,7 @@ DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla_query, "post-vanilla-query");
 
 DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded, "post-x-www-form-urlencoded");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www-form-urlencoded-parameters");
+#endif // NEVER
 
 static int s_do_header_skip_test(
     struct aws_allocator *allocator,

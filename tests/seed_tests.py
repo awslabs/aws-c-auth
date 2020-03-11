@@ -63,10 +63,15 @@ def generate_test_case(source_dir, dest_dir, test_name, context_map):
 
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
-    
+        
     dest_request_filename = os.path.join(dest_dir, "request.txt")
-    shutil.copyfile(source_request_filename, dest_request_filename)
-
+    
+    with open(source_request_filename, "r") as source_file:
+        with open(dest_request_filename, "w") as dest_file:
+            for _, line in enumerate(source_file):
+                if not line.startswith("X-Amz-Date"):
+                    dest_file.write(line)
+            
     test_context = copy.deepcopy(base_context)
     test_context = merge_dicts(context_map, test_context)
 
@@ -124,8 +129,6 @@ def main():
     dest_dir = args["dest_dir"]
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
-
-    pdb.set_trace()
         
     generate_tests(source_dir, dest_dir, "", normalized_context)
 

@@ -81,7 +81,7 @@ static const struct aws_string *s_get_signed_request_filename(enum aws_signing_r
     }
 }
 
-struct v4a_test_case_contents {
+struct v4_test_case_contents {
     struct aws_allocator *allocator;
     struct aws_byte_buf context;
     struct aws_byte_buf request;
@@ -102,13 +102,13 @@ static int s_load_test_case_file(
     return aws_byte_buf_init_from_file(buffer, allocator, path);
 }
 
-static int s_v4a_test_case_context_init_from_file_set(
-    struct v4a_test_case_contents *contents,
+static int s_v4_test_case_context_init_from_file_set(
+    struct v4_test_case_contents *contents,
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
-    enum aws_signing_request_transform transform,
-    bool missing_optional_files_is_failure) {
+    enum aws_signing_algorithm algorithm,
+    enum aws_signing_request_transform transform) {
 
     AWS_ZERO_STRUCT(*contents);
     contents->allocator = allocator;
@@ -119,28 +119,25 @@ static int s_v4a_test_case_context_init_from_file_set(
         return AWS_OP_ERR;
     }
 
-    /* optional while we're still debugging/generating */
-    if (s_load_test_case_file(
-            allocator, parent_folder, test_name, aws_string_c_str(s_ecc_key_filename), &contents->key) ||
+    if (algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
         s_load_test_case_file(
-            allocator,
-            parent_folder,
-            test_name,
-            aws_string_c_str(s_get_canonical_request_filename(transform)),
-            &contents->expected_canonical_request) ||
-        s_load_test_case_file(
-            allocator,
-            parent_folder,
-            test_name,
-            aws_string_c_str(s_get_string_to_sign_filename(transform)),
-            &contents->expected_string_to_sign)) {
-
-        if (missing_optional_files_is_failure) {
-            return AWS_OP_ERR;
-        }
+                allocator, parent_folder, test_name, aws_string_c_str(s_ecc_key_filename), &contents->key);
     }
 
-    /* optional until generation is finished */
+    s_load_test_case_file(
+        allocator,
+        parent_folder,
+        test_name,
+        aws_string_c_str(s_get_canonical_request_filename(transform)),
+        &contents->expected_canonical_request);
+
+    s_load_test_case_file(
+        allocator,
+        parent_folder,
+        test_name,
+        aws_string_c_str(s_get_string_to_sign_filename(transform)),
+        &contents->expected_string_to_sign);
+
     s_load_test_case_file(
         allocator,
         parent_folder,
@@ -151,7 +148,7 @@ static int s_v4a_test_case_context_init_from_file_set(
     return AWS_OP_SUCCESS;
 }
 
-static void s_v4a_test_case_contents_clean_up(struct v4a_test_case_contents *contents) {
+static void s_v4_test_case_contents_clean_up(struct v4_test_case_contents *contents) {
     if (contents->allocator) {
         aws_byte_buf_clean_up(&contents->request);
         aws_byte_buf_clean_up(&contents->context);
@@ -164,9 +161,10 @@ static void s_v4a_test_case_contents_clean_up(struct v4a_test_case_contents *con
     }
 }
 
-struct v4a_test_context {
+struct v4_test_context {
     struct aws_allocator *allocator;
-    struct v4a_test_case_contents test_case_data;
+    enum aws_signing_algorithm algorithm;
+    struct v4_test_case_contents test_case_data;
 
     struct aws_string *region_config;
     struct aws_string *service;
@@ -190,8 +188,8 @@ struct v4a_test_context {
     bool should_generate_test_case;
 };
 
-static void s_v4a_test_context_clean_up(struct v4a_test_context *context) {
-    s_v4a_test_case_contents_clean_up(&context->test_case_data);
+static void s_v4_test_context_clean_up(struct v4_test_context *context) {
+    s_v4_test_case_contents_clean_up(&context->test_case_data);
 
     aws_http_message_release(context->request);
     aws_input_stream_destroy(context->payload_stream);
@@ -221,7 +219,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_service_name, "service");
 AWS_STATIC_STRING_FROM_LITERAL(s_timestamp_name, "timestamp");
 AWS_STATIC_STRING_FROM_LITERAL(s_normalize_name, "normalize");
 
-static int s_v4a_test_context_parse_context_file(struct v4a_test_context *context) {
+static int s_v4_test_context_parse_context_file(struct v4_test_context *context) {
     struct aws_byte_buf *document = &context->test_case_data.context;
     cJSON *document_root = NULL;
     int result = AWS_OP_ERR;
@@ -313,8 +311,8 @@ done:
     return result;
 }
 
-static int s_v4a_test_context_parse_request(
-    struct v4a_test_context *context,
+static int s_v4_test_context_parse_request(
+    struct v4_test_context *context,
     struct aws_byte_buf *request_buffer,
     bool skip_date_header,
     struct aws_http_message **out_request,
@@ -468,8 +466,8 @@ done:
     return result;
 }
 
-static int s_v4a_test_context_init_signing_config(
-    struct v4a_test_context *context,
+static int s_v4_test_context_init_signing_config(
+    struct v4_test_context *context,
     enum aws_signing_request_transform transform) {
 
     context->signable = aws_signable_new_http_request(context->allocator, context->request);
@@ -480,7 +478,7 @@ static int s_v4a_test_context_init_signing_config(
     }
 
     context->config->config_type = AWS_SIGNING_CONFIG_AWS;
-    context->config->algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+    context->config->algorithm = context->algorithm;
     context->config->transform = transform;
     context->config->region_config = aws_byte_cursor_from_string(context->region_config);
     context->config->service = aws_byte_cursor_from_string(context->service);
@@ -502,7 +500,7 @@ static int s_v4a_test_context_init_signing_config(
     return AWS_OP_SUCCESS;
 }
 
-static int s_v4a_test_context_parse_key(struct v4a_test_context *context) {
+static int s_v4_test_context_parse_key(struct v4_test_context *context) {
     if (context->test_case_data.key.len == 0) {
         return AWS_OP_SUCCESS;
     }
@@ -550,15 +548,17 @@ done:
 
 AWS_STATIC_STRING_FROM_LITERAL(s_generate_test_env_var_name, "GENERATE_TEST_CASES");
 
-static int s_v4a_test_context_init(
-    struct v4a_test_context *context,
+static int s_v4_test_context_init(
+    struct v4_test_context *context,
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
+    enum aws_signing_algorithm algorithm,
     enum aws_signing_request_transform transform) {
 
     AWS_ZERO_STRUCT(*context);
     context->allocator = allocator;
+    context->algorithm = algorithm;
 
     struct aws_string *should_generate = NULL;
     ASSERT_SUCCESS(aws_get_environment_value(allocator, s_generate_test_env_var_name, &should_generate));
@@ -566,30 +566,30 @@ static int s_v4a_test_context_init(
     context->should_generate_test_case = should_generate != NULL;
     aws_string_destroy(should_generate);
 
-    if (s_v4a_test_case_context_init_from_file_set(
+    if (s_v4_test_case_context_init_from_file_set(
             &context->test_case_data,
             allocator,
             parent_folder,
             test_name,
-            transform,
-            !context->should_generate_test_case)) {
+            algorithm,
+            transform)) {
         return AWS_OP_ERR;
     }
 
-    if (s_v4a_test_context_parse_context_file(context)) {
+    if (s_v4_test_context_parse_context_file(context)) {
         return AWS_OP_ERR;
     }
 
-    if (s_v4a_test_context_parse_request(
+    if (s_v4_test_context_parse_request(
             context, &context->test_case_data.request, true, &context->request, &context->payload_stream)) {
         return AWS_OP_ERR;
     }
 
-    if (s_v4a_test_context_init_signing_config(context, transform)) {
+    if (s_v4_test_context_init_signing_config(context, transform)) {
         return AWS_OP_ERR;
     }
 
-    if (s_v4a_test_context_parse_key(context)) {
+    if (s_v4_test_context_parse_key(context)) {
         return AWS_OP_ERR;
     }
 
@@ -607,11 +607,11 @@ static int s_v4a_test_context_init(
 }
 
 bool s_is_signing_complete_predicate(void *userdata) {
-    struct v4a_test_context *context = userdata;
+    struct v4_test_context *context = userdata;
     return context->done;
 }
 
-void s_wait_on_signing_complete(struct v4a_test_context *context) {
+void s_wait_on_signing_complete(struct v4_test_context *context) {
     aws_mutex_lock(&context->lock);
     if (!context->done) {
         aws_condition_variable_wait_pred(&context->signal, &context->lock, s_is_signing_complete_predicate, context);
@@ -623,7 +623,7 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
 
     AWS_FATAL_ASSERT(error_code == AWS_ERROR_SUCCESS);
 
-    struct v4a_test_context *context = userdata;
+    struct v4_test_context *context = userdata;
 
     aws_apply_signing_result_to_http_request(context->request, context->allocator, result);
 
@@ -666,7 +666,7 @@ static struct aws_byte_cursor s_get_value_from_result(
 #define BASE64_CHARS_PER_LINE 80
 
 static int s_write_key_to_test_case_file(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     struct aws_ecc_key_pair *ecc_key,
     const char *parent_folder,
     const char *test_name) {
@@ -736,7 +736,7 @@ done:
     return result;
 }
 
-static int s_check_derived_ecc_key(struct v4a_test_context *test_context, struct aws_ecc_key_pair *derived_ecc_key) {
+static int s_check_derived_ecc_key(struct v4_test_context *test_context, struct aws_ecc_key_pair *derived_ecc_key) {
     struct aws_byte_cursor derived_pub_x;
     AWS_ZERO_STRUCT(derived_pub_x);
     struct aws_byte_cursor derived_pub_y;
@@ -786,7 +786,7 @@ static int s_write_test_file(
 }
 
 static int s_validate_authorization_value(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     struct aws_byte_cursor string_to_sign_cursor,
     struct aws_byte_cursor signature_value_cursor) {
 
@@ -831,7 +831,7 @@ done:
     return result;
 }
 
-static int s_validate_internal_header_authorization(struct v4a_test_context *test_context) {
+static int s_validate_internal_header_authorization(struct v4_test_context *test_context) {
 
     struct aws_signing_state_aws *signing_state = test_context->signing_state;
     struct aws_array_list *headers = NULL;
@@ -855,7 +855,7 @@ static int s_validate_internal_header_authorization(struct v4a_test_context *tes
         test_context, aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign), signature_value_cursor);
 }
 
-static int s_validate_internal_query_authorization(struct v4a_test_context *test_context) {
+static int s_validate_internal_query_authorization(struct v4_test_context *test_context) {
 
     struct aws_signing_state_aws *signing_state = test_context->signing_state;
     struct aws_array_list *params = NULL;
@@ -873,7 +873,7 @@ static int s_validate_internal_query_authorization(struct v4a_test_context *test
         test_context, aws_byte_cursor_from_buf(&test_context->signing_state->string_to_sign), signature_value_cursor);
 }
 
-static int s_validate_internal_authorization(struct v4a_test_context *test_context) {
+static int s_validate_internal_authorization(struct v4_test_context *test_context) {
     switch (test_context->config->transform) {
         case AWS_SRT_HEADER:
             return s_validate_internal_header_authorization(test_context);
@@ -887,26 +887,28 @@ static int s_validate_internal_authorization(struct v4a_test_context *test_conte
 }
 
 static int s_generate_test_case(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     const char *parent_folder,
     const char *test_name) {
     {
         struct aws_signing_state_aws *signing_state = test_context->signing_state;
 
         /* 1a - generate ecc key */
-        if (test_context->credentials != NULL) {
-            struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-                test_context->allocator, test_context->credentials);
-            ASSERT_NOT_NULL(derived_ecc_key);
-            ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
+        if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            if (test_context->credentials != NULL) {
+                struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+                        test_context->allocator, test_context->credentials);
+                ASSERT_NOT_NULL(derived_ecc_key);
+                ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
 
-            ASSERT_SUCCESS(s_write_key_to_test_case_file(test_context, derived_ecc_key, parent_folder, test_name));
-            aws_ecc_key_pair_release(test_context->ecc_key);
-            test_context->ecc_key = derived_ecc_key;
+                ASSERT_SUCCESS(s_write_key_to_test_case_file(test_context, derived_ecc_key, parent_folder, test_name));
+                aws_ecc_key_pair_release(test_context->ecc_key);
+                test_context->ecc_key = derived_ecc_key;
+            }
+
+            signing_state->config.ecc_signing_key = test_context->ecc_key;
+            aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
         }
-
-        signing_state->config.ecc_signing_key = test_context->ecc_key;
-        aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
 
         /* 1b - generate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
@@ -928,27 +930,29 @@ static int s_generate_test_case(
     return AWS_OP_SUCCESS;
 }
 
-static int s_check_test_case(struct v4a_test_context *test_context, const char *parent_folder, const char *test_name) {
+static int s_check_test_case(struct v4_test_context *test_context, const char *parent_folder, const char *test_name) {
     {
         struct aws_signing_state_aws *signing_state = test_context->signing_state;
 
         ASSERT_TRUE(test_context->ecc_key != NULL);
 
         /* 1a - validate ecc key if credentials present */
-        if (test_context->credentials != NULL) {
-            struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-                test_context->allocator, test_context->credentials);
-            ASSERT_NOT_NULL(derived_ecc_key);
+        if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            if (test_context->credentials != NULL) {
+                struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+                        test_context->allocator, test_context->credentials);
+                ASSERT_NOT_NULL(derived_ecc_key);
 
-            ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
+                ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
 
-            ASSERT_SUCCESS(s_check_derived_ecc_key(test_context, derived_ecc_key));
+                ASSERT_SUCCESS(s_check_derived_ecc_key(test_context, derived_ecc_key));
 
-            aws_ecc_key_pair_release(derived_ecc_key);
+                aws_ecc_key_pair_release(derived_ecc_key);
+            }
+
+            signing_state->config.ecc_signing_key = test_context->ecc_key;
+            aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
         }
-
-        signing_state->config.ecc_signing_key = test_context->ecc_key;
-        aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
 
         /* 1b -  validate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
@@ -974,17 +978,18 @@ static int s_check_test_case(struct v4a_test_context *test_context, const char *
     return AWS_OP_SUCCESS;
 }
 
-static int s_do_sigv4a_test_internal(
+static int s_do_sigv4_test_internal(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
+    enum aws_signing_algorithm algorithm,
     enum aws_signing_request_transform transform,
     struct aws_byte_buf *out_string_to_sign) {
 
-    struct v4a_test_context test_context;
+    struct v4_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
 
-    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name, transform));
+    ASSERT_SUCCESS(s_v4_test_context_init(&test_context, allocator, parent_folder, test_name, algorithm, transform));
 
     if (test_context.should_generate_test_case) {
         ASSERT_SUCCESS(s_generate_test_case(&test_context, parent_folder, test_name));
@@ -996,13 +1001,13 @@ static int s_do_sigv4a_test_internal(
         aws_byte_cursor_from_buf(&test_context.signing_state->string_to_sign);
     aws_byte_buf_append_dynamic(out_string_to_sign, &string_to_sign_cursor);
 
-    s_v4a_test_context_clean_up(&test_context);
+    s_v4_test_context_clean_up(&test_context);
 
     return AWS_OP_SUCCESS;
 }
 
 static int s_write_signed_request_to_file(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     const char *parent_folder,
     const char *test_name,
     const struct aws_string *filename) {
@@ -1073,7 +1078,7 @@ static int s_check_header_value(struct aws_http_message *request, struct aws_htt
 }
 
 static int s_check_query_authorization(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     struct aws_byte_cursor signed_path,
     struct aws_byte_cursor expected_path,
     struct aws_byte_buf *string_to_sign) {
@@ -1172,7 +1177,7 @@ static int s_compare_authorization_pair(
 }
 
 static int s_check_header_authorization(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     struct aws_http_header *header,
     struct aws_http_message *expected_request,
     struct aws_byte_buf *string_to_sign) {
@@ -1249,15 +1254,15 @@ static int s_check_header_authorization(
 }
 
 static int s_check_signed_request(
-    struct v4a_test_context *test_context,
+    struct v4_test_context *test_context,
     struct aws_byte_buf *expected_request_buffer,
     struct aws_byte_buf *string_to_sign) {
 
     struct aws_http_message *expected_request = NULL;
     struct aws_input_stream *body_stream = NULL;
 
-    ASSERT_SUCCESS(s_v4a_test_context_parse_request(
-        test_context, expected_request_buffer, false, &expected_request, &body_stream));
+    ASSERT_SUCCESS(s_v4_test_context_parse_request(
+            test_context, expected_request_buffer, false, &expected_request, &body_stream));
     ASSERT_NOT_NULL(expected_request);
 
     /* method */
@@ -1313,10 +1318,11 @@ static int s_check_signed_request(
     return AWS_OP_SUCCESS;
 }
 
-static int s_do_sigv4a_test_signing(
+static int s_do_sigv4_test_signing(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
+    enum aws_signing_algorithm algorithm,
     enum aws_signing_request_transform transform) {
 
     struct aws_byte_buf string_to_sign;
@@ -1324,12 +1330,12 @@ static int s_do_sigv4a_test_signing(
         return AWS_OP_ERR;
     }
 
-    ASSERT_SUCCESS(s_do_sigv4a_test_internal(allocator, parent_folder, test_name, transform, &string_to_sign));
+    ASSERT_SUCCESS(s_do_sigv4_test_internal(allocator, parent_folder, test_name, algorithm, transform, &string_to_sign));
 
-    struct v4a_test_context test_context;
+    struct v4_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
 
-    ASSERT_SUCCESS(s_v4a_test_context_init(&test_context, allocator, parent_folder, test_name, transform));
+    ASSERT_SUCCESS(s_v4_test_context_init(&test_context, allocator, parent_folder, test_name, algorithm, transform));
 
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator, test_context.signable, (void *)test_context.config, s_on_signing_complete, &test_context));
@@ -1344,7 +1350,7 @@ static int s_do_sigv4a_test_signing(
             s_check_signed_request(&test_context, &test_context.test_case_data.sample_signed_request, &string_to_sign));
     }
 
-    s_v4a_test_context_clean_up(&test_context);
+    s_v4_test_context_clean_up(&test_context);
 
     aws_byte_buf_clean_up(&string_to_sign);
 
@@ -1356,8 +1362,8 @@ static int s_do_sigv4a_test_case(struct aws_allocator *allocator, const char *te
     /* Set up everything */
     aws_auth_library_init(allocator);
 
-    ASSERT_SUCCESS(s_do_sigv4a_test_signing(allocator, parent_folder, test_name, AWS_SRT_HEADER));
-    ASSERT_SUCCESS(s_do_sigv4a_test_signing(allocator, parent_folder, test_name, AWS_SRT_QUERY_PARAM));
+    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC, AWS_SRT_HEADER));
+    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC, AWS_SRT_QUERY_PARAM));
 
     aws_auth_library_clean_up();
 
@@ -1410,3 +1416,63 @@ DECLARE_SIGV4A_TEST_SUITE_CASE(get_slashes_normalized, "get-slashes-normalized")
 DECLARE_SIGV4A_TEST_SUITE_CASE(get_slashes_unnormalized, "get-slashes-unnormalized");
 DECLARE_SIGV4A_TEST_SUITE_CASE(get_space_normalized, "get-space-normalized");
 DECLARE_SIGV4A_TEST_SUITE_CASE(get_space_unnormalized, "get-space-unnormalized");
+
+static int s_do_sigv4_test_case(struct aws_allocator *allocator, const char *test_name, const char *parent_folder) {
+
+    /* Set up everything */
+    aws_auth_library_init(allocator);
+
+    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4, AWS_SRT_HEADER));
+    ASSERT_SUCCESS(s_do_sigv4_test_signing(allocator, parent_folder, test_name, AWS_SIGNING_ALGORITHM_V4, AWS_SRT_QUERY_PARAM));
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+#define DECLARE_SIGV4_TEST_SUITE_CASE(test_name, test_name_string)                                                     \
+    static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
+        (void)ctx;                                                                                                     \
+        return s_do_sigv4_test_case(allocator, test_name_string, "./v4");                                              \
+    }                                                                                                                  \
+    AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
+
+DECLARE_SIGV4_TEST_SUITE_CASE(get_header_key_duplicate, "get-header-key-duplicate");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_multiline, "get-header-value-multiline");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_order, "get-header-value-order");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_trim, "get-header-value-trim");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_unreserved, "get-unreserved");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_utf8, "get-utf8");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla, "get-vanilla");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_empty_query_key, "get-vanilla-empty-query-key");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query, "get-vanilla-query");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query_order_key_case, "get-vanilla-query-order-key-case");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_unreserved, "get-vanilla-query-unreserved");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_utf8_query, "get-vanilla-utf8-query");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_header_key_case, "post-header-key-case");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_header_key_sort, "post-header-key-sort");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_header_value_case, "post-header-value-case");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla, "post-vanilla");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla_empty_query_value, "post-vanilla-empty-query-value");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla_query, "post-vanilla-query");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded, "post-x-www-form-urlencoded");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www-form-urlencoded-parameters");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_with_session_token, "get-vanilla-with-session-token");
+
+DECLARE_SIGV4_TEST_SUITE_CASE(post_sts_header_after, "post-sts-header-after");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_sts_header_before, "post-sts-header-before");
+
+DECLARE_SIGV4_TEST_SUITE_CASE(get_relative_normalized, "get-relative-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_relative_unnormalized, "get-relative-unnormalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_relative_relative_normalized, "get-relative-relative-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_relative_relative_unnormalized, "get-relative-relative-unnormalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slash_normalized, "get-slash-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slash_unnormalized, "get-slash-unnormalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slash_dot_slash_normalized, "get-slash-dot-slash-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slash_dot_slash_unnormalized, "get-slash-dot-slash-unnormalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slash_pointless_dot_normalized, "get-slash-pointless-dot-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slash_pointless_dot_unnormalized, "get-slash-pointless-dot-unnormalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slashes_normalized, "get-slashes-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_slashes_unnormalized, "get-slashes-unnormalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_space_normalized, "get-space-normalized");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_space_unnormalized, "get-space-unnormalized");

@@ -1,0 +1,4 @@
+GET /?-._~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz=-._~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fus-east-1%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host&X-Amz-Signature=7c81fc3287ef0d38eae1d9ed8d84da9764b6aa18fbb26254e299608759ca65ba HTTP/1.1
+Host:example.amazonaws.com
+X-Amz-Date:20150830T123600Z
+
