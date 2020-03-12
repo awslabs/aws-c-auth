@@ -123,7 +123,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         impl->cached_credentials = aws_credentials_new_copy(provider->allocator, credentials);
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Cached credentials provider succesfully sourced credentials on refresh",
+            "(id=%p) Cached credentials provider successfully sourced credentials on refresh",
             (void *)provider);
     } else {
         impl->cached_credentials = NULL;
