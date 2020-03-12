@@ -161,16 +161,18 @@ static struct aws_credentials *s_parse_credentials_from_ecs_document(
 
     struct aws_credentials *credentials = NULL;
     cJSON *document_root = NULL;
-
+    bool success = false;
+    bool parse_error = true;
     struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
     if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
+        parse_error = false;
         goto done;
     }
 
     document_root = cJSON_Parse((const char *)document->buffer);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse ECS response as Json document.");
-        goto parse_error;
+        goto done;
     }
 
     /*
@@ -180,7 +182,7 @@ static struct aws_credentials *s_parse_credentials_from_ecs_document(
     if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from ECS response Json document.");
-        goto parse_error;
+        goto done;
     }
 
     cJSON *secret_access_key =
@@ -188,20 +190,20 @@ static struct aws_credentials *s_parse_credentials_from_ecs_document(
     if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from ECS response Json document.");
-        goto parse_error;
+        goto done;
     }
 
     cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
     if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from ECS response Json document.");
-        goto parse_error;
+        goto done;
     }
 
     cJSON *creds_expiration =
         cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_creds_expiration_name));
     if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from ECS response Json document.");
-        goto parse_error;
+        goto done;
     }
 
     /*
@@ -217,7 +219,7 @@ static struct aws_credentials *s_parse_credentials_from_ecs_document(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "ECS credentials provider received unexpected credentials response,"
             " either access key, secret key or token is empty.")
-        goto parse_error;
+        goto done;
     }
 
     credentials = aws_credentials_new_from_cursors(
@@ -226,6 +228,7 @@ static struct aws_credentials *s_parse_credentials_from_ecs_document(
     if (credentials == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS credentials provider failed to allocate memory for credentials.");
+        parse_error = false;
         goto done;
     }
 
@@ -238,16 +241,15 @@ static struct aws_credentials *s_parse_credentials_from_ecs_document(
                 "Expiration in ECS response Json document is not a valid ISO_8601 date string.");
             aws_credentials_destroy(credentials);
             credentials = NULL;
-            goto parse_error;
+            goto done;
         }
         credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
     }
-    goto done;
-
-parse_error:
-    aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-
+    success = true;
 done:
+    if (!success && parse_error) {
+        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
+    }
 
     if (document_root != NULL) {
         cJSON_Delete(document_root);

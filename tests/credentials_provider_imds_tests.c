@@ -60,6 +60,10 @@ struct aws_mock_imds_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+    bool token_ttl_header_exist[IMDS_MAX_REQUESTS];
+    bool token_ttl_header_expected[IMDS_MAX_REQUESTS];
+    bool token_header_exist[IMDS_MAX_REQUESTS];
+    bool token_header_expected[IMDS_MAX_REQUESTS];
 };
 
 static struct aws_mock_imds_tester s_tester;
@@ -163,6 +167,9 @@ static void s_invoke_mock_request_callbacks(
         options->user_data);
 }
 
+static void s_validate_token_ttl_header(const struct aws_http_message *request);
+static void s_validate_token_header(const struct aws_http_message *request);
+
 static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     struct aws_http_connection *client_connection,
     const struct aws_http_make_request_options *options) {
@@ -173,6 +180,14 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     struct aws_byte_cursor path;
     AWS_ZERO_STRUCT(path);
     aws_http_message_get_request_path(options->request, &path);
+
+    if (s_tester.current_request == s_tester.token_request_idx) {
+        // verify token ttl header
+        s_validate_token_ttl_header(options->request);
+    } else if (s_tester.current_request > s_tester.token_request_idx) {
+        // verify token header
+        s_validate_token_header(options->request);
+    }
 
     int idx = s_tester.current_request++;
     aws_byte_buf_append_dynamic(&(s_tester.request_uris[idx]), &path);
@@ -185,7 +200,6 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
     const struct aws_http_stream *stream,
     int *out_status_code) {
     (void)stream;
-
     if (s_tester.token_request_idx == s_tester.current_request - 1 && s_tester.token_response_code != 0) {
         *out_status_code = s_tester.token_response_code;
     } else if (s_tester.current_request == 1 && s_tester.insecure_then_secure_attempt) {
@@ -358,6 +372,40 @@ AWS_STATIC_STRING_FROM_LITERAL(s_expected_imds_role_uri, "/latest/meta-data/iam/
 AWS_STATIC_STRING_FROM_LITERAL(s_test_role_response, "test-role");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_imds_token, "A00XXF3H00ZZ==");
 
+static void s_validate_token_ttl_header(const struct aws_http_message *request) {
+    const struct aws_http_headers *headers = aws_http_message_get_const_headers(request);
+    struct aws_byte_cursor ttl_header = aws_byte_cursor_from_c_str("x-aws-ec2-metadata-token-ttl-seconds");
+    struct aws_byte_cursor ttl_value;
+    int ret = aws_http_headers_get(headers, ttl_header, &ttl_value);
+    if (ret == AWS_OP_SUCCESS) {
+        s_tester.token_ttl_header_exist[s_tester.current_request] = true;
+        if (aws_byte_cursor_eq_c_str_ignore_case(&ttl_value, "21600")) {
+            s_tester.token_ttl_header_expected[s_tester.current_request] = true;
+        } else {
+            s_tester.token_ttl_header_expected[s_tester.current_request] = false;
+        }
+    } else {
+        s_tester.token_ttl_header_exist[s_tester.current_request] = false;
+    }
+}
+
+static void s_validate_token_header(const struct aws_http_message *request) {
+    const struct aws_http_headers *headers = aws_http_message_get_const_headers(request);
+    struct aws_byte_cursor token_header = aws_byte_cursor_from_c_str("x-aws-ec2-metadata-token");
+    struct aws_byte_cursor token_value;
+    int ret = aws_http_headers_get(headers, token_header, &token_value);
+    if (ret == AWS_OP_SUCCESS) {
+        s_tester.token_header_exist[s_tester.current_request] = true;
+        if (aws_byte_cursor_eq_c_str_ignore_case(&token_value, "A00XXF3H00ZZ==")) {
+            s_tester.token_header_expected[s_tester.current_request] = true;
+        } else {
+            s_tester.token_header_expected[s_tester.current_request] = false;
+        }
+    } else {
+        s_tester.token_header_exist[s_tester.current_request] = false;
+    }
+}
+
 static int s_validate_uri_path_and_creds(int expected_requests, bool get_credentials) {
 
     ASSERT_TRUE(s_tester.current_request == expected_requests);
@@ -421,6 +469,9 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_validate_uri_path_and_creds(1, false /*no creds*/) == 0);
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
 
     aws_credentials_provider_release(provider);
 
@@ -462,9 +513,13 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_validate_uri_path_and_creds(2, false /*no creds*/) == 0);
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
 
-    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_TRUE(s_tester.credentials == NULL);
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
 
     aws_credentials_provider_release(provider);
 
@@ -511,6 +566,17 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_validate_uri_path_and_creds(3, false /*no creds*/) == 0);
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_expected[2]);
 
     aws_credentials_provider_release(provider);
 
@@ -614,6 +680,18 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
 
     ASSERT_TRUE(s_validate_uri_path_and_creds(3, true /*got creds*/) == 0);
 
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_expected[2]);
+
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.credentials->access_key_id->bytes,
         s_tester.credentials->access_key_id->len,
@@ -674,6 +752,16 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_validate_uri_path_and_creds(3, true /*no creds*/) == 0);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_FALSE(s_tester.token_header_exist[1]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
+    ASSERT_FALSE(s_tester.token_header_exist[2]);
 
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.credentials->access_key_id->bytes,
@@ -740,6 +828,21 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
 
     s_aws_wait_for_credentials_result();
     ASSERT_TRUE(s_validate_uri_path_and_creds(4, true /*no creds*/) == 0);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[1]);
+    ASSERT_FALSE(s_tester.token_header_exist[1]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_expected[2]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[3]);
+    ASSERT_TRUE(s_tester.token_header_exist[3]);
+    ASSERT_TRUE(s_tester.token_header_expected[3]);
 
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.credentials->access_key_id->bytes,
