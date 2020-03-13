@@ -236,7 +236,10 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
                 "Failed reading ECS Token environment variable during ECS creds provider initialization.");
             goto clean_up;
         }
-        struct aws_byte_cursor nullify_cursor = {0};
+
+        struct aws_byte_cursor nullify_cursor;
+        AWS_ZERO_STRUCT(nullify_cursor);
+
         struct aws_credentials_provider_ecs_options ecs_options = {
             .bootstrap = options->bootstrap,
             .host = uri.host_name,
