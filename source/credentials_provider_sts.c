@@ -307,6 +307,7 @@ finish:
 static void s_on_connection_setup_fn(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
+    struct aws_http_stream *stream = NULL;
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -335,18 +336,21 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
         .on_complete = s_on_stream_complete_fn,
     };
 
-    struct aws_http_stream *stream =
-        provider_impl->function_table->aws_http_connection_make_request(connection, &options);
+    stream = provider_impl->function_table->aws_http_connection_make_request(connection, &options);
     if (stream) {
         if (provider_impl->function_table->aws_http_stream_activate(stream)) {
-            provider_impl->function_table->aws_http_stream_release(stream);
             goto error;
         }
 
+        provider_impl->function_table->aws_http_stream_release(stream);
         return;
     }
 
 error:
+    if (stream) {
+        provider_impl->function_table->aws_http_stream_release(stream);
+    }
+
     s_clean_up_user_data(provider_user_data);
 }
 
