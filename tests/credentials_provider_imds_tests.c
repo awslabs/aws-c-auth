@@ -22,6 +22,7 @@
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/logging.h>
@@ -204,9 +205,9 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
         *out_status_code = s_tester.token_response_code;
     } else if (s_tester.current_request == 1 && s_tester.insecure_then_secure_attempt) {
         /* for testing insecure then switch to secure way */
-        *out_status_code = 401;
+        *out_status_code = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
     } else {
-        *out_status_code = 200;
+        *out_status_code = AWS_HTTP_STATUS_CODE_200_OK;
     }
 
     return AWS_OP_SUCCESS;
@@ -451,7 +452,7 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
 
     s_aws_imds_tester_init(allocator);
     s_tester.is_request_successful[0] = false;
-    s_tester.token_response_code = 400;
+    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
@@ -726,7 +727,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.token_response_code = 403;
+    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
     s_tester.is_request_successful[0] = false;
 
     struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
@@ -800,7 +801,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     s_tester.is_request_successful[0] = false;
     s_tester.insecure_then_secure_attempt = true;
     s_tester.token_request_idx = 1;
-    s_tester.token_response_code = 200;
+    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_200_OK;
 
     struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_token_cursor);
@@ -819,7 +820,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .token_not_required = true,
+        .use_imds_v1 = true,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);

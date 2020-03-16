@@ -23,6 +23,7 @@
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 #include <aws/io/tls_channel_handler.h>
@@ -379,7 +380,7 @@ static void s_ecs_on_stream_complete_fn(struct aws_http_stream *stream, int erro
      * On anything other than a 200, nullify the response and pretend there was
      * an error
      */
-    if (ecs_user_data->status_code != 200 || error_code != AWS_OP_SUCCESS) {
+    if (ecs_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
         ecs_user_data->current_result.len = 0;
     }
 

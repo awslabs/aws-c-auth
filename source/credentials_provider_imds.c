@@ -23,6 +23,7 @@
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 #include <ctype.h>
@@ -33,6 +34,7 @@
 
 /* instance role credentials body response is currently ~ 1300 characters + name length */
 #define IMDS_RESPONSE_SIZE_INITIAL 2048
+#define IMDS_RESPONSE_TOKEN_SIZE_INITIAL 64
 #define IMDS_RESPONSE_SIZE_LIMIT 10000
 #define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 
@@ -54,9 +56,6 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
     .aws_http_connection_close = aws_http_connection_close};
 
 /*
- * IMDS V1 takes two http requests to get IMDS credentials.
- * Prior to this two requests, IMDS V2 takes one more token (Http PUT) request
- * to get secure token used in following requests.
  * This tracks which request we're on.
  */
 enum aws_imds_query_state { AWS_IMDS_QS_TOKEN, AWS_IMDS_QS_ROLE_NAME, AWS_IMDS_QS_ROLE_CREDENTIALS };
@@ -129,7 +128,8 @@ static struct aws_credentials_provider_imds_user_data *s_aws_credentials_provide
         goto on_error;
     }
 
-    if (aws_byte_buf_init(&wrapped_user_data->token_result, imds_provider->allocator, IMDS_RESPONSE_SIZE_INITIAL)) {
+    if (aws_byte_buf_init(
+            &wrapped_user_data->token_result, imds_provider->allocator, IMDS_RESPONSE_TOKEN_SIZE_INITIAL)) {
         goto on_error;
     }
     struct aws_credentials_provider_imds_impl *impl = imds_provider->impl;
@@ -399,8 +399,8 @@ static int s_imds_on_token_response(void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
 
     /* Gets 400 means token is required but the request itself failed. */
-    if (imds_user_data->status_code == 400) {
-        return -1;
+    if (imds_user_data->status_code == AWS_HTTP_STATUS_CODE_400_BAD_REQUEST) {
+        return AWS_OP_ERR;
     }
 
     /*
@@ -408,7 +408,7 @@ static int s_imds_on_token_response(void *user_data) {
      * we should fall back to insecure request. Otherwise, we should use
      * token in following requests.
      */
-    if (imds_user_data->status_code != 200 || imds_user_data->current_result.len == 0) {
+    if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || imds_user_data->current_result.len == 0) {
         imds_user_data->token_required = false;
     } else {
         imds_user_data->token = aws_byte_cursor_from_buf(&(imds_user_data->current_result));
@@ -418,14 +418,14 @@ static int s_imds_on_token_response(void *user_data) {
         } else {
             aws_byte_buf_reset(&imds_user_data->token_result, true /*zero contents*/);
             if (aws_byte_buf_append_and_update(&imds_user_data->token_result, &imds_user_data->token)) {
-                return -1;
+                return AWS_OP_ERR;
             }
         }
     }
     // No matter token acquire succeeded or not, moving forward to next step.
     imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME;
     s_imds_query_instance_role_name(imds_user_data);
-    return 0;
+    return AWS_OP_SUCCESS;
 }
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
@@ -439,7 +439,7 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
 
     // Token requst finished
     if (imds_user_data->query_state == AWS_IMDS_QS_TOKEN) {
-        if (s_imds_on_token_response(user_data) != 0) {
+        if (s_imds_on_token_response(user_data)) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to process IMDS token response.");
             s_imds_finalize_get_credentials_query(imds_user_data);
         }
@@ -447,7 +447,7 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     }
 
     // Unauthorized for other requests, means service requires token.
-    if (imds_user_data->status_code == 401) {
+    if (imds_user_data->status_code == AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED) {
         s_aws_credentials_provider_imds_user_data_reset_response(imds_user_data);
         imds_user_data->token_required = true;
         imds_user_data->query_state = AWS_IMDS_QS_TOKEN;
@@ -459,7 +459,7 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
      * At this step, on anything other than a 200, nullify the
      * response and pretend there was an error
      */
-    if (imds_user_data->status_code != 200) {
+    if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
         imds_user_data->current_result.len = 0;
         error_code = AWS_ERROR_HTTP_UNKNOWN;
     }
@@ -763,7 +763,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     if (impl->function_table == NULL) {
         impl->function_table = &s_default_function_table;
     }
-    impl->token_required = options->token_not_required ? false : true;
+    impl->token_required = options->use_imds_v1 ? false : true;
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (impl->connection_manager == NULL) {
         goto on_error;

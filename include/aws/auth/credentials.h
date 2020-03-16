@@ -152,11 +152,16 @@ struct aws_credentials_provider_chain_options {
     size_t provider_count;
 };
 
+/*
+ * IMDSV1 takes two http requests to get IMDS credentials.
+ * Prior to these two requests, IMDSV2 takes one more token (Http PUT) request
+ * to get secure token used in following requests.
+ */
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
-    /* if not set, the default value means token required */
-    bool token_not_required;
+    /* If not set, this value will be false, means use IMDSV2 */
+    bool use_imds_v1;
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;
 };
