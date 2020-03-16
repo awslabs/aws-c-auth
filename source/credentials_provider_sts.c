@@ -72,6 +72,7 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
     .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
     .aws_http_connection_make_request = aws_http_connection_make_request,
+    .aws_http_stream_activate = aws_http_stream_activate,
     .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close,
@@ -336,13 +337,15 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
 
     struct aws_http_stream *stream =
         provider_impl->function_table->aws_http_connection_make_request(connection, &options);
-    if (!stream) {
-        goto error;
+    if (stream) {
+        if (provider_impl->function_table->aws_http_stream_activate(stream)) {
+            provider_impl->function_table->aws_http_stream_release(stream);
+            goto error;
+        }
+
+        return;
     }
 
-    provider_impl->function_table->aws_http_stream_release(stream);
-
-    return;
 error:
     s_clean_up_user_data(provider_user_data);
 }

@@ -53,6 +53,7 @@ typedef int(aws_http_connection_manager_release_connection_fn)(
 typedef struct aws_http_stream *(aws_http_connection_make_request_fn)(
     struct aws_http_connection *client_connection,
     const struct aws_http_make_request_options *options);
+typedef int(aws_http_stream_activate_fn)(struct aws_http_stream *stream);
 typedef int(aws_http_stream_get_incoming_response_status_fn)(const struct aws_http_stream *stream, int *out_status);
 typedef void(aws_http_stream_release_fn)(struct aws_http_stream *stream);
 typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connection);
@@ -69,6 +70,7 @@ struct aws_credentials_provider_system_vtable {
     aws_http_connection_manager_release_connection_fn *aws_http_connection_manager_release_connection;
 
     aws_http_connection_make_request_fn *aws_http_connection_make_request;
+    aws_http_stream_activate_fn *aws_http_stream_activate;
     aws_http_stream_get_incoming_response_status_fn *aws_http_stream_get_incoming_response_status;
     aws_http_stream_release_fn *aws_http_stream_release;
 
