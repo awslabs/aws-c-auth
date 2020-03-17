@@ -423,7 +423,7 @@ static int s_make_imds_http_query(
         goto on_error;
     }
 
-    if (!impl->function_table->aws_http_stream_activate(stream)) {
+    if (impl->function_table->aws_http_stream_activate(stream)) {
         goto on_error;
     }
 
