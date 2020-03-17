@@ -1,12 +1,18 @@
 {
     "name": "aws-c-auth",
+    "targets": {
+        "android": {
+            "enabled": false,
+            "_comment": "disabled until we need to support it. LibCrypto needs to be configured on build machine."
+        }
+    },
     "upstream": [
         { "name": "aws-c-http" },
         { "name": "aws-c-cal" }
     ],
     "downstream": [
     ],
-    "cmake_args": [
-        "-DS2N_NO_PQ_ASM=ON"
+    "test_steps": [
+        "test"
     ]
 }
