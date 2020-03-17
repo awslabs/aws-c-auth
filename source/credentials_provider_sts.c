@@ -300,6 +300,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     }
 
 finish:
+    provider_impl->function_table->aws_http_stream_release(stream);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -337,20 +338,18 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
     };
 
     stream = provider_impl->function_table->aws_http_connection_make_request(connection, &options);
-    if (stream) {
-        if (provider_impl->function_table->aws_http_stream_activate(stream)) {
-            goto error;
-        }
 
-        provider_impl->function_table->aws_http_stream_release(stream);
-        return;
+    if (!stream) {
+        goto error;
     }
 
+    if (provider_impl->function_table->aws_http_stream_activate(stream)) {
+        goto error;
+    }
+
+    return;
 error:
-    if (stream) {
-        provider_impl->function_table->aws_http_stream_release(stream);
-    }
-
+    provider_impl->function_table->aws_http_stream_release(stream);
     s_clean_up_user_data(provider_user_data);
 }
 

@@ -399,6 +399,7 @@ static int s_make_ecs_http_query(
     struct aws_byte_cursor *uri) {
     AWS_FATAL_ASSERT(ecs_user_data->connection);
 
+    struct aws_http_stream *stream = NULL;
     struct aws_http_message *request = aws_http_message_new_request(ecs_user_data->allocator);
     if (request == NULL) {
         return AWS_OP_ERR;
@@ -458,20 +459,20 @@ static int s_make_ecs_http_query(
         .request = request,
     };
 
-    struct aws_http_stream *stream =
-        impl->function_table->aws_http_connection_make_request(ecs_user_data->connection, &request_options);
+    stream = impl->function_table->aws_http_connection_make_request(ecs_user_data->connection, &request_options);
 
-    if (stream) {
-        if (impl->function_table->aws_http_stream_activate(stream)) {
-            impl->function_table->aws_http_stream_release(stream);
-            goto on_error;
-        }
-
-        return AWS_OP_SUCCESS;
+    if (!stream) {
+        goto on_error;
     }
 
-on_error:
+    if (impl->function_table->aws_http_stream_activate(stream)) {
+        goto on_error;
+    }
 
+    return AWS_OP_SUCCESS;
+
+on_error:
+    impl->function_table->aws_http_stream_release(stream);
     aws_http_message_destroy(request);
 
     return AWS_OP_ERR;
