@@ -211,12 +211,12 @@ struct aws_signing_config_aws {
     /*
      * Signing key control:
      *
-     * If requested version is sigv4:
+     * If requested algorithm is sigv4:
      *   (1) If "credentials" is valid, use it
      *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
      *   (3) Else fail
      *
-     * If requested version is sigv4 asymmetric:
+     * If requested algorithm is sigv4 asymmetric:
      *   (1) If "ecc_signing_key" is valid, use it
      *   (2) Else If "credentials" is valid, derive a signing key via
      *       aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials() and use the result
@@ -228,12 +228,13 @@ struct aws_signing_config_aws {
      *   if credentials is valid (rule 2) but the key derivation procedure fails for some reason, we do *NOT* fall
      *   through to (3), we instead fail completely.
      *
-     *   Key derivation is not cheap, and so users are encourage to cache derived ecc signing keys relative
+     *   Key derivation is not cheap, and so users are encouraged to cache derived ecc signing keys relative
      *   to aws credential instances.
      */
 
     /*
-     * Ecc key to use as part of an asymmetric sigv4 signing process.
+     * Ecc key to use as part of an asymmetric sigv4 signing process.  If the signing algorithm is not sigv4a then
+     * this parameter has no effect.
      */
     struct aws_ecc_key_pair *ecc_signing_key;
 
@@ -248,6 +249,13 @@ struct aws_signing_config_aws {
      * ecc key pair will be derived from the fetched credentials.
      */
     struct aws_credentials_provider *credentials_provider;
+
+    /*
+     * If non-zero and the signing transform is query param, then signing will add X-Amz-Expires to the query
+     * string, equal to the value specified here.  If this value is zero or if header signing is being used then
+     * this parameter has no effect.
+     */
+    uint64_t expiration_in_seconds;
 };
 
 AWS_EXTERN_C_BEGIN

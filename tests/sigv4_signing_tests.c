@@ -171,6 +171,7 @@ struct v4_test_context {
     struct aws_string *timestamp;
     struct aws_credentials *credentials;
     bool should_normalize;
+    uint64_t expiration_in_seconds;
     struct aws_input_stream *payload_stream;
     struct aws_ecc_key_pair *ecc_key;
 
@@ -218,6 +219,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_name, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_service_name, "service");
 AWS_STATIC_STRING_FROM_LITERAL(s_timestamp_name, "timestamp");
 AWS_STATIC_STRING_FROM_LITERAL(s_normalize_name, "normalize");
+AWS_STATIC_STRING_FROM_LITERAL(s_expiration_name, "expiration_in_seconds");
 
 static int s_v4_test_context_parse_context_file(struct v4_test_context *context) {
     struct aws_byte_buf *document = &context->test_case_data.context;
@@ -299,6 +301,13 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     }
 
     context->should_normalize = cJSON_IsTrue(normalize_node);
+
+    cJSON *expiration_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_expiration_name));
+    if (expiration_node == NULL || !cJSON_IsNumber(expiration_node)) {
+        goto done;
+    }
+
+    context->expiration_in_seconds = expiration_node->valueint;
 
     result = AWS_OP_SUCCESS;
 
@@ -480,6 +489,7 @@ static int s_v4_test_context_init_signing_config(
     context->config->should_normalize_uri_path = context->should_normalize;
     context->config->body_signing_type = AWS_BODY_SIGNING_OFF;
     context->config->credentials = context->credentials;
+    context->config->expiration_in_seconds = context->expiration_in_seconds;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(context->timestamp);
     if (aws_date_time_init_from_str_cursor(&context->config->date, &date_cursor, AWS_DATE_FORMAT_ISO_8601)) {

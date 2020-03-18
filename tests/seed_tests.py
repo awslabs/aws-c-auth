@@ -18,18 +18,12 @@ import copy
 import argparse
 import pdb
 import json
-import shutil
-
-#import subprocess
-#import shutil
-#import time
-#import datetime
-#import sys
 
 base_context = {
     "region":"us-east-1",
     "service":"service",
     "timestamp":"2015-08-30T12:36:00Z",
+    "expiration":3600,
     "credentials": {
         "access_key_id" : "AKIDEXAMPLE",
         "secret_access_key" : "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
