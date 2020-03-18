@@ -1,6 +1,6 @@
 GET
 /
-X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-Region-Set=us-east-1&X-Amz-Security-Token=6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267&X-Amz-SignedHeaders=host%3Bx-amz-security-token
+X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-Expires=3600&X-Amz-Region-Set=us-east-1&X-Amz-Security-Token=6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267&X-Amz-SignedHeaders=host%3Bx-amz-security-token
 host:example.amazonaws.com
 x-amz-security-token:6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267
 

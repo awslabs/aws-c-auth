@@ -1,4 +1,4 @@
-GET /?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fus-east-1%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host%3Bmy-header1&X-Amz-Signature=cbf1dbd78c9e4b545482af8403dc88d0f6b3b0517dcfd6380ac0b98c04407b17 HTTP/1.1
+GET /?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fus-east-1%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host%3Bmy-header1&X-Amz-Expires=3600&X-Amz-Signature=313720e71ca6202fdcfa9b20f88de01a4eb0638a83c833b1c184359a4eda864e HTTP/1.1
 Host:example.amazonaws.com
 My-Header1:value4
 My-Header1:value1
