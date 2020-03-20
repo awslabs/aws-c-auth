@@ -7,7 +7,8 @@ on:
       - '!master'
 
 env:
-  BUILDER_VERSION: v0.4.5
+  BUILDER_VERSION: v0.6.0
+  BUILDER_SOURCE: releases
   BUILDER_HOST: https://d19elf31gohf1l.cloudfront.net
   PACKAGE_NAME: aws-c-auth
   LINUX_BASE_IMAGE: ubuntu-16-x64
@@ -75,7 +76,7 @@ jobs:
     steps:
     - name: Build ${{ env.PACKAGE_NAME }} + consumers
       run: |
-        python -c "from urllib.request import urlretrieve; urlretrieve('${{ env.BUILDER_HOST }}/${{ env.BUILDER_VERSION }}/builder', 'builder.pyz')"
+        python -c "from urllib.request import urlretrieve; urlretrieve('${{ env.BUILDER_HOST }}/${{ env.BUILDER_SOURCE }}/${{ env.BUILDER_VERSION }}/builder.pyz', 'builder.pyz')"
         python builder.pyz build -p ${{ env.PACKAGE_NAME }} default-downstream
 
   osx:
@@ -83,7 +84,7 @@ jobs:
     steps:
     - name: Build ${{ env.PACKAGE_NAME }} + consumers
       run: |
-        python3 -c "from urllib.request import urlretrieve; urlretrieve('${{ env.BUILDER_HOST }}/${{ env.BUILDER_VERSION }}/builder', 'builder')"
+        python3 -c "from urllib.request import urlretrieve; urlretrieve('${{ env.BUILDER_HOST }}/${{ env.BUILDER_SOURCE }}/${{ env.BUILDER_VERSION }}/builder.pyz', 'builder')"
         chmod a+x builder
         ./builder build -p ${{ env.PACKAGE_NAME }} default-downstream
 

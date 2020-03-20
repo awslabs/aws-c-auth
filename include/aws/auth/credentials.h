@@ -152,10 +152,22 @@ struct aws_credentials_provider_chain_options {
     size_t provider_count;
 };
 
+/*
+ * IMDS_V1 takes two http requests to get IMDS credentials.
+ * Prior to these two requests, IMDS_V2 takes one more token (Http PUT) request
+ * to get secure token used in following requests.
+ */
+enum aws_credentials_provider_imds_versions {
+    // defaults to use IMDS_V2
+    IMDS_V2,
+    IMDS_V1
+};
+
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
-
+    /* If not set, this value will be false, means use IMDS_V2 */
+    enum aws_credentials_provider_imds_versions imds_version;
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;
 };

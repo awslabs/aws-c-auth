@@ -24,6 +24,7 @@
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 #include <aws/io/socket.h>
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
@@ -252,7 +253,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         "(id=%p): AssumeRole call completed with http status %d",
         (void *)provider_user_data->provider,
         http_response_code);
-    if (!error_code && http_response_code == 200) {
+    if (!error_code && http_response_code == AWS_HTTP_STATUS_CODE_200_OK) {
         struct aws_xml_parser xml_parser;
         struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
 
