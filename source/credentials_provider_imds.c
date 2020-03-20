@@ -763,7 +763,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     if (impl->function_table == NULL) {
         impl->function_table = &s_default_function_table;
     }
-    impl->token_required = options->use_imds_v1 ? false : true;
+    impl->token_required = options->imds_version == IMDS_V1 ? false : true;
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (impl->connection_manager == NULL) {
         goto on_error;

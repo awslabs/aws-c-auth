@@ -820,7 +820,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .use_imds_v1 = true,
+        .imds_version = IMDS_V1,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
