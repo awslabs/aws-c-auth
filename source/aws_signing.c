@@ -787,19 +787,17 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     }
 
     /* X-Amz-Security-token */
-    if (state->config.credentials != NULL) {
-        struct aws_byte_cursor security_token_name_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
-        struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-        if (session_token_cursor.len > 0 && s_should_sign_param(state, &security_token_name_cur)) {
-            struct aws_uri_param security_token_param = {
-                .key = security_token_name_cur,
-                .value = session_token_cursor,
-            };
+    struct aws_byte_cursor security_token_name_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+    struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
+    if (session_token_cursor.len > 0 && s_should_sign_param(state, &security_token_name_cur)) {
+        struct aws_uri_param security_token_param = {
+            .key = security_token_name_cur,
+            .value = session_token_cursor,
+        };
 
-            if (s_add_authorization_query_param_with_encoding(
-                    state, query_params, &security_token_param, &uri_encoded_value)) {
-                goto done;
-            }
+        if (s_add_authorization_query_param_with_encoding(
+                state, query_params, &security_token_param, &uri_encoded_value)) {
+            goto done;
         }
     }
 
@@ -1080,24 +1078,22 @@ static int s_build_canonical_stable_header_list(
 
     struct aws_byte_cursor security_token_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
 
-    if (state->config.credentials != NULL) {
-        struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-        if (session_token_cursor.len > 0 && s_should_sign_param(state, &security_token_cur)) {
-            /* X-Amz-Security-Token */
-            struct stable_header session_token_header = {
-                .original_index = additional_header_index++,
-                .header =
-                    {
-                        .name = security_token_cur,
-                        .value = session_token_cursor,
-                    },
-            };
-            if (aws_array_list_push_back(stable_header_list, &session_token_header)) {
-                return AWS_OP_ERR;
-            }
-
-            *out_required_capacity += g_aws_signing_security_token_name->len + session_token_cursor.len;
+    struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
+    if (session_token_cursor.len > 0 && s_should_sign_param(state, &security_token_cur)) {
+        /* X-Amz-Security-Token */
+        struct stable_header session_token_header = {
+            .original_index = additional_header_index++,
+            .header =
+                {
+                    .name = security_token_cur,
+                    .value = session_token_cursor,
+                },
+        };
+        if (aws_array_list_push_back(stable_header_list, &session_token_header)) {
+            return AWS_OP_ERR;
         }
+
+        *out_required_capacity += g_aws_signing_security_token_name->len + session_token_cursor.len;
     }
 
     if (state->config.signature_type == AWS_ST_HTTP_REQUEST_HEADERS) {
@@ -1207,11 +1203,9 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         total_sign_headers_count += 1;
     }
 
-    if (state->config.credentials != NULL) {
-        struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-        if (session_token_cursor.len > 0) {
-            total_sign_headers_count += 1; /* for X-Amz-Security-Token */
-        }
+    struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
+    if (session_token_cursor.len > 0) {
+        total_sign_headers_count += 1; /* for X-Amz-Security-Token */
     }
 
     if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
@@ -2053,35 +2047,33 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         /*
          * Add Security token to the signing result if a session token was present.
          */
-        if (state->config.credentials != NULL) {
-            struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-            if (session_token_cursor.len > 0) {
-                struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(
-                        g_aws_signing_security_token_name);
-                const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
+        struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
+        if (session_token_cursor.len > 0) {
+            struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(
+                    g_aws_signing_security_token_name);
+            const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
 
-                /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers
-                 */
-                if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
-                    property_list_name = g_aws_http_query_params_property_list_name;
+            /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers
+             */
+            if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+                property_list_name = g_aws_http_query_params_property_list_name;
 
-                    if (aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token_cursor.len)) {
-                        goto cleanup;
-                    }
-
-                    /* uri encode it */
-                    if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token_cursor)) {
-                        aws_byte_buf_clean_up(&uri_encoded_buf);
-                        goto cleanup;
-                    }
-
-                    session_token_cursor = aws_byte_cursor_from_buf(&uri_encoded_buf);
-                }
-
-                if (aws_signing_result_append_property_list(
-                        &state->result, property_list_name, &session_token_name, &session_token_cursor)) {
+                if (aws_byte_buf_init(&uri_encoded_buf, state->allocator, session_token_cursor.len)) {
                     goto cleanup;
                 }
+
+                /* uri encode it */
+                if (aws_byte_buf_append_encoding_uri_param(&uri_encoded_buf, &session_token_cursor)) {
+                    aws_byte_buf_clean_up(&uri_encoded_buf);
+                    goto cleanup;
+                }
+
+                session_token_cursor = aws_byte_cursor_from_buf(&uri_encoded_buf);
+            }
+
+            if (aws_signing_result_append_property_list(
+                    &state->result, property_list_name, &session_token_name, &session_token_cursor)) {
+                goto cleanup;
             }
         }
     }
