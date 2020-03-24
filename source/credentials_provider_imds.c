@@ -18,12 +18,15 @@
 #include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
+#include <aws/common/date_time.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
+#include <ctype.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
@@ -31,12 +34,15 @@
 
 /* instance role credentials body response is currently ~ 1300 characters + name length */
 #define IMDS_RESPONSE_SIZE_INITIAL 2048
+#define IMDS_RESPONSE_TOKEN_SIZE_INITIAL 64
 #define IMDS_RESPONSE_SIZE_LIMIT 10000
 #define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_credentials_provider_system_vtable *function_table;
+    /* will be set to true by default, means using IMDS V2 */
+    bool token_required;
 };
 
 static struct aws_credentials_provider_system_vtable s_default_function_table = {
@@ -51,9 +57,9 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
     .aws_http_connection_close = aws_http_connection_close};
 
 /*
- * It takes two http requests to get IMDS credentials.  This tracks which request we're on.
+ * This tracks which request we're on.
  */
-enum aws_imds_query_state { AWS_IMDS_QS_ROLE_NAME, AWS_IMDS_QS_ROLE_CREDENTIALS };
+enum aws_imds_query_state { AWS_IMDS_QS_TOKEN, AWS_IMDS_QS_ROLE_NAME, AWS_IMDS_QS_ROLE_CREDENTIALS };
 
 /*
  * Tracking structure for each outstanding async query to an imds provider
@@ -70,6 +76,13 @@ struct aws_credentials_provider_imds_user_data {
     struct aws_http_connection *connection;
     struct aws_http_message *request;
     struct aws_byte_buf current_result;
+    struct aws_byte_buf token_result;
+    struct aws_byte_cursor token;
+    /*
+     * initial value is copy of impl->token_required,
+     * will be adapted according to response.
+     */
+    bool token_required;
     int status_code;
 };
 
@@ -78,7 +91,6 @@ static void s_aws_credentials_provider_imds_user_data_destroy(
     if (user_data == NULL) {
         return;
     }
-
     struct aws_credentials_provider_imds_impl *impl = user_data->imds_provider->impl;
 
     if (user_data->connection) {
@@ -87,11 +99,12 @@ static void s_aws_credentials_provider_imds_user_data_destroy(
     }
 
     aws_byte_buf_clean_up(&user_data->current_result);
+    aws_byte_buf_clean_up(&user_data->token_result);
 
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
     }
-
+    aws_credentials_provider_release(user_data->imds_provider);
     aws_mem_release(user_data->allocator, user_data);
 }
 
@@ -101,15 +114,14 @@ static struct aws_credentials_provider_imds_user_data *s_aws_credentials_provide
     void *user_data) {
 
     struct aws_credentials_provider_imds_user_data *wrapped_user_data =
-        aws_mem_acquire(imds_provider->allocator, sizeof(struct aws_credentials_provider_imds_user_data));
+        aws_mem_calloc(imds_provider->allocator, 1, sizeof(struct aws_credentials_provider_imds_user_data));
     if (wrapped_user_data == NULL) {
         goto on_error;
     }
 
-    AWS_ZERO_STRUCT(*wrapped_user_data);
-
     wrapped_user_data->allocator = imds_provider->allocator;
     wrapped_user_data->imds_provider = imds_provider;
+    aws_credentials_provider_acquire(imds_provider);
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
@@ -117,6 +129,12 @@ static struct aws_credentials_provider_imds_user_data *s_aws_credentials_provide
         goto on_error;
     }
 
+    if (aws_byte_buf_init(
+            &wrapped_user_data->token_result, imds_provider->allocator, IMDS_RESPONSE_TOKEN_SIZE_INITIAL)) {
+        goto on_error;
+    }
+    struct aws_credentials_provider_imds_impl *impl = imds_provider->impl;
+    wrapped_user_data->token_required = impl->token_required;
     return wrapped_user_data;
 
 on_error:
@@ -137,10 +155,11 @@ static void s_aws_credentials_provider_imds_user_data_reset_response(
     }
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_empty_empty_string, "\0");
+AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "\0");
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "AccessKeyId");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "SecretAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "Token");
+AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "Expiration");
 
 /*
  * In general, the IMDS document looks something like:
@@ -162,14 +181,18 @@ static struct aws_credentials *s_parse_credentials_from_imds_document(
 
     struct aws_credentials *credentials = NULL;
     cJSON *document_root = NULL;
+    bool success = false;
+    bool parse_error = true;
 
-    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
+    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
     if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
+        parse_error = false;
         goto done;
     }
 
     document_root = cJSON_Parse((const char *)document->buffer);
     if (document_root == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IMDS response as Json document.");
         goto done;
     }
 
@@ -178,17 +201,30 @@ static struct aws_credentials *s_parse_credentials_from_imds_document(
      */
     cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_access_key_id_name));
     if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from IMDS response Json document.");
         goto done;
     }
 
     cJSON *secret_access_key =
         cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_secret_access_key_name));
     if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from IMDS response Json document.");
         goto done;
     }
 
     cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
     if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from IMDS response Json document.");
+        goto done;
+    }
+
+    cJSON *creds_expiration =
+        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_creds_expiration_name));
+    if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from IMDS response Json document.");
         goto done;
     }
 
@@ -198,15 +234,45 @@ static struct aws_credentials *s_parse_credentials_from_imds_document(
     struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
     struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
     struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
+    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
 
     if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0 || session_token_cursor.len == 0) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "IMDS credentials provider received unexpected credentials response,"
+            " either access key, secret key or token is empty.")
         goto done;
     }
 
     credentials = aws_credentials_new_from_cursors(
         allocator, &access_key_id_cursor, &secret_access_key_cursor, &session_token_cursor);
 
+    if (credentials == NULL) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "IMDS credentials provider failed to allocate memory for credentials.");
+        parse_error = false;
+        goto done;
+    }
+
+    if (creds_expiration_cursor.len != 0) {
+        struct aws_date_time expiration;
+        if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
+            AWS_OP_ERR) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Expiration in IMDS response Json document is not a valid ISO_8601 date string.");
+            aws_credentials_destroy(credentials);
+            credentials = NULL;
+            goto done;
+        }
+        credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
+    }
+    success = true;
+
 done:
+    if (!success && parse_error) {
+        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
+    }
 
     if (document_root != NULL) {
         cJSON_Delete(document_root);
@@ -238,9 +304,7 @@ static void s_imds_finalize_get_credentials_query(struct aws_credentials_provide
     }
 
     /* clean up */
-    struct aws_credentials_provider *provider = imds_user_data->imds_provider;
     s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
-    aws_credentials_provider_release(provider);
     aws_credentials_destroy(credentials);
 }
 
@@ -323,7 +387,47 @@ static int s_imds_on_incoming_headers_fn(
     return AWS_OP_SUCCESS;
 }
 
+static void s_imds_query_token(struct aws_credentials_provider_imds_user_data *aws_credentials_provider_imds_user_data);
+static void s_imds_query_instance_role_name(struct aws_credentials_provider_imds_user_data *imds_user_data);
 static void s_imds_query_instance_role_credentials(struct aws_credentials_provider_imds_user_data *imds_user_data);
+
+static bool s_isspace(uint8_t c) {
+    return isspace((int)c) != 0;
+}
+
+static int s_imds_on_token_response(void *user_data) {
+
+    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+
+    /* Gets 400 means token is required but the request itself failed. */
+    if (imds_user_data->status_code == AWS_HTTP_STATUS_CODE_400_BAD_REQUEST) {
+        return AWS_OP_ERR;
+    }
+
+    /*
+     * Other than that, if meets any error, then token is not required,
+     * we should fall back to insecure request. Otherwise, we should use
+     * token in following requests.
+     */
+    if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || imds_user_data->current_result.len == 0) {
+        imds_user_data->token_required = false;
+    } else {
+        imds_user_data->token = aws_byte_cursor_from_buf(&(imds_user_data->current_result));
+        aws_byte_cursor_trim_pred(&(imds_user_data->token), s_isspace);
+        if (imds_user_data->token.len == 0) {
+            imds_user_data->token_required = false;
+        } else {
+            aws_byte_buf_reset(&imds_user_data->token_result, true /*zero contents*/);
+            if (aws_byte_buf_append_and_update(&imds_user_data->token_result, &imds_user_data->token)) {
+                return AWS_OP_ERR;
+            }
+        }
+    }
+    // No matter token acquire succeeded or not, moving forward to next step.
+    imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME;
+    s_imds_query_instance_role_name(imds_user_data);
+    return AWS_OP_SUCCESS;
+}
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
@@ -334,11 +438,29 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
     impl->function_table->aws_http_stream_release(stream);
 
+    // Token requst finished
+    if (imds_user_data->query_state == AWS_IMDS_QS_TOKEN) {
+        if (s_imds_on_token_response(user_data)) {
+            AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to process IMDS token response.");
+            s_imds_finalize_get_credentials_query(imds_user_data);
+        }
+        return;
+    }
+
+    // Unauthorized for other requests, means service requires token.
+    if (imds_user_data->status_code == AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED) {
+        s_aws_credentials_provider_imds_user_data_reset_response(imds_user_data);
+        imds_user_data->token_required = true;
+        imds_user_data->query_state = AWS_IMDS_QS_TOKEN;
+        s_imds_query_token(imds_user_data);
+        return;
+    }
+
     /*
-     * On anything other than a 200, nullify the response and pretend there was
-     * an error
+     * At this step, on anything other than a 200, nullify the
+     * response and pretend there was an error
      */
-    if (imds_user_data->status_code != 200) {
+    if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
         imds_user_data->current_result.len = 0;
         error_code = AWS_ERROR_HTTP_UNKNOWN;
     }
@@ -359,6 +481,10 @@ AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header, "User-Agent");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header_value, "aws-sdk-crt/imds-credentials-provider");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_h1_0_keep_alive_header, "Connection");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_h1_0_keep_alive_header_value, "keep-alive");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_resource_path, "/latest/api/token");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_ttl_header, "x-aws-ec2-metadata-token-ttl-seconds");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_header, "x-aws-ec2-metadata-token");
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_ttl_default_value, "21600");
 
 static int s_make_imds_http_query(
     struct aws_credentials_provider_imds_user_data *imds_user_data,
@@ -397,11 +523,35 @@ static int s_make_imds_http_query(
         goto on_error;
     }
 
-    if (aws_http_message_set_request_path(request, *uri)) {
-        goto on_error;
+    if (imds_user_data->query_state == AWS_IMDS_QS_TOKEN) {
+        struct aws_http_header token_ttl_header = {
+            .name = aws_byte_cursor_from_string(s_imds_token_ttl_header),
+            .value = aws_byte_cursor_from_string(s_imds_token_ttl_default_value),
+        };
+        if (aws_http_message_add_header(request, token_ttl_header)) {
+            goto on_error;
+        }
+
+        if (aws_http_message_set_request_method(request, aws_byte_cursor_from_c_str("PUT"))) {
+            goto on_error;
+        }
+
+    } else {
+        if (imds_user_data->token_required) {
+            struct aws_http_header token_header = {
+                .name = aws_byte_cursor_from_string(s_imds_token_header),
+                .value = imds_user_data->token,
+            };
+            if (aws_http_message_add_header(request, token_header)) {
+                goto on_error;
+            }
+        }
+        if (aws_http_message_set_request_method(request, aws_byte_cursor_from_c_str("GET"))) {
+            goto on_error;
+        }
     }
 
-    if (aws_http_message_set_request_method(request, aws_byte_cursor_from_c_str("GET"))) {
+    if (aws_http_message_set_request_path(request, *uri)) {
         goto on_error;
     }
 
@@ -486,8 +636,16 @@ cleanup:
 }
 
 static void s_imds_query_instance_role_name(struct aws_credentials_provider_imds_user_data *imds_user_data) {
-
+    /* "Clear" the result incase there is a prior token request */
+    s_aws_credentials_provider_imds_user_data_reset_response(imds_user_data);
     struct aws_byte_cursor uri = aws_byte_cursor_from_string(s_imds_metadata_resource_path);
+    if (s_make_imds_http_query(imds_user_data, &uri)) {
+        s_imds_finalize_get_credentials_query(imds_user_data);
+    }
+}
+
+static void s_imds_query_token(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+    struct aws_byte_cursor uri = aws_byte_cursor_from_string(s_imds_token_resource_path);
     if (s_make_imds_http_query(imds_user_data, &uri)) {
         s_imds_finalize_get_credentials_query(imds_user_data);
     }
@@ -509,9 +667,13 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
     }
 
     imds_user_data->connection = connection;
-    imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME;
-
-    s_imds_query_instance_role_name(imds_user_data);
+    if (imds_user_data->token_required) {
+        imds_user_data->query_state = AWS_IMDS_QS_TOKEN;
+        s_imds_query_token(imds_user_data);
+    } else {
+        imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME;
+        s_imds_query_instance_role_name(imds_user_data);
+    }
 }
 
 static int s_credentials_provider_imds_get_credentials_async(
@@ -526,8 +688,6 @@ static int s_credentials_provider_imds_get_credentials_async(
     if (wrapped_user_data == NULL) {
         goto error;
     }
-
-    aws_credentials_provider_acquire(provider);
 
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_imds_on_acquire_connection, wrapped_user_data);
@@ -612,7 +772,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     if (impl->function_table == NULL) {
         impl->function_table = &s_default_function_table;
     }
-
+    impl->token_required = options->imds_version == IMDS_V1 ? false : true;
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (impl->connection_manager == NULL) {
         goto on_error;
