@@ -327,7 +327,6 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
     }
 
     struct aws_http_make_request_options options = {
-        .manual_window_management = false,
         .user_data = user_data,
         .request = provider_user_data->message,
         .self_size = sizeof(struct aws_http_make_request_options),
