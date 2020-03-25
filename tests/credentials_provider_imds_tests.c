@@ -43,7 +43,7 @@
  * Well, IMDS could act crazy then client would keep switching between secure and insecure way.
  * We will not handle this extreme case.
  */
-#define IMDS_MAX_REQUESTS (4)
+#define IMDS_MAX_REQUESTS (8)
 struct aws_mock_imds_tester {
     struct aws_byte_buf request_uris[IMDS_MAX_REQUESTS];
     struct aws_array_list response_data_callbacks[IMDS_MAX_REQUESTS];
@@ -65,6 +65,7 @@ struct aws_mock_imds_tester {
     bool token_ttl_header_expected[IMDS_MAX_REQUESTS];
     bool token_header_exist[IMDS_MAX_REQUESTS];
     bool token_header_expected[IMDS_MAX_REQUESTS];
+    bool alternate_closed_connections;
 };
 
 static struct aws_mock_imds_tester s_tester;
@@ -162,10 +163,17 @@ static void s_invoke_mock_request_callbacks(
         options->on_response_body((struct aws_http_stream *)1, &data_callback_cursor, options->user_data);
     }
 
-    options->on_complete(
-        (struct aws_http_stream *)1,
-        is_request_successful ? AWS_ERROR_SUCCESS : AWS_ERROR_HTTP_UNKNOWN,
-        options->user_data);
+    if (!s_tester.alternate_closed_connections) {
+        options->on_complete(
+            (struct aws_http_stream *)1,
+            is_request_successful ? AWS_ERROR_SUCCESS : AWS_ERROR_HTTP_UNKNOWN,
+            options->user_data);
+    } else {
+        options->on_complete(
+            (struct aws_http_stream *)1,
+            ((uint8_t)s_tester.current_request & 0x01) ? AWS_ERROR_HTTP_CONNECTION_CLOSED : AWS_ERROR_SUCCESS,
+            options->user_data);
+    }
 }
 
 static void s_validate_token_ttl_header(const struct aws_http_message *request);
@@ -202,6 +210,10 @@ static int s_aws_http_stream_activate_mock(struct aws_http_stream *stream) {
     return AWS_OP_SUCCESS;
 }
 
+static struct aws_http_connection *s_aws_http_stream_get_connection_mock(const struct aws_http_stream *stream) {
+    return (struct aws_http_connection *)1;
+}
+
 static int s_aws_http_stream_get_incoming_response_status_mock(
     const struct aws_http_stream *stream,
     int *out_status_code) {
@@ -233,6 +245,7 @@ static struct aws_credentials_provider_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_release_connection = s_aws_http_connection_manager_release_connection_mock,
     .aws_http_connection_make_request = s_aws_http_connection_make_request_mock,
     .aws_http_stream_activate = s_aws_http_stream_activate_mock,
+    .aws_http_stream_get_connection = s_aws_http_stream_get_connection_mock,
     .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
     .aws_http_connection_close = s_aws_http_connection_close_mock};
@@ -415,7 +428,7 @@ static void s_validate_token_header(const struct aws_http_message *request) {
 
 static int s_validate_uri_path_and_creds(int expected_requests, bool get_credentials) {
 
-    ASSERT_TRUE(s_tester.current_request == expected_requests);
+    ASSERT_UINT_EQUALS(expected_requests, s_tester.current_request);
 
     int idx = s_tester.token_request_idx;
     if (s_tester.current_request >= 1) {
@@ -728,6 +741,73 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
 }
 
 AWS_TEST_CASE(credentials_provider_imds_secure_success, s_credentials_provider_imds_secure_success);
+
+static int s_credentials_provider_imds_connection_closed_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+    s_tester.alternate_closed_connections = true;
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+    /* this one will fail, replay the body. */
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_token_cursor);
+
+    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &test_role_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[3], &good_response_cursor);
+    /* this one will fail replay the body */
+    aws_array_list_push_back(&s_tester.response_data_callbacks[4], &good_response_cursor);
+
+    struct aws_credentials_provider_imds_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->access_key_id->bytes,
+        s_tester.credentials->access_key_id->len,
+        s_good_access_key_id->bytes,
+        s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->secret_access_key->bytes,
+        s_tester.credentials->secret_access_key->len,
+        s_good_secret_access_key->bytes,
+        s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->session_token->bytes,
+        s_tester.credentials->session_token->len,
+        s_good_session_token->bytes,
+        s_good_session_token->len);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_imds_connection_closed_success,
+    s_credentials_provider_imds_connection_closed_success);
 
 static int s_credentials_provider_imds_insecure_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
