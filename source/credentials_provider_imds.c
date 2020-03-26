@@ -37,6 +37,7 @@
 #define IMDS_RESPONSE_TOKEN_SIZE_INITIAL 64
 #define IMDS_RESPONSE_SIZE_LIMIT 10000
 #define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
+#define IMDS_MAX_RETRIES 4
 
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
@@ -71,6 +72,7 @@ enum aws_imds_query_state {
     AWS_IMDS_QS_ROLE_CREDENTIALS_REQ,
     AWS_IMDS_QS_ROLE_CREDENTIALS_RESP,
     AWS_IMDS_QS_COMPLETE,
+    AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK,
     AWS_IMDS_QS_UNRECOVERABLE_ERROR
 };
 
@@ -98,6 +100,7 @@ struct aws_credentials_provider_imds_user_data {
      * will be adapted according to response.
      */
     bool token_required;
+    uint8_t retry_count;
     int status_code;
 };
 
@@ -351,8 +354,6 @@ static int s_make_imds_http_query(
         .request = request,
     };
 
-    imds_user_data->query_state += 1;
-
     stream = impl->function_table->aws_http_connection_make_request(imds_user_data->connection, &request_options);
 
     if (!stream) {
@@ -391,11 +392,11 @@ static void s_imds_query_token(struct aws_credentials_provider_imds_user_data *i
 
     struct aws_byte_cursor verb = aws_byte_cursor_from_c_str("PUT");
 
-    if (s_make_imds_http_query(imds_user_data, &verb, &uri, headers, AWS_ARRAY_SIZE(headers))) {
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-    }
-
     imds_user_data->query_state = AWS_IMDS_QS_TOKEN_RESP;
+
+    if (s_make_imds_http_query(imds_user_data, &verb, &uri, headers, AWS_ARRAY_SIZE(headers))) {
+        imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
+    }
 }
 
 /*
@@ -461,12 +462,12 @@ static void s_imds_query_instance_role_name(struct aws_credentials_provider_imds
     struct aws_byte_cursor uri = aws_byte_cursor_from_string(s_imds_metadata_resource_path);
     struct aws_byte_cursor verb = aws_byte_cursor_from_c_str("GET");
 
+    imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME_RESP;
+
     if (s_make_imds_http_query(imds_user_data, &verb, &uri, headers_array_ptr, headers_count)) {
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
         return;
     }
-
-    imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME_RESP;
 }
 
 /*
@@ -555,12 +556,12 @@ static void s_imds_query_instance_role_credentials_req(struct aws_credentials_pr
 
     struct aws_byte_cursor verb = aws_byte_cursor_from_c_str("GET");
     struct aws_byte_cursor uri = aws_byte_cursor_from_buf(&imds_user_data->creds_uri);
-    if (s_make_imds_http_query(imds_user_data, &verb, &uri, headers_array_ptr, headers_count)) {
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        return;
-    }
 
     imds_user_data->query_state = AWS_IMDS_QS_ROLE_CREDENTIALS_RESP;
+
+    if (s_make_imds_http_query(imds_user_data, &verb, &uri, headers_array_ptr, headers_count)) {
+        imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
+    }
 }
 
 /*
@@ -709,7 +710,9 @@ static void s_imds_query_complete(struct aws_credentials_provider_imds_user_data
 }
 
 static void s_imds_query_error(struct aws_credentials_provider_imds_user_data *imds_user_data) {
-    AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_UNRECOVERABLE_ERROR);
+    AWS_PRECONDITION(
+        imds_user_data->query_state == AWS_IMDS_QS_UNRECOVERABLE_ERROR |
+        imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK);
 
     imds_user_data->original_callback(NULL, imds_user_data->original_user_data);
     AWS_LOGF_WARN(
@@ -737,14 +740,29 @@ static imds_state_fn *s_query_state_machine[] = {
     [AWS_IMDS_QS_ROLE_CREDENTIALS_REQ] = s_imds_query_instance_role_credentials_req,
     [AWS_IMDS_QS_ROLE_CREDENTIALS_RESP] = s_imds_query_instance_role_credentials_response,
     [AWS_IMDS_QS_COMPLETE] = s_imds_query_complete,
+    [AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK] = s_imds_query_error,
     [AWS_IMDS_QS_UNRECOVERABLE_ERROR] = s_imds_query_error,
 };
+
+static inline void s_imds_state_machine_roll_back_to_request_state(
+    struct aws_credentials_provider_imds_user_data *user_data) {
+    AWS_FATAL_ASSERT(
+        user_data->query_state < AWS_IMDS_QS_COMPLETE &&
+        "State machine can't be advanced, it's already in a terminal state.");
+    user_data->query_state -= 1;
+    /* request states are evenly numbered. */
+    AWS_FATAL_ASSERT(!(user_data->query_state & 0x01));
+}
+
+static inline bool s_imds_state_machine_is_terminal_state(struct aws_credentials_provider_imds_user_data *user_data) {
+    return user_data->query_state >= AWS_IMDS_QS_COMPLETE && user_data->query_state <= AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+}
 
 static void s_imds_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
 
     AWS_FATAL_ASSERT(
-        !(((uint8_t)imds_user_data->query_state) & 0x01) && imds_user_data->query_state < AWS_IMDS_QS_COMPLETE &&
+        !(((uint8_t)imds_user_data->query_state) & 0x01) && !s_imds_state_machine_is_terminal_state(imds_user_data) &&
         "Invalid query state, we should be in a request state.")
     imds_user_data->connection = connection;
 
@@ -756,13 +774,14 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
             error_code,
             aws_error_str(error_code));
 
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
+    } else {
+        s_query_state_machine[imds_user_data->query_state](imds_user_data);
     }
 
-    s_query_state_machine[imds_user_data->query_state](imds_user_data);
     /* there's no universe where we should have moved to COMPLETE, but an error could have occurred. */
-    if (imds_user_data->query_state == AWS_IMDS_QS_UNRECOVERABLE_ERROR) {
-        s_query_state_machine[AWS_IMDS_QS_UNRECOVERABLE_ERROR](imds_user_data);
+    if (imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK) {
+        s_query_state_machine[AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK](imds_user_data);
         s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
     }
 }
@@ -782,18 +801,27 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     /* try again, just drop the state from the response to the request state by subtracting one.
      * Don't run the state machine in this callback in this case, let the acquire connection callback handle it. */
     if (error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "id=%p: Connection was closed, retrying the last request on a new connection.",
-            (void *)imds_user_data->imds_provider);
-        /* roll back to the last request we made, and let it retry. */
-        imds_user_data->query_state -= 1;
+        if (imds_user_data->retry_count++ < IMDS_MAX_RETRIES) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "id=%p: Connection was closed, retrying the last request on a new connection.",
+                (void *)imds_user_data->imds_provider);
+            /* roll back to the last request we made, and let it retry. */
+            s_imds_state_machine_roll_back_to_request_state(imds_user_data);
+        } else {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "id=%p: Connection was closed, retries have been exhausted.",
+                (void *)imds_user_data->imds_provider);
+            /* roll back to the last request we made, and let it retry. */
+            imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        }
     } else {
         s_query_state_machine[imds_user_data->query_state](imds_user_data);
     }
 
     /* if there's more work to do, acquire a connection, and run the machine again. */
-    if (imds_user_data->query_state < AWS_IMDS_QS_COMPLETE) {
+    if (!s_imds_state_machine_is_terminal_state(imds_user_data)) {
         impl->function_table->aws_http_connection_manager_acquire_connection(
             impl->connection_manager, s_imds_on_acquire_connection, user_data);
     } else {
