@@ -711,7 +711,7 @@ static void s_imds_query_complete(struct aws_credentials_provider_imds_user_data
 
 static void s_imds_query_error(struct aws_credentials_provider_imds_user_data *imds_user_data) {
     AWS_PRECONDITION(
-        imds_user_data->query_state == AWS_IMDS_QS_UNRECOVERABLE_ERROR |
+        imds_user_data->query_state == AWS_IMDS_QS_UNRECOVERABLE_ERROR ||
         imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK);
 
     imds_user_data->original_callback(NULL, imds_user_data->original_user_data);
@@ -744,26 +744,29 @@ static imds_state_fn *s_query_state_machine[] = {
     [AWS_IMDS_QS_UNRECOVERABLE_ERROR] = s_imds_query_error,
 };
 
+static inline bool s_imds_state_machine_is_terminal_state(struct aws_credentials_provider_imds_user_data *user_data) {
+    return user_data->query_state >= AWS_IMDS_QS_COMPLETE && user_data->query_state <= AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+}
+
+static inline bool s_imds_state_machine_is_request_state(struct aws_credentials_provider_imds_user_data *user_data) {
+    return !s_imds_state_machine_is_terminal_state(user_data) && !(user_data->query_state & 0x01);
+}
+
 static inline void s_imds_state_machine_roll_back_to_request_state(
     struct aws_credentials_provider_imds_user_data *user_data) {
     AWS_FATAL_ASSERT(
-        user_data->query_state < AWS_IMDS_QS_COMPLETE &&
-        "State machine can't be advanced, it's already in a terminal state.");
+        !s_imds_state_machine_is_terminal_state(user_data) &&
+        "State machine can't be rolled back from a terminal state.");
     user_data->query_state -= 1;
     /* request states are evenly numbered. */
-    AWS_FATAL_ASSERT(!(user_data->query_state & 0x01));
-}
-
-static inline bool s_imds_state_machine_is_terminal_state(struct aws_credentials_provider_imds_user_data *user_data) {
-    return user_data->query_state >= AWS_IMDS_QS_COMPLETE && user_data->query_state <= AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+    AWS_FATAL_ASSERT(s_imds_state_machine_is_request_state(user_data) && "Can only rollback to a request state.");
 }
 
 static void s_imds_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
 
     AWS_FATAL_ASSERT(
-        !(((uint8_t)imds_user_data->query_state) & 0x01) && !s_imds_state_machine_is_terminal_state(imds_user_data) &&
-        "Invalid query state, we should be in a request state.")
+        s_imds_state_machine_is_request_state(user_data) && "Invalid query state, we should be in a request state.")
     imds_user_data->connection = connection;
 
     if (connection == NULL) {
