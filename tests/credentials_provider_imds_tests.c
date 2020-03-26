@@ -211,6 +211,7 @@ static int s_aws_http_stream_activate_mock(struct aws_http_stream *stream) {
 }
 
 static struct aws_http_connection *s_aws_http_stream_get_connection_mock(const struct aws_http_stream *stream) {
+    (void)stream;
     return (struct aws_http_connection *)1;
 }
 
