@@ -53,7 +53,6 @@ struct aws_mock_imds_tester {
     int token_request_idx;
     bool insecure_then_secure_attempt;
     bool is_connection_acquire_successful;
-    bool is_request_successful[IMDS_MAX_REQUESTS];
 
     struct aws_mutex lock;
     struct aws_condition_variable signal;
@@ -135,8 +134,7 @@ static int s_aws_http_connection_manager_release_connection_mock(
 
 static void s_invoke_mock_request_callbacks(
     const struct aws_http_make_request_options *options,
-    struct aws_array_list *data_callbacks,
-    bool is_request_successful) {
+    struct aws_array_list *data_callbacks) {
 
     size_t data_callback_count = aws_array_list_length(data_callbacks);
 
@@ -197,8 +195,7 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
 
     int idx = s_tester.current_request++;
     aws_byte_buf_append_dynamic(&(s_tester.request_uris[idx]), &path);
-    s_invoke_mock_request_callbacks(
-        options, &s_tester.response_data_callbacks[idx], s_tester.is_request_successful[idx]);
+    s_invoke_mock_request_callbacks(options, &s_tester.response_data_callbacks[idx]);
     return (struct aws_http_stream *)1;
 }
 
@@ -257,7 +254,6 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
         if (aws_byte_buf_init(&s_tester.request_uris[i], allocator, 100)) {
             return AWS_OP_ERR;
         }
-        s_tester.is_request_successful[i] = true;
     }
 
     s_tester.token_response_code = 0;
@@ -468,7 +464,6 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.is_request_successful[0] = false;
     s_tester.token_response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = NULL,
@@ -509,7 +504,6 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.is_request_successful[1] = false;
 
     struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
     aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
@@ -559,7 +553,6 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.is_request_successful[2] = false;
 
     struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
     aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
@@ -812,7 +805,6 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
 
     s_aws_imds_tester_init(allocator);
     s_tester.token_response_code = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
-    s_tester.is_request_successful[0] = false;
 
     struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
@@ -882,7 +874,6 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.is_request_successful[0] = false;
     s_tester.insecure_then_secure_attempt = true;
     s_tester.token_request_idx = 1;
     s_tester.token_response_code = AWS_HTTP_STATUS_CODE_200_OK;
