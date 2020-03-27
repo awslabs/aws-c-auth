@@ -164,10 +164,7 @@ static void s_invoke_mock_request_callbacks(
     }
 
     if (!s_tester.alternate_closed_connections) {
-        options->on_complete(
-            (struct aws_http_stream *)1,
-            is_request_successful ? AWS_ERROR_SUCCESS : AWS_ERROR_HTTP_UNKNOWN,
-            options->user_data);
+        options->on_complete((struct aws_http_stream *)1, AWS_ERROR_SUCCESS, options->user_data);
     } else {
         options->on_complete(
             (struct aws_http_stream *)1,

@@ -486,7 +486,7 @@ static void s_imds_process_instance_role_response(struct aws_credentials_provide
 
     /*
      * At this step, on anything other than a 200, nullify the
-     * response and pretend there was an error
+     * response and treat as an error
      */
     if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
@@ -600,7 +600,7 @@ static void s_imds_query_instance_role_credentials_response(
 
     document_root = cJSON_Parse((const char *)imds_user_data->current_result.buffer);
     if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IMDS response as Json document.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IMDS response as JSON document.");
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
         goto done;
@@ -612,7 +612,7 @@ static void s_imds_query_instance_role_credentials_response(
     cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_access_key_id_name));
     if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from IMDS response Json document.");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from IMDS response JSON document.");
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
         goto done;
@@ -622,7 +622,7 @@ static void s_imds_query_instance_role_credentials_response(
         cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_secret_access_key_name));
     if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from IMDS response Json document.");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from IMDS response JSON document.");
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
         goto done;
@@ -630,7 +630,7 @@ static void s_imds_query_instance_role_credentials_response(
 
     cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
     if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from IMDS response Json document.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from IMDS response JSON document.");
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
         goto done;
@@ -640,7 +640,7 @@ static void s_imds_query_instance_role_credentials_response(
         cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_creds_expiration_name));
     if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from IMDS response Json document.");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from IMDS response JSON document.");
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
         goto done;
@@ -680,7 +680,7 @@ static void s_imds_query_instance_role_credentials_response(
             AWS_OP_ERR) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Expiration in IMDS response Json document is not a valid ISO_8601 date string.");
+                "Expiration in IMDS response JSON document is not a valid ISO_8601 date string.");
             aws_credentials_destroy(imds_user_data->credentials);
             imds_user_data->credentials = NULL;
             imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
@@ -802,8 +802,10 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     impl->function_table->aws_http_connection_manager_release_connection(impl->connection_manager, connection);
 
     /* try again, just drop the state from the response to the request state by subtracting one.
-     * Don't run the state machine in this callback in this case, let the acquire connection callback handle it. */
-    if (error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED) {
+     * Don't run the state machine in this callback in this case, let the acquire connection callback handle it.
+     * Note these are connection level errors, not http level. Since we obviously connected, it's likely
+     * we're on EC2, plus we have max retries so it's likely safer to just retry everything.*/
+    if (error_code) {
         if (imds_user_data->retry_count++ < IMDS_MAX_RETRIES) {
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
