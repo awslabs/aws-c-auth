@@ -73,6 +73,7 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
     .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
     .aws_http_connection_make_request = aws_http_connection_make_request,
+    .aws_http_stream_activate = aws_http_stream_activate,
     .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close,
@@ -300,6 +301,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     }
 
 finish:
+    provider_impl->function_table->aws_http_stream_release(stream);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -307,6 +309,7 @@ finish:
 static void s_on_connection_setup_fn(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
+    struct aws_http_stream *stream = NULL;
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -325,7 +328,6 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
     }
 
     struct aws_http_make_request_options options = {
-        .manual_window_management = false,
         .user_data = user_data,
         .request = provider_user_data->message,
         .self_size = sizeof(struct aws_http_make_request_options),
@@ -335,16 +337,19 @@ static void s_on_connection_setup_fn(struct aws_http_connection *connection, int
         .on_complete = s_on_stream_complete_fn,
     };
 
-    struct aws_http_stream *stream =
-        provider_impl->function_table->aws_http_connection_make_request(connection, &options);
+    stream = provider_impl->function_table->aws_http_connection_make_request(connection, &options);
+
     if (!stream) {
         goto error;
     }
 
-    provider_impl->function_table->aws_http_stream_release(stream);
+    if (provider_impl->function_table->aws_http_stream_activate(stream)) {
+        goto error;
+    }
 
     return;
 error:
+    provider_impl->function_table->aws_http_stream_release(stream);
     s_clean_up_user_data(provider_user_data);
 }
 

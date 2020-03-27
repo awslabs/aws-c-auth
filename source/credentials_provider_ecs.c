@@ -54,6 +54,7 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
     .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
     .aws_http_connection_make_request = aws_http_connection_make_request,
+    .aws_http_stream_activate = aws_http_stream_activate,
     .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
     .aws_http_stream_release = aws_http_stream_release,
     .aws_http_connection_close = aws_http_connection_close};
@@ -400,6 +401,7 @@ static int s_make_ecs_http_query(
     struct aws_byte_cursor *uri) {
     AWS_FATAL_ASSERT(ecs_user_data->connection);
 
+    struct aws_http_stream *stream = NULL;
     struct aws_http_message *request = aws_http_message_new_request(ecs_user_data->allocator);
     if (request == NULL) {
         return AWS_OP_ERR;
@@ -459,13 +461,20 @@ static int s_make_ecs_http_query(
         .request = request,
     };
 
-    struct aws_http_stream *stream =
-        impl->function_table->aws_http_connection_make_request(ecs_user_data->connection, &request_options);
+    stream = impl->function_table->aws_http_connection_make_request(ecs_user_data->connection, &request_options);
 
-    return stream == NULL ? AWS_OP_ERR : AWS_OP_SUCCESS;
+    if (!stream) {
+        goto on_error;
+    }
+
+    if (impl->function_table->aws_http_stream_activate(stream)) {
+        goto on_error;
+    }
+
+    return AWS_OP_SUCCESS;
 
 on_error:
-
+    impl->function_table->aws_http_stream_release(stream);
     aws_http_message_destroy(request);
 
     return AWS_OP_ERR;
