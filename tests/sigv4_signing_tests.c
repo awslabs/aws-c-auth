@@ -171,6 +171,7 @@ struct v4_test_context {
     struct aws_string *timestamp;
     struct aws_credentials *credentials;
     bool should_normalize;
+    bool should_sign_body;
     uint64_t expiration_in_seconds;
     struct aws_input_stream *payload_stream;
     struct aws_ecc_key_pair *ecc_key;
@@ -219,6 +220,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_name, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_service_name, "service");
 AWS_STATIC_STRING_FROM_LITERAL(s_timestamp_name, "timestamp");
 AWS_STATIC_STRING_FROM_LITERAL(s_normalize_name, "normalize");
+AWS_STATIC_STRING_FROM_LITERAL(s_body_name, "sign_body");
 AWS_STATIC_STRING_FROM_LITERAL(s_expiration_name, "expiration_in_seconds");
 
 static int s_v4_test_context_parse_context_file(struct v4_test_context *context) {
@@ -302,6 +304,13 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     context->should_normalize = cJSON_IsTrue(normalize_node);
 
+    cJSON *body_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_body_name));
+    if (body_node == NULL || !cJSON_IsBool(body_node)) {
+        goto done;
+    }
+
+    context->should_sign_body = cJSON_IsTrue(body_node);
+
     cJSON *expiration_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_expiration_name));
     if (expiration_node == NULL || !cJSON_IsNumber(expiration_node)) {
         goto done;
@@ -336,15 +345,15 @@ static int s_parse_request(
         return AWS_OP_ERR;
     }
 
-    struct aws_array_list header_set;
-    AWS_ZERO_STRUCT(header_set);
-    if (aws_array_list_init_dynamic(&header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
-        goto done;
-    }
-
     struct aws_input_stream *body_stream = NULL;
     struct aws_http_message *request = aws_http_message_new_request(allocator);
     if (request == NULL) {
+        goto done;
+    }
+
+    struct aws_array_list header_set;
+    AWS_ZERO_STRUCT(header_set);
+    if (aws_array_list_init_dynamic(&header_set, allocator, 10, sizeof(struct aws_signable_property_list_pair))) {
         goto done;
     }
 
@@ -487,7 +496,7 @@ static int s_v4_test_context_init_signing_config(
     context->config->service = aws_byte_cursor_from_string(context->service);
     context->config->use_double_uri_encode = true;
     context->config->should_normalize_uri_path = context->should_normalize;
-    context->config->body_signing_type = AWS_BODY_SIGNING_OFF;
+    context->config->body_signing_type = context->should_sign_body ? AWS_BODY_SIGNING_ON : AWS_BODY_SIGNING_OFF;
     context->config->credentials = context->credentials;
     context->config->expiration_in_seconds = context->expiration_in_seconds;
 
@@ -652,7 +661,12 @@ static int s_write_key_to_test_case_file(
     struct aws_byte_buf base64_buffer;
     AWS_ZERO_STRUCT(base64_buffer);
 
-    if (aws_byte_buf_init(&der_key_buffer, test_context->allocator, DEFAULT_BUFFER_SIZE)) {
+    size_t encoded_length = 0;
+    if (aws_ecc_key_pair_get_asn1_encoding_length(ecc_key, &encoded_length)) {
+        goto done;
+    }
+
+    if (aws_byte_buf_init(&der_key_buffer, test_context->allocator, encoded_length)) {
         goto done;
     }
 
@@ -702,7 +716,9 @@ static int s_write_key_to_test_case_file(
 
 done:
 
-    fclose(fp);
+    if (fp != NULL) {
+        fclose(fp);
+    }
 
     aws_byte_buf_clean_up(&der_key_buffer);
     aws_byte_buf_clean_up(&base64_buffer);

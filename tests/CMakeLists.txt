@@ -251,9 +251,6 @@ set(TEST_BINARY_NAME ${PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
 # sigv4 test suite files
-add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/aws-sig-v4-test-suite ${CMAKE_CURRENT_BINARY_DIR})
 
 add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

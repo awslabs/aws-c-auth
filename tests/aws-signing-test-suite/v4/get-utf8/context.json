@@ -7,5 +7,6 @@
     "normalize": true,
     "region": "us-east-1",
     "service": "service",
+    "sign_body": false,
     "timestamp": "2015-08-30T12:36:00Z"
 }

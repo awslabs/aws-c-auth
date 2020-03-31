@@ -2,8 +2,8 @@ POST / HTTP/1.1
 Content-Type:application/x-www-form-urlencoded
 Host:example.amazonaws.com
 Content-Length:13
-x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=content-length;content-type;host;x-amz-date;x-amz-region-set, Signature=3046022100d6c787ff937ebdb3af511596da52f0dc88d2b4dc8e7fae957f30e3a5df3ce973022100f6d793a06b8f5bed71e768fda8bd46326535cfba642606673a10306da08c1685
+x-amz-content-sha256:9095672bbd1f56dfc5b65f3e153adc8731a4a654192329106275f4c7b24d0b6e
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=content-length;content-type;host;x-amz-content-sha256;x-amz-date;x-amz-region-set, Signature=30440220269806b8528c7f577d374ddae81c2915957ff717a8e62955288597f12a8391920220446a4df99eea194d722d47fa29f64bf8620b3ac2a84d5ac98f4cc157cd44c261
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 

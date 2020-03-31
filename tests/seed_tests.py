@@ -27,7 +27,8 @@ base_context = {
     "credentials": {
         "access_key_id" : "AKIDEXAMPLE",
         "secret_access_key" : "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
-    }    
+    },
+    "sign_body": False
 }
 
 def parse_arguments():
@@ -93,6 +94,11 @@ token_context = {
     }    
 }
 
+sign_body_context = {
+    "normalize": True,
+    "sign_body": True
+}
+
 def generate_tests(source_dir, dest_dir, suffix, default_context_map):
     for root_dir, dir_names, file_names in os.walk( source_dir ):
         if root_dir == source_dir:
@@ -102,7 +108,9 @@ def generate_tests(source_dir, dest_dir, suffix, default_context_map):
                 context_map = default_context_map
                 if dir_name == "get-vanilla-with-session-token":
                     context_map = token_context
-                    
+                elif dir_name.startswith('post-x-www-form'):
+                    context_map = sign_body_context
+
                 v4_test_case_dest_dir = os.path.join(dest_dir, "v4", dir_name + suffix)
                 v4a_test_case_dest_dir = os.path.join(dest_dir, "v4a", dir_name + suffix)
 

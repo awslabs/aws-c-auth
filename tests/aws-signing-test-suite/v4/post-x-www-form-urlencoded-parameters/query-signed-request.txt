@@ -1,4 +1,4 @@
-POST /?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fus-east-1%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&X-Amz-Expires=3600&X-Amz-Signature=b54391dacb584af6cad300751db7a6bd6674ee0f708af14736fcee902a9a2b3b HTTP/1.1
+POST /?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fus-east-1%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost%3Bx-amz-content-sha256&X-Amz-Expires=3600&X-Amz-Signature=1b8d9ac4ab8553a224622753bae7714608a7c61f8994dbd385150e6da12114df HTTP/1.1
 Content-Type:application/x-www-form-urlencoded; charset=utf-8
 Host:example.amazonaws.com
 Content-Length:13

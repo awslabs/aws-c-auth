@@ -1,4 +1,4 @@
-POST /?X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&X-Amz-Expires=3600&X-Amz-Region-Set=us-east-1&X-Amz-Signature=304402205b6b9c9440c7cb631ae845c934ed6626cae5804d46fab2e0a8e6dec8d20b088c02205f594a0539303ff9a8bc2f2218b8cd5913e6e8bf707e5cf4e9638abdf9af031d HTTP/1.1
+POST /?X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost%3Bx-amz-content-sha256&X-Amz-Expires=3600&X-Amz-Region-Set=us-east-1&X-Amz-Signature=30450221009ce2341f2517504eeb03017b5426d7eeafe88114b063d26dcbae93eea24a7f9c022064fb1210eb00604eda98aaffab44117f4e7c45244b354022f112f53d9753857f HTTP/1.1
 Content-Type:application/x-www-form-urlencoded; charset=utf-8
 Host:example.amazonaws.com
 Content-Length:13
