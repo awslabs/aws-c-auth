@@ -201,6 +201,32 @@ struct aws_credentials_provider_ecs_options {
     struct aws_credentials_provider_system_vtable *function_table;
 };
 
+/**
+ * Devices can use X.509 certificates to connect to AWS IoT Core using TLS mutual authentication protocols.
+ * IoT core could then authenticate devices and issue a temporary secure token to devices to sign requests.
+ * See details:
+ * https://docs.aws.amazon.com/iot/latest/developerguide/authorizing-direct-aws.html
+ * An end to end demo with detailed steps can be found here:
+ * https://aws.amazon.com/blogs/security/how-to-eliminate-the-need-for-hardcoded-aws-credentials-in-devices-by-using-the-aws-iot-credentials-provider/
+ * To use X.509 creds provers, you need to provide:
+ * - an aws_tls_connection_options that can be initiated with your registered X.509 certificate and private key.
+ * - an IoT thingName you registered
+ * - a role alias you created
+ * - an account specific endpoint that can be acquired following above demo steps.
+ */
+struct aws_credentials_provider_x509_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    struct aws_client_bootstrap *bootstrap;
+
+    struct aws_tls_connection_options *tls_connection_options;
+    struct aws_byte_cursor thing_name;
+    struct aws_byte_cursor role_alias;
+    struct aws_byte_cursor endpoint;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
+};
+
 struct aws_credentials_provider_sts_options {
     struct aws_client_bootstrap *bootstrap;
     struct aws_tls_ctx *tls_ctx;
@@ -355,6 +381,14 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
+
+/*
+ * A provider that sources credentials from IoT Core
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_x509(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_x509_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
