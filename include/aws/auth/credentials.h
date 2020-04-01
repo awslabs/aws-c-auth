@@ -217,8 +217,8 @@ struct aws_credentials_provider_x509_options {
     struct aws_byte_cursor thing_name;
     /* Iot role alias you created with AWS IoT for your IAM role, it will be used in http request path */
     struct aws_byte_cursor role_alias;
-    /** 
-     * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo 
+    /**
+     * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo
      * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
      */
     struct aws_byte_cursor endpoint;
