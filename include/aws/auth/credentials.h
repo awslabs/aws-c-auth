@@ -201,6 +201,32 @@ struct aws_credentials_provider_ecs_options {
     struct aws_credentials_provider_system_vtable *function_table;
 };
 
+/**
+ * The x509 credentials provider sources temporary credentials from AWS IoT Core using TLS mutual authentication.
+ * See details: https://docs.aws.amazon.com/iot/latest/developerguide/authorizing-direct-aws.html
+ * An end to end demo with detailed steps can be found here:
+ * https://aws.amazon.com/blogs/security/how-to-eliminate-the-need-for-hardcoded-aws-credentials-in-devices-by-using-the-aws-iot-credentials-provider/
+ */
+struct aws_credentials_provider_x509_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    struct aws_client_bootstrap *bootstrap;
+
+    /* TLS connection options that have been initialized with your x509 certificate and private key */
+    struct aws_tls_connection_options *tls_connection_options;
+    /* IoT thing name you registered with AWS IOT for your device, it will be used in http request header */
+    struct aws_byte_cursor thing_name;
+    /* Iot role alias you created with AWS IoT for your IAM role, it will be used in http request path */
+    struct aws_byte_cursor role_alias;
+    /**
+     * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo
+     * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
+     */
+    struct aws_byte_cursor endpoint;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
+};
+
 struct aws_credentials_provider_sts_options {
     struct aws_client_bootstrap *bootstrap;
     struct aws_tls_ctx *tls_ctx;
@@ -355,6 +381,14 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
+
+/*
+ * A provider that sources credentials from IoT Core
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_x509(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_x509_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.

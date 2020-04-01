@@ -27,8 +27,9 @@
 #include <aws/io/event_loop.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
+#include <aws/io/tls_channel_handler.h>
 
-struct aws_mock_ecs_tester {
+struct aws_mock_x509_tester {
     struct aws_byte_buf request_uri;
 
     struct aws_array_list response_data_callbacks;
@@ -41,9 +42,12 @@ struct aws_mock_ecs_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+
+    struct aws_tls_ctx *ctx;
+    struct aws_tls_connection_options tls_connection_options;
 };
 
-static struct aws_mock_ecs_tester s_tester;
+static struct aws_mock_x509_tester s_tester;
 
 static void s_on_shutdown_complete(void *user_data) {
     (void)user_data;
@@ -197,7 +201,7 @@ static struct aws_credentials_provider_system_vtable s_mock_function_table = {
     .aws_http_stream_release = s_aws_http_stream_release_mock,
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
-static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
+static int s_aws_x509_tester_init(struct aws_allocator *allocator) {
     if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
     }
@@ -214,6 +218,13 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    AWS_ZERO_STRUCT(s_tester.tls_connection_options);
+    aws_io_library_init(allocator);
+    struct aws_tls_ctx_options tls_options;
+    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+    s_tester.ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    aws_tls_connection_options_init_from_ctx(&s_tester.tls_connection_options, s_tester.ctx);
+
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
     s_tester.is_request_successful = true;
@@ -221,12 +232,18 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_ecs_tester_cleanup(void) {
+static void s_aws_x509_tester_cleanup(void) {
     aws_array_list_clean_up(&s_tester.response_data_callbacks);
     aws_byte_buf_clean_up(&s_tester.request_uri);
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_destroy(s_tester.credentials);
+    if (s_tester.ctx) {
+        aws_tls_ctx_destroy(s_tester.ctx);
+        s_tester.ctx = NULL;
+    }
+    aws_tls_connection_options_clean_up(&s_tester.tls_connection_options);
+    aws_io_library_clean_up();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -254,12 +271,12 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, void
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static int s_credentials_provider_ecs_new_destroy(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
         .shutdown_options =
@@ -267,12 +284,13 @@ static int s_credentials_provider_ecs_new_destroy(struct aws_allocator *allocato
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
@@ -280,20 +298,20 @@ static int s_credentials_provider_ecs_new_destroy(struct aws_allocator *allocato
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_new_destroy, s_credentials_provider_ecs_new_destroy);
+AWS_TEST_CASE(credentials_provider_x509_new_destroy, s_credentials_provider_x509_new_destroy);
 
-static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_connect_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
     s_tester.is_connection_acquire_successful = false;
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
         .shutdown_options =
@@ -301,12 +319,13 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -322,22 +341,22 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_connect_failure, s_credentials_provider_ecs_connect_failure);
+AWS_TEST_CASE(credentials_provider_x509_connect_failure, s_credentials_provider_x509_connect_failure);
 
-AWS_STATIC_STRING_FROM_LITERAL(s_expected_ecs_relative_uri, "/path/to/resource/?a=b&c=d");
+AWS_STATIC_STRING_FROM_LITERAL(s_expected_x509_role_alias_path, "/role-aliases/my_test_role_alias/credentials");
 
-static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
     s_tester.is_request_successful = false;
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
         .shutdown_options =
@@ -345,12 +364,12 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -359,8 +378,8 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
-        s_expected_ecs_relative_uri->bytes,
-        s_expected_ecs_relative_uri->len);
+        s_expected_x509_role_alias_path->bytes,
+        s_expected_x509_role_alias_path->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
 
@@ -371,24 +390,24 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_request_failure, s_credentials_provider_ecs_request_failure);
+AWS_TEST_CASE(credentials_provider_x509_request_failure, s_credentials_provider_x509_request_failure);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_document_response, "{\"NotTheExpectedDocumentFormat\":\"Error\"}");
 
-static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_bad_document_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
 
     struct aws_byte_cursor bad_document_cursor = aws_byte_cursor_from_string(s_bad_document_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &bad_document_cursor);
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
         .shutdown_options =
@@ -396,12 +415,13 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -410,8 +430,8 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
-        s_expected_ecs_relative_uri->bytes,
-        s_expected_ecs_relative_uri->len);
+        s_expected_x509_role_alias_path->bytes,
+        s_expected_x509_role_alias_path->len);
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
@@ -423,31 +443,31 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_bad_document_failure, s_credentials_provider_ecs_bad_document_failure);
+AWS_TEST_CASE(credentials_provider_x509_bad_document_failure, s_credentials_provider_x509_bad_document_failure);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_good_response,
-    "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
-    "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
+    "{\"Credentials\": {\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
+    "\"SessionToken\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}}");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
 
-static int s_credentials_provider_ecs_basic_success(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_basic_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
 
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
         .shutdown_options =
@@ -455,12 +475,13 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -469,8 +490,8 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
-        s_expected_ecs_relative_uri->bytes,
-        s_expected_ecs_relative_uri->len);
+        s_expected_x509_role_alias_path->bytes,
+        s_expected_x509_role_alias_path->len);
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
@@ -502,21 +523,25 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_basic_success, s_credentials_provider_ecs_basic_success);
+AWS_TEST_CASE(credentials_provider_x509_basic_success, s_credentials_provider_x509_basic_success);
 
-AWS_STATIC_STRING_FROM_LITERAL(s_good_response_first_part, "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"Secret");
-AWS_STATIC_STRING_FROM_LITERAL(s_good_response_second_part, "AccessKey\":\"SuccessfulSecret\", \n  \"Token\":\"Token");
-AWS_STATIC_STRING_FROM_LITERAL(s_good_response_third_part, "Success\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_good_response_first_part,
+    "{\"Credentials\": {\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"Secret");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_good_response_second_part,
+    "AccessKey\":\"SuccessfulSecret\", \n  \"SessionToken\":\"Token");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_response_third_part, "Success\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}}");
 
-static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_success_multi_part_doc(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
 
     struct aws_byte_cursor good_response_cursor1 = aws_byte_cursor_from_string(s_good_response_first_part);
     struct aws_byte_cursor good_response_cursor2 = aws_byte_cursor_from_string(s_good_response_second_part);
@@ -525,7 +550,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor2);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor3);
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = NULL,
         .function_table = &s_mock_function_table,
         .shutdown_options =
@@ -533,12 +558,13 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -547,8 +573,8 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
-        s_expected_ecs_relative_uri->bytes,
-        s_expected_ecs_relative_uri->len);
+        s_expected_x509_role_alias_path->bytes,
+        s_expected_x509_role_alias_path->len);
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
@@ -580,14 +606,14 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_success_multi_part_doc, s_credentials_provider_ecs_success_multi_part_doc);
+AWS_TEST_CASE(credentials_provider_x509_success_multi_part_doc, s_credentials_provider_x509_success_multi_part_doc);
 
-static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     aws_auth_library_init(allocator);
@@ -601,7 +627,7 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
     ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
     aws_logger_set(&logger);
 
-    s_aws_ecs_tester_init(allocator);
+    s_aws_x509_tester_init(allocator);
 
     struct aws_event_loop_group el_group;
     aws_event_loop_group_default_init(&el_group, allocator, 1);
@@ -615,19 +641,20 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
-    struct aws_credentials_provider_ecs_options options = {
+    struct aws_credentials_provider_x509_options options = {
         .bootstrap = bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -641,7 +668,7 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
     aws_host_resolver_clean_up(&resolver);
     aws_event_loop_group_clean_up(&el_group);
 
-    s_aws_ecs_tester_cleanup();
+    s_aws_x509_tester_cleanup();
 
     aws_auth_library_clean_up();
 
@@ -651,72 +678,4 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_real_new_destroy, s_credentials_provider_ecs_real_new_destroy);
-
-static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    aws_auth_library_init(allocator);
-
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
-
-    s_aws_ecs_tester_init(allocator);
-
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
-
-    struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = bootstrap,
-        .shutdown_options =
-            {
-                .shutdown_callback = s_on_shutdown_complete,
-                .shutdown_user_data = NULL,
-            },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
-    };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
-
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    s_aws_wait_for_credentials_result();
-
-    ASSERT_TRUE(s_tester.credentials != NULL);
-
-    aws_credentials_provider_release(provider);
-
-    s_aws_wait_for_provider_shutdown_callback();
-
-    s_aws_ecs_tester_cleanup();
-
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-
-    aws_auth_library_clean_up();
-
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
-
-    return 0;
-}
-
-AWS_TEST_CASE(credentials_provider_ecs_real_success, s_credentials_provider_ecs_real_success);
+AWS_TEST_CASE(credentials_provider_x509_real_new_destroy, s_credentials_provider_x509_real_new_destroy);
