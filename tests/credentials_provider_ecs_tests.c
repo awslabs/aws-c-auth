@@ -644,7 +644,6 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
     s_aws_ecs_tester_cleanup();
 
     aws_auth_library_clean_up();
-    aws_http_library_clean_up();
 
     aws_logger_set(NULL);
     aws_logger_clean_up(&logger);
@@ -713,7 +712,6 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
     aws_event_loop_group_clean_up(&el_group);
 
     aws_auth_library_clean_up();
-    aws_http_library_clean_up();
 
     aws_logger_set(NULL);
     aws_logger_clean_up(&logger);

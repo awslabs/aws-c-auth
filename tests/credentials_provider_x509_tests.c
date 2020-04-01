@@ -671,7 +671,6 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
     s_aws_x509_tester_cleanup();
 
     aws_auth_library_clean_up();
-    aws_http_library_clean_up();
 
     aws_logger_set(NULL);
     aws_logger_clean_up(&logger);

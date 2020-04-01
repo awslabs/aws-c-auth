@@ -202,25 +202,25 @@ struct aws_credentials_provider_ecs_options {
 };
 
 /**
- * Devices can use X.509 certificates to connect to AWS IoT Core using TLS mutual authentication protocols.
- * IoT core could then authenticate devices and issue a temporary secure token to devices to sign requests.
- * See details:
- * https://docs.aws.amazon.com/iot/latest/developerguide/authorizing-direct-aws.html
+ * The x509 credentials provider sources temporary credentials from AWS IoT Core using TLS mutual authentication.
+ * See details: https://docs.aws.amazon.com/iot/latest/developerguide/authorizing-direct-aws.html
  * An end to end demo with detailed steps can be found here:
  * https://aws.amazon.com/blogs/security/how-to-eliminate-the-need-for-hardcoded-aws-credentials-in-devices-by-using-the-aws-iot-credentials-provider/
- * To use X.509 creds provers, you need to provide:
- * - an aws_tls_connection_options that can be initiated with your registered X.509 certificate and private key.
- * - an IoT thingName you registered
- * - a role alias you created
- * - an account specific endpoint that can be acquired following above demo steps.
  */
 struct aws_credentials_provider_x509_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
 
+    /* TLS connection options that have been initialized with your x509 certificate and private key */
     struct aws_tls_connection_options *tls_connection_options;
+    /* IoT thing name you registered with AWS IOT for your device, it will be used in http request header */
     struct aws_byte_cursor thing_name;
+    /* Iot role alias you created with AWS IoT for your IAM role, it will be used in http request path */
     struct aws_byte_cursor role_alias;
+    /** 
+     * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo 
+     * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
+     */
     struct aws_byte_cursor endpoint;
 
     /* For mocking the http layer in tests, leave NULL otherwise */

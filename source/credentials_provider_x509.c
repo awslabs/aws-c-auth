@@ -33,9 +33,9 @@
 #    pragma warning(disable : 4204)
 #endif /* _MSC_VER */
 
-/* IoT Core credentials body response is currently ~ 128 Bytes*/
-#define X509_RESPONSE_SIZE_INITIAL 128
-#define X509_RESPONSE_SIZE_LIMIT 1024
+/* IoT Core credentials body response is currently ~ 1100 Bytes*/
+#define X509_RESPONSE_SIZE_INITIAL 1024
+#define X509_RESPONSE_SIZE_LIMIT 2048
 #define X509_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 
 struct aws_credentials_provider_x509_impl {
@@ -70,7 +70,7 @@ struct aws_credentials_provider_x509_user_data {
     /* mutable */
     struct aws_http_connection *connection;
     struct aws_http_message *request;
-    struct aws_byte_buf current_result;
+    struct aws_byte_buf response;
     int status_code;
 };
 
@@ -87,7 +87,7 @@ static void s_aws_credentials_provider_x509_user_data_destroy(
             impl->connection_manager, user_data->connection);
     }
 
-    aws_byte_buf_clean_up(&user_data->current_result);
+    aws_byte_buf_clean_up(&user_data->response);
 
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
@@ -113,7 +113,7 @@ static struct aws_credentials_provider_x509_user_data *s_aws_credentials_provide
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
-    if (aws_byte_buf_init(&wrapped_user_data->current_result, x509_provider->allocator, X509_RESPONSE_SIZE_INITIAL)) {
+    if (aws_byte_buf_init(&wrapped_user_data->response, x509_provider->allocator, X509_RESPONSE_SIZE_INITIAL)) {
         goto on_error;
     }
 
@@ -128,7 +128,7 @@ on_error:
 
 static void s_aws_credentials_provider_x509_user_data_reset_response(
     struct aws_credentials_provider_x509_user_data *x509_user_data) {
-    x509_user_data->current_result.len = 0;
+    x509_user_data->response.len = 0;
     x509_user_data->status_code = 0;
 
     if (x509_user_data->request) {
@@ -270,7 +270,7 @@ done:
 static void s_x509_finalize_get_credentials_query(struct aws_credentials_provider_x509_user_data *x509_user_data) {
     /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials =
-        s_parse_credentials_from_iot_core_document(x509_user_data->allocator, &x509_user_data->current_result);
+        s_parse_credentials_from_iot_core_document(x509_user_data->allocator, &x509_user_data->response);
 
     if (credentials != NULL) {
         AWS_LOGF_INFO(
@@ -308,7 +308,7 @@ static int s_x509_on_incoming_body_fn(
         (void *)x509_user_data->x509_provider,
         data->len);
 
-    if (data->len + x509_user_data->current_result.len > X509_RESPONSE_SIZE_LIMIT) {
+    if (data->len + x509_user_data->response.len > X509_RESPONSE_SIZE_LIMIT) {
         impl->function_table->aws_http_connection_close(x509_user_data->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -318,7 +318,7 @@ static int s_x509_on_incoming_body_fn(
         return aws_raise_error(AWS_ERROR_SHORT_BUFFER);
     }
 
-    if (aws_byte_buf_append_dynamic(&x509_user_data->current_result, data)) {
+    if (aws_byte_buf_append_dynamic(&x509_user_data->response, data)) {
         impl->function_table->aws_http_connection_close(x509_user_data->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -384,7 +384,7 @@ static void s_x509_on_stream_complete_fn(struct aws_http_stream *stream, int err
      * an error
      */
     if (x509_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
-        x509_user_data->current_result.len = 0;
+        x509_user_data->response.len = 0;
     }
 
     s_x509_finalize_get_credentials_query(x509_user_data);
@@ -400,7 +400,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_x509_thing_name_header, "x-amzn-iot-thingname")
 
 static int s_make_x509_http_query(
     struct aws_credentials_provider_x509_user_data *x509_user_data,
-    struct aws_byte_cursor *uri) {
+    struct aws_byte_cursor *request_path) {
     AWS_FATAL_ASSERT(x509_user_data->connection);
 
     struct aws_http_stream *stream = NULL;
@@ -443,7 +443,7 @@ static int s_make_x509_http_query(
         goto on_error;
     }
 
-    if (aws_http_message_set_request_path(request, *uri)) {
+    if (aws_http_message_set_request_path(request, *request_path)) {
         goto on_error;
     }
 
@@ -490,8 +490,8 @@ static void s_x509_query_credentials(struct aws_credentials_provider_x509_user_d
     /* "Clear" the result */
     s_aws_credentials_provider_x509_user_data_reset_response(x509_user_data);
 
-    struct aws_byte_cursor uri_cursor = aws_byte_cursor_from_buf(&impl->role_alias_path);
-    if (s_make_x509_http_query(x509_user_data, &uri_cursor) == AWS_OP_ERR) {
+    struct aws_byte_cursor request_path_cursor = aws_byte_cursor_from_buf(&impl->role_alias_path);
+    if (s_make_x509_http_query(x509_user_data, &request_path_cursor) == AWS_OP_ERR) {
         s_x509_finalize_get_credentials_query(x509_user_data);
     }
 }
