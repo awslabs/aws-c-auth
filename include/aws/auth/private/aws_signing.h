@@ -130,13 +130,6 @@ AWS_AUTH_API
 void aws_signing_clean_up_signing_tables(void);
 
 
-
-/* DELETE ME */
-struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials_debug(
-    struct aws_allocator *allocator,
-    struct aws_credentials *credentials,
-    struct aws_bigint **private_key);
-
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_SIGNING_SIGV4_H */
