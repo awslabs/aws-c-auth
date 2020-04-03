@@ -69,6 +69,8 @@ struct aws_signing_state_aws {
     char expiration_array[32]; /* serialization of the pre-signing expiration duration value */
 };
 
+struct aws_bigint;
+
 AWS_EXTERN_C_BEGIN
 
 AWS_AUTH_API
@@ -126,6 +128,14 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator);
  */
 AWS_AUTH_API
 void aws_signing_clean_up_signing_tables(void);
+
+
+
+/* DELETE ME */
+struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials_debug(
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials,
+    struct aws_bigint **private_key);
 
 AWS_EXTERN_C_END
 

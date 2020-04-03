@@ -2180,7 +2180,7 @@ static int s_aws_init_k_pair(
 }
 
 static const char *s_ecc_private_key_group_divisor =
-    "0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFE";
+    "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140";
 
 static int s_aws_derive_ecc_private_key(
     struct aws_bigint *private_key_value,
@@ -2234,9 +2234,10 @@ done:
     return result;
 }
 
-struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+struct aws_ecc_key_pair *s_aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
     struct aws_allocator *allocator,
-    struct aws_credentials *credentials) {
+    struct aws_credentials *credentials,
+    struct aws_bigint **private_key) {
 
     if (credentials == NULL) {
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
@@ -2251,8 +2252,6 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_buf k_pair;
     AWS_ZERO_STRUCT(k_pair);
 
-    struct aws_bigint *private_key_value = NULL;
-
     struct aws_byte_buf private_key_buf;
     AWS_ZERO_STRUCT(private_key_buf);
 
@@ -2266,12 +2265,12 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 
     AWS_FATAL_ASSERT(k_pair.len == AWS_SHA256_HMAC_LEN * 2);
 
-    private_key_value = aws_bigint_new_from_uint64(allocator, 0);
-    if (private_key_value == NULL) {
+    *private_key = aws_bigint_new_from_uint64(allocator, 0);
+    if (private_key == NULL) {
         goto done;
     }
 
-    if (s_aws_derive_ecc_private_key(private_key_value, allocator, &k_pair)) {
+    if (s_aws_derive_ecc_private_key(*private_key, allocator, &k_pair)) {
         goto done;
     }
 
@@ -2280,7 +2279,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
         goto done;
     }
 
-    if (aws_bigint_bytebuf_append_as_big_endian(private_key_value, &private_key_buf, key_length)) {
+    if (aws_bigint_bytebuf_append_as_big_endian(*private_key, &private_key_buf, key_length)) {
         goto done;
     }
 
@@ -2290,9 +2289,29 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 done:
 
     aws_byte_buf_clean_up(&private_key_buf);
-    aws_bigint_destroy(private_key_value);
     aws_byte_buf_clean_up(&k_pair);
     aws_byte_buf_clean_up(&fixed_input);
+
+    return ecc_key_pair;
+}
+
+struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials) {
+
+    struct aws_bigint *private_key = NULL;
+    struct aws_ecc_key_pair *ecc_key_pair = s_aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, credentials, &private_key);
+    aws_bigint_destroy(private_key);
+
+    return ecc_key_pair;
+}
+
+struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials_debug(
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials,
+    struct aws_bigint **private_key) {
+
+    struct aws_ecc_key_pair *ecc_key_pair = s_aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, credentials, private_key);
 
     return ecc_key_pair;
 }

@@ -648,14 +648,12 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
 #define DEFAULT_BUFFER_SIZE 1024
 #define BASE64_CHARS_PER_LINE 80
 
-static int s_write_key_to_test_case_file(
-    struct v4_test_context *test_context,
+static int s_write_key_to_file(
+    struct aws_allocator *allocator,
     struct aws_ecc_key_pair *ecc_key,
-    const char *parent_folder,
-    const char *test_name) {
+    FILE *fp) {
     int result = AWS_OP_ERR;
 
-    FILE *fp = NULL;
     struct aws_byte_buf der_key_buffer;
     AWS_ZERO_STRUCT(der_key_buffer);
     struct aws_byte_buf base64_buffer;
@@ -666,7 +664,7 @@ static int s_write_key_to_test_case_file(
         goto done;
     }
 
-    if (aws_byte_buf_init(&der_key_buffer, test_context->allocator, encoded_length)) {
+    if (aws_byte_buf_init(&der_key_buffer, allocator, encoded_length)) {
         goto done;
     }
 
@@ -679,20 +677,12 @@ static int s_write_key_to_test_case_file(
         goto done;
     }
 
-    if (aws_byte_buf_init(&base64_buffer, test_context->allocator, base64_length)) {
+    if (aws_byte_buf_init(&base64_buffer, allocator, base64_length)) {
         goto done;
     }
 
     struct aws_byte_cursor der_cursor = aws_byte_cursor_from_array(der_key_buffer.buffer, der_key_buffer.len);
     if (aws_base64_encode(&der_cursor, &base64_buffer)) {
-        goto done;
-    }
-
-    char path[1024];
-    snprintf(path, AWS_ARRAY_SIZE(path), "./%s/%s/%s", parent_folder, test_name, aws_string_c_str(s_ecc_key_filename));
-
-    fp = fopen(path, "w");
-    if (fp == NULL) {
         goto done;
     }
 
@@ -716,12 +706,30 @@ static int s_write_key_to_test_case_file(
 
 done:
 
-    if (fp != NULL) {
-        fclose(fp);
-    }
-
     aws_byte_buf_clean_up(&der_key_buffer);
     aws_byte_buf_clean_up(&base64_buffer);
+
+    return result;
+}
+
+static int s_write_key_to_test_case_file(
+    struct v4_test_context *test_context,
+    struct aws_ecc_key_pair *ecc_key,
+    const char *parent_folder,
+    const char *test_name) {
+
+    FILE *fp = NULL;
+    char path[1024];
+    snprintf(path, AWS_ARRAY_SIZE(path), "./%s/%s/%s", parent_folder, test_name, aws_string_c_str(s_ecc_key_filename));
+
+    fp = fopen(path, "w");
+    if (fp == NULL) {
+        return AWS_OP_ERR;
+    }
+
+    int result = s_write_key_to_file(test_context->allocator, ecc_key, fp);
+
+    fclose(fp);
 
     return result;
 }
@@ -1744,3 +1752,51 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_chen_access_key_id, "AKIA3WX2MJNBEKW4PLEV");
+AWS_STATIC_STRING_FROM_LITERAL(s_chen_secret_access_key, "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");
+
+#include <aws/common/bigint.h>
+
+static int s_private_key_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_auth_library_init(allocator);
+
+    struct aws_byte_cursor session_token;
+    AWS_ZERO_STRUCT(session_token);
+
+    struct aws_credentials *credentials = aws_credentials_new(
+        allocator,
+        aws_byte_cursor_from_string(s_chen_access_key_id),
+        aws_byte_cursor_from_string(s_chen_secret_access_key),
+        session_token,
+        0);
+
+    struct aws_bigint *private_key = NULL;
+    struct aws_ecc_key_pair *ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials_debug(allocator, credentials, &private_key);
+
+    struct aws_byte_buf private_key_hex_buffer;
+    ASSERT_SUCCESS(aws_byte_buf_init(&private_key_hex_buffer, allocator, 1024));
+
+    aws_bigint_bytebuf_debug_output(private_key, &private_key_hex_buffer);
+
+    FILE *fp = fopen("/tmp/ecc_key.pem", "w");
+    ASSERT_SUCCESS(s_write_key_to_file(allocator, ecc_key, fp));
+    fclose(fp);
+
+    fp = fopen("/tmp/private_key", "w'");
+    struct aws_byte_cursor pk_cursor = aws_byte_cursor_from_buf(&private_key_hex_buffer);
+    fprintf(fp, PRInSTR "\n", AWS_BYTE_CURSOR_PRI(pk_cursor));
+    fclose(fp);
+
+    aws_byte_buf_clean_up(&private_key_hex_buffer);
+    aws_ecc_key_pair_release(ecc_key);
+    aws_bigint_destroy(private_key);
+    aws_credentials_release(credentials);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(private_key_test, s_private_key_test);

@@ -2,7 +2,7 @@ POST / HTTP/1.1
 Host:example.amazonaws.com
 X-Amz-Security-Token:AQoDYXdzEPT//////////wEXAMPLEtc764bNrC9SAPBSM22wDOk4x4HIZ8j4FZTwdQWLWsKWHGBuFqwAeMicRXmxfpSPfIeoIYRqTflfKD8YUuwthAx7mSEI/qkPpKPi/kMcGdQrmGdeehM4IC1NtBmUpp2wUE8phUZampKsburEDy0KPkyQDYwT7WZ0wq5VSXDvp75YU9HFvlRd8Tx6q6fE8YQcHNVXAkiY9q6d+xo0rKwT38xVqr7ZD0u0iPPkUL64lIZbqBAz+scqKmlzm8FDrypNC9Yjc8fPOLn9FX9KSYvKTr4rvx3iSIlTJabIQwj2ICCR/oLxBA==
 x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set;x-amz-security-token, Signature=304402200564887a6d40c6a75d5ea6aea927debec1e9348a9c60f00473cd0aca820fdaee022031f16cf953fa7598335c44fdd0bc54814f2cf83e11ad1cf059c3c1dca99641af
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set;x-amz-security-token, Signature=3044022071046cb197afa44a903e0e424cc6a221e1578f90b398f7bc2c13840088c815b60220330e4dc27703b93ef4d0175152f6ec884185d54542bd177552ffdf06430e5ea5
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 
