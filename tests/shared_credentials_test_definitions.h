@@ -53,6 +53,12 @@ static struct aws_string *aws_create_process_unique_file_name(struct aws_allocat
 }
 
 static int aws_create_profile_file(const struct aws_string *file_name, const struct aws_string *file_contents) {
+    // avoid compiler warning if some files include this header but don't actually use those variables
+    (void)s_default_profile_env_variable_name;
+    (void)s_default_config_path_env_variable_name;
+    (void)s_default_credentials_path_env_variable_name;
+    (void)s_access_key_id_env_var;
+    (void)s_secret_access_key_env_var;
     (void)s_session_token_env_var;
 
     FILE *fp = fopen(aws_string_c_str(file_name), "w");
