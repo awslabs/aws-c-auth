@@ -104,6 +104,7 @@ static struct aws_byte_cursor s_amz_credential_param_name;
 static struct aws_byte_cursor s_amz_algorithm_param_name;
 static struct aws_byte_cursor s_amz_signed_headers_param_name;
 static struct aws_byte_cursor s_amz_expires_param_name;
+static struct aws_byte_cursor s_amz_region_set_param_name;
 
 /*
  * Build a set of library-static tables for quick lookup.
@@ -227,6 +228,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
 
     s_amz_expires_param_name = aws_byte_cursor_from_string(g_aws_signing_expires_query_param_name);
     if (aws_hash_table_put(&s_forbidden_params, &s_amz_expires_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_amz_region_set_param_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_region_set_param_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
