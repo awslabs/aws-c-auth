@@ -115,8 +115,8 @@ struct sts_creds_provider_user_data {
     struct aws_signing_config_aws signing_config;
     struct aws_http_message *message;
     struct aws_byte_buf output_buf;
-    struct aws_retry_token *retry_token;
 
+    struct aws_retry_token *retry_token;
     int error_code;
     void *user_data;
 };
@@ -567,7 +567,7 @@ static void s_start_make_request(
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
     provider_user_data->signing_config.credentials_provider = impl->provider;
     aws_date_time_init_now(&provider_user_data->signing_config.date);
-    provider_user_data->signing_config.region_config = s_signing_region;
+    provider_user_data->signing_config.region = s_signing_region;
     provider_user_data->signing_config.service = s_service_name;
     provider_user_data->signing_config.use_double_uri_encode = false;
 

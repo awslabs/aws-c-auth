@@ -208,6 +208,11 @@ static int s_aws_http_stream_activate_mock(struct aws_http_stream *stream) {
     return AWS_OP_SUCCESS;
 }
 
+static int s_aws_http_stream_activate_mock(struct aws_http_stream *stream) {
+    (void)stream;
+    return AWS_OP_SUCCESS;
+}
+
 static void s_aws_http_stream_release_mock(struct aws_http_stream *stream) {
     (void)stream;
 }
