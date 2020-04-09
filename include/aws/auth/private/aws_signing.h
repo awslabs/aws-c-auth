@@ -69,8 +69,6 @@ struct aws_signing_state_aws {
     char expiration_array[32]; /* serialization of the pre-signing expiration duration value */
 };
 
-struct aws_bigint;
-
 AWS_EXTERN_C_BEGIN
 
 AWS_AUTH_API

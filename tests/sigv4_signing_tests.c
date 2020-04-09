@@ -1492,7 +1492,7 @@ AWS_TEST_CASE(sigv4_skip_xray_header_test, s_sigv4_skip_xray_header_test);
 AWS_STATIC_STRING_FROM_LITERAL(
     s_skip_user_agent_header_request,
     "GET / HTTP/1.1\n"
-    "Useragent:c sdk v1.0\n"
+    "User-agent:c sdk v1.0\n"
     "Host:example.amazonaws.com\n\n");
 
 AWS_STATIC_STRING_FROM_LITERAL(
@@ -1686,7 +1686,7 @@ AWS_TEST_CASE(sigv4_fail_algorithm_param_test, s_sigv4_fail_algorithm_param_test
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_amz_signed_headers_param_request,
-    "GET /?X-Amz-SignedHeaders=UserAgent HTTP/1.1\n"
+    "GET /?X-Amz-SignedHeaders=User-Agent HTTP/1.1\n"
     "Host:example.amazonaws.com\n");
 
 static int s_sigv4_fail_signed_headers_param_test(struct aws_allocator *allocator, void *ctx) {
