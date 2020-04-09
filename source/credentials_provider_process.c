@@ -41,6 +41,7 @@ static int s_get_credentials_from_process(
     struct aws_run_command_options options = {
         .command = aws_string_c_str(impl->command),
     };
+
     struct aws_run_command_result result;
     int ret = AWS_OP_ERR;
     if (aws_run_command_result_init(provider->allocator, &result)) {
@@ -84,9 +85,18 @@ static int s_get_credentials_from_process(
     ret = AWS_OP_SUCCESS;
 
 on_finish:
-    callback(credentials, user_data);
+
+    ;int error_code = AWS_ERROR_SUCCESS;
+    if (credentials == NULL) {
+        error_code = aws_last_error();
+        if (error_code == AWS_ERROR_SUCCESS) {
+            error_code = AWS_AUTH_CREDENTIALS_PROVIDER_PROCESS_SOURCE_FAILURE;
+        }
+    }
+
+    callback(credentials, error_code, user_data);
     aws_run_command_result_cleanup(&result);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
     return ret;
 }
 

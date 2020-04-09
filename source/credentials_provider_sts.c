@@ -103,6 +103,9 @@ struct sts_creds_provider_user_data {
     struct aws_allocator *allocator;
     struct aws_credentials_provider *provider;
     struct aws_credentials *credentials;
+    struct aws_string *access_key_id;
+    struct aws_string *secret_access_key;
+    struct aws_string *session_token;
     aws_on_get_credentials_callback_fn *callback;
     struct aws_http_connection *connection;
     struct aws_byte_buf payload_body;
@@ -111,7 +114,9 @@ struct sts_creds_provider_user_data {
     struct aws_signing_config_aws signing_config;
     struct aws_http_message *message;
     struct aws_byte_buf output_buf;
+
     struct aws_retry_token *retry_token;
+    int error_code;
     void *user_data;
 };
 
@@ -141,16 +146,26 @@ static void s_reset_request_specific_data(struct sts_creds_provider_user_data *u
     }
 
     aws_byte_buf_clean_up(&user_data->output_buf);
+
+    aws_string_destroy(user_data->access_key_id);
+    user_data->access_key_id = NULL;
+
+    aws_string_destroy(user_data->secret_access_key);
+    user_data->secret_access_key = NULL;
+
+    aws_string_destroy(user_data->session_token);
+    user_data->session_token = NULL;
 }
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
-    user_data->callback(user_data->credentials, user_data->user_data);
+    user_data->callback(user_data->credentials, user_data->error_code, user_data->user_data);
 
     if (user_data->credentials) {
-        aws_credentials_destroy(user_data->credentials);
+        aws_credentials_release(user_data->credentials);
     }
 
     s_reset_request_specific_data(user_data);
     aws_credentials_provider_release(user_data->provider);
+
     aws_retry_strategy_release_retry_token(user_data->retry_token);
     aws_mem_release(user_data->allocator, user_data);
 }
@@ -221,33 +236,33 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
         return aws_xml_node_traverse(parser, node, s_on_node_encountered_fn, user_data);
     }
 
-    struct aws_credentials *credentials = user_data;
+    struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_byte_cursor credential_data;
     AWS_ZERO_STRUCT(credential_data);
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_access_key_id_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->access_key_id =
-            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        provider_user_data->access_key_id =
+            aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
 
-        if (credentials->access_key_id) {
+        if (provider_user_data->access_key_id) {
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(credentials=%p): AccessKeyId %s",
-                (void *)credentials,
-                aws_string_c_str(credentials->access_key_id));
+                "(id=%p): Read AccessKeyId %s",
+                (void *)provider_user_data->provider,
+                aws_string_c_str(provider_user_data->access_key_id));
         }
     }
 
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_secret_key_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->secret_access_key =
-            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        provider_user_data->secret_access_key =
+            aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
     if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_session_token_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->session_token =
-            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        provider_user_data->session_token =
+            aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
     return true;
@@ -289,8 +304,14 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
 
+    provider_user_data->error_code = error_code;
+
     if (provider_impl->function_table->aws_http_stream_get_incoming_response_status(stream, &http_response_code)) {
         goto finish;
+    }
+
+    if (http_response_code != 200) {
+        provider_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
     }
 
     provider_impl->function_table->aws_http_stream_release(stream);
@@ -355,41 +376,39 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
             goto finish;
         }
 
-        provider_user_data->credentials =
-            aws_mem_calloc(provider_user_data->allocator, 1, sizeof(struct aws_credentials));
-
         uint64_t now = UINT64_MAX;
         if (provider_impl->system_clock_fn(&now) != AWS_OP_SUCCESS) {
             goto finish;
         }
 
         uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
-        provider_user_data->credentials->expiration_timepoint_seconds = now_seconds + provider_impl->duration_seconds;
 
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(credentials=%p): parsing credentials",
-            (void *)provider_user_data->credentials);
-        provider_user_data->credentials->allocator = provider_user_data->allocator;
-        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, provider_user_data->credentials)) {
+        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, provider_user_data)) {
+            provider_user_data->error_code = aws_last_error();
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "{credentials=%p): parsing failed with error %s",
+                "(id=%p): credentials parsing failed with error %s",
                 (void *)provider_user_data->credentials,
-                aws_error_debug_str(aws_last_error()));
+                aws_error_debug_str(provider_user_data->error_code));
             goto finish;
         }
 
         aws_xml_parser_clean_up(&xml_parser);
 
-        if (!(provider_user_data->credentials->access_key_id && provider_user_data->credentials->secret_access_key &&
-              provider_user_data->credentials->session_token)) {
+        if (provider_user_data->access_key_id && provider_user_data->secret_access_key &&
+            provider_user_data->session_token) {
+
+            provider_user_data->credentials = aws_credentials_new(
+                provider_user_data->allocator,
+                aws_byte_cursor_from_string(provider_user_data->access_key_id),
+                aws_byte_cursor_from_string(provider_user_data->secret_access_key),
+                aws_byte_cursor_from_string(provider_user_data->session_token),
+                now_seconds + provider_impl->duration_seconds);
+        } else {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): credentials document was corrupted, treating as an error.",
                 (void *)provider_user_data->provider);
-            aws_credentials_destroy(provider_user_data->credentials);
-            provider_user_data->credentials = NULL;
         }
     }
 
@@ -541,7 +560,9 @@ static void s_start_make_request(
     }
 
     struct aws_credentials_provider_sts_impl *impl = provider->impl;
-    provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
+
+    provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4;
+    provider_user_data->signing_config.transform = AWS_SRT_HEADER;
     provider_user_data->signing_config.body_signing_type = AWS_BODY_SIGNING_ON;
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
     provider_user_data->signing_config.credentials_provider = impl->provider;
@@ -570,7 +591,7 @@ error:
     if (provider_user_data) {
         s_clean_up_user_data(provider_user_data);
     } else {
-        provider_user_data->callback(NULL, provider_user_data->user_data);
+        provider_user_data->callback(NULL, provider_user_data->error_code, provider_user_data->user_data);
     }
 }
 
@@ -613,7 +634,7 @@ static int s_sts_get_creds(
             "(id=%p): error occurred while allocating memory: %s",
             (void *)provider_user_data->provider,
             aws_error_debug_str(aws_last_error()));
-        callback(NULL, user_data);
+        callback(NULL, aws_last_error(), user_data);
         return AWS_OP_ERR;
     }
 
@@ -630,7 +651,7 @@ static int s_sts_get_creds(
             "(id=%p): failed to acquire retry token: %s",
             (void *)provider_user_data->provider,
             aws_error_debug_str(aws_last_error()));
-        callback(NULL, user_data);
+        callback(NULL, aws_last_error(), user_data);
         s_clean_up_user_data(user_data);
         return AWS_OP_ERR;
     }

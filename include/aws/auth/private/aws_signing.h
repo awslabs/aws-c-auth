@@ -48,7 +48,7 @@ struct aws_signing_state_aws {
     struct aws_byte_buf region_service_buffer;
 
     struct aws_signing_result result;
-    struct aws_credentials *credentials;
+    int error_code;
 
     /* persistent, constructed values that are either/or
      *  (1) consumed by later stages of the signing process,
@@ -62,6 +62,8 @@ struct aws_signing_state_aws {
     struct aws_byte_buf credential_scope;
     struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
+
+    char expiration_array[32];
 };
 
 AWS_EXTERN_C_BEGIN

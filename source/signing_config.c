@@ -15,11 +15,13 @@
 
 #include <aws/auth/signing_config.h>
 
-static const char *s_algorithm_names[AWS_SIGNING_ALGORITHM_COUNT] = {"Aws SigV4"};
-
 const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm) {
-    if (algorithm < AWS_SIGNING_ALGORITHM_COUNT) {
-        return s_algorithm_names[algorithm];
+    switch (algorithm) {
+        case AWS_SIGNING_ALGORITHM_V4:
+            return "SigV4";
+
+        default:
+            break;
     }
 
     return "Unknown";
@@ -40,12 +42,19 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
-    if (config->credentials_provider == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_SIGNING,
-            "(id=%p) Signing config is missing a credentials provider or credentials",
-            (void *)config);
-        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    switch (config->algorithm) {
+        case AWS_SIGNING_ALGORITHM_V4:
+            if (config->credentials == NULL && config->credentials_provider == NULL) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "(id=%p) Sigv4 signing config is missing a credentials provider or credentials",
+                    (void *)config);
+                return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+            }
+            break;
+
+        default:
+            return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
     return AWS_OP_SUCCESS;

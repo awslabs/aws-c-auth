@@ -42,13 +42,18 @@ struct aws_signing_config_base {
 };
 
 /*
- * What signing algorithm to use.  Independent of signing config type as some
- * algorithms may share a common configuration struct.
+ * What version of the AWS signing process should we use.
  */
 enum aws_signing_algorithm {
-    AWS_SIGNING_ALGORITHM_SIG_V4_HEADER,
-    AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM,
-    AWS_SIGNING_ALGORITHM_COUNT
+    AWS_SIGNING_ALGORITHM_V4,
+};
+
+/*
+ * How should the signing process transform the request.
+ */
+enum aws_signing_request_transform {
+    AWS_SRT_HEADER,
+    AWS_SRT_QUERY_PARAM,
 };
 
 enum aws_body_signing_config_type {
@@ -68,14 +73,14 @@ struct aws_signing_config_aws {
     enum aws_signing_config_type config_type;
 
     /*
-     * What signing process do we want to invoke
+     * What signing algorithm to use.
      */
     enum aws_signing_algorithm algorithm;
 
     /*
-     * AWS credentials provider to fetch signing credentials with
+     * What kind of signing transform should be applied to the request.
      */
-    struct aws_credentials_provider *credentials_provider;
+    enum aws_signing_request_transform transform;
 
     /*
      * The region to sign against
@@ -122,6 +127,32 @@ struct aws_signing_config_aws {
      * otherwise no paylod signing will take place.
      */
     enum aws_body_signing_config_type body_signing_type;
+
+    /*
+     * Signing key control:
+     *
+     *   (1) If "credentials" is valid, use it
+     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
+     *   (3) Else fail
+     *
+     */
+
+    /*
+     * AWS Credentials to sign with.
+     */
+    struct aws_credentials *credentials;
+
+    /*
+     * AWS credentials provider to fetch credentials from.
+     */
+    struct aws_credentials_provider *credentials_provider;
+
+    /*
+     * If non-zero and the signing transform is query param, then signing will add X-Amz-Expires to the query
+     * string, equal to the value specified here.  If this value is zero or if header signing is being used then
+     * this parameter has no effect.
+     */
+    uint64_t expiration_in_seconds;
 };
 
 AWS_EXTERN_C_BEGIN

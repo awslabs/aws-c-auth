@@ -52,6 +52,7 @@ struct aws_mock_sts_tester {
 
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
+    int error_code;
 
     bool fail_connection;
 
@@ -258,7 +259,7 @@ static void s_cleanup_creds_callback_data(void) {
     s_tester.has_received_credentials_callback = false;
 
     if (s_tester.credentials) {
-        aws_credentials_destroy(s_tester.credentials);
+        aws_credentials_release(s_tester.credentials);
         s_tester.credentials = NULL;
     }
 
@@ -299,13 +300,14 @@ static void s_aws_wait_for_credentials_result(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
+static void s_get_credentials_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)user_data;
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
+    s_tester.error_code = error_code;
     if (credentials != NULL) {
-        s_tester.credentials = aws_credentials_new_copy(credentials->allocator, credentials);
+        s_tester.credentials = aws_credentials_new_clone(credentials);
     }
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
@@ -337,6 +339,19 @@ static const char *success_creds_doc = "<AssumeRoleResponse xmlns=\"who cares\">
 static struct aws_byte_cursor s_expected_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%"
                                           "3Arole%2Ftest_role&RoleSessionName=test_session&DurationSeconds=900");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_response, "accessKeyIdResp");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_response, "secretKeyResp");
+AWS_STATIC_STRING_FROM_LITERAL(s_session_token_response, "sessionTokenResp");
+
+static int s_verify_credentials(struct aws_credentials *credentials) {
+    ASSERT_NOT_NULL(credentials);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_access_key_id_response);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(credentials), s_secret_access_key_response);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_session_token_response);
+
+    return AWS_OP_SUCCESS;
+}
 
 static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -370,11 +385,8 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_NOT_NULL(s_tester.credentials);
-    ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
-    ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
-    ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
 
     const char *expected_method = "POST";
     ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
@@ -437,11 +449,8 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_NOT_NULL(s_tester.credentials);
-    ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
-    ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
-    ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
 
     const char *expected_method = "POST";
     ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
@@ -674,10 +683,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_NOT_NULL(s_tester.credentials);
-    ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
-    ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
-    ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     const char *expected_method = "POST";
     ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
@@ -761,10 +767,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_NOT_NULL(s_tester.credentials);
-    ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
-    ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
-    ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     const char *expected_method = "POST";
     ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
@@ -842,11 +845,8 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_NOT_NULL(s_tester.credentials);
-    ASSERT_STR_EQUALS("accessKeyIdResp", aws_string_c_str(s_tester.credentials->access_key_id));
-    ASSERT_STR_EQUALS("secretKeyResp", aws_string_c_str(s_tester.credentials->secret_access_key));
-    ASSERT_STR_EQUALS("sessionTokenResp", aws_string_c_str(s_tester.credentials->session_token));
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
 
     const char *expected_method = "POST";
     ASSERT_BIN_ARRAYS_EQUALS(expected_method, strlen(expected_method), s_tester.method.buffer, s_tester.method.len);
@@ -874,7 +874,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
 
     s_aws_wait_for_credentials_result();
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 900);
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
 
     /* advance each time to after expiration but before cached provider timeout, verify we get new creds */
     uint64_t nine_hundred_and_one_seconds_in_ns =
@@ -887,7 +887,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
 
     s_aws_wait_for_credentials_result();
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == 1801);
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 1801);
 
     aws_credentials_provider_release(cached_provider);
     aws_credentials_provider_release(sts_provider);

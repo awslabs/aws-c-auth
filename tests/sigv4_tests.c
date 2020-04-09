@@ -126,6 +126,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_secret_access_key, "wJalrXUtnFEMI/K7
 AWS_STATIC_STRING_FROM_LITERAL(
     s_test_suite_session_token,
     "6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267");
+AWS_STATIC_STRING_FROM_LITERAL(s_empty_token, "");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_date, "2015-08-30T12:36:00Z");
 
@@ -235,7 +236,8 @@ static int s_initialize_test_from_contents(
         contents->payload_stream);
 
     config->config_type = AWS_SIGNING_CONFIG_AWS;
-    config->algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
+    config->algorithm = AWS_SIGNING_ALGORITHM_V4;
+    config->transform = AWS_SRT_HEADER;
     config->region = aws_byte_cursor_from_string(s_test_suite_region);
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->use_double_uri_encode = true;
@@ -409,20 +411,8 @@ static int s_do_sigv4_test_suite_test(
     ASSERT_SUCCESS(
         s_initialize_test_from_file(&signable, &config, allocator, &test_contents, test_name, parent_folder));
 
-    struct aws_byte_cursor session_token;
-    if (credentials->session_token) {
-        session_token = aws_byte_cursor_from_string(credentials->session_token);
-    } else {
-        AWS_ZERO_STRUCT(session_token);
-    }
-
-    struct aws_credentials_provider_static_options static_options = {
-        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
-        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
-        .session_token = session_token,
-    };
-
-    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+    ASSERT_NOT_NULL(credentials);
+    config.credentials = credentials;
 
     /* Get constants and expected values */
     struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
@@ -431,9 +421,6 @@ static int s_do_sigv4_test_suite_test(
     {
         struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
         ASSERT_NOT_NULL(signing_state);
-
-        ASSERT_NOT_NULL(credentials);
-        signing_state->credentials = credentials;
 
         struct aws_signing_result *result = &signing_state->result;
 
@@ -465,7 +452,8 @@ static int s_do_sigv4_test_suite_test(
         ASSERT_BIN_ARRAYS_EQUALS(
             expected_auth_header.ptr, expected_auth_header.len, auth_header_value.ptr, auth_header_value.len);
 
-        if (credentials->session_token) {
+        struct aws_byte_cursor session_token = aws_credentials_get_session_token(credentials);
+        if (session_token.len > 0) {
             struct aws_byte_cursor session_token_header_name =
                 aws_byte_cursor_from_string(g_aws_signing_security_token_name);
 
@@ -475,7 +463,7 @@ static int s_do_sigv4_test_suite_test(
                 AWS_OP_SUCCESS);
 
             struct aws_byte_cursor session_header_value = s_get_value_from_result(headers, &session_token_header_name);
-            struct aws_byte_cursor expected_session_header = aws_byte_cursor_from_string(credentials->session_token);
+            struct aws_byte_cursor expected_session_header = session_token;
 
             ASSERT_BIN_ARRAYS_EQUALS(
                 expected_session_header.ptr,
@@ -511,13 +499,10 @@ static int s_do_sigv4_test_suite_test(
     /* 3 - sign via query param and check for expected query params.  We don't have an X-Amz-Signature value to check
      * though so just make sure it exists */
     {
-        config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_QUERY_PARAM;
+        config.transform = AWS_SRT_QUERY_PARAM;
 
         struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
         ASSERT_NOT_NULL(signing_state);
-
-        ASSERT_NOT_NULL(credentials);
-        signing_state->credentials = credentials;
 
         struct aws_signing_result *result = &signing_state->result;
 
@@ -595,9 +580,9 @@ static int s_do_sigv4_test_suite_test(
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
         struct aws_credentials *credentials =                                                                          \
-            aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);          \
+            aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);          \
         int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
-        aws_credentials_destroy(credentials);                                                                          \
+        aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
@@ -605,10 +590,10 @@ static int s_do_sigv4_test_suite_test(
 #define DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(test_name, test_name_string)                                  \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
-        struct aws_credentials *credentials = aws_credentials_new(                                                     \
-            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_test_suite_session_token);        \
+        struct aws_credentials *credentials = aws_credentials_new_from_string(                                                     \
+            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_test_suite_session_token, UINT64_MAX);        \
         int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
-        aws_credentials_destroy(credentials);                                                                          \
+        aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
@@ -617,9 +602,9 @@ static int s_do_sigv4_test_suite_test(
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
         struct aws_credentials *credentials =                                                                          \
-            aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);          \
+            aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);          \
         int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder, credentials);             \
-        aws_credentials_destroy(credentials);                                                                          \
+        aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
@@ -686,20 +671,13 @@ static int s_do_header_skip_test(
     config.should_sign_param = should_sign;
 
     struct aws_credentials *credentials =
-        aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
+        aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
     ASSERT_NOT_NULL(credentials);
 
-    struct aws_credentials_provider_static_options static_options = {
-        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
-        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
-    };
-
-    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+    config.credentials = credentials;
 
     struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
     ASSERT_NOT_NULL(signing_state);
-
-    signing_state->credentials = credentials;
 
     ASSERT_SUCCESS(aws_signing_build_canonical_request(signing_state));
 
@@ -713,7 +691,7 @@ static int s_do_header_skip_test(
 
     aws_signing_state_destroy(signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
     aws_signable_destroy(signable);
 
     aws_auth_library_clean_up();
@@ -749,7 +727,7 @@ AWS_TEST_CASE(sigv4_skip_xray_header_test, s_sigv4_skip_xray_header_test);
 AWS_STATIC_STRING_FROM_LITERAL(
     s_skip_user_agent_header_request,
     "GET / HTTP/1.1\n"
-    "Useragent:c sdk v1.0\n"
+    "User-agent:c sdk v1.0\n"
     "Host:example.amazonaws.com\n"
     "X-Amz-Date:20150830T123600Z");
 
@@ -833,20 +811,13 @@ static int s_do_forbidden_header_param_test(
         AWS_OP_SUCCESS);
 
     struct aws_credentials *credentials =
-        aws_credentials_new(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL);
+        aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
     ASSERT_NOT_NULL(credentials);
 
-    struct aws_credentials_provider_static_options static_options = {
-        .access_key_id = aws_byte_cursor_from_string(credentials->access_key_id),
-        .secret_access_key = aws_byte_cursor_from_string(credentials->secret_access_key),
-    };
-
-    config.credentials_provider = aws_credentials_provider_new_static(allocator, &static_options);
+    config.credentials = credentials;
 
     struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
     ASSERT_NOT_NULL(signing_state);
-
-    signing_state->credentials = credentials;
 
     ASSERT_FAILS(aws_signing_build_canonical_request(signing_state));
     ASSERT_TRUE(aws_last_error() == expected_error);
@@ -854,7 +825,7 @@ static int s_do_forbidden_header_param_test(
     aws_signing_state_destroy(signing_state);
     aws_credentials_provider_release(config.credentials_provider);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
     aws_signable_destroy(signable);
 
     aws_auth_library_clean_up();
@@ -951,7 +922,7 @@ AWS_TEST_CASE(sigv4_fail_algorithm_param_test, s_sigv4_fail_algorithm_param_test
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_amz_signed_headers_param_request,
-    "GET /?X-Amz-SignedHeaders=UserAgent HTTP/1.1\n"
+    "GET /?X-Amz-SignedHeaders=User-Agent HTTP/1.1\n"
     "Host:example.amazonaws.com\n");
 
 static int s_sigv4_fail_signed_headers_param_test(struct aws_allocator *allocator, void *ctx) {
@@ -986,9 +957,10 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
 
     struct aws_signing_config_aws config = {
         .config_type = AWS_SIGNING_CONFIG_AWS,
-        .algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER,
+        .algorithm = AWS_SIGNING_ALGORITHM_V4,
+        .transform = AWS_SRT_HEADER,
         .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
-        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticbuttservice"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
     };
     config.credentials_provider = aws_credentials_provider_new_mock(allocator, &results, 1, NULL);
     aws_date_time_init_now(&config.date);

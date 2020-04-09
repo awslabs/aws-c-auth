@@ -80,7 +80,14 @@ struct sts_web_identity_user_data {
     struct aws_http_connection *connection;
     struct aws_http_message *request;
     struct aws_byte_buf response;
+
+    struct aws_string *access_key_id;
+    struct aws_string *secret_access_key;
+    struct aws_string *session_token;
+    uint64_t expiration_timepoint_in_seconds;
+
     int status_code;
+    int error_code;
     int attempt_count;
 };
 
@@ -101,6 +108,11 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
     }
+
+    aws_string_destroy(user_data->access_key_id);
+    aws_string_destroy(user_data->secret_access_key);
+    aws_string_destroy(user_data->session_token);
+
     aws_credentials_provider_release(user_data->sts_web_identity_provider);
     aws_mem_release(user_data->allocator, user_data);
 }
@@ -146,6 +158,15 @@ static void s_user_data_reset_response(struct sts_web_identity_user_data *sts_we
         aws_http_message_destroy(sts_web_identity_user_data->request);
         sts_web_identity_user_data->request = NULL;
     }
+
+    aws_string_destroy(sts_web_identity_user_data->access_key_id);
+    sts_web_identity_user_data->access_key_id = NULL;
+
+    aws_string_destroy(sts_web_identity_user_data->secret_access_key);
+    sts_web_identity_user_data->secret_access_key = NULL;
+
+    aws_string_destroy(sts_web_identity_user_data->session_token);
+    sts_web_identity_user_data->session_token = NULL;
 }
 
 /*
@@ -233,33 +254,25 @@ static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct
         return aws_xml_node_traverse(parser, node, s_on_creds_node_encountered_fn, user_data);
     }
 
-    struct aws_credentials *credentials = user_data;
+    struct sts_web_identity_user_data *query_user_data = user_data;
     struct aws_byte_cursor credential_data;
     AWS_ZERO_STRUCT(credential_data);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AccessKeyId")) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->access_key_id =
-            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
-
-        if (credentials->access_key_id) {
-            AWS_LOGF_DEBUG(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(credentials=%p): AccessKeyId: %s",
-                (void *)credentials,
-                aws_string_c_str(credentials->access_key_id));
-        }
+        query_user_data->access_key_id =
+            aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
     if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "SecretAccessKey")) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->secret_access_key =
-            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        query_user_data->secret_access_key =
+            aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
     if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "SessionToken")) {
         aws_xml_node_as_body(parser, node, &credential_data);
-        credentials->session_token =
-            aws_string_new_from_array(credentials->allocator, credential_data.ptr, credential_data.len);
+        query_user_data->session_token =
+            aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
     /* As long as we parsed an usable expiration, use it, otherwise use
@@ -271,12 +284,13 @@ static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct
             struct aws_date_time expiration;
             if (aws_date_time_init_from_str_cursor(&expiration, &credential_data, AWS_DATE_FORMAT_ISO_8601) ==
                 AWS_OP_SUCCESS) {
-                credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
+                query_user_data->expiration_timepoint_in_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
             } else {
+                query_user_data->error_code = aws_last_error();
                 AWS_LOGF_ERROR(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                     "Failed to parse time string from sts web identity xml response: %s",
-                    aws_error_str(aws_last_error()));
+                    aws_error_str(query_user_data->error_code));
             }
         }
     }
@@ -284,18 +298,17 @@ static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct
 }
 
 static struct aws_credentials *s_parse_credentials_from_response(
-    struct aws_allocator *allocator,
+    struct sts_web_identity_user_data *query_user_data,
     struct aws_byte_buf *response) {
 
-    if (!allocator || !response || response->len == 0) {
+    if (!response || response->len == 0) {
         return NULL;
     }
 
     struct aws_xml_parser xml_parser;
     struct aws_credentials *credentials = NULL;
-    bool parse_success = false;
     struct aws_byte_cursor response_cursor = aws_byte_cursor_from_buf(response);
-    if (aws_xml_parser_init(&xml_parser, allocator, &response_cursor, 0)) {
+    if (aws_xml_parser_init(&xml_parser, query_user_data->allocator, &response_cursor, 0)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to init xml parser for sts web identity credentials provider to parse error information.")
@@ -309,18 +322,9 @@ static struct aws_credentials *s_parse_credentials_from_response(
         goto on_finish;
     }
     uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
-    credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
-    if (!credentials) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to allocate required memory for credentials: %s",
-            aws_error_str(aws_last_error()));
-        goto on_finish;
-    }
-    credentials->allocator = allocator;
-    credentials->expiration_timepoint_seconds = now_seconds + STS_WEB_IDENTITY_CREDS_DEFAULT_DURATION_SECONDS;
+    query_user_data->expiration_timepoint_in_seconds = now_seconds + STS_WEB_IDENTITY_CREDS_DEFAULT_DURATION_SECONDS;
 
-    if (aws_xml_parser_parse(&xml_parser, s_on_creds_node_encountered_fn, credentials)) {
+    if (aws_xml_parser_parse(&xml_parser, s_on_creds_node_encountered_fn, query_user_data)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to parse xml response for sts web identity with error: %s",
@@ -328,17 +332,24 @@ static struct aws_credentials *s_parse_credentials_from_response(
         goto on_finish;
     }
 
-    if (!credentials->access_key_id || !credentials->secret_access_key) {
+    if (!query_user_data->access_key_id || !query_user_data->secret_access_key) {
         goto on_finish;
     }
-    parse_success = true;
+
+    credentials = aws_credentials_new(query_user_data->allocator,
+        aws_byte_cursor_from_string(query_user_data->access_key_id),
+aws_byte_cursor_from_string(query_user_data->secret_access_key),
+aws_byte_cursor_from_string(query_user_data->session_token),
+query_user_data->expiration_timepoint_in_seconds);
 
 on_finish:
-    aws_xml_parser_clean_up(&xml_parser);
-    if (!parse_success) {
-        aws_credentials_destroy(credentials);
-        return NULL;
+
+    if (credentials == NULL) {
+        query_user_data->error_code = aws_last_error();
     }
+
+    aws_xml_parser_clean_up(&xml_parser);
+
     return credentials;
 }
 
@@ -350,7 +361,11 @@ static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *
     struct aws_credentials *credentials = NULL;
     if (sts_web_identity_user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
         credentials = s_parse_credentials_from_response(
-            sts_web_identity_user_data->allocator, &sts_web_identity_user_data->response);
+            sts_web_identity_user_data, &sts_web_identity_user_data->response);
+    }
+
+    if (credentials == NULL && sts_web_identity_user_data->error_code == AWS_ERROR_SUCCESS) {
+        sts_web_identity_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE;
     }
 
     if (credentials != NULL) {
@@ -366,11 +381,11 @@ static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *
     }
 
     /* pass the credentials back */
-    sts_web_identity_user_data->original_callback(credentials, sts_web_identity_user_data->original_user_data);
+    sts_web_identity_user_data->original_callback(credentials, sts_web_identity_user_data->error_code, sts_web_identity_user_data->original_user_data);
 
     /* clean up */
     s_user_data_destroy(sts_web_identity_user_data);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
 }
 
 static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *data, void *user_data) {

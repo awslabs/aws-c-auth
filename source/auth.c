@@ -49,6 +49,37 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_INVALID_CONFIGURATION,
         "Attempt to sign an http request with an invalid signing configuration"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT,
+        "Valid credentials could not be sourced from process environment"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by a profile provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the IMDS provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the STS provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE,
+    "Unsuccessful status code returned from credentials-fetching http request"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE,
+        "Invalid response document encountered while querying credentials via http"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_ECS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the ECS provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_X509_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the X509 provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_PROCESS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the process provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the sts web identity provider"),
+
 };
 /* clang-format on */
 

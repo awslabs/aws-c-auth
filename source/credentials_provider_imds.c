@@ -106,6 +106,7 @@ struct imds_user_data {
      */
     bool token_required;
     int status_code;
+    int error_code;
 
     struct aws_atomic_var ref_count;
     bool callback_invoked;
@@ -123,7 +124,7 @@ static void s_imds_user_data_destroy(struct imds_user_data *user_data) {
     }
 
     if (user_data->credentials) {
-        aws_credentials_destroy(user_data->credentials);
+        aws_credentials_release(user_data->credentials);
         user_data->credentials = NULL;
     }
 
@@ -426,6 +427,7 @@ static void s_imds_on_token_response(struct imds_user_data *imds_user_data) {
 
     /* Gets 400 means token is required but the request itself failed. */
     if (imds_user_data->status_code == AWS_HTTP_STATUS_CODE_400_BAD_REQUEST) {
+        imds_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         return;
     }
@@ -508,6 +510,7 @@ static void s_imds_process_instance_role_response(struct imds_user_data *imds_us
      * response and treat as an error
      */
     if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        imds_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         return;
     }
@@ -515,6 +518,7 @@ static void s_imds_process_instance_role_response(struct imds_user_data *imds_us
      * Take the result of the base query, which should be the name of the instance role
      */
     if (imds_user_data->current_result.len == 0) {
+        imds_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE;
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         return;
     }
@@ -603,6 +607,7 @@ static void s_imds_query_instance_role_credentials_response(struct imds_user_dat
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_ROLE_CREDENTIALS_RESP);
 
     if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        imds_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         goto done;
     }
@@ -637,7 +642,8 @@ done:
 static void s_imds_query_complete(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_COMPLETE);
 
-    imds_user_data->original_callback(imds_user_data->credentials, imds_user_data->original_user_data);
+    imds_user_data->original_callback(
+        imds_user_data->credentials, AWS_ERROR_SUCCESS, imds_user_data->original_user_data);
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) IMDS credentials provider successfully queried instance role credentials",
@@ -650,9 +656,16 @@ static void s_imds_query_error(struct imds_user_data *imds_user_data) {
         imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK);
 
     if (!imds_user_data->callback_invoked) {
-        imds_user_data->original_callback(NULL, imds_user_data->original_user_data);
+
+        imds_user_data->error_code = aws_last_error();
+        if (imds_user_data->error_code == AWS_ERROR_SUCCESS) {
+            imds_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE;
+        }
+
+        imds_user_data->original_callback(NULL, imds_user_data->error_code, imds_user_data->original_user_data);
         imds_user_data->callback_invoked = true;
     }
+
     AWS_LOGF_WARN(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) IMDS credentials provider failed to query instance role credentials",
@@ -716,6 +729,7 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
             aws_error_str(error_code));
 
         imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
+        imds_user_data->error_code = error_code;
     } else {
         /* prevent user_data from being destroyed under the hood. */
         s_imds_user_data_acquire(imds_user_data);
@@ -781,8 +795,9 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "id=%p: Connection was closed, retries have been exhausted.",
                 (void *)imds_user_data->imds_provider);
-            /* roll back to the last request we made, and let it retry. */
+            /* Give up */
             imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+            imds_user_data->error_code = error_code;
         }
     } else {
         /* treat everything else as success on the retry token for now. if we decide we need to retry

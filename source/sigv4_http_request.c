@@ -442,7 +442,8 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
      */
     config.credentials_provider = provider;
     config.config_type = AWS_SIGNING_CONFIG_AWS;
-    config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
+    config.algorithm = AWS_SIGNING_ALGORITHM_V4;
+    config.transform = AWS_SRT_HEADER;
     config.region = aws_byte_cursor_from_string(region);
     config.service = aws_byte_cursor_from_string(service);
     config.use_double_uri_encode = true;
