@@ -648,10 +648,7 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
 #define DEFAULT_BUFFER_SIZE 1024
 #define BASE64_CHARS_PER_LINE 80
 
-static int s_write_key_to_file(
-    struct aws_allocator *allocator,
-    struct aws_ecc_key_pair *ecc_key,
-    FILE *fp) {
+static int s_write_key_to_file(struct aws_allocator *allocator, struct aws_ecc_key_pair *ecc_key, FILE *fp) {
     int result = AWS_OP_ERR;
 
     struct aws_byte_buf der_key_buffer;

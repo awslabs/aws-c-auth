@@ -129,7 +129,6 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator);
 AWS_AUTH_API
 void aws_signing_clean_up_signing_tables(void);
 
-
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_SIGNING_SIGV4_H */

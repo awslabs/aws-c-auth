@@ -2295,4 +2295,3 @@ done:
 
     return ecc_key_pair;
 }
-

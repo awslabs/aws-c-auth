@@ -492,7 +492,6 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     if (impl->owns_ctx) {
         aws_tls_ctx_destroy(impl->ctx);
     }
-
     aws_mem_release(provider->allocator, provider);
 }
 
