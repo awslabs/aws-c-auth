@@ -158,7 +158,7 @@ struct aws_credentials_provider_chain_options {
  * to get secure token used in following requests.
  */
 enum aws_credentials_provider_imds_versions {
-    // defaults to use IMDS_V2
+    /* defaults to use IMDS_V2 */
     IMDS_V2,
     IMDS_V1
 };

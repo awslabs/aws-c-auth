@@ -804,7 +804,7 @@ struct aws_credentials_provider_sts_web_identity_parameters *s_sts_web_identity_
     struct aws_string *role_session_name = NULL;
     struct aws_string *token_file_path = NULL;
 
-    // check environment variables
+    /* check environment variables */
     aws_get_environment_value(allocator, s_sts_web_identity_region_env, &region);
     aws_get_environment_value(allocator, s_sts_web_identity_role_arn_env, &role_arn);
     aws_get_environment_value(allocator, s_sts_web_identity_role_session_name_env, &role_session_name);
