@@ -570,6 +570,11 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "/Action=AssumeRoleWithWebIdentity&Version=2011-06-15"
     "&RoleArn=arn%3Aaws%3Aiam%3A%3A1234567890%3Arole%2Ftest-arn&RoleSessionName=9876543210&WebIdentityToken=my-test-"
     "token-contents-123-abc-xyz");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expected_sts_web_identity_path_and_query_config,
+    "/Action=AssumeRoleWithWebIdentity&Version=2011-06-15"
+    "&RoleArn=arn%3Aaws%3Aiam%3A%3A3333333333%3Arole%2Ftest-arn&RoleSessionName=4444444444&WebIdentityToken=my-test-"
+    "token-contents-123-abc-xyz");
 
 static int s_credentials_provider_sts_web_identity_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -875,7 +880,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
 
-static int s_credentials_provider_sts_web_identity_basic_success(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     s_aws_sts_web_identity_tester_init(allocator);
@@ -957,8 +962,102 @@ static int s_credentials_provider_sts_web_identity_basic_success(struct aws_allo
 }
 
 AWS_TEST_CASE(
-    credentials_provider_sts_web_identity_basic_success,
-    s_credentials_provider_sts_web_identity_basic_success);
+    credentials_provider_sts_web_identity_basic_success_env,
+    s_credentials_provider_sts_web_identity_basic_success_env);
+
+static int s_credentials_provider_sts_web_identity_basic_success_config(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(token_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content =
+        aws_byte_buf_from_c_str(aws_string_c_str(s_sts_web_identity_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(token_file_path_str);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    aws_string_destroy(token_file_path_str);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_sts_web_identity_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.request_uri.buffer,
+        s_tester.request_uri.len,
+        s_expected_sts_web_identity_path_and_query_config->bytes,
+        s_expected_sts_web_identity_path_and_query_config->len);
+
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->access_key_id->bytes,
+        s_tester.credentials->access_key_id->len,
+        s_good_access_key_id->bytes,
+        s_good_access_key_id->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->secret_access_key->bytes,
+        s_tester.credentials->secret_access_key->len,
+        s_good_secret_access_key->bytes,
+        s_good_secret_access_key->len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.credentials->session_token->bytes,
+        s_tester.credentials->session_token->len,
+        s_good_session_token->bytes,
+        s_good_session_token->len);
+
+    struct aws_date_time expiration;
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
+    aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
+    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == (uint64_t)expiration.timestamp);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
+    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
+    aws_tls_ctx_destroy(impl->ctx);
+    aws_tls_connection_options_clean_up(&impl->connection_options);
+    s_aws_sts_web_identity_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_basic_success_config,
+    s_credentials_provider_sts_web_identity_basic_success_config);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_good_response_first_part,

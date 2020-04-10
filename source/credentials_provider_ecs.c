@@ -549,6 +549,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
 
     aws_string_destroy(impl->path_and_query);
     aws_string_destroy(impl->auth_token);
+    aws_tls_connection_options_clean_up(&impl->connection_options);
 
     /* freeing the provider takes place in the shutdown callback below */
 }
@@ -566,7 +567,6 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     if (impl->owns_ctx) {
         aws_tls_ctx_destroy(impl->ctx);
     }
-    aws_tls_connection_options_clean_up(&impl->connection_options);
     aws_mem_release(provider->allocator, provider);
 }
 
