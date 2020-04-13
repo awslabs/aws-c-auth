@@ -2186,7 +2186,7 @@ static int s_aws_init_k_pair(
 }
 
 static const char *s_ecc_private_key_group_divisor =
-    "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140";
+    "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550";
 
 static int s_aws_derive_ecc_private_key(
     struct aws_bigint *private_key_value,

@@ -3,7 +3,7 @@ Content-Type:application/x-www-form-urlencoded; charset=utf-8
 Host:example.amazonaws.com
 Content-Length:13
 x-amz-content-sha256:9095672bbd1f56dfc5b65f3e153adc8731a4a654192329106275f4c7b24d0b6e
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=content-length;content-type;host;x-amz-content-sha256;x-amz-date;x-amz-region-set, Signature=3046022100d85ad84670d0c0fc2858fef1df78bfa7e396721d01b1fb60d50b788e6c2acf870221008e7d0eadf1bffe6fba92a127ebca8c78f1376b7def424d204272d4b8b0ebd724
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=content-length;content-type;host;x-amz-content-sha256;x-amz-date;x-amz-region-set, Signature=3045022045024199c5172ea7869cdb8b4ba711de5de86e62ce19fc6b206e5f0916af4a27022100ac67d915430ba2ae8fc8f11f59facff49831700fb87b72d0164cab4cda9285d7
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 

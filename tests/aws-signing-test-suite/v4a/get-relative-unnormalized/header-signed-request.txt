@@ -1,7 +1,7 @@
 GET /example/.. HTTP/1.1
 Host:example.amazonaws.com
 x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=304502203afa55f5ef71eeaf6c177183435933acccebbacab80bfa323c42cc8162c79b6c02210087730e4707867a8e813951c35d878b5ddf10a821a5b6794ec96e9f13cec330d0
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=304502206f29933aec08058a898e154ff69ba7c672e31de542cf989ff0c5309492d55451022100aace2d5add2315f61984e31fef25b246db4857bf5fbfd47efc7ac6171830bb35
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 
