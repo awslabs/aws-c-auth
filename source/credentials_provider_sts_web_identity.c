@@ -771,10 +771,10 @@ on_error:
 }
 
 static struct aws_byte_cursor s_default_profile_name_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("default");
-AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
 static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
 static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
 static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
 
 static int s_construct_endpoint(
     struct aws_allocator *allocator,
