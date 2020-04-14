@@ -48,7 +48,7 @@ struct aws_mock_sts_web_identity_tester {
 
     int attempts;
     int response_code;
-};
+} s_tester;
 
 /**
  * Redefinition of impl struct because we are mocking connection manager,
@@ -65,8 +65,6 @@ struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
 };
-
-static struct aws_mock_sts_web_identity_tester s_tester;
 
 static void s_on_shutdown_complete(void *user_data) {
     (void)user_data;
