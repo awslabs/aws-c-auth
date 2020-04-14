@@ -69,7 +69,7 @@ static struct aws_credentials_provider_system_vtable s_default_function_table = 
 /*
  * Tracking structure for each outstanding async query to an sts_web_identity provider
  */
-struct aws_credentials_provider_sts_web_identity_user_data {
+struct sts_web_identity_user_data {
     /* immutable post-creation */
     struct aws_allocator *allocator;
     struct aws_credentials_provider *sts_web_identity_provider;
@@ -84,8 +84,7 @@ struct aws_credentials_provider_sts_web_identity_user_data {
     int attempt_count;
 };
 
-static void s_aws_credentials_provider_sts_web_identity_user_data_destroy(
-    struct aws_credentials_provider_sts_web_identity_user_data *user_data) {
+static void s_sts_web_identity_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     if (user_data == NULL) {
         return;
     }
@@ -106,14 +105,13 @@ static void s_aws_credentials_provider_sts_web_identity_user_data_destroy(
     aws_mem_release(user_data->allocator, user_data);
 }
 
-static struct aws_credentials_provider_sts_web_identity_user_data *
-    s_aws_credentials_provider_sts_web_identity_user_data_new(
-        struct aws_credentials_provider *sts_web_identity_provider,
-        aws_on_get_credentials_callback_fn callback,
-        void *user_data) {
+static struct sts_web_identity_user_data *s_sts_web_identity_user_data_new(
+    struct aws_credentials_provider *sts_web_identity_provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
 
-    struct aws_credentials_provider_sts_web_identity_user_data *wrapped_user_data = aws_mem_calloc(
-        sts_web_identity_provider->allocator, 1, sizeof(struct aws_credentials_provider_sts_web_identity_user_data));
+    struct sts_web_identity_user_data *wrapped_user_data =
+        aws_mem_calloc(sts_web_identity_provider->allocator, 1, sizeof(struct sts_web_identity_user_data));
     if (wrapped_user_data == NULL) {
         goto on_error;
     }
@@ -135,13 +133,12 @@ static struct aws_credentials_provider_sts_web_identity_user_data *
 
 on_error:
 
-    s_aws_credentials_provider_sts_web_identity_user_data_destroy(wrapped_user_data);
+    s_sts_web_identity_user_data_destroy(wrapped_user_data);
 
     return NULL;
 }
 
-static void s_aws_credentials_provider_sts_web_identity_user_data_reset_response(
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data) {
+static void s_sts_web_identity_user_data_reset_response(struct sts_web_identity_user_data *sts_web_identity_user_data) {
     sts_web_identity_user_data->response.len = 0;
     sts_web_identity_user_data->status_code = 0;
 
@@ -205,7 +202,7 @@ static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct
     return true;
 }
 
-static bool s_sts_web_identity_parse_retryale_error_from_response(
+static bool s_sts_web_identity_parse_retryable_error_from_response(
     struct aws_allocator *allocator,
     struct aws_byte_buf *response) {
 
@@ -277,6 +274,11 @@ static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct
             if (aws_date_time_init_from_str_cursor(&expiration, &credential_data, AWS_DATE_FORMAT_ISO_8601) ==
                 AWS_OP_SUCCESS) {
                 credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
+            } else {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "Failed to parse time string from sts web identity xml response: %s",
+                    aws_error_str(aws_last_error()));
             }
         }
     }
@@ -292,6 +294,8 @@ static struct aws_credentials *s_sts_web_identity_parse_credentials_from_respons
     }
 
     struct aws_xml_parser xml_parser;
+    struct aws_credentials *credentials = NULL;
+    bool parse_success = false;
     struct aws_byte_cursor response_cursor = aws_byte_cursor_from_buf(response);
     if (aws_xml_parser_init(&xml_parser, allocator, &response_cursor, 0)) {
         AWS_LOGF_ERROR(
@@ -304,16 +308,16 @@ static struct aws_credentials *s_sts_web_identity_parse_credentials_from_respons
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to get sys clock for sts web identity credentials provider to parse error information.")
-        return NULL;
+        goto on_finish;
     }
     uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
-    struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
+    credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
     if (!credentials) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to allocate required memory for credentials: %s",
             aws_error_str(aws_last_error()));
-        return NULL;
+        goto on_finish;
     }
     credentials->allocator = allocator;
     credentials->expiration_timepoint_seconds = now_seconds + STS_WEB_IDENTITY_CREDS_DEFAULT_DURATION_SECONDS;
@@ -323,13 +327,17 @@ static struct aws_credentials *s_sts_web_identity_parse_credentials_from_respons
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to parse xml response for sts web identity with error: %s",
             aws_error_str(aws_last_error()));
-        aws_xml_parser_clean_up(&xml_parser);
-        aws_credentials_destroy(credentials);
-        return NULL;
+        goto on_finish;
     }
 
-    aws_xml_parser_clean_up(&xml_parser);
     if (!credentials->access_key_id || !credentials->secret_access_key) {
+        goto on_finish;
+    }
+    parse_success = true;
+
+on_finish:
+    aws_xml_parser_clean_up(&xml_parser);
+    if (!parse_success) {
         aws_credentials_destroy(credentials);
         return NULL;
     }
@@ -340,7 +348,7 @@ static struct aws_credentials *s_sts_web_identity_parse_credentials_from_respons
  * No matter the result, this always gets called assuming that user_data is successfully allocated
  */
 static void s_sts_web_identity_finalize_get_credentials_query(
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data) {
+    struct sts_web_identity_user_data *sts_web_identity_user_data) {
     /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials = NULL;
     if (sts_web_identity_user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
@@ -364,7 +372,7 @@ static void s_sts_web_identity_finalize_get_credentials_query(
     sts_web_identity_user_data->original_callback(credentials, sts_web_identity_user_data->original_user_data);
 
     /* clean up */
-    s_aws_credentials_provider_sts_web_identity_user_data_destroy(sts_web_identity_user_data);
+    s_sts_web_identity_user_data_destroy(sts_web_identity_user_data);
     aws_credentials_destroy(credentials);
 }
 
@@ -375,7 +383,7 @@ static int s_sts_web_identity_on_incoming_body_fn(
 
     (void)stream;
 
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
     struct aws_credentials_provider_sts_web_identity_impl *impl =
         sts_web_identity_user_data->sts_web_identity_provider->impl;
 
@@ -423,7 +431,7 @@ static int s_sts_web_identity_on_incoming_headers_fn(
         return AWS_OP_SUCCESS;
     }
 
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
     if (header_block == AWS_HTTP_HEADER_BLOCK_MAIN) {
         if (sts_web_identity_user_data->status_code == 0) {
             struct aws_credentials_provider_sts_web_identity_impl *impl =
@@ -450,11 +458,10 @@ static int s_sts_web_identity_on_incoming_headers_fn(
     return AWS_OP_SUCCESS;
 }
 
-static void s_sts_web_identity_query_credentials(
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data);
+static void s_sts_web_identity_query_credentials(struct sts_web_identity_user_data *sts_web_identity_user_data);
 
 static void s_sts_web_identity_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
 
     aws_http_message_destroy(sts_web_identity_user_data->request);
     sts_web_identity_user_data->request = NULL;
@@ -466,13 +473,13 @@ static void s_sts_web_identity_on_stream_complete_fn(struct aws_http_stream *str
     impl->function_table->aws_http_connection_manager_release_connection(impl->connection_manager, connection);
 
     /*
-     * On anything other than a 200, nullify the response and pretend there was
-     * an error
+     * On anything other than a 200, if we can retry the request based on
+     * error response, retry it, otherwise, call the finalize function.
      */
     if (sts_web_identity_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
         if (++sts_web_identity_user_data->attempt_count < STS_WEB_IDENTITY_MAX_ATTEMPTS &&
             sts_web_identity_user_data->response.len) {
-            if (s_sts_web_identity_parse_retryale_error_from_response(
+            if (s_sts_web_identity_parse_retryable_error_from_response(
                     sts_web_identity_user_data->allocator, &sts_web_identity_user_data->response)) {
                 s_sts_web_identity_query_credentials(sts_web_identity_user_data);
                 return;
@@ -493,7 +500,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_h1_0_keep_alive_header, "Conne
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_h1_0_keep_alive_header_value, "keep-alive");
 
 static int s_make_sts_web_identity_http_query(
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data,
+    struct sts_web_identity_user_data *sts_web_identity_user_data,
     struct aws_byte_cursor *uri) {
     AWS_FATAL_ASSERT(sts_web_identity_user_data->connection);
 
@@ -570,15 +577,14 @@ on_error:
     return AWS_OP_ERR;
 }
 
-static void s_sts_web_identity_query_credentials(
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data) {
+static void s_sts_web_identity_query_credentials(struct sts_web_identity_user_data *sts_web_identity_user_data) {
     AWS_FATAL_ASSERT(sts_web_identity_user_data->connection);
 
     struct aws_credentials_provider_sts_web_identity_impl *impl =
         sts_web_identity_user_data->sts_web_identity_provider->impl;
 
     /* "Clear" the result */
-    s_aws_credentials_provider_sts_web_identity_user_data_reset_response(sts_web_identity_user_data);
+    s_sts_web_identity_user_data_reset_response(sts_web_identity_user_data);
 
     /*
      * Calculate query string:
@@ -648,7 +654,7 @@ static void s_sts_web_identity_on_acquire_connection(
     struct aws_http_connection *connection,
     int error_code,
     void *user_data) {
-    struct aws_credentials_provider_sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
 
     if (connection == NULL) {
         AWS_LOGF_WARN(
@@ -674,8 +680,8 @@ static int s_credentials_provider_sts_web_identity_get_credentials_async(
 
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
 
-    struct aws_credentials_provider_sts_web_identity_user_data *wrapped_user_data =
-        s_aws_credentials_provider_sts_web_identity_user_data_new(provider, callback, user_data);
+    struct sts_web_identity_user_data *wrapped_user_data =
+        s_sts_web_identity_user_data_new(provider, callback, user_data);
     if (wrapped_user_data == NULL) {
         goto error;
     }
@@ -687,7 +693,7 @@ static int s_credentials_provider_sts_web_identity_get_credentials_async(
 
 error:
 
-    s_aws_credentials_provider_sts_web_identity_user_data_destroy(wrapped_user_data);
+    s_sts_web_identity_user_data_destroy(wrapped_user_data);
 
     return AWS_OP_ERR;
 }
@@ -731,7 +737,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_role_session_name_env, "AWS_RO
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_token_file_path_config, "web_identity_token_file");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_token_file_path_env, "AWS_WEB_IDENTITY_TOKEN_FILE");
 
-struct aws_credentials_provider_sts_web_identity_parameters {
+struct sts_web_identity_parameters {
     struct aws_allocator *allocator;
     /* region is actually used to construct endpoint */
     struct aws_byte_buf endpoint;
@@ -773,30 +779,43 @@ struct aws_profile_collection *s_sts_web_identity_load_profile(struct aws_alloca
     return config_profiles;
 
 on_error:
-    if (config_file_path) {
-        aws_string_destroy(config_file_path);
-    }
-    if (config_profiles) {
-        aws_profile_collection_destroy(config_profiles);
-    }
+    aws_string_destroy(config_file_path);
+    aws_profile_collection_destroy(config_profiles);
     return NULL;
 }
 
 static struct aws_byte_cursor s_default_profile_name_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("default");
-static struct aws_byte_cursor s_default_region_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
-static struct aws_byte_cursor s_sts_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.");
-static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
-static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
 
-struct aws_credentials_provider_sts_web_identity_parameters *s_sts_web_identity_parameters_new(
-    struct aws_allocator *allocator) {
+void s_get_or_override_with_profile_config(
+    struct aws_allocator *allocator,
+    struct aws_profile *profile,
+    struct aws_string **target,
+    const struct aws_string *config_key) {
 
-    struct aws_credentials_provider_sts_web_identity_parameters *parameter =
-        aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials_provider_sts_web_identity_parameters));
-    if (parameter == NULL) {
+    if (!allocator || !profile || !config_key) {
+        return;
+    }
+
+    if ((!(*target) || !(*target)->len)) {
+        if (*target) {
+            aws_string_destroy(*target);
+        }
+        struct aws_profile_property *property = aws_profile_get_property(profile, *target);
+        if (property) {
+            *target = aws_string_new_from_string(allocator, property->value);
+        }
+    }
+}
+
+struct sts_web_identity_parameters *s_sts_web_identity_parameters_new(struct aws_allocator *allocator) {
+
+    struct sts_web_identity_parameters *parameters =
+        aws_mem_calloc(allocator, 1, sizeof(struct sts_web_identity_parameters));
+    if (parameters == NULL) {
         return NULL;
     }
-    parameter->allocator = allocator;
+    parameters->allocator = allocator;
 
     bool success = false;
     struct aws_string *region = NULL;
@@ -811,109 +830,51 @@ struct aws_credentials_provider_sts_web_identity_parameters *s_sts_web_identity_
     aws_get_environment_value(allocator, s_sts_web_identity_token_file_path_env, &token_file_path);
 
     /**
-     * check config profile if either role_arn or token_file_path or role_session_name is not resolved from environment
-     * variable. Region is not enforced, but we need it to construct sts endpoint, if we can't find region from
-     * environment, we should check if it's set in config file, if neither, use default value "us-east-1" as region.
-     * Role session name can be generated by us using uuid if not found.
+     * check config profile if either region, role_arn or token_file_path or role_session_name is not resolved from
+     * environment variable. Role session name can also be generated by us using uuid if not found from both sources.
      */
     struct aws_profile_collection *config_profile = NULL;
     struct aws_string *profile_name = NULL;
     struct aws_profile *profile = NULL;
-    bool good_region = (region && region->len);
-    bool good_role_arn_and_token_file_path = (role_arn && role_arn->len && token_file_path && token_file_path->len);
-    if (!good_region || !good_role_arn_and_token_file_path) {
+    bool get_all_parameters =
+        (region && region->len && role_arn && role_arn->len && token_file_path && token_file_path->len);
+    if (!get_all_parameters) {
         config_profile = s_sts_web_identity_load_profile(allocator);
         profile_name = aws_get_profile_name(allocator, &s_default_profile_name_cursor);
         if (config_profile && profile_name) {
             profile = aws_profile_collection_get_profile(config_profile, profile_name);
         }
 
-        if (!config_profile || !profile_name || !profile) {
-            /* if region is also not in good shape, we just need to use default us-east-1. */
-            if (!good_role_arn_and_token_file_path) {
-                AWS_LOGF_ERROR(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Failed to resolve role arn or token file path during sts web identity provider initialization.")
-                goto on_finish;
-            }
+        if (!profile) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Failed to resolve either region, role arn or token file path during sts web identity provider "
+                "initialization.")
+            goto on_finish;
 
         } else {
-            if (!region || !region->len) {
-                struct aws_profile_property *region_property =
-                    aws_profile_get_property(profile, s_sts_web_identity_region_config);
-                if (region_property) {
-                    region = aws_string_new_from_string(allocator, region_property->value);
-                }
-            }
-
-            if ((!role_arn || !role_arn->len)) {
-                if (role_arn) {
-                    aws_string_destroy(role_arn);
-                }
-                struct aws_profile_property *role_arn_property =
-                    aws_profile_get_property(profile, s_sts_web_identity_role_arn_config);
-                if (role_arn_property) {
-                    role_arn = aws_string_new_from_string(allocator, role_arn_property->value);
-                }
-            }
-            if ((!role_session_name || !role_session_name->len)) {
-                if (role_session_name) {
-                    aws_string_destroy(role_session_name);
-                }
-                struct aws_profile_property *role_session_name_property =
-                    aws_profile_get_property(profile, s_sts_web_identity_role_session_name_config);
-                if (role_session_name_property) {
-                    role_session_name = aws_string_new_from_string(allocator, role_session_name_property->value);
-                }
-            }
-            if ((!token_file_path || !token_file_path->len)) {
-                if (token_file_path) {
-                    aws_string_destroy(token_file_path);
-                }
-                struct aws_profile_property *token_file_path_property =
-                    aws_profile_get_property(profile, s_sts_web_identity_token_file_path_config);
-                if (token_file_path_property) {
-                    token_file_path = aws_string_new_from_string(allocator, token_file_path_property->value);
-                }
-            }
+            s_get_or_override_with_profile_config(allocator, profile, &region, s_sts_web_identity_region_config);
+            s_get_or_override_with_profile_config(allocator, profile, &role_arn, s_sts_web_identity_role_arn_config);
+            s_get_or_override_with_profile_config(
+                allocator, profile, &role_session_name, s_sts_web_identity_role_session_name_config);
+            s_get_or_override_with_profile_config(
+                allocator, profile, &token_file_path, s_sts_web_identity_token_file_path_config);
         }
     }
 
-    struct aws_byte_cursor region_cursor;
-    if (region && region->len) {
-        region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
-    } else {
-        region_cursor = s_default_region_cursor;
-    }
-
-    /* determine endpoint */
-    if (aws_byte_buf_init_copy_from_cursor(&parameter->endpoint, allocator, s_sts_cursor)) {
+    if (aws_credentials_provider_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Failed to construct sts endpoint with region: %s, service: %s. Error:%s",
+            aws_string_c_str(region),
+            aws_string_c_str(s_sts_service_name),
+            aws_error_str(aws_last_error()));
         goto on_finish;
-    }
-    if (aws_byte_buf_append_dynamic(&parameter->endpoint, &region_cursor)) {
-        goto on_finish;
-    }
-    if (aws_byte_buf_append_dynamic(&parameter->endpoint, &s_amazonaws_cursor)) {
-        goto on_finish;
-    }
-
-    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
-        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(&parameter->endpoint, &s_cn_cursor)) {
-            goto on_finish;
-        }
     }
 
     /* determine role_arn */
-    if (!role_arn || !role_arn->len) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve role arn during sts web identity provider initialization.")
-        goto on_finish;
-    }
-
-    struct aws_byte_cursor role_arn_cursor = aws_byte_cursor_from_string(role_arn);
-    if (aws_byte_buf_init_copy_from_cursor(&parameter->role_arn, allocator, role_arn_cursor)) {
+    if (!role_arn || !role_arn->len ||
+        aws_byte_buf_init_copy_from_cursor(&parameters->role_arn, allocator, aws_byte_cursor_from_string(role_arn))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to resolve role arn during sts web identity provider initialization.")
@@ -921,15 +882,9 @@ struct aws_credentials_provider_sts_web_identity_parameters *s_sts_web_identity_
     }
 
     /* determine token_file_path */
-    if (!token_file_path || !token_file_path->len) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve token file path during sts web identity provider initialization.")
-        goto on_finish;
-    }
-
-    struct aws_byte_cursor token_file_path_cursor = aws_byte_cursor_from_string(token_file_path);
-    if (aws_byte_buf_init_copy_from_cursor(&parameter->token_file_path, allocator, token_file_path_cursor)) {
+    if (!token_file_path || !token_file_path->len ||
+        aws_byte_buf_init_copy_from_cursor(
+            &parameters->token_file_path, allocator, aws_byte_cursor_from_string(token_file_path))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to resolve token file path during sts web identity provider initialization.")
@@ -938,12 +893,8 @@ struct aws_credentials_provider_sts_web_identity_parameters *s_sts_web_identity_
 
     /* determine role_session_name */
     if (role_session_name && role_session_name->len) {
-        struct aws_byte_cursor role_session_name_cursor = aws_byte_cursor_from_string(role_session_name);
-        if (aws_byte_buf_init_copy_from_cursor(&parameter->role_session_name, allocator, role_session_name_cursor)) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Failed to resolve role session name during sts web identity provider initialization: %s",
-                aws_error_str(aws_last_error()));
+        if (aws_byte_buf_init_copy_from_cursor(
+                &parameters->role_session_name, allocator, aws_byte_cursor_from_string(role_session_name))) {
             goto on_finish;
         }
     } else {
@@ -967,7 +918,7 @@ struct aws_credentials_provider_sts_web_identity_parameters *s_sts_web_identity_
                 aws_error_str(aws_last_error()));
             goto on_finish;
         }
-        if (aws_byte_buf_init_copy(&parameter->role_session_name, allocator, &uuid_buf)) {
+        if (aws_byte_buf_init_copy(&parameters->role_session_name, allocator, &uuid_buf)) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "Failed to generate role session name during sts web identity provider initialization: %s",
@@ -989,13 +940,13 @@ on_finish:
     aws_string_destroy(profile_name);
     aws_profile_collection_destroy(config_profile);
     if (!success) {
-        aws_mem_release(allocator, parameter);
-        parameter = NULL;
+        aws_mem_release(allocator, parameters);
+        parameters = NULL;
     }
-    return parameter;
+    return parameters;
 }
 
-void s_sts_web_identity_parameters_destroy(struct aws_credentials_provider_sts_web_identity_parameters *parameter) {
+void s_sts_web_identity_parameters_destroy(struct sts_web_identity_parameters *parameter) {
     if (!parameter) {
         return;
     }
@@ -1010,8 +961,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_web_identity_options *options) {
 
-    struct aws_credentials_provider_sts_web_identity_parameters *parameters =
-        s_sts_web_identity_parameters_new(allocator);
+    struct sts_web_identity_parameters *parameters = s_sts_web_identity_parameters_new(allocator);
     if (!parameters) {
         return NULL;
     }

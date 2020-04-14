@@ -109,6 +109,13 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
 AWS_AUTH_API
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
 
+AWS_AUTH_API
+int aws_credentials_provider_construct_endpoint(
+    struct aws_allocator *allocator,
+    struct aws_byte_buf *endpoint,
+    const struct aws_string *region, 
+    const struct aws_string *service_name);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_PRIVATE_H */

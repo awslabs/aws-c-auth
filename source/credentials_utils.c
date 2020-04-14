@@ -13,6 +13,7 @@
  * permissions and limitations under the License.
  */
 
+#include <aws/common/string.h>
 #include <aws/auth/private/credentials_utils.h>
 
 void aws_credentials_query_init(
@@ -52,4 +53,52 @@ void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_pr
     if (provider && provider->shutdown_options.shutdown_callback) {
         provider->shutdown_options.shutdown_callback(provider->shutdown_options.shutdown_user_data);
     }
+}
+
+static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
+static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
+static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
+
+int aws_credentials_provider_construct_endpoint(
+    struct aws_allocator *allocator,
+    struct aws_byte_buf *endpoint,
+    const struct aws_string *region, 
+    const struct aws_string *service_name) {
+
+    aws_byte_buf_clean_up(endpoint);
+
+    if (!allocator || !endpoint || !region || !service_name) {
+        return AWS_ERROR_INVALID_ARGUMENT;
+    }
+
+    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
+    if (aws_byte_buf_init_copy_from_cursor(endpoint, allocator, service_cursor)) {
+        goto on_finish;
+    }
+
+    if (aws_byte_buf_init_copy_from_cursor(endpoint, allocator, s_dot_cursor)) {
+        goto on_finish;
+    }
+
+    struct aws_byte_cursor region_cursor;
+    region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
+    if (aws_byte_buf_append_dynamic(endpoint, &region_cursor)) {
+        goto on_finish;
+    }
+
+    if (aws_byte_buf_append_dynamic(endpoint, &s_amazonaws_cursor)) {
+        goto on_finish;
+    }
+
+    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
+        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
+        if (aws_byte_buf_append_dynamic(endpoint, &s_cn_cursor)) {
+            goto on_finish;
+        }
+    }
+    return AWS_OP_SUCCESS;
+
+on_finish:
+    aws_byte_buf_clean_up(endpoint);
+    return AWS_OP_ERR;
 }
