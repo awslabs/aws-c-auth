@@ -68,6 +68,7 @@ static struct aws_byte_cursor s_assume_role_credentials_name = AWS_BYTE_CUR_INIT
 static struct aws_byte_cursor s_assume_role_session_token_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SessionToken");
 static struct aws_byte_cursor s_assume_role_secret_key_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SecretAccessKey");
 static struct aws_byte_cursor s_assume_role_access_key_id_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AccessKeyId");
+static const int s_max_retries = 8;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
 
@@ -847,7 +848,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     struct aws_exponential_backoff_retry_options retry_options = {
         .el_group = options->bootstrap->event_loop_group,
-        .max_retries = MAX_RETRIES,
+        .max_retries = s_max_retries,
     };
     impl->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
 
