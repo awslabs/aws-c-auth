@@ -14,6 +14,8 @@
  */
 
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/string.h>
+#include <aws/common/uuid.h>
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,

@@ -158,7 +158,7 @@ struct aws_credentials_provider_chain_options {
  * to get secure token used in following requests.
  */
 enum aws_credentials_provider_imds_versions {
-    // defaults to use IMDS_V2
+    /* defaults to use IMDS_V2 */
     IMDS_V2,
     IMDS_V1
 };
@@ -222,6 +222,31 @@ struct aws_credentials_provider_x509_options {
      * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
      */
     struct aws_byte_cursor endpoint;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_credentials_provider_system_vtable *function_table;
+};
+
+/**
+ * Sts with web identity credentials provider sources a set of temporary security credentials for users who have been
+ * authenticated in a mobile or web application with a web identity provider.
+ * Example providers include Amazon Cognito, Login with Amazon, Facebook, Google, or any OpenID Connect-compatible
+ * identity provider like Elastic Kubernetes Service
+ * https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html
+ * The required parameters used in the request (region, roleArn, sessionName, tokenFilePath) are automatically resolved
+ * by SDK from envrionment variables or config file.
+ ---------------------------------------------------------------------------------
+ | Parameter           | Environment Variable Name    | Config File Property Name |
+ ----------------------------------------------------------------------------------
+ | region              | AWS_DEFAULT_REGION           | region                    |
+ | role_arn            | AWS_ROLE_ARN                 | role_arn                  |
+ | role_session_name   | AWS_ROLE_SESSION_NAME        | role_session_name         |
+ | token_file_path     | AWS_WEB_IDENTITY_TOKEN_FILE  | web_identity_token_file   |
+ |--------------------------------------------------------------------------------|
+ */
+struct aws_credentials_provider_sts_web_identity_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;
@@ -389,6 +414,14 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_x509(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_x509_options *options);
+
+/*
+ * A provider that sources credentials from STS using AssumeRoleWithWebIdentity
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_web_identity_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
