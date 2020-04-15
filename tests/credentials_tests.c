@@ -63,7 +63,7 @@ static int s_credentials_copy_test(struct aws_allocator *allocator, void *ctx) {
 
     struct aws_credentials *credentials = aws_credentials_new_copy(allocator, source);
 
-    // Verify string equality and pointer inequality
+    /* Verify string equality and pointer inequality */
     ASSERT_TRUE(aws_string_compare(credentials->access_key_id, s_access_key_id_test_value) == 0);
     ASSERT_TRUE(credentials->access_key_id != source->access_key_id);
 

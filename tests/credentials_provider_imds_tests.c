@@ -188,10 +188,10 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     aws_http_message_get_request_path(options->request, &path);
 
     if (s_tester.current_request == s_tester.token_request_idx) {
-        // verify token ttl header
+        /* verify token ttl header */
         s_validate_token_ttl_header(options->request);
     } else if (s_tester.current_request > s_tester.token_request_idx) {
-        // verify token header
+        /* verify token header */
         s_validate_token_header(options->request);
     }
 

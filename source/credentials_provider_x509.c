@@ -648,7 +648,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
         goto on_error;
     }
 
-    // the expected path is "/role-aliases/<your role alias>/credentials"
+    /* the expected path is "/role-aliases/<your role alias>/credentials" */
     struct aws_byte_cursor prefix_cursor = aws_byte_cursor_from_c_str("/role-aliases/");
     if (aws_byte_buf_init_copy_from_cursor(&impl->role_alias_path, allocator, prefix_cursor)) {
         goto on_error;

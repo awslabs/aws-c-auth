@@ -23,6 +23,7 @@
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/logging.h>
@@ -173,7 +174,7 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
     int *out_status_code) {
     (void)stream;
 
-    *out_status_code = 200;
+    *out_status_code = AWS_HTTP_STATUS_CODE_200_OK;
 
     return AWS_OP_SUCCESS;
 }
