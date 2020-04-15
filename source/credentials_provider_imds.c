@@ -24,7 +24,9 @@
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
+#include <aws/io/channel_bootstrap.h>
 #include <aws/io/logging.h>
+#include <aws/io/retry_strategy.h>
 #include <aws/io/socket.h>
 #include <ctype.h>
 
@@ -41,6 +43,7 @@
 
 struct aws_credentials_provider_imds_impl {
     struct aws_http_connection_manager *connection_manager;
+    struct aws_retry_strategy *retry_strategy;
     struct aws_credentials_provider_system_vtable *function_table;
     /* will be set to true by default, means using IMDS V2 */
     bool token_required;
@@ -95,12 +98,12 @@ struct aws_credentials_provider_imds_user_data {
     struct aws_byte_cursor token;
     struct aws_byte_buf creds_uri;
     struct aws_credentials *credentials;
+    struct aws_retry_token *retry_token;
     /*
      * initial value is copy of impl->token_required,
      * will be adapted according to response.
      */
     bool token_required;
-    uint8_t retry_count;
     int status_code;
 };
 
@@ -128,6 +131,7 @@ static void s_aws_credentials_provider_imds_user_data_destroy(
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
     }
+    aws_retry_strategy_release_retry_token(user_data->retry_token);
     aws_credentials_provider_release(user_data->imds_provider);
     aws_mem_release(user_data->allocator, user_data);
 }
@@ -789,6 +793,22 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
     }
 }
 
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data) {
+    (void)token;
+
+    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
+
+    if (!error_code) {
+        s_imds_state_machine_roll_back_to_request_state(imds_user_data);
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_imds_on_acquire_connection, user_data);
+    } else {
+        s_query_state_machine[AWS_IMDS_QS_UNRECOVERABLE_ERROR](imds_user_data);
+        s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+    }
+}
+
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
 
@@ -806,13 +826,15 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
      * Note these are connection level errors, not http level. Since we obviously connected, it's likely
      * we're on EC2, plus we have max retries so it's likely safer to just retry everything.*/
     if (error_code) {
-        if (imds_user_data->retry_count++ < IMDS_MAX_RETRIES) {
+        /* for now we're only going to retry transient errors. If we find IMDS consistently throttles, we'll come back
+         * and retry http errors as well. */
+        if (!aws_retry_strategy_schedule_retry(
+                imds_user_data->retry_token, AWS_RETRY_ERROR_TYPE_TRANSIENT, s_on_retry_ready, user_data)) {
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "id=%p: Connection was closed, retrying the last request on a new connection.",
                 (void *)imds_user_data->imds_provider);
-            /* roll back to the last request we made, and let it retry. */
-            s_imds_state_machine_roll_back_to_request_state(imds_user_data);
+            return;
         } else {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -822,7 +844,19 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
             imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         }
     } else {
-        s_query_state_machine[imds_user_data->query_state](imds_user_data);
+        /* treat everything else as success on the retry token for now. if we decide we need to retry
+         * http errors, we'll come back and rework this. */
+        if (aws_retry_strategy_token_record_success(imds_user_data->retry_token)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "id=%p: Error while recording successful retry: %s",
+                (void *)imds_user_data->imds_provider,
+                aws_error_str(aws_last_error()));
+            /* roll back to the last request we made, and let it retry. */
+            imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        } else {
+            s_query_state_machine[imds_user_data->query_state](imds_user_data);
+        }
     }
 
     /* if there's more work to do, acquire a connection, and run the machine again. */
@@ -832,6 +866,26 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     } else {
         /* terminal state, invoke the terminal state and cleanup. */
         s_query_state_machine[imds_user_data->query_state](imds_user_data);
+        s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+    }
+}
+
+static void s_on_retry_token_acquired(
+    struct aws_retry_strategy *strategy,
+    int error_code,
+    struct aws_retry_token *token,
+    void *user_data) {
+    (void)strategy;
+    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+
+    if (!error_code) {
+        struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
+        imds_user_data->retry_token = token;
+
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_imds_on_acquire_connection, imds_user_data);
+    } else {
+        s_query_state_machine[AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK](imds_user_data);
         s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
     }
 }
@@ -849,8 +903,10 @@ static int s_credentials_provider_imds_get_credentials_async(
         goto error;
     }
 
-    impl->function_table->aws_http_connection_manager_acquire_connection(
-        impl->connection_manager, s_imds_on_acquire_connection, wrapped_user_data);
+    if (aws_retry_strategy_acquire_retry_token(
+            impl->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, 100)) {
+        goto error;
+    }
 
     return AWS_OP_SUCCESS;
 
@@ -867,6 +923,7 @@ static void s_credentials_provider_imds_destroy(struct aws_credentials_provider 
         return;
     }
 
+    aws_retry_strategy_release(impl->retry_strategy);
     impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */
@@ -939,6 +996,16 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     }
 
     provider->shutdown_options = options->shutdown_options;
+
+    struct aws_exponential_backoff_retry_options retry_options = {
+        .el_group = options->bootstrap->event_loop_group,
+        .max_retries = IMDS_MAX_RETRIES,
+    };
+    impl->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
+
+    if (impl->retry_strategy == NULL) {
+        goto on_error;
+    }
 
     return provider;
 

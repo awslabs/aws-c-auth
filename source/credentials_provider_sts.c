@@ -18,13 +18,17 @@
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
+
 #include <aws/common/clock.h>
-#include <aws/common/mutex.h>
 #include <aws/common/string.h>
+
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
+
+#include <aws/io/channel_bootstrap.h>
+#include <aws/io/retry_strategy.h>
 #include <aws/io/socket.h>
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
@@ -89,6 +93,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_tls_connection_options connection_options;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_retry_strategy *retry_strategy;
     bool owns_ctx;
     aws_io_clock_fn *system_clock_fn;
 };
@@ -105,9 +110,37 @@ struct sts_creds_provider_user_data {
     struct aws_signing_config_aws signing_config;
     struct aws_http_message *message;
     struct aws_byte_buf output_buf;
+    struct aws_retry_token *retry_token;
     void *user_data;
 };
 
+static void s_reset_request_specific_data(struct sts_creds_provider_user_data *user_data) {
+    if (user_data->connection) {
+        struct aws_credentials_provider_sts_impl *provider_impl = user_data->provider->impl;
+        provider_impl->function_table->aws_http_connection_manager_release_connection(
+            provider_impl->connection_manager, user_data->connection);
+        user_data->connection = NULL;
+    }
+
+    if (user_data->signable) {
+        aws_signable_destroy(user_data->signable);
+        user_data->signable = NULL;
+    }
+
+    if (user_data->input_stream) {
+        aws_input_stream_destroy(user_data->input_stream);
+        user_data->input_stream = NULL;
+    }
+
+    aws_byte_buf_clean_up(&user_data->payload_body);
+
+    if (user_data->message) {
+        aws_http_message_destroy(user_data->message);
+        user_data->message = NULL;
+    }
+
+    aws_byte_buf_clean_up(&user_data->output_buf);
+}
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
     user_data->callback(user_data->credentials, user_data->user_data);
 
@@ -115,29 +148,9 @@ static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data)
         aws_credentials_destroy(user_data->credentials);
     }
 
-    if (user_data->connection) {
-        struct aws_credentials_provider_sts_impl *provider_impl = user_data->provider->impl;
-        provider_impl->function_table->aws_http_connection_manager_release_connection(
-            provider_impl->connection_manager, user_data->connection);
-    }
-
+    s_reset_request_specific_data(user_data);
     aws_credentials_provider_release(user_data->provider);
-
-    if (user_data->signable) {
-        aws_signable_destroy(user_data->signable);
-    }
-
-    if (user_data->input_stream) {
-        aws_input_stream_destroy(user_data->input_stream);
-    }
-
-    aws_byte_buf_clean_up(&user_data->payload_body);
-
-    if (user_data->message) {
-        aws_http_message_destroy(user_data->message);
-    }
-
-    aws_byte_buf_clean_up(&user_data->output_buf);
+    aws_retry_strategy_release_retry_token(user_data->retry_token);
     aws_mem_release(user_data->allocator, user_data);
 }
 
@@ -239,6 +252,36 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
     return true;
 }
 
+/* errors that mean something screwy was going on at the networking layer. */
+static inline bool s_is_transient_error(int error_code) {
+    return error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED || error_code == AWS_ERROR_HTTP_STREAM_CLOSED ||
+           error_code == AWS_IO_SOCKET_CLOSED || error_code == AWS_IO_SOCKET_CONNECT_ABORTED ||
+           error_code == AWS_IO_SOCKET_CONNECTION_REFUSED || error_code == AWS_IO_SOCKET_NETWORK_DOWN ||
+           error_code == AWS_IO_DNS_QUERY_FAILED || error_code == AWS_IO_DNS_NO_ADDRESS_FOR_HOST ||
+           error_code == AWS_IO_SOCKET_TIMEOUT || error_code == AWS_IO_TLS_NEGOTIATION_TIMEOUT ||
+           error_code == AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT;
+}
+
+static void s_start_make_request(
+    struct aws_credentials_provider *provider,
+    struct sts_creds_provider_user_data *provider_user_data);
+
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data) {
+    (void)token;
+    struct sts_creds_provider_user_data *provider_user_data = user_data;
+
+    if (!error_code) {
+        s_start_make_request(provider_user_data->provider, provider_user_data);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): retry task failed: %s",
+            (void *)provider_user_data->provider,
+            aws_error_str(aws_last_error()));
+        s_clean_up_user_data(provider_user_data);
+    }
+}
+
 /* called upon completion of http request */
 static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
     int http_response_code = 0;
@@ -249,12 +292,61 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         goto finish;
     }
 
+    provider_impl->function_table->aws_http_stream_release(stream);
+
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): AssumeRole call completed with http status %d",
         (void *)provider_user_data->provider,
         http_response_code);
+
+    if (error_code || http_response_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        /* prevent connection reuse. */
+        provider_impl->function_table->aws_http_connection_close(provider_user_data->connection);
+
+        enum aws_retry_error_type error_type = http_response_code >= 400 && http_response_code < 500
+                                                   ? AWS_RETRY_ERROR_TYPE_CLIENT_ERROR
+                                                   : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
+
+        if (s_is_transient_error(error_code)) {
+            error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
+        }
+
+        /* server throttling us is retryable */
+        if (http_response_code == AWS_HTTP_STATUS_CODE_429_TOO_MANY_REQUESTS) {
+            /* force a new connection on this. */
+            error_type = AWS_RETRY_ERROR_TYPE_THROTTLING;
+        }
+
+        s_reset_request_specific_data(provider_user_data);
+
+        /* don't retry client errors at all. */
+        if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
+            if (aws_retry_strategy_schedule_retry(
+                    provider_user_data->retry_token, error_type, s_on_retry_ready, provider_user_data)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p): failed to schedule retry: %s",
+                    (void *)provider_user_data->provider,
+                    aws_error_str(aws_last_error()));
+                goto finish;
+            }
+            return;
+        }
+    }
+
     if (!error_code && http_response_code == AWS_HTTP_STATUS_CODE_200_OK) {
+        /* update the book keeping so we can let the retry strategy make determinations about when the service is
+         * healthy after an outage. */
+        if (aws_retry_strategy_token_record_success(provider_user_data->retry_token)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): failed to register operation success: %s",
+                (void *)provider_user_data->provider,
+                aws_error_str(aws_last_error()));
+            goto finish;
+        }
+
         struct aws_xml_parser xml_parser;
         struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
 
@@ -301,7 +393,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     }
 
 finish:
-    provider_impl->function_table->aws_http_stream_release(stream);
     s_clean_up_user_data(provider_user_data);
 }
 
@@ -355,8 +446,6 @@ error:
 
 /* called once sigv4 signing is complete. */
 void s_on_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
-    (void)result;
-    (void)error_code;
     struct sts_creds_provider_user_data *provider_user_data = userdata;
     struct aws_credentials_provider_sts_impl *sts_impl = provider_user_data->provider->impl;
 
@@ -384,27 +473,9 @@ error:
     s_clean_up_user_data(provider_user_data);
 }
 
-static int s_sts_get_creds(
+static void s_start_make_request(
     struct aws_credentials_provider *provider,
-    aws_on_get_credentials_callback_fn callback,
-    void *user_data) {
-
-    AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): fetching credentials", (void *)provider);
-
-    struct aws_credentials_provider_sts_impl *sts_impl = provider->impl;
-    struct sts_creds_provider_user_data *provider_user_data =
-        aws_mem_calloc(provider->allocator, 1, sizeof(struct sts_creds_provider_user_data));
-
-    if (!provider_user_data) {
-        return AWS_OP_ERR;
-    }
-
-    provider_user_data->allocator = provider->allocator;
-    provider_user_data->provider = provider;
-    aws_credentials_provider_acquire(provider);
-    provider_user_data->callback = callback;
-    provider_user_data->user_data = user_data;
-
+    struct sts_creds_provider_user_data *provider_user_data) {
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
 
     if (!provider_user_data->message) {
@@ -468,10 +539,11 @@ static int s_sts_get_creds(
         goto error;
     }
 
+    struct aws_credentials_provider_sts_impl *impl = provider->impl;
     provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
     provider_user_data->signing_config.body_signing_type = AWS_BODY_SIGNING_ON;
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
-    provider_user_data->signing_config.credentials_provider = sts_impl->provider;
+    provider_user_data->signing_config.credentials_provider = impl->provider;
     aws_date_time_init_now(&provider_user_data->signing_config.date);
     provider_user_data->signing_config.region = s_signing_region;
     provider_user_data->signing_config.service = s_service_name;
@@ -486,7 +558,7 @@ static int s_sts_get_creds(
         goto error;
     }
 
-    return AWS_OP_SUCCESS;
+    return;
 
 error:
     AWS_LOGF_ERROR(
@@ -497,9 +569,72 @@ error:
     if (provider_user_data) {
         s_clean_up_user_data(provider_user_data);
     } else {
-        callback(NULL, user_data);
+        provider_user_data->callback(NULL, provider_user_data->user_data);
     }
-    return AWS_OP_ERR;
+}
+
+static void s_on_retry_token_acquired(
+    struct aws_retry_strategy *strategy,
+    int error_code,
+    struct aws_retry_token *token,
+    void *user_data) {
+    (void)strategy;
+    struct sts_creds_provider_user_data *provider_user_data = user_data;
+
+    if (!error_code) {
+        provider_user_data->retry_token = token;
+        s_start_make_request(provider_user_data->provider, provider_user_data);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to acquire retry token: %s",
+            (void *)provider_user_data->provider,
+            aws_error_debug_str(error_code));
+        s_clean_up_user_data(provider_user_data);
+    }
+}
+
+static int s_sts_get_creds(
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+
+    struct aws_credentials_provider_sts_impl *impl = provider->impl;
+
+    AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): fetching credentials", (void *)provider);
+
+    struct sts_creds_provider_user_data *provider_user_data =
+        aws_mem_calloc(provider->allocator, 1, sizeof(struct sts_creds_provider_user_data));
+
+    if (!provider_user_data) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): error occurred while allocating memory: %s",
+            (void *)provider_user_data->provider,
+            aws_error_debug_str(aws_last_error()));
+        callback(NULL, user_data);
+        return AWS_OP_ERR;
+    }
+
+    provider_user_data->allocator = provider->allocator;
+    provider_user_data->provider = provider;
+    aws_credentials_provider_acquire(provider);
+    provider_user_data->callback = callback;
+    provider_user_data->user_data = user_data;
+
+    if (aws_retry_strategy_acquire_retry_token(
+            impl->retry_strategy, NULL, s_on_retry_token_acquired, provider_user_data, 100)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to acquire retry token: %s",
+            (void *)provider_user_data->provider,
+            aws_error_debug_str(aws_last_error()));
+        callback(NULL, user_data);
+        s_clean_up_user_data(user_data);
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
 static void s_on_credentials_provider_shutdown(void *user_data) {
@@ -541,6 +676,7 @@ void s_destroy(struct aws_credentials_provider *provider) {
         sts_impl->function_table->aws_http_connection_manager_release(sts_impl->connection_manager);
     }
 
+    aws_retry_strategy_release(sts_impl->retry_strategy);
     aws_credentials_provider_release(sts_impl->provider);
 }
 
@@ -708,6 +844,21 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     impl->provider->shutdown_options.shutdown_user_data = provider;
 
     provider->shutdown_options = options->shutdown_options;
+
+    struct aws_exponential_backoff_retry_options retry_options = {
+        .el_group = options->bootstrap->event_loop_group,
+        .max_retries = MAX_RETRIES,
+    };
+    impl->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
+
+    if (!impl->retry_strategy) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to create a retry strategy with error %s",
+            (void *)provider,
+            aws_error_debug_str(aws_last_error()));
+        goto cleanup_provider;
+    }
 
     return provider;
 
