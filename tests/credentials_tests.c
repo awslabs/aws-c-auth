@@ -300,6 +300,14 @@ AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_2, "AccessKey2");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_2, "SecretKey2");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_2, "SessionToken2");
 
+void s_wait_for_provider_ref_cnt_to_become_one(struct aws_credentials_provider *provider) {
+    bool done = false;
+    while (!done) {
+        aws_thread_current_sleep(1000);
+        done = aws_atomic_load_int(&provider->ref_count) == 1;
+    }
+}
+
 int s_wait_for_get_credentials(struct aws_get_credentials_test_callback_result *callback_results) {
     aws_wait_on_credentials_callback(callback_results);
 
@@ -571,6 +579,7 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
         s_verify_callback_status(&callback_results, 2, s_access_key_id_2, s_secret_access_key_2, s_session_token_2) ==
         0);
 
+    s_wait_for_provider_ref_cnt_to_become_one(mock_provider);
     aws_credentials_provider_release(cached_provider);
 
     s_aws_wait_for_provider_shutdown_callback();
