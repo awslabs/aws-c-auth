@@ -77,7 +77,7 @@ static int s_aws_process_test_init_config_profile(
 }
 
 static int s_aws_process_tester_init(struct aws_allocator *allocator) {
-
+    (void)allocator;
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
