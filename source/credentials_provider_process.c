@@ -23,6 +23,10 @@
 #include <aws/common/process.h>
 #include <aws/common/string.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4204)
+#endif /* _MSC_VER */
+
 struct aws_credentials_provider_process_impl {
     struct aws_string *command;
 };
