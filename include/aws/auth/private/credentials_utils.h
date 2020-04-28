@@ -109,6 +109,48 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
 AWS_AUTH_API
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
 
+struct aws_parse_credentials_from_json_doc_options {
+    char *access_key_id_name;
+    char *secrete_access_key_name;
+    char *token_name;
+    char *expiration_name;
+    bool token_required;
+    bool expiration_required;
+};
+
+/**
+ * This API is used internally to parse credentials from json document.
+ * It _ONLY_ parses the first level of json structure. json document like
+ * this will produce a valid credentials:
+ {
+    "accessKeyId" : "...",
+    "secretAccessKey" : "...",
+    "Token" : "...",
+    "expiration" : "2019-05-29T00:21:43Z"
+ }
+ * but json document like this won't:
+ {
+    "credentials": {
+        "accessKeyId" : "...",
+        "secretAccessKey" : "...",
+        "sessionToken" : "...",
+        "expiration" : "2019-05-29T00:21:43Z"
+    }
+ }
+ * In general, the keys' names of credentials in json document are:
+ * "AccessKeyId", "SecretAccessKey", "Token" and "Expiration",
+ * but there are cases services use different keys like "sessionToken".
+ * A valid credentials must have "access key" and "secrete access key".
+ * For some services, token and expiration are not required.
+ * So in this API, the keys are provided by callers and this API will
+ * performe an case insensitive search.
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_parse_credentials_from_json_document(
+    struct aws_allocator *allocator,
+    struct aws_byte_buf *document,
+    const struct aws_parse_credentials_from_json_doc_options *options);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_PRIVATE_H */

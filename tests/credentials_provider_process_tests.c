@@ -170,15 +170,13 @@ static int s_credentials_provider_process_new_destroy_from_config(struct aws_all
     s_aws_process_test_init_config_profile(allocator, config_file_contents);
     aws_string_destroy(config_file_contents);
 
-    struct aws_string *profile = aws_string_new_from_string(allocator, s_credentials_process_profile);
     struct aws_credentials_provider_process_options options = {.shutdown_options =
                                                                    {
                                                                        .shutdown_callback = s_on_shutdown_complete,
                                                                        .shutdown_user_data = NULL,
                                                                    },
-                                                               .profile_to_use = profile};
+                                                               .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),};
     struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
-    aws_string_destroy(profile);
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
@@ -203,15 +201,13 @@ static int s_credentials_provider_process_new_failed(struct aws_allocator *alloc
 
     s_aws_process_test_init_config_profile(allocator, s_process_config_file_no_process_contents);
 
-    struct aws_string *profile = aws_string_new_from_string(allocator, s_credentials_process_profile);
     struct aws_credentials_provider_process_options options = {.shutdown_options =
                                                                    {
                                                                        .shutdown_callback = s_on_shutdown_complete,
                                                                        .shutdown_user_data = NULL,
                                                                    },
-                                                               .profile_to_use = profile};
+                                                               .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),};
     struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
-    aws_string_destroy(profile);
     ASSERT_NULL(provider);
 
     s_aws_process_tester_cleanup();
@@ -239,15 +235,13 @@ static int s_credentials_provider_process_bad_command(struct aws_allocator *allo
     s_aws_process_test_init_config_profile(allocator, config_file_contents);
     aws_string_destroy(config_file_contents);
 
-    struct aws_string *profile = aws_string_new_from_string(allocator, s_credentials_process_profile);
     struct aws_credentials_provider_process_options options = {.shutdown_options =
                                                                    {
                                                                        .shutdown_callback = s_on_shutdown_complete,
                                                                        .shutdown_user_data = NULL,
                                                                    },
-                                                               .profile_to_use = profile};
+                                                               .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),};
     struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
-    aws_string_destroy(profile);
     ASSERT_NOT_NULL(provider);
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -283,15 +277,13 @@ static int s_credentials_provider_process_incorrect_command_output(struct aws_al
     s_aws_process_test_init_config_profile(allocator, config_file_contents);
     aws_string_destroy(config_file_contents);
 
-    struct aws_string *profile = aws_string_new_from_string(allocator, s_credentials_process_profile);
     struct aws_credentials_provider_process_options options = {.shutdown_options =
                                                                    {
                                                                        .shutdown_callback = s_on_shutdown_complete,
                                                                        .shutdown_user_data = NULL,
                                                                    },
-                                                               .profile_to_use = profile};
+                                                               .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),};
     struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
-    aws_string_destroy(profile);
     ASSERT_NOT_NULL(provider);
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -329,15 +321,13 @@ static int s_credentials_provider_process_basic_success(struct aws_allocator *al
     s_aws_process_test_init_config_profile(allocator, config_file_contents);
     aws_string_destroy(config_file_contents);
 
-    struct aws_string *profile = aws_string_new_from_string(allocator, s_credentials_process_profile);
     struct aws_credentials_provider_process_options options = {.shutdown_options =
                                                                    {
                                                                        .shutdown_callback = s_on_shutdown_complete,
                                                                        .shutdown_user_data = NULL,
                                                                    },
-                                                               .profile_to_use = profile};
+                                                               .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),};
     struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
-    aws_string_destroy(profile);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 

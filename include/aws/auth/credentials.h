@@ -267,7 +267,11 @@ struct aws_credentials_provider_sts_options {
 
 /**
  * The process credentials provider sources credentials from running a command or process.
- * The command is configured in config file with the config key as "credential_process".
+ * The command to run is sourced from a profile in the AWS config file, using the standard
+ * profile selection rules. The profile key the command is read from is "credential_process."
+ * E.g.:
+ *  [default]
+ *  credential_process=/opt/amazon/bin/my-credential-fetcher --argsA=abc
  * On successfully running the command, the output should be a json data with the following
  * format:
  * {
@@ -277,10 +281,8 @@ struct aws_credentials_provider_sts_options {
     "SessionToken": "....",
     "Expiration": "2019-05-29T00:21:43Z"
    }
- * Version here identify the command output format version. If it involved in future, SDK should update
- * accordingly and support both new and old versions. On error: error output should be captured and logged.
- * Note that our default provider chain will not add this provider, it's SDKs' choice to add this provider
- * to their provider chain.
+ * Version here identifies the command output format version. 
+ * This provider is not part of the default provider chain.
  */
 struct aws_credentials_provider_process_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -288,7 +290,7 @@ struct aws_credentials_provider_process_options {
      * In which profile name to look for credential_process,
      * if not provided, we will try environment variable: AWS_PROFILE.
      */
-    struct aws_string *profile_to_use;
+    struct aws_byte_cursor profile_to_use;
 };
 
 struct aws_credentials_provider_chain_default_options {
