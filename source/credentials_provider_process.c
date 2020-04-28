@@ -55,7 +55,6 @@ static int s_get_credentials_from_process(
         goto on_finish;
     }
 
-    struct aws_byte_buf doc_buf = aws_byte_buf_from_array(result.std_out->bytes, result.std_out->len);
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "AccessKeyId",
         .secrete_access_key_name = "SecretAccessKey",
@@ -65,7 +64,8 @@ static int s_get_credentials_from_process(
         .expiration_required = false,
     };
 
-    credentials = aws_parse_credentials_from_json_document(provider->allocator, &doc_buf, &parse_options);
+    credentials =
+        aws_parse_credentials_from_json_document(provider->allocator, aws_string_c_str(result.std_out), &parse_options);
     if (!credentials) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -147,7 +147,7 @@ static void s_check_or_get_with_profile_config(
         aws_byte_buf_clean_up(target);
         struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
         if (property) {
-             aws_byte_buf_init_copy_from_cursor(target, allocator, aws_byte_cursor_from_string(property->value));
+            aws_byte_buf_init_copy_from_cursor(target, allocator, aws_byte_cursor_from_string(property->value));
         }
     }
 }
@@ -155,7 +155,7 @@ static void s_check_or_get_with_profile_config(
 static struct aws_byte_cursor s_stderr_redirect_to_stdout = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(" 2>&1");
 static struct aws_string *s_get_command(struct aws_allocator *allocator, struct aws_byte_cursor profile_cursor) {
 
-    struct aws_byte_buf command_buf;    
+    struct aws_byte_buf command_buf;
     AWS_ZERO_STRUCT(command_buf);
     struct aws_string *command = NULL;
     struct aws_profile_collection *config_profiles = NULL;
@@ -204,7 +204,7 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
 on_finish:
     aws_string_destroy(profile_name);
     aws_profile_collection_destroy(config_profiles);
-    aws_byte_buf_clean_up_secure(&command_buf);    
+    aws_byte_buf_clean_up_secure(&command_buf);
     return command;
 }
 

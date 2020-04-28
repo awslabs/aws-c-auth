@@ -13,8 +13,8 @@
  * permissions and limitations under the License.
  */
 
-#include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/external/cJSON.h>
+#include <aws/auth/private/credentials_utils.h>
 #include <aws/common/date_time.h>
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
@@ -58,14 +58,13 @@ void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_pr
     }
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "\0");
-struct aws_credentials *aws_parse_credentials_from_json_document(
+struct aws_credentials *aws_parse_credentials_from_cjson_object(
     struct aws_allocator *allocator,
-    struct aws_byte_buf *document,
+    struct cJSON *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
     AWS_FATAL_ASSERT(allocator);
-    AWS_FATAL_ASSERT(document);
+    AWS_FATAL_ASSERT(document_root);
     AWS_FATAL_ASSERT(options);
     AWS_FATAL_ASSERT(options->access_key_id_name);
     AWS_FATAL_ASSERT(options->secrete_access_key_name);
@@ -79,7 +78,6 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     }
 
     struct aws_credentials *credentials = NULL;
-    cJSON *document_root = NULL;
     cJSON *access_key_id = NULL;
     cJSON *secrete_access_key = NULL;
     cJSON *token = NULL;
@@ -87,33 +85,19 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
 
     bool success = false;
     bool parse_error = true;
-    
-    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
-    if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
-        parse_error = false;
-        goto done;
-    }
-
-    document_root = cJSON_Parse((const char *)document->buffer);
-    if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
-        goto done;
-    }
 
     /*
      * Pull out the credentials components
      */
     access_key_id = cJSON_GetObjectItem(document_root, options->access_key_id_name);
     if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from Json document.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from Json document.");
         goto done;
     }
 
     secrete_access_key = cJSON_GetObjectItem(document_root, options->secrete_access_key_name);
     if (!cJSON_IsString(secrete_access_key) || (secrete_access_key->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
         goto done;
     }
 
@@ -154,20 +138,18 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
         struct aws_byte_cursor token_cursor = aws_byte_cursor_from_c_str(token->valuestring);
         if (options->token_required && token_cursor.len == 0) {
             AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Parsed an unexpected credentials json document with empty token.")
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed an unexpected credentials json document with empty token.")
             goto done;
         }
         credentials = aws_credentials_new_from_cursors(
             allocator, &access_key_id_cursor, &secret_access_key_cursor, token_cursor.len ? &token_cursor : NULL);
     } else {
-        credentials = aws_credentials_new_from_cursors(
-            allocator, &access_key_id_cursor, &secret_access_key_cursor, NULL);
+        credentials =
+            aws_credentials_new_from_cursors(allocator, &access_key_id_cursor, &secret_access_key_cursor, NULL);
     }
 
     if (credentials == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to allocate memory for credentials.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to allocate memory for credentials.");
         parse_error = false;
         goto done;
     }
@@ -211,9 +193,25 @@ done:
         credentials = NULL;
     }
 
-    if (document_root != NULL) {
-        cJSON_Delete(document_root);
-    }
-
     return credentials;
+}
+
+struct aws_credentials *aws_parse_credentials_from_json_document(
+    struct aws_allocator *allocator,
+    const char *document,
+    const struct aws_parse_credentials_from_json_doc_options *options) {
+
+    cJSON *document_root = cJSON_Parse(document);
+    if (document_root == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
+        return NULL;
+    }
+    struct aws_credentials *credentials = aws_parse_credentials_from_cjson_object(allocator, document_root, options);
+    cJSON_Delete(document_root);
+    return credentials;
+}
+
+static struct aws_byte_cursor s_empty_string_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("\0");
+int aws_append_null_terminator_to_byte_buf(struct aws_byte_buf *buf) {
+    return aws_byte_buf_append_dynamic(buf, &s_empty_string_cursor);
 }
