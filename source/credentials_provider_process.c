@@ -38,7 +38,9 @@ static int s_get_credentials_from_process(
 
     struct aws_credentials_provider_process_impl *impl = provider->impl;
     struct aws_credentials *credentials = NULL;
-    struct aws_run_command_options options = {.command = aws_string_c_str(impl->command),};
+    struct aws_run_command_options options = {
+        .command = aws_string_c_str(impl->command),
+    };
     struct aws_run_command_result result;
     int ret = AWS_OP_ERR;
     if (aws_run_command_result_init(provider->allocator, &result)) {
