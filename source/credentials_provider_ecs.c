@@ -545,11 +545,10 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
         return;
     }
 
-    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
-
     aws_string_destroy(impl->path_and_query);
     aws_string_destroy(impl->auth_token);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */
 }

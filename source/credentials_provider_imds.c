@@ -73,13 +73,14 @@ enum aws_imds_query_state {
     AWS_IMDS_QS_ROLE_CREDENTIALS_RESP,
     AWS_IMDS_QS_COMPLETE,
     AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK,
-    AWS_IMDS_QS_UNRECOVERABLE_ERROR
+    AWS_IMDS_QS_UNRECOVERABLE_ERROR,
+    AWS_IMDS_QS_PENDING_DESTROY,
 };
 
 /*
  * Tracking structure for each outstanding async query to an imds provider
  */
-struct aws_credentials_provider_imds_user_data {
+struct imds_user_data {
     /* immutable post-creation */
     struct aws_allocator *allocator;
     struct aws_credentials_provider *imds_provider;
@@ -102,10 +103,12 @@ struct aws_credentials_provider_imds_user_data {
     bool token_required;
     uint8_t retry_count;
     int status_code;
+
+    struct aws_atomic_var ref_count;
+    bool callback_invoked;
 };
 
-static void s_aws_credentials_provider_imds_user_data_destroy(
-    struct aws_credentials_provider_imds_user_data *user_data) {
+static void s_imds_user_data_destroy(struct imds_user_data *user_data) {
     if (user_data == NULL) {
         return;
     }
@@ -132,13 +135,13 @@ static void s_aws_credentials_provider_imds_user_data_destroy(
     aws_mem_release(user_data->allocator, user_data);
 }
 
-static struct aws_credentials_provider_imds_user_data *s_aws_credentials_provider_imds_user_data_new(
+static struct imds_user_data *s_imds_user_data_new(
     struct aws_credentials_provider *imds_provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
-    struct aws_credentials_provider_imds_user_data *wrapped_user_data =
-        aws_mem_calloc(imds_provider->allocator, 1, sizeof(struct aws_credentials_provider_imds_user_data));
+    struct imds_user_data *wrapped_user_data =
+        aws_mem_calloc(imds_provider->allocator, 1, sizeof(struct imds_user_data));
     if (wrapped_user_data == NULL) {
         goto on_error;
     }
@@ -166,17 +169,35 @@ static struct aws_credentials_provider_imds_user_data *s_aws_credentials_provide
         wrapped_user_data->query_state = AWS_IMDS_QS_ROLE_NAME_REQ;
     }
 
+    aws_atomic_store_int(&wrapped_user_data->ref_count, 1);
+
     return wrapped_user_data;
 
 on_error:
 
-    s_aws_credentials_provider_imds_user_data_destroy(wrapped_user_data);
+    s_imds_user_data_destroy(wrapped_user_data);
 
     return NULL;
 }
 
-static void s_aws_credentials_provider_imds_user_data_reset_scratch_data(
-    struct aws_credentials_provider_imds_user_data *imds_user_data) {
+void s_imds_user_data_release(struct imds_user_data *user_data) {
+    if (user_data == NULL) {
+        return;
+    }
+    size_t old_value = aws_atomic_fetch_sub(&user_data->ref_count, 1);
+    if (old_value == 1) {
+        s_imds_user_data_destroy(user_data);
+    }
+}
+
+void s_imds_user_data_acquire(struct imds_user_data *user_data) {
+    if (user_data == NULL) {
+        return;
+    }
+    aws_atomic_fetch_add(&user_data->ref_count, 1);
+}
+
+static void s_imds_user_data_reset_scratch_data(struct imds_user_data *imds_user_data) {
     imds_user_data->current_result.len = 0;
     imds_user_data->status_code = 0;
 
@@ -200,7 +221,7 @@ static int s_imds_on_incoming_body_fn(
     (void)stream;
     (void)data;
 
-    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct imds_user_data *imds_user_data = user_data;
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
 
     AWS_LOGF_DEBUG(
@@ -246,7 +267,7 @@ static int s_imds_on_incoming_headers_fn(
         return AWS_OP_SUCCESS;
     }
 
-    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct imds_user_data *imds_user_data = user_data;
     if (header_block == AWS_HTTP_HEADER_BLOCK_MAIN) {
         if (imds_user_data->status_code == 0) {
             struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
@@ -291,7 +312,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_header, "x-aws-ec2-metadata-token");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_ttl_default_value, "21600");
 
 static int s_make_imds_http_query(
-    struct aws_credentials_provider_imds_user_data *imds_user_data,
+    struct imds_user_data *imds_user_data,
     const struct aws_byte_cursor *verb,
     const struct aws_byte_cursor *uri,
     const struct aws_http_header *headers,
@@ -373,10 +394,10 @@ on_error:
     return AWS_OP_ERR;
 }
 
-typedef void(imds_state_fn)(struct aws_credentials_provider_imds_user_data *);
+typedef void(imds_state_fn)(struct imds_user_data *);
 
 /* Make an http request to put a ttl and hopefully get a token back. */
-static void s_imds_query_token(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_query_token(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_TOKEN_REQ);
 
     struct aws_byte_cursor uri = aws_byte_cursor_from_string(s_imds_token_resource_path);
@@ -402,7 +423,7 @@ static void s_imds_query_token(struct aws_credentials_provider_imds_user_data *i
 /*
  * Process the http response from the token put.
  */
-static void s_imds_on_token_response(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_on_token_response(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_TOKEN_RESP);
 
     /* Gets 400 means token is required but the request itself failed. */
@@ -431,7 +452,7 @@ static void s_imds_on_token_response(struct aws_credentials_provider_imds_user_d
             }
         }
     }
-    s_aws_credentials_provider_imds_user_data_reset_scratch_data(imds_user_data);
+    s_imds_user_data_reset_scratch_data(imds_user_data);
     /* No matter token acquire succeeded or not, moving forward to next step. */
     imds_user_data->query_state = AWS_IMDS_QS_ROLE_NAME_REQ;
 }
@@ -439,7 +460,7 @@ static void s_imds_on_token_response(struct aws_credentials_provider_imds_user_d
 /*
  * Make the http request to fetch the role name.
  */
-static void s_imds_query_instance_role_name(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_query_instance_role_name(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_ROLE_NAME_REQ);
 
     struct aws_http_header token_header = {
@@ -473,12 +494,12 @@ static void s_imds_query_instance_role_name(struct aws_credentials_provider_imds
 /*
  * Process the http response for fetching the role name for the ec2 instance.
  */
-static void s_imds_process_instance_role_response(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_process_instance_role_response(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_ROLE_NAME_RESP);
 
     /* In this case we fallback to the secure imds flow. */
     if (imds_user_data->status_code == AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED) {
-        s_aws_credentials_provider_imds_user_data_reset_scratch_data(imds_user_data);
+        s_imds_user_data_reset_scratch_data(imds_user_data);
         imds_user_data->token_required = true;
         imds_user_data->query_state = AWS_IMDS_QS_TOKEN_REQ;
         return;
@@ -524,14 +545,14 @@ static void s_imds_process_instance_role_response(struct aws_credentials_provide
     }
 
     /* "Clear" the result */
-    s_aws_credentials_provider_imds_user_data_reset_scratch_data(imds_user_data);
+    s_imds_user_data_reset_scratch_data(imds_user_data);
     imds_user_data->query_state = AWS_IMDS_QS_ROLE_CREDENTIALS_REQ;
 }
 
 /*
  * Make a request to attempt to fetch the credentials.
  */
-static void s_imds_query_instance_role_credentials_req(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_query_instance_role_credentials_req(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_ROLE_CREDENTIALS_REQ);
 
     AWS_FATAL_ASSERT(imds_user_data->connection);
@@ -580,8 +601,7 @@ static void s_imds_query_instance_role_credentials_req(struct aws_credentials_pr
 }
 
  */
-static void s_imds_query_instance_role_credentials_response(
-    struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_query_instance_role_credentials_response(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_ROLE_CREDENTIALS_RESP);
 
     cJSON *document_root = NULL;
@@ -696,10 +716,10 @@ done:
         cJSON_Delete(document_root);
     }
 
-    s_aws_credentials_provider_imds_user_data_reset_scratch_data(imds_user_data);
+    s_imds_user_data_reset_scratch_data(imds_user_data);
 }
 
-static void s_imds_query_complete(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_query_complete(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_COMPLETE);
 
     imds_user_data->original_callback(imds_user_data->credentials, imds_user_data->original_user_data);
@@ -709,12 +729,15 @@ static void s_imds_query_complete(struct aws_credentials_provider_imds_user_data
         (void *)imds_user_data->imds_provider);
 }
 
-static void s_imds_query_error(struct aws_credentials_provider_imds_user_data *imds_user_data) {
+static void s_imds_query_error(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(
         imds_user_data->query_state == AWS_IMDS_QS_UNRECOVERABLE_ERROR ||
         imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK);
 
-    imds_user_data->original_callback(NULL, imds_user_data->original_user_data);
+    if (!imds_user_data->callback_invoked) {
+        imds_user_data->original_callback(NULL, imds_user_data->original_user_data);
+        imds_user_data->callback_invoked = true;
+    }
     AWS_LOGF_WARN(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) IMDS credentials provider failed to query instance role credentials",
@@ -744,16 +767,15 @@ static imds_state_fn *s_query_state_machine[] = {
     [AWS_IMDS_QS_UNRECOVERABLE_ERROR] = s_imds_query_error,
 };
 
-static inline bool s_imds_state_machine_is_terminal_state(struct aws_credentials_provider_imds_user_data *user_data) {
+static inline bool s_imds_state_machine_is_terminal_state(struct imds_user_data *user_data) {
     return user_data->query_state >= AWS_IMDS_QS_COMPLETE && user_data->query_state <= AWS_IMDS_QS_UNRECOVERABLE_ERROR;
 }
 
-static inline bool s_imds_state_machine_is_request_state(struct aws_credentials_provider_imds_user_data *user_data) {
+static inline bool s_imds_state_machine_is_request_state(struct imds_user_data *user_data) {
     return !s_imds_state_machine_is_terminal_state(user_data) && !(user_data->query_state & 0x01);
 }
 
-static inline void s_imds_state_machine_roll_back_to_request_state(
-    struct aws_credentials_provider_imds_user_data *user_data) {
+static inline void s_imds_state_machine_roll_back_to_request_state(struct imds_user_data *user_data) {
     AWS_FATAL_ASSERT(
         !s_imds_state_machine_is_terminal_state(user_data) &&
         "State machine can't be rolled back from a terminal state.");
@@ -763,12 +785,13 @@ static inline void s_imds_state_machine_roll_back_to_request_state(
 }
 
 static void s_imds_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
-    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct imds_user_data *imds_user_data = user_data;
 
     AWS_FATAL_ASSERT(
         s_imds_state_machine_is_request_state(user_data) && "Invalid query state, we should be in a request state.")
     imds_user_data->connection = connection;
 
+    bool user_data_destroyed = false;
     if (connection == NULL) {
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -779,18 +802,24 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
 
         imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
     } else {
+        // prevent user_data from being destroyed under the hood.
+        s_imds_user_data_acquire(imds_user_data);
         s_query_state_machine[imds_user_data->query_state](imds_user_data);
+        if (imds_user_data->query_state == AWS_IMDS_QS_PENDING_DESTROY) {
+            user_data_destroyed = true;
+        }
+        s_imds_user_data_release(imds_user_data);
     }
 
     /* there's no universe where we should have moved to COMPLETE, but an error could have occurred. */
-    if (imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK) {
+    if (!user_data_destroyed && imds_user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK) {
         s_query_state_machine[AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK](imds_user_data);
-        s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+        s_imds_user_data_release(imds_user_data);
     }
 }
 
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
-    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct imds_user_data *imds_user_data = user_data;
 
     aws_http_message_destroy(imds_user_data->request);
     imds_user_data->request = NULL;
@@ -832,7 +861,8 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
     } else {
         /* terminal state, invoke the terminal state and cleanup. */
         s_query_state_machine[imds_user_data->query_state](imds_user_data);
-        s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+        imds_user_data->query_state = AWS_IMDS_QS_PENDING_DESTROY;
+        s_imds_user_data_release(imds_user_data);
     }
 }
 
@@ -843,8 +873,7 @@ static int s_credentials_provider_imds_get_credentials_async(
 
     struct aws_credentials_provider_imds_impl *impl = provider->impl;
 
-    struct aws_credentials_provider_imds_user_data *wrapped_user_data =
-        s_aws_credentials_provider_imds_user_data_new(provider, callback, user_data);
+    struct imds_user_data *wrapped_user_data = s_imds_user_data_new(provider, callback, user_data);
     if (wrapped_user_data == NULL) {
         goto error;
     }
@@ -856,7 +885,7 @@ static int s_credentials_provider_imds_get_credentials_async(
 
 error:
 
-    s_aws_credentials_provider_imds_user_data_destroy(wrapped_user_data);
+    s_imds_user_data_release(wrapped_user_data);
 
     return AWS_OP_ERR;
 }

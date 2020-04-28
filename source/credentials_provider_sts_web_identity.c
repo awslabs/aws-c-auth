@@ -690,11 +690,10 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
         return;
     }
 
-    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
-
     aws_string_destroy(impl->role_arn);
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->token_file_path);
+    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */
 }
