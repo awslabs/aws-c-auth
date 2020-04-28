@@ -693,6 +693,10 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
     aws_string_destroy(impl->role_arn);
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->token_file_path);
+    /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
+     * which will do memory release for provider and impl. So We should be freeing impl
+     * related memory first, then call aws_http_connection_manager_release.
+     */
     impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */

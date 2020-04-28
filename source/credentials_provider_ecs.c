@@ -548,6 +548,10 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
     aws_string_destroy(impl->path_and_query);
     aws_string_destroy(impl->auth_token);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
+     * which will do memory release for provider and impl. So We should be freeing impl
+     * related memory first, then call aws_http_connection_manager_release.
+     */
     impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */
