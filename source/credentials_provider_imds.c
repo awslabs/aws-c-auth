@@ -825,7 +825,7 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data) {
     (void)token;
 
-    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct imds_user_data *imds_user_data = user_data;
     struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
 
     if (!error_code) {
@@ -834,7 +834,8 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
             impl->connection_manager, s_imds_on_acquire_connection, user_data);
     } else {
         s_query_state_machine[AWS_IMDS_QS_UNRECOVERABLE_ERROR](imds_user_data);
-        s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+        imds_user_data->query_state = AWS_IMDS_QS_PENDING_DESTROY;
+        s_imds_user_data_release(imds_user_data);
     }
 }
 
@@ -906,7 +907,7 @@ static void s_on_retry_token_acquired(
     struct aws_retry_token *token,
     void *user_data) {
     (void)strategy;
-    struct aws_credentials_provider_imds_user_data *imds_user_data = user_data;
+    struct imds_user_data *imds_user_data = user_data;
 
     if (!error_code) {
         struct aws_credentials_provider_imds_impl *impl = imds_user_data->imds_provider->impl;
@@ -916,7 +917,7 @@ static void s_on_retry_token_acquired(
             impl->connection_manager, s_imds_on_acquire_connection, imds_user_data);
     } else {
         s_query_state_machine[AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK](imds_user_data);
-        s_aws_credentials_provider_imds_user_data_destroy(imds_user_data);
+        s_imds_user_data_release(imds_user_data);
     }
 }
 
