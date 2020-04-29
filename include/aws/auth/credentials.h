@@ -28,7 +28,6 @@ struct aws_credentials_provider_system_vtable;
 struct aws_string;
 
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
-
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
  */
