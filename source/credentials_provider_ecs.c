@@ -138,15 +138,9 @@ static void s_aws_credentials_provider_ecs_user_data_reset_response(
     }
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "\0");
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "AccessKeyId");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "SecretAccessKey");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "Token");
-AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "Expiration");
 /*
  * In general, the ECS document looks something like:
-
-{
+ {
   "Code" : "Success",
   "LastUpdated" : "2019-05-28T18:03:09Z",
   "Type" : "AWS-HMAC",
@@ -154,119 +148,30 @@ AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "Expiration");
   "SecretAccessKey" : "...",
   "Token" : "...",
   "Expiration" : "2019-05-29T00:21:43Z"
-}
-
- */
-static struct aws_credentials *s_parse_credentials_from_ecs_document(
-    struct aws_allocator *allocator,
-    struct aws_byte_buf *document) {
-
-    struct aws_credentials *credentials = NULL;
-    cJSON *document_root = NULL;
-    bool success = false;
-    bool parse_error = true;
-    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
-    if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
-        parse_error = false;
-        goto done;
-    }
-
-    document_root = cJSON_Parse((const char *)document->buffer);
-    if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse ECS response as Json document.");
-        goto done;
-    }
-
-    /*
-     * Pull out the three credentials components
-     */
-    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_access_key_id_name));
-    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from ECS response Json document.");
-        goto done;
-    }
-
-    cJSON *secret_access_key =
-        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_secret_access_key_name));
-    if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from ECS response Json document.");
-        goto done;
-    }
-
-    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
-    if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from ECS response Json document.");
-        goto done;
-    }
-
-    cJSON *creds_expiration =
-        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_creds_expiration_name));
-    if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from ECS response Json document.");
-        goto done;
-    }
-
-    /*
-     * Build the credentials
-     */
-    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
-    struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
-    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
-
-    if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0 || session_token_cursor.len == 0) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "ECS credentials provider received unexpected credentials response,"
-            " either access key, secret key or token is empty.")
-        goto done;
-    }
-
-    credentials = aws_credentials_new_from_cursors(
-        allocator, &access_key_id_cursor, &secret_access_key_cursor, &session_token_cursor);
-
-    if (credentials == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS credentials provider failed to allocate memory for credentials.");
-        parse_error = false;
-        goto done;
-    }
-
-    if (creds_expiration_cursor.len != 0) {
-        struct aws_date_time expiration;
-        if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
-            AWS_OP_ERR) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Expiration in ECS response Json document is not a valid ISO_8601 date string.");
-            aws_credentials_destroy(credentials);
-            credentials = NULL;
-            goto done;
-        }
-        credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
-    }
-    success = true;
-done:
-    if (!success && parse_error) {
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-    }
-
-    if (document_root != NULL) {
-        cJSON_Delete(document_root);
-    }
-
-    return credentials;
-}
-
-/*
+ }
+ *
  * No matter the result, this always gets called assuming that esc_user_data is successfully allocated
  */
 static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider_ecs_user_data *ecs_user_data) {
     /* Try to build credentials from whatever, if anything, was in the result */
-    struct aws_credentials *credentials =
-        s_parse_credentials_from_ecs_document(ecs_user_data->allocator, &ecs_user_data->current_result);
+    struct aws_credentials *credentials = NULL;
+    struct aws_parse_credentials_from_json_doc_options parse_options = {
+        .access_key_id_name = "AccessKeyId",
+        .secrete_access_key_name = "SecretAccessKey",
+        .token_name = "Token",
+        .expiration_name = "Expiration",
+        .token_required = true,
+        .expiration_required = true,
+    };
+    if (aws_byte_buf_append_null_terminator(&ecs_user_data->current_result) == AWS_OP_SUCCESS) {
+        credentials = aws_parse_credentials_from_json_document(
+            ecs_user_data->allocator, (const char *)ecs_user_data->current_result.buffer, &parse_options);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) ECS credentials provider failed to add null terminating char to resulting buffer.",
+            (void *)ecs_user_data->ecs_provider);
+    }
 
     if (credentials != NULL) {
         AWS_LOGF_INFO(

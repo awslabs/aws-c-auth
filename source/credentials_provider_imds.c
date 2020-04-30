@@ -211,12 +211,6 @@ static void s_imds_user_data_reset_scratch_data(struct imds_user_data *imds_user
     }
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "\0");
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "AccessKeyId");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "SecretAccessKey");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "Token");
-AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "Expiration");
-
 static int s_imds_on_incoming_body_fn(
     struct aws_http_stream *stream,
     const struct aws_byte_cursor *data,
@@ -608,118 +602,35 @@ static void s_imds_query_instance_role_credentials_req(struct imds_user_data *im
 static void s_imds_query_instance_role_credentials_response(struct imds_user_data *imds_user_data) {
     AWS_PRECONDITION(imds_user_data->query_state == AWS_IMDS_QS_ROLE_CREDENTIALS_RESP);
 
-    cJSON *document_root = NULL;
-
     if (imds_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         goto done;
     }
 
-    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
-    if (aws_byte_buf_append_dynamic(&imds_user_data->current_result, &null_terminator_cursor)) {
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    document_root = cJSON_Parse((const char *)imds_user_data->current_result.buffer);
-    if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IMDS response as JSON document.");
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    /*
-     * Pull out the three credentials components
-     */
-    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_access_key_id_name));
-    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from IMDS response JSON document.");
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    cJSON *secret_access_key =
-        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_secret_access_key_name));
-    if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from IMDS response JSON document.");
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
-    if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from IMDS response JSON document.");
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    cJSON *creds_expiration =
-        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_creds_expiration_name));
-    if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from IMDS response JSON document.");
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    /*
-     * Build the credentials
-     */
-    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
-    struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
-    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
-
-    if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0 || session_token_cursor.len == 0) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "IMDS credentials provider received unexpected credentials response,"
-            " either access key, secret key or token is empty.");
-        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-        goto done;
-    }
-
-    imds_user_data->credentials = aws_credentials_new_from_cursors(
-        imds_user_data->allocator, &access_key_id_cursor, &secret_access_key_cursor, &session_token_cursor);
-
-    if (imds_user_data->credentials == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "IMDS credentials provider failed to allocate memory for credentials.");
+    if (aws_byte_buf_append_null_terminator(&imds_user_data->current_result)) {
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         goto done;
     }
 
-    if (creds_expiration_cursor.len != 0) {
-        struct aws_date_time expiration;
-        if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
-            AWS_OP_ERR) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Expiration in IMDS response JSON document is not a valid ISO_8601 date string.");
-            aws_credentials_destroy(imds_user_data->credentials);
-            imds_user_data->credentials = NULL;
-            imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-            aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-            goto done;
-        }
-        imds_user_data->credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
-        imds_user_data->query_state = AWS_IMDS_QS_COMPLETE;
+    struct aws_parse_credentials_from_json_doc_options parse_options = {
+        .access_key_id_name = "AccessKeyId",
+        .secrete_access_key_name = "SecretAccessKey",
+        .token_name = "Token",
+        .expiration_name = "Expiration",
+        .token_required = true,
+        .expiration_required = true,
+    };
+    imds_user_data->credentials = aws_parse_credentials_from_json_document(
+        imds_user_data->allocator, (const char *)imds_user_data->current_result.buffer, &parse_options);
+
+    if (!imds_user_data->credentials) {
+        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        goto done;
     }
+
+    imds_user_data->query_state = AWS_IMDS_QS_COMPLETE;
 
 done:
-    if (document_root != NULL) {
-        cJSON_Delete(document_root);
-    }
-
     s_imds_user_data_reset_scratch_data(imds_user_data);
 }
 

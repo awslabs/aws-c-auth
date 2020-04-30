@@ -853,7 +853,7 @@ static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_by
     return AWS_OP_SUCCESS;
 }
 
-void s_check_or_get_with_profile_config(
+static void s_check_or_get_with_profile_config(
     struct aws_allocator *allocator,
     struct aws_profile *profile,
     struct aws_string **target,
@@ -873,7 +873,7 @@ void s_check_or_get_with_profile_config(
     }
 }
 
-void s_parameters_destroy(struct sts_web_identity_parameters *parameters) {
+static void s_parameters_destroy(struct sts_web_identity_parameters *parameters) {
     if (!parameters) {
         return;
     }
@@ -884,7 +884,7 @@ void s_parameters_destroy(struct sts_web_identity_parameters *parameters) {
     aws_mem_release(parameters->allocator, parameters);
 }
 
-struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator *allocator) {
+static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator *allocator) {
 
     struct sts_web_identity_parameters *parameters =
         aws_mem_calloc(allocator, 1, sizeof(struct sts_web_identity_parameters));
@@ -1012,7 +1012,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
         sizeof(struct aws_credentials_provider_sts_web_identity_impl));
 
     if (!provider) {
-        return NULL;
+        goto on_error;
     }
 
     AWS_ZERO_STRUCT(*provider);

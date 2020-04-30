@@ -265,6 +265,34 @@ struct aws_credentials_provider_sts_options {
     aws_io_clock_fn *system_clock_fn;
 };
 
+/**
+ * The process credentials provider sources credentials from running a command or process.
+ * The command to run is sourced from a profile in the AWS config file, using the standard
+ * profile selection rules. The profile key the command is read from is "credential_process."
+ * E.g.:
+ *  [default]
+ *  credential_process=/opt/amazon/bin/my-credential-fetcher --argsA=abc
+ * On successfully running the command, the output should be a json data with the following
+ * format:
+ * {
+    "Version": 1,
+    "AccessKeyId": "accesskey",
+    "SecretAccessKey": "secretAccessKey"
+    "SessionToken": "....",
+    "Expiration": "2019-05-29T00:21:43Z"
+   }
+ * Version here identifies the command output format version.
+ * This provider is not part of the default provider chain.
+ */
+struct aws_credentials_provider_process_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    /**
+     * In which profile name to look for credential_process,
+     * if not provided, we will try environment variable: AWS_PROFILE.
+     */
+    struct aws_byte_cursor profile_to_use;
+};
+
 struct aws_credentials_provider_chain_default_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
@@ -421,6 +449,14 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_web_identity_options *options);
+
+/*
+ * A provider that sources credentials from running an external command or process
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_process(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_process_options *options);
 
 /*
  * Creates the default provider chain used by most AWS SDKs.
