@@ -806,7 +806,7 @@ static void s_imds_on_acquire_connection(struct aws_http_connection *connection,
 
         imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
     } else {
-        // prevent user_data from being destroyed under the hood.
+        /* prevent user_data from being destroyed under the hood. */
         s_imds_user_data_acquire(imds_user_data);
         s_query_state_machine[imds_user_data->query_state](imds_user_data);
         if (imds_user_data->query_state == AWS_IMDS_QS_PENDING_DESTROY) {
