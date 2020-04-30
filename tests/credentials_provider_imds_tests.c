@@ -58,6 +58,8 @@ struct aws_mock_imds_tester {
     struct aws_condition_variable signal;
 
     struct aws_credentials *credentials;
+    struct aws_event_loop_group el_group;
+    struct aws_client_bootstrap *bootstrap;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
     bool token_ttl_header_exist[IMDS_MAX_REQUESTS];
@@ -272,6 +274,17 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
 
+    ASSERT_SUCCESS(aws_event_loop_group_default_init(&s_tester.el_group, allocator, 1));
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = &s_tester.el_group,
+        .user_data = NULL,
+        .host_resolution_config = NULL,
+        .host_resolver = (void *)1,
+        .on_shutdown_complete = NULL,
+    };
+    s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+    ASSERT_NOT_NULL(s_tester.bootstrap);
+
     return AWS_OP_SUCCESS;
 }
 
@@ -284,6 +297,9 @@ static void s_aws_imds_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_destroy(s_tester.credentials);
+
+    aws_client_bootstrap_release(s_tester.bootstrap);
+    aws_event_loop_group_clean_up(&s_tester.el_group);
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -317,7 +333,7 @@ static int s_credentials_provider_imds_new_destroy(struct aws_allocator *allocat
     s_aws_imds_tester_init(allocator);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -348,7 +364,7 @@ static int s_credentials_provider_imds_connect_failure(struct aws_allocator *all
     s_tester.is_connection_acquire_successful = false;
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -466,7 +482,7 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     s_aws_imds_tester_init(allocator);
     s_tester.token_response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -509,7 +525,7 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -561,7 +577,7 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -620,7 +636,7 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &bad_document_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -674,7 +690,7 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -753,7 +769,7 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
     aws_array_list_push_back(&s_tester.response_data_callbacks[4], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -813,7 +829,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -888,7 +904,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     aws_array_list_push_back(&s_tester.response_data_callbacks[3], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -972,7 +988,7 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -1046,7 +1062,7 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor3);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
