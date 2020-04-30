@@ -607,7 +607,7 @@ static void s_imds_query_instance_role_credentials_response(struct imds_user_dat
         goto done;
     }
 
-    if (aws_append_null_terminator_to_byte_buf(&imds_user_data->current_result)) {
+    if (aws_byte_buf_append_null_terminator(&imds_user_data->current_result)) {
         imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
         goto done;
     }

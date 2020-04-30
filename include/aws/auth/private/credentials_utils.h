@@ -109,10 +109,10 @@ AWS_AUTH_API
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
 
 struct aws_parse_credentials_from_json_doc_options {
-    char *access_key_id_name;
-    char *secrete_access_key_name;
-    char *token_name;
-    char *expiration_name;
+    const char *access_key_id_name;
+    const char *secrete_access_key_name;
+    const char *token_name;
+    const char *expiration_name;
     bool token_required;
     bool expiration_required;
 };
@@ -142,7 +142,7 @@ struct aws_parse_credentials_from_json_doc_options {
  * A valid credentials must have "access key" and "secrete access key".
  * For some services, token and expiration are not required.
  * So in this API, the keys are provided by callers and this API will
- * performe an case insensitive search.
+ * performe a case insensitive search.
  */
 AWS_AUTH_API
 struct aws_credentials *aws_parse_credentials_from_cjson_object(
@@ -152,16 +152,13 @@ struct aws_credentials *aws_parse_credentials_from_cjson_object(
 
 /**
  * This API is similar to aws_parse_credentials_from_cjson_object,
- * except it accpets an char buffer json document as it's input.
+ * except it accpets a char buffer json document as it's input.
  */
 AWS_AUTH_API
 struct aws_credentials *aws_parse_credentials_from_json_document(
     struct aws_allocator *allocator,
     const char *json_document,
     const struct aws_parse_credentials_from_json_doc_options *options);
-
-AWS_AUTH_API
-int aws_append_null_terminator_to_byte_buf(struct aws_byte_buf *buf);
 
 AWS_EXTERN_C_END
 

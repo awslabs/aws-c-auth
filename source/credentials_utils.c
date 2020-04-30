@@ -210,8 +210,3 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     cJSON_Delete(document_root);
     return credentials;
 }
-
-static struct aws_byte_cursor s_empty_string_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("\0");
-int aws_append_null_terminator_to_byte_buf(struct aws_byte_buf *buf) {
-    return aws_byte_buf_append_dynamic(buf, &s_empty_string_cursor);
-}

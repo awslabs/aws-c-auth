@@ -163,7 +163,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
         .token_required = true,
         .expiration_required = true,
     };
-    if (aws_append_null_terminator_to_byte_buf(&ecs_user_data->current_result) == AWS_OP_SUCCESS) {
+    if (aws_byte_buf_append_null_terminator(&ecs_user_data->current_result) == AWS_OP_SUCCESS) {
         credentials = aws_parse_credentials_from_json_document(
             ecs_user_data->allocator, (const char *)ecs_user_data->current_result.buffer, &parse_options);
     } else {

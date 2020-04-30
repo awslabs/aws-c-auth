@@ -155,7 +155,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     struct aws_credentials *credentials = NULL;
     cJSON *document_root = NULL;
 
-    if (aws_append_null_terminator_to_byte_buf(document)) {
+    if (aws_byte_buf_append_null_terminator(document)) {
         goto done;
     }
 
