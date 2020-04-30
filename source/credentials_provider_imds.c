@@ -631,7 +631,7 @@ static void s_imds_query_instance_role_credentials_response(struct imds_user_dat
     imds_user_data->query_state = AWS_IMDS_QS_COMPLETE;
 
 done:
-    s_aws_credentials_provider_imds_user_data_reset_scratch_data(imds_user_data);
+    s_imds_user_data_reset_scratch_data(imds_user_data);
 }
 
 static void s_imds_query_complete(struct imds_user_data *imds_user_data) {
