@@ -137,12 +137,6 @@ static void s_aws_credentials_provider_x509_user_data_reset_response(
     }
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "\0");
-AWS_STATIC_STRING_FROM_LITERAL(s_credentials, "credentials");
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "accessKeyId");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "secretAccessKey");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "sessionToken");
-AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "expiration");
 /*
  * In general, the returned json document looks something like:
 {
@@ -160,11 +154,8 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 
     struct aws_credentials *credentials = NULL;
     cJSON *document_root = NULL;
-    bool success = false;
-    bool parse_error = true;
-    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
-    if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
-        parse_error = false;
+
+    if (aws_byte_buf_append_null_terminator(document)) {
         goto done;
     }
 
@@ -177,86 +168,27 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     /*
      * pull out the root "Credentials" components
      */
-    cJSON *creds = cJSON_GetObjectItem(document_root, aws_string_c_str(s_credentials));
+    cJSON *creds = cJSON_GetObjectItem(document_root, "credentials");
     if (!cJSON_IsObject(creds)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse credentials from IoT Core response.");
         goto done;
     }
-    /*
-     * Pull out the three credentials components
-     */
-    cJSON *access_key_id = cJSON_GetObjectItem(creds, aws_string_c_str(s_access_key_id_name));
-    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse accessKeyId from IoT core response Json document.");
-        goto done;
+
+    struct aws_parse_credentials_from_json_doc_options parse_options = {
+        .access_key_id_name = "accessKeyId",
+        .secrete_access_key_name = "secretAccessKey",
+        .token_name = "sessionToken",
+        .expiration_name = "expiration",
+        .token_required = true,
+        .expiration_required = false,
+    };
+
+    credentials = aws_parse_credentials_from_cjson_object(allocator, creds, &parse_options);
+    if (!credentials) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "X509 credentials provider failed to parse credentials");
     }
 
-    cJSON *secret_access_key = cJSON_GetObjectItem(creds, aws_string_c_str(s_secret_access_key_name));
-    if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from IoT core response Json document.");
-        goto done;
-    }
-
-    cJSON *session_token = cJSON_GetObjectItem(creds, aws_string_c_str(s_session_token_name));
-    if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from IoT core response Json document.");
-        goto done;
-    }
-
-    cJSON *creds_expiration = cJSON_GetObjectItem(creds, aws_string_c_str(s_creds_expiration_name));
-    if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from IoT core response Json document.");
-        goto done;
-    }
-
-    /*
-     * Build the credentials
-     */
-    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
-    struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
-    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
-
-    if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0 || session_token_cursor.len == 0) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "X509 credentials provider received unexpected credentials response,"
-            " either access key, secret key or token is empty.")
-        goto done;
-    }
-
-    credentials = aws_credentials_new_from_cursors(
-        allocator, &access_key_id_cursor, &secret_access_key_cursor, &session_token_cursor);
-
-    if (credentials == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "X509 credentials provider failed to allocate memory for credentials.");
-        parse_error = false;
-        goto done;
-    }
-
-    if (creds_expiration_cursor.len != 0) {
-        struct aws_date_time expiration;
-        if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
-            AWS_OP_ERR) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Expiration in IoT core response Json document is not a valid ISO_8601 date string.");
-            aws_credentials_destroy(credentials);
-            credentials = NULL;
-            goto done;
-        }
-        credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
-    }
-    success = true;
 done:
-    if (!success && parse_error) {
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-    }
-
     if (document_root != NULL) {
         cJSON_Delete(document_root);
     }
@@ -547,11 +479,14 @@ static void s_credentials_provider_x509_destroy(struct aws_credentials_provider 
         return;
     }
 
-    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
-
     aws_byte_buf_clean_up(&impl->thing_name);
     aws_byte_buf_clean_up(&impl->role_alias_path);
     aws_tls_connection_options_clean_up(&impl->tls_connection_options);
+    /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
+     * which will do memory release for provider and impl. So We should be freeing impl
+     * related memory first, then call aws_http_connection_manager_release.
+     */
+    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */
 }

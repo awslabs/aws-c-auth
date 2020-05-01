@@ -396,7 +396,6 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_env(struct a
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
     aws_mem_release(provider->allocator, provider);
-
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -462,10 +461,11 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_config(struc
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
+
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -551,10 +551,10 @@ static int s_credentials_provider_sts_web_identity_connect_failure(struct aws_al
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -624,10 +624,10 @@ static int s_credentials_provider_sts_web_identity_request_failure(struct aws_al
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -693,10 +693,10 @@ static int s_credentials_provider_sts_web_identity_bad_document_failure(struct a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -776,10 +776,10 @@ static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -841,10 +841,10 @@ static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -950,10 +950,10 @@ static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -1044,10 +1044,10 @@ static int s_credentials_provider_sts_web_identity_basic_success_config(struct a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -1159,10 +1159,10 @@ static int s_credentials_provider_sts_web_identity_success_multi_part_doc(struct
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
     aws_tls_ctx_destroy(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
