@@ -24,6 +24,8 @@
 #include <aws/common/thread.h>
 #include <aws/http/http.h>
 
+#include <aws/io/channel_bootstrap.h>
+#include <aws/io/event_loop.h>
 #include <credentials_provider_utils.h>
 
 #include "shared_credentials_test_definitions.h"
@@ -1001,7 +1003,27 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
     aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
 
+    struct aws_event_loop_group el_group;
+    AWS_ZERO_STRUCT(el_group);
+    ASSERT_SUCCESS(aws_event_loop_group_default_init(&el_group, allocator, 1));
+
+    struct aws_host_resolver resolver;
+    AWS_ZERO_STRUCT(resolver);
+    ASSERT_SUCCESS(aws_host_resolver_init_default(&resolver, allocator, 4, &el_group));
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .host_resolver = &resolver,
+        .on_shutdown_complete = NULL,
+        .host_resolution_config = NULL,
+        .user_data = NULL,
+        .event_loop_group = &el_group,
+    };
+
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+    ASSERT_NOT_NULL(bootstrap);
+
     struct aws_credentials_provider_chain_default_options options = {
+        .bootstrap = bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -1031,6 +1053,9 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_credentials_provider_release(provider);
 
     s_aws_credentials_shutdown_checker_clean_up();
+    aws_client_bootstrap_release(bootstrap);
+    aws_host_resolver_clean_up(&resolver);
+    aws_event_loop_group_clean_up(&el_group);
     aws_http_library_clean_up();
 
     return 0;
