@@ -125,8 +125,8 @@ struct aws_credentials *aws_parse_credentials_from_cjson_object(
         struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
         if (options->expiration_required && creds_expiration_cursor.len == 0) {
             AWS_LOGF_ERROR(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Parsed an unexpected credentials json document with empty expiration.")
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Parsed an unexpected credentials json document with empty expiration.")
             goto done;
         }
         if (creds_expiration_cursor.len != 0) {
@@ -135,13 +135,13 @@ struct aws_credentials *aws_parse_credentials_from_cjson_object(
                 AWS_OP_ERR) {
                 if (options->expiration_required) {
                     AWS_LOGF_ERROR(
-                            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                            "Expiration in Json document is not a valid ISO_8601 date string.");
+                        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                        "Expiration in Json document is not a valid ISO_8601 date string.");
                     goto done;
                 } else {
                     AWS_LOGF_INFO(
-                            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                            "Expiration in Json document is not a valid ISO_8601 date string.");
+                        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                        "Expiration in Json document is not a valid ISO_8601 date string.");
                 }
             } else {
                 expiration_timepoint_in_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
@@ -174,7 +174,12 @@ struct aws_credentials *aws_parse_credentials_from_cjson_object(
         }
     }
 
-    credentials = aws_credentials_new(allocator, access_key_id_cursor, secret_access_key_cursor, session_token_cursor, expiration_timepoint_in_seconds);
+    credentials = aws_credentials_new(
+        allocator,
+        access_key_id_cursor,
+        secret_access_key_cursor,
+        session_token_cursor,
+        expiration_timepoint_in_seconds);
 
     if (credentials == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to allocate memory for credentials.");

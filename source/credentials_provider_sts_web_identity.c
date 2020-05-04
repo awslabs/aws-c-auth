@@ -336,11 +336,12 @@ static struct aws_credentials *s_parse_credentials_from_response(
         goto on_finish;
     }
 
-    credentials = aws_credentials_new(query_user_data->allocator,
+    credentials = aws_credentials_new(
+        query_user_data->allocator,
         aws_byte_cursor_from_string(query_user_data->access_key_id),
-aws_byte_cursor_from_string(query_user_data->secret_access_key),
-aws_byte_cursor_from_string(query_user_data->session_token),
-query_user_data->expiration_timepoint_in_seconds);
+        aws_byte_cursor_from_string(query_user_data->secret_access_key),
+        aws_byte_cursor_from_string(query_user_data->session_token),
+        query_user_data->expiration_timepoint_in_seconds);
 
 on_finish:
 
@@ -360,8 +361,8 @@ static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *
     /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials = NULL;
     if (sts_web_identity_user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
-        credentials = s_parse_credentials_from_response(
-            sts_web_identity_user_data, &sts_web_identity_user_data->response);
+        credentials =
+            s_parse_credentials_from_response(sts_web_identity_user_data, &sts_web_identity_user_data->response);
     }
 
     if (credentials == NULL && sts_web_identity_user_data->error_code == AWS_ERROR_SUCCESS) {
@@ -381,7 +382,8 @@ static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *
     }
 
     /* pass the credentials back */
-    sts_web_identity_user_data->original_callback(credentials, sts_web_identity_user_data->error_code, sts_web_identity_user_data->original_user_data);
+    sts_web_identity_user_data->original_callback(
+        credentials, sts_web_identity_user_data->error_code, sts_web_identity_user_data->original_user_data);
 
     /* clean up */
     s_user_data_destroy(sts_web_identity_user_data);

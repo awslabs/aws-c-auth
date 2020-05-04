@@ -579,8 +579,8 @@ static int s_do_sigv4_test_suite_test(
 #define DECLARE_SIGV4_TEST_SUITE_CASE(test_name, test_name_string)                                                     \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
-        struct aws_credentials *credentials =                                                                          \
-            aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);          \
+        struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
+            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);         \
         int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
         aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
@@ -590,8 +590,12 @@ static int s_do_sigv4_test_suite_test(
 #define DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(test_name, test_name_string)                                  \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
-        struct aws_credentials *credentials = aws_credentials_new_from_string(                                                     \
-            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_test_suite_session_token, UINT64_MAX);        \
+        struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
+            allocator,                                                                                                 \
+            s_test_suite_access_key_id,                                                                                \
+            s_test_suite_secret_access_key,                                                                            \
+            s_test_suite_session_token,                                                                                \
+            UINT64_MAX);                                                                                               \
         int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
         aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
@@ -601,8 +605,8 @@ static int s_do_sigv4_test_suite_test(
 #define DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(test_name, test_name_string, parent_folder)                               \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
-        struct aws_credentials *credentials =                                                                          \
-            aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);          \
+        struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
+            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);         \
         int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder, credentials);             \
         aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
@@ -670,8 +674,8 @@ static int s_do_header_skip_test(
 
     config.should_sign_param = should_sign;
 
-    struct aws_credentials *credentials =
-        aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
     ASSERT_NOT_NULL(credentials);
 
     config.credentials = credentials;
@@ -810,8 +814,8 @@ static int s_do_forbidden_header_param_test(
         s_initialize_test_from_cursor(&signable, &config, allocator, &test_contents, &request_cursor, NULL, false) ==
         AWS_OP_SUCCESS);
 
-    struct aws_credentials *credentials =
-        aws_credentials_new_from_string(allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, NULL, UINT64_MAX);
     ASSERT_NOT_NULL(credentials);
 
     config.credentials = credentials;
