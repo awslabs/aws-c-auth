@@ -2298,39 +2298,49 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_cursor private_key_cursor = aws_byte_cursor_from_buf(&private_key_buf);
     ecc_key_pair = aws_ecc_key_pair_new_from_private_key(allocator, AWS_CAL_ECDSA_P256, &private_key_cursor);
 
-    aws_ecc_key_pair_derive_public_key(ecc_key_pair);
+    /*
+     * We do a lot of work here to log the public key, so let's only do it if trace is actually enabled.
+     */
+    struct aws_logger *logger = aws_logger_get();
+    if (logger != NULL && logger->vtable->get_log_level(logger, AWS_LS_AUTH_SIGNING) == AWS_LL_TRACE) {
+        /*
+         * Open Q: maybe make this unconditional?  It costs time but it's weird that the returned
+         * key may or may not have the public bits available depending on the log level.
+         */
+        aws_ecc_key_pair_derive_public_key(ecc_key_pair);
 
-    struct aws_byte_cursor pub_x_cursor;
-    AWS_ZERO_STRUCT(pub_x_cursor);
-    struct aws_byte_cursor pub_y_cursor;
-    AWS_ZERO_STRUCT(pub_y_cursor);
+        struct aws_byte_cursor pub_x_cursor;
+        AWS_ZERO_STRUCT(pub_x_cursor);
+        struct aws_byte_cursor pub_y_cursor;
+        AWS_ZERO_STRUCT(pub_y_cursor);
 
-    aws_ecc_key_pair_get_public_key(ecc_key_pair, &pub_x_cursor, &pub_y_cursor);
+        aws_ecc_key_pair_get_public_key(ecc_key_pair, &pub_x_cursor, &pub_y_cursor);
 
-    pub_x = aws_bigint_new_from_cursor(allocator, pub_x_cursor);
-    pub_y = aws_bigint_new_from_cursor(allocator, pub_y_cursor);
+        pub_x = aws_bigint_new_from_cursor(allocator, pub_x_cursor);
+        pub_y = aws_bigint_new_from_cursor(allocator, pub_y_cursor);
 
-    if (aws_byte_buf_init(&log_buf, allocator, 512)) {
-        goto done;
+        if (aws_byte_buf_init(&log_buf, allocator, 512)) {
+            goto done;
+        }
+
+        struct aws_byte_cursor x_cursor = aws_byte_cursor_from_c_str("X = ");
+        aws_byte_buf_append_dynamic(&log_buf, &x_cursor);
+        aws_bigint_bytebuf_debug_output(pub_x, &log_buf);
+
+        struct aws_byte_cursor y_cursor = aws_byte_cursor_from_c_str(" ; Y = ");
+        aws_byte_buf_append_dynamic(&log_buf, &y_cursor);
+        aws_bigint_bytebuf_debug_output(pub_y, &log_buf);
+
+        struct aws_byte_cursor access_key_id = aws_credentials_get_access_key_id(credentials);
+        struct aws_byte_cursor secret_access_key = aws_credentials_get_secret_access_key(credentials);
+
+        AWS_LOGF_TRACE(
+            AWS_LS_AUTH_SIGNING,
+            "Deriving ecc key for credentials(" PRInSTR " : " PRInSTR ") yielding public key " PRInSTR,
+            AWS_BYTE_CURSOR_PRI(access_key_id),
+            AWS_BYTE_CURSOR_PRI(secret_access_key),
+            AWS_BYTE_BUF_PRI(log_buf));
     }
-
-    struct aws_byte_cursor x_cursor = aws_byte_cursor_from_c_str("X = ");
-    aws_byte_buf_append_dynamic(&log_buf, &x_cursor);
-    aws_bigint_bytebuf_debug_output(pub_x, &log_buf);
-
-    struct aws_byte_cursor y_cursor = aws_byte_cursor_from_c_str(" ; Y = ");
-    aws_byte_buf_append_dynamic(&log_buf, &y_cursor);
-    aws_bigint_bytebuf_debug_output(pub_y, &log_buf);
-
-    struct aws_byte_cursor access_key_id = aws_credentials_get_access_key_id(credentials);
-    struct aws_byte_cursor secret_access_key = aws_credentials_get_secret_access_key(credentials);
-
-    AWS_LOGF_TRACE(
-        AWS_LS_AUTH_SIGNING,
-        "Deriving ecc key for credentials(" PRInSTR " : " PRInSTR ") yielding public key " PRInSTR,
-        AWS_BYTE_CURSOR_PRI(access_key_id),
-        AWS_BYTE_CURSOR_PRI(secret_access_key),
-        AWS_BYTE_BUF_PRI(log_buf));
 
 done:
 
