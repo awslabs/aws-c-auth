@@ -579,6 +579,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
     manager_options.tls_connection_options = &impl->tls_connection_options;
+    manager_options.proxy_options = options->proxy_options;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
