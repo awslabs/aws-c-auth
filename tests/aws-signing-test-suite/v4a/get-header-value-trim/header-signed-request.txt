@@ -3,7 +3,7 @@ Host:example.amazonaws.com
 My-Header1: value1
 My-Header2: "a   b   c"
 x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;my-header2;x-amz-date;x-amz-region-set, Signature=3045022100d5a458a8fc0a59fb26abc61bb2515627c9d4a90ae91cf4258fda4f3f27844844022011ccca490f375791cc310cdbd8068e0cd8b22038e3f1764b3253ee14da9def0f
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;my-header2;x-amz-date;x-amz-region-set, Signature=3045022058668a87de2c053ae508d52442361bac28b7ebea52fc5d53035373e82fa37e2a022100c3301a0714f76e9d3d424c65a7a5460f0a46747adced67e7ad88ed04a29e40b1
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 

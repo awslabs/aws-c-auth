@@ -1,4 +1,4 @@
-POST /?X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host%3Bmy-header1&X-Amz-Expires=3600&X-Amz-Region-Set=us-east-1&X-Amz-Signature=304402204cfcfbeec09f47ba2eeb9ca08be64418d19d791c6a33600c97d7c675bf3d34d802204cedad088a170e2ceaeff078c06371d79f491bb9f29ee6670f4c5a927073bcaf HTTP/1.1
+POST /?X-Amz-Algorithm=AWS4-ECDSA-P256-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20150830%2Fservice%2Faws4_request&X-Amz-Date=20150830T123600Z&X-Amz-SignedHeaders=host%3Bmy-header1&X-Amz-Expires=3600&X-Amz-Region-Set=us-east-1&X-Amz-Signature=3046022100e62be643ee212ea8a7cd151b3e2bf0bff1d1456a731815124585f96364ebf7aa022100cd38a68a55a033e85cc6665e2578801e1e8e33aa4cff27ed83632c18fee0d71d HTTP/1.1
 Host:example.amazonaws.com
 My-Header1:VALUE1
 X-Amz-Date:20150830T123600Z

@@ -2115,20 +2115,31 @@ cleanup:
 
 #define SIGV4A_FIXED_INPUT_SIZE_OVERESTIMATE 256
 
-static int s_aws_init_fixed_input_buffer(
-    struct aws_byte_buf *fixed_input,
-    struct aws_allocator *allocator,
-    struct aws_credentials *credentials) {
-
-    if (aws_byte_buf_init(fixed_input, allocator, SIGV4A_FIXED_INPUT_SIZE_OVERESTIMATE)) {
-        return AWS_OP_ERR;
+static uint32_t s_get_counter_byte_count(uint32_t counter) {
+    /* in order of likelihood */
+    if (counter < (1U << 8)) {
+        return 1;
+    } else if (counter < (1U << 16)) {
+        return 2;
+    } else if (counter < (1U << 24)) {
+        return 3;
     }
 
+    return 4;
+}
+
+static int s_aws_build_fixed_input_buffer(
+    struct aws_byte_buf *fixed_input,
+    struct aws_credentials *credentials,
+    uint32_t counter) {
+
+    AWS_FATAL_ASSERT(counter > 0);
+    AWS_FATAL_ASSERT(aws_byte_buf_is_valid(fixed_input));
+    fixed_input->len = 0;
+
     /*
-     * A placeholder value that's not actually part of the fixed input string
-     *
-     * Later we hmac both (1 || FixedInput) and (2 || FixedInput).  By prepending this byte (and setting it to 2
-     * before the second hmac), we prevent some useless copying.
+     * A placeholder value that's not actually part of the fixed input string in the spec, but is always this value
+     * and is always the first byte of the hmaced string.
      */
     if (s_append_character_to_byte_buf(fixed_input, 1)) {
         return AWS_OP_ERR;
@@ -2148,74 +2159,62 @@ static int s_aws_init_fixed_input_buffer(
         return AWS_OP_ERR;
     }
 
+    /*
+     * Assuming close-enough-to-uniform hashing, every generate-and-test step has a 1 in 4 billion chance of failing
+     * on the comparison step.  So we will occasionally increment the counter.  While it is absurdly unlikely, it is
+     * possible that there could be 255 consecutive failures, which pushes the counter beyond a single byte.  So let's
+     * be paranoid and handle counters up to UINT32_MAX.
+     */
+    uint32_t byte_count = s_get_counter_byte_count(counter);
+    AWS_FATAL_ASSERT(byte_count > 0);
+    for (uint32_t i = 0; i < byte_count; ++i) {
+        uint32_t shift = (byte_count - i - 1) * 8;
+        uint8_t byte = (uint8_t)((counter >> shift) & 0xFF);
+        if (s_append_character_to_byte_buf(fixed_input, byte)) {
+            return AWS_OP_ERR;
+        }
+    }
+
     if (s_append_character_to_byte_buf(fixed_input, 0x01)) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(fixed_input, 0x40)) {
+    if (s_append_character_to_byte_buf(fixed_input, 0x00)) {
         return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static int s_aws_init_k_pair(
-    struct aws_byte_buf *k_pair,
-    struct aws_allocator *allocator,
-    struct aws_credentials *credentials,
-    struct aws_byte_buf *fixed_input) {
-    if (aws_byte_buf_init(k_pair, allocator, AWS_SHA256_HMAC_LEN * 2)) {
-        return AWS_OP_ERR;
-    }
-
-    struct aws_byte_cursor secret_cursor = aws_credentials_get_secret_access_key(credentials);
-    struct aws_byte_cursor fixed_input_cursor = aws_byte_cursor_from_buf(fixed_input);
-
-    if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, k_pair, 0)) {
-        return AWS_OP_ERR;
-    }
-
-    /* Flip the first byte of the fixed input from 1 to 2.  Repeat HMAC. */
-    fixed_input->buffer[0] = 2;
-
-    if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, k_pair, 0)) {
-        return AWS_OP_ERR;
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-static const char *s_ecc_private_key_group_divisor =
+/* In the spec, this is N-1 */
+static const char *s_ecc_private_key_group_threshold =
     "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550";
 
-static int s_aws_derive_ecc_private_key(
+enum aws_key_derivation_result { AKDR_SUCCESS, AKDR_INCREMENT_COUNTER, AKDR_FAILURE };
+
+static enum aws_key_derivation_result s_aws_derive_ecc_private_key(
     struct aws_bigint *private_key_value,
     struct aws_allocator *allocator,
-    struct aws_byte_buf *k_pair) {
-    struct aws_byte_cursor c_cursor = aws_byte_cursor_from_buf(k_pair);
-    c_cursor.len = 40;
+    struct aws_byte_buf *k0) {
+    AWS_FATAL_ASSERT(k0->len == 32);
 
-    struct aws_bigint *c = aws_bigint_new_from_cursor(allocator, c_cursor);
+    struct aws_bigint *c = aws_bigint_new_from_cursor(allocator, aws_byte_cursor_from_buf(k0));
     if (c == NULL) {
-        return AWS_OP_ERR;
+        return AKDR_FAILURE;
     }
 
-    int result = AWS_OP_ERR;
-    struct aws_bigint *divisor = NULL;
-    struct aws_bigint *remainder = NULL;
+    int result = AKDR_FAILURE;
+    struct aws_bigint *threshold = NULL;
     struct aws_bigint *one = NULL;
 
-    divisor = aws_bigint_new_from_hex(allocator, aws_byte_cursor_from_c_str(s_ecc_private_key_group_divisor));
-    if (divisor == NULL) {
+    threshold = aws_bigint_new_from_hex(allocator, aws_byte_cursor_from_c_str(s_ecc_private_key_group_threshold));
+    if (threshold == NULL) {
         goto done;
     }
 
-    remainder = aws_bigint_new_from_uint64(allocator, 0);
-    if (remainder == NULL) {
-        goto done;
-    }
-
-    if (aws_bigint_divide(NULL, remainder, c, divisor)) {
+    /* c > N-2 is equivalent c >= N-1 */
+    if (aws_bigint_greater_than_or_equals(c, threshold)) {
+        result = AKDR_INCREMENT_COUNTER;
         goto done;
     }
 
@@ -2224,17 +2223,16 @@ static int s_aws_derive_ecc_private_key(
         goto done;
     }
 
-    if (aws_bigint_add(private_key_value, remainder, one)) {
+    if (aws_bigint_add(private_key_value, c, one)) {
         goto done;
     }
 
-    result = AWS_OP_SUCCESS;
+    result = AKDR_SUCCESS;
 
 done:
 
     aws_bigint_destroy(c);
-    aws_bigint_destroy(divisor);
-    aws_bigint_destroy(remainder);
+    aws_bigint_destroy(threshold);
     aws_bigint_destroy(one);
 
     return result;
@@ -2250,7 +2248,6 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     }
 
     struct aws_ecc_key_pair *ecc_key_pair = NULL;
-    struct aws_bigint *private_key = NULL;
 
     struct aws_bigint *pub_x = NULL;
     struct aws_bigint *pub_y = NULL;
@@ -2261,29 +2258,45 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_buf fixed_input;
     AWS_ZERO_STRUCT(fixed_input);
 
-    struct aws_byte_buf k_pair;
-    AWS_ZERO_STRUCT(k_pair);
+    struct aws_byte_buf fixed_input_hash_digest;
+    AWS_ZERO_STRUCT(fixed_input_hash_digest);
 
     struct aws_byte_buf private_key_buf;
     AWS_ZERO_STRUCT(private_key_buf);
 
-    if (s_aws_init_fixed_input_buffer(&fixed_input, allocator, credentials)) {
-        goto done;
-    }
-
-    if (s_aws_init_k_pair(&k_pair, allocator, credentials, &fixed_input)) {
-        goto done;
-    }
-
-    AWS_FATAL_ASSERT(k_pair.len == AWS_SHA256_HMAC_LEN * 2);
-
-    private_key = aws_bigint_new_from_uint64(allocator, 0);
+    struct aws_bigint *private_key = aws_bigint_new_from_uint64(allocator, 0);
     if (private_key == NULL) {
+        return NULL;
+    }
+
+    if (aws_byte_buf_init(&fixed_input, allocator, SIGV4A_FIXED_INPUT_SIZE_OVERESTIMATE)) {
         goto done;
     }
 
-    if (s_aws_derive_ecc_private_key(private_key, allocator, &k_pair)) {
+    if (aws_byte_buf_init(&fixed_input_hash_digest, allocator, AWS_SHA256_LEN)) {
         goto done;
+    }
+
+    uint32_t counter = 1;
+    while (counter != 0) { /* could be while(true) but compilers hate it */
+        if (s_aws_build_fixed_input_buffer(&fixed_input, credentials, counter++)) {
+            goto done;
+        }
+
+        fixed_input_hash_digest.len = 0;
+        struct aws_byte_cursor fixed_input_cursor = aws_byte_cursor_from_buf(&fixed_input);
+        struct aws_byte_cursor secret_cursor = aws_credentials_get_secret_access_key(credentials);
+        if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, &fixed_input_hash_digest, 0)) {
+            goto done;
+        }
+
+        enum aws_key_derivation_result result =
+            s_aws_derive_ecc_private_key(private_key, allocator, &fixed_input_hash_digest);
+        if (result == AKDR_SUCCESS) {
+            break;
+        } else if (result == AKDR_FAILURE || counter == 0) {
+            goto done;
+        }
     }
 
     size_t key_length = aws_ecc_key_coordinate_byte_size_from_curve_name(AWS_CAL_ECDSA_P256);
@@ -2345,7 +2358,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 done:
 
     aws_byte_buf_clean_up(&private_key_buf);
-    aws_byte_buf_clean_up(&k_pair);
+    aws_byte_buf_clean_up(&fixed_input_hash_digest);
     aws_byte_buf_clean_up(&fixed_input);
     aws_bigint_destroy(private_key);
 
