@@ -2160,10 +2160,8 @@ static int s_aws_build_fixed_input_buffer(
     }
 
     /*
-     * Assuming close-enough-to-uniform hashing, every generate-and-test step has a 1 in 4 billion chance of failing
-     * on the comparison step.  So we will occasionally increment the counter.  While it is absurdly unlikely, it is
-     * possible that there could be 255 consecutive failures, which pushes the counter beyond a single byte.  So let's
-     * be paranoid and handle counters up to UINT32_MAX.
+     * While it is absurdly unlikely, it is possible that there could be 255 consecutive failures,
+     * which pushes the counter beyond a single byte.  So let's be paranoid and handle counters up to UINT32_MAX.
      */
     uint32_t byte_count = s_get_counter_byte_count(counter);
     AWS_FATAL_ASSERT(byte_count > 0);
@@ -2188,7 +2186,7 @@ static int s_aws_build_fixed_input_buffer(
 
 /* In the spec, this is N-1 */
 static const char *s_ecc_private_key_group_threshold =
-    "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632550";
+    "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140";
 
 enum aws_key_derivation_result { AKDR_SUCCESS, AKDR_INCREMENT_COUNTER, AKDR_FAILURE };
 
