@@ -2185,8 +2185,7 @@ static int s_aws_build_fixed_input_buffer(
 }
 
 /* In the spec, this is N-1 */
-static const char *s_ecc_private_key_group_threshold =
-    "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140";
+static const char *s_n_minus_1 = "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632550";
 
 enum aws_key_derivation_result { AKDR_SUCCESS, AKDR_INCREMENT_COUNTER, AKDR_FAILURE };
 
@@ -2205,7 +2204,7 @@ static enum aws_key_derivation_result s_aws_derive_ecc_private_key(
     struct aws_bigint *threshold = NULL;
     struct aws_bigint *one = NULL;
 
-    threshold = aws_bigint_new_from_hex(allocator, aws_byte_cursor_from_c_str(s_ecc_private_key_group_threshold));
+    threshold = aws_bigint_new_from_hex(allocator, aws_byte_cursor_from_c_str(s_n_minus_1));
     if (threshold == NULL) {
         goto done;
     }
