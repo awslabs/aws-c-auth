@@ -265,6 +265,9 @@ AWS_EXTERN_C_BEGIN
 
 /*
  * Credentials APIs
+ *
+ * expiration_timepoint_seconds is the timepoint, in seconds since epoch, that the credentials will no longer
+ * be valid.  For credentials that do not expire, use UINT64_MAX.
  */
 
 AWS_AUTH_API
