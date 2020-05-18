@@ -174,16 +174,24 @@ struct aws_credentials_provider_x509_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* TLS connection options that have been initialized with your x509 certificate and private key */
-    struct aws_tls_connection_options *tls_connection_options;
+    const struct aws_tls_connection_options *tls_connection_options;
+
     /* IoT thing name you registered with AWS IOT for your device, it will be used in http request header */
     struct aws_byte_cursor thing_name;
+
     /* Iot role alias you created with AWS IoT for your IAM role, it will be used in http request path */
     struct aws_byte_cursor role_alias;
+
     /**
      * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo
      * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
      */
     struct aws_byte_cursor endpoint;
+
+    /**
+     * (Optional) proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_http_proxy_options *proxy_options;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_credentials_provider_system_vtable *function_table;

@@ -43,6 +43,7 @@ struct aws_credentials_provider_x509_impl {
     struct aws_credentials_provider_system_vtable *function_table;
     struct aws_byte_buf thing_name;
     struct aws_byte_buf role_alias_path;
+    struct aws_byte_buf endpoint;
     struct aws_tls_connection_options tls_connection_options;
 };
 
@@ -346,6 +347,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_x509_user_agent_header_value, "aws-sdk-crt/x509
 AWS_STATIC_STRING_FROM_LITERAL(s_x509_h1_0_keep_alive_header, "Connection");
 AWS_STATIC_STRING_FROM_LITERAL(s_x509_h1_0_keep_alive_header_value, "keep-alive");
 AWS_STATIC_STRING_FROM_LITERAL(s_x509_thing_name_header, "x-amzn-iot-thingname");
+AWS_STATIC_STRING_FROM_LITERAL(s_x509_host_header, "Host");
 
 static int s_make_x509_http_query(
     struct aws_credentials_provider_x509_user_data *x509_user_data,
@@ -389,6 +391,14 @@ static int s_make_x509_http_query(
         .value = aws_byte_cursor_from_string(s_x509_h1_0_keep_alive_header_value),
     };
     if (aws_http_message_add_header(request, keep_alive_header)) {
+        goto on_error;
+    }
+
+    struct aws_http_header host_header = {
+        .name = aws_byte_cursor_from_string(s_x509_host_header),
+        .value = aws_byte_cursor_from_buf(&impl->endpoint),
+    };
+    if (aws_http_message_add_header(request, host_header)) {
         goto on_error;
     }
 
@@ -500,6 +510,7 @@ static void s_credentials_provider_x509_destroy(struct aws_credentials_provider 
 
     aws_byte_buf_clean_up(&impl->thing_name);
     aws_byte_buf_clean_up(&impl->role_alias_path);
+    aws_byte_buf_clean_up(&impl->endpoint);
     aws_tls_connection_options_clean_up(&impl->tls_connection_options);
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
      * which will do memory release for provider and impl. So We should be freeing impl
@@ -587,6 +598,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
     manager_options.tls_connection_options = &impl->tls_connection_options;
+    manager_options.proxy_options = options->proxy_options;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
@@ -599,6 +611,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
     }
 
     if (aws_byte_buf_init_copy_from_cursor(&impl->thing_name, allocator, options->thing_name)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_init_copy_from_cursor(&impl->endpoint, allocator, options->endpoint)) {
         goto on_error;
     }
 
