@@ -1281,20 +1281,9 @@ struct aws_credentials *aws_credentials_new_from_profile(
         return NULL;
     }
 
-    struct aws_byte_cursor session_token_cursor;
-    AWS_ZERO_STRUCT(session_token_cursor);
-
     const struct aws_string *session_token = s_profile_get_property_value(profile, s_session_token_profile_var);
-    if (session_token) {
-        session_token_cursor = aws_byte_cursor_from_string(session_token);
-    }
 
-    return aws_credentials_new(
-        allocator,
-        aws_byte_cursor_from_string(access_key),
-        aws_byte_cursor_from_string(secret_key),
-        session_token_cursor,
-        UINT64_MAX);
+    return aws_credentials_new_from_string(allocator, access_key, secret_key, session_token, UINT64_MAX);
 }
 
 static struct aws_string *s_process_profile_file_path(struct aws_allocator *allocator, const struct aws_string *path) {

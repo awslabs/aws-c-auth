@@ -150,7 +150,7 @@ static void s_reset_request_specific_data(struct sts_creds_provider_user_data *u
     aws_string_destroy(user_data->access_key_id);
     user_data->access_key_id = NULL;
 
-    aws_string_destroy(user_data->secret_access_key);
+    aws_string_destroy_secure(user_data->secret_access_key);
     user_data->secret_access_key = NULL;
 
     aws_string_destroy(user_data->session_token);
@@ -159,9 +159,7 @@ static void s_reset_request_specific_data(struct sts_creds_provider_user_data *u
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
     user_data->callback(user_data->credentials, user_data->error_code, user_data->user_data);
 
-    if (user_data->credentials) {
-        aws_credentials_release(user_data->credentials);
-    }
+    aws_credentials_release(user_data->credentials);
 
     s_reset_request_specific_data(user_data);
     aws_credentials_provider_release(user_data->provider);
@@ -398,11 +396,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         if (provider_user_data->access_key_id && provider_user_data->secret_access_key &&
             provider_user_data->session_token) {
 
-            provider_user_data->credentials = aws_credentials_new(
+            provider_user_data->credentials = aws_credentials_new_from_string(
                 provider_user_data->allocator,
-                aws_byte_cursor_from_string(provider_user_data->access_key_id),
-                aws_byte_cursor_from_string(provider_user_data->secret_access_key),
-                aws_byte_cursor_from_string(provider_user_data->session_token),
+                provider_user_data->access_key_id,
+                provider_user_data->secret_access_key,
+                provider_user_data->session_token,
                 now_seconds + provider_impl->duration_seconds);
         } else {
             AWS_LOGF_ERROR(

@@ -41,19 +41,8 @@ static int s_credentials_provider_environment_get_credentials_async(
     aws_get_environment_value(allocator, s_session_token_env_var, &session_token);
 
     if (access_key_id != NULL && secret_access_key != NULL) {
-        struct aws_byte_cursor session_token_cursor;
-        AWS_ZERO_STRUCT(session_token_cursor);
-
-        if (session_token != NULL) {
-            session_token_cursor = aws_byte_cursor_from_string(session_token);
-        }
-
-        credentials = aws_credentials_new(
-            allocator,
-            aws_byte_cursor_from_string(access_key_id),
-            aws_byte_cursor_from_string(secret_access_key),
-            session_token_cursor,
-            UINT64_MAX);
+        credentials =
+            aws_credentials_new_from_string(allocator, access_key_id, secret_access_key, session_token, UINT64_MAX);
         if (credentials == NULL) {
             error_code = aws_last_error();
         }

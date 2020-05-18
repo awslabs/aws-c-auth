@@ -681,6 +681,14 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 
+static int s_verify_credentials(struct aws_credentials *credentials) {
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(credentials), s_good_secret_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_good_session_token);
+
+    return AWS_OP_SUCCESS;
+}
+
 static int s_credentials_provider_imds_secure_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -726,11 +734,7 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     ASSERT_TRUE(s_tester.token_header_expected[2]);
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_TRUE(s_tester.credentials != NULL);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -781,10 +785,7 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -842,10 +843,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
     ASSERT_FALSE(s_tester.token_header_exist[2]);
 
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -911,10 +909,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     ASSERT_TRUE(s_tester.token_header_exist[3]);
     ASSERT_TRUE(s_tester.token_header_expected[3]);
 
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -969,10 +964,7 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
 
     s_validate_uri_path_and_creds(3, true);
 
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -1032,10 +1024,7 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
 
     s_validate_uri_path_and_creds(3, true);
 
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 

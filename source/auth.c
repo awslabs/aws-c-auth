@@ -63,7 +63,7 @@ static struct aws_error_info s_errors[] = {
         "Valid credentials could not be sourced by the STS provider"),
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE,
-    "Unsuccessful status code returned from credentials-fetching http request"),
+        "Unsuccessful status code returned from credentials-fetching http request"),
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE,
         "Invalid response document encountered while querying credentials via http"),

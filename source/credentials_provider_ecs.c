@@ -180,6 +180,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
             "(id=%p) ECS credentials provider successfully queried instance role credentials",
             (void *)ecs_user_data->ecs_provider);
     } else {
+        /* no credentials, make sure we have a valid error to report */
         if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
             ecs_user_data->error_code = aws_last_error();
             if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {

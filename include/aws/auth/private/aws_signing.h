@@ -63,7 +63,7 @@ struct aws_signing_state_aws {
     struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
 
-    char expiration_array[32];
+    char expiration_array[32]; /* serialization of the pre-signing expiration duration value */
 };
 
 AWS_EXTERN_C_BEGIN

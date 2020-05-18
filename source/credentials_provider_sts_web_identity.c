@@ -110,8 +110,8 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     }
 
     aws_string_destroy(user_data->access_key_id);
-    aws_string_destroy(user_data->secret_access_key);
-    aws_string_destroy(user_data->session_token);
+    aws_string_destroy_secure(user_data->secret_access_key);
+    aws_string_destroy_secure(user_data->session_token);
 
     aws_credentials_provider_release(user_data->sts_web_identity_provider);
     aws_mem_release(user_data->allocator, user_data);
@@ -162,10 +162,10 @@ static void s_user_data_reset_response(struct sts_web_identity_user_data *sts_we
     aws_string_destroy(sts_web_identity_user_data->access_key_id);
     sts_web_identity_user_data->access_key_id = NULL;
 
-    aws_string_destroy(sts_web_identity_user_data->secret_access_key);
+    aws_string_destroy_secure(sts_web_identity_user_data->secret_access_key);
     sts_web_identity_user_data->secret_access_key = NULL;
 
-    aws_string_destroy(sts_web_identity_user_data->session_token);
+    aws_string_destroy_secure(sts_web_identity_user_data->session_token);
     sts_web_identity_user_data->session_token = NULL;
 }
 
