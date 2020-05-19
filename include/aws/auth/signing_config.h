@@ -56,6 +56,16 @@ enum aws_signing_request_transform {
     AWS_SRT_QUERY_PARAM,
 };
 
+/*
+ * Which date header to sign.
+ * "X-Amz-Date" is preferred, but "Date" is also acceptable.
+ * Only applies to header signing. Query param signing always uses "X-Amz-Date".
+ */
+enum aws_signing_date_header {
+    AWS_SDH_X_AMZ_DATE,
+    AWS_SDH_DATE,
+};
+
 enum aws_body_signing_config_type {
     AWS_BODY_SIGNING_OFF,
     AWS_BODY_SIGNING_ON,
@@ -153,6 +163,14 @@ struct aws_signing_config_aws {
      * this parameter has no effect.
      */
     uint64_t expiration_in_seconds;
+
+    /*
+     * Which date header to sign.
+     * "X-Amz-Date" is preferred, but "Date" is also acceptable.
+     * This value only affects header signing.
+     * This value is ignored by query param signing, which always uses "X-Amz-Date".
+     */
+    enum aws_signing_date_header date_header;
 };
 
 AWS_EXTERN_C_BEGIN

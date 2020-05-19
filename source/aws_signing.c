@@ -58,7 +58,8 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization"
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_query_param_name, "X-Amz-Signature");
 AWS_STRING_FROM_LITERAL(g_aws_signing_algorithm_query_param_name, "X-Amz-Algorithm");
 AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Credential");
-AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
+AWS_STRING_FROM_LITERAL(g_aws_signing_amz_date_name, "X-Amz-Date");
+AWS_STRING_FROM_LITERAL(g_aws_signing_vanilla_date_header_name, "Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires");
@@ -80,6 +81,7 @@ static struct aws_byte_cursor s_upgrade_header_name;
 
 static struct aws_byte_cursor s_amz_content_sha256_header_name;
 static struct aws_byte_cursor s_amz_date_header_name;
+static struct aws_byte_cursor s_vanilla_date_header_name;
 static struct aws_byte_cursor s_authorization_header_name;
 
 static struct aws_byte_cursor s_amz_signature_param_name;
@@ -158,8 +160,13 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    s_amz_date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    s_amz_date_header_name = aws_byte_cursor_from_string(g_aws_signing_amz_date_name);
     if (aws_hash_table_put(&s_forbidden_headers, &s_amz_date_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_vanilla_date_header_name = aws_byte_cursor_from_string(g_aws_signing_vanilla_date_header_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_vanilla_date_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
@@ -184,7 +191,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    s_amz_date_param_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    s_amz_date_param_name = aws_byte_cursor_from_string(g_aws_signing_amz_date_name);
     if (aws_hash_table_put(&s_forbidden_params, &s_amz_date_param_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
@@ -707,7 +714,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
 
     /* X-Amz-Date */
     struct aws_uri_param date_param = {
-        .key = aws_byte_cursor_from_string(g_aws_signing_date_name),
+        .key = aws_byte_cursor_from_string(g_aws_signing_amz_date_name),
         .value = aws_byte_cursor_from_buf(&state->date),
     };
 
@@ -1038,17 +1045,21 @@ static int s_build_canonical_stable_header_list(
 
     if (state->config.transform != AWS_SRT_QUERY_PARAM) {
         /*
-         * X-Amz-Date
+         * X-Amz-Date or Date
          */
+        const struct aws_string *date_name_str = state->config.date_header == AWS_SDH_DATE
+                                                     ? g_aws_signing_vanilla_date_header_name
+                                                     : g_aws_signing_amz_date_name;
+
         struct stable_header date_header = {.original_index = additional_header_index++,
-                                            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
+                                            .header = {.name = aws_byte_cursor_from_string(date_name_str),
                                                        .value = aws_byte_cursor_from_buf(&state->date)}};
 
         if (aws_array_list_push_back(stable_header_list, &date_header)) {
             return AWS_OP_ERR;
         }
 
-        *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
+        *out_required_capacity += date_name_str->len + state->date.len;
     }
 
     /*
@@ -1842,9 +1853,12 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
     }
 
     /*
-     * Add X-Amz-Date to the signing result
+     * Add X-Amz-Date (or Date) to the signing result
      */
-    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+    const struct aws_string *date_header_name_str = state->config.date_header == AWS_SDH_DATE
+                                                        ? g_aws_signing_vanilla_date_header_name
+                                                        : g_aws_signing_amz_date_name;
+    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(date_header_name_str);
     struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
     if (aws_signing_result_append_property_list(
             &state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {

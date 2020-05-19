@@ -44,6 +44,7 @@ AWS_EXTERN_C_BEGIN
  *   (1) Do not add the following headers to requests before signing:
  *      x-amz-content-sha256,
  *      X-Amz-Date,
+ *      Date,
  *      Authorization
  *
  *   (2) Do not add the following query params to requests before signing:

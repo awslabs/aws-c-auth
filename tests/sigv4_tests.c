@@ -206,7 +206,7 @@ static int s_initialize_test_from_contents(
             aws_byte_cursor_advance(&current_line, current_header.name.len + 1);
             current_header.value = current_line;
 
-            struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(g_aws_signing_date_name);
+            struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(g_aws_signing_amz_date_name);
             if (!ignore_date_header || !aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor)) {
                 aws_array_list_push_back(&contents->header_set, &current_header);
             }
@@ -843,12 +843,25 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "Host:example.amazonaws.com\n"
     "X-Amz-Date:20150830T123600Z");
 
-static int s_sigv4_fail_date_header_test(struct aws_allocator *allocator, void *ctx) {
+static int s_sigv4_fail_amz_date_header_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     return s_do_forbidden_header_param_test(
         allocator, s_amz_date_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
 }
-AWS_TEST_CASE(sigv4_fail_date_header_test, s_sigv4_fail_date_header_test);
+AWS_TEST_CASE(sigv4_fail_amz_date_header_test, s_sigv4_fail_amz_date_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_vanilla_date_header_request,
+    "GET / HTTP/1.1\n"
+    "Host:example.amazonaws.com\n"
+    "Date:20150830T123600Z");
+
+static int s_sigv4_fail_vanilla_date_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_forbidden_header_param_test(
+        allocator, s_vanilla_date_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+}
+AWS_TEST_CASE(sigv4_fail_vanilla_date_header_test, s_sigv4_fail_vanilla_date_header_test);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_amz_content_sha256_header_request,
