@@ -538,12 +538,14 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
          * If we don't need to perform any kind of transformation on the normalized path, just append it directly
          * into the canonical request buffer
          */
-        if (config->should_normalize_uri_path &&
-            s_append_normalized_path(&uri->path, allocator, canonical_request_buffer)) {
-            goto cleanup;
-        } else if (
-            !config->should_normalize_uri_path && aws_byte_buf_append_dynamic(canonical_request_buffer, &uri->path)) {
-            goto cleanup;
+        if (config->should_normalize_uri_path) {
+            if (s_append_normalized_path(&uri->path, allocator, canonical_request_buffer)) {
+                goto cleanup;
+            }
+        } else {
+            if (aws_byte_buf_append_dynamic(canonical_request_buffer, &uri->path)) {
+                goto cleanup;
+            }
         }
     }
 

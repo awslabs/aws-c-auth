@@ -416,7 +416,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
 
-    struct aws_credentials_provider *providers[3];
+    enum { providers_size = 3 };
+    struct aws_credentials_provider *providers[providers_size];
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
 
@@ -444,7 +445,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         providers[index++] = ecs_or_imds_provider;
     }
 
-    AWS_FATAL_ASSERT(index <= AWS_ARRAY_SIZE(providers));
+    AWS_FATAL_ASSERT(index <= providers_size);
 
     struct aws_credentials_provider_chain_options chain_options = {
         .provider_count = index,

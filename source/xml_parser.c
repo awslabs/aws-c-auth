@@ -57,7 +57,7 @@ int aws_xml_parser_init(
 void aws_xml_parser_clean_up(struct aws_xml_parser *parser) {
     if (parser->allocator) {
         aws_array_list_clean_up(&parser->callback_stack);
-        AWS_ZERO_STRUCT(parser);
+        AWS_ZERO_STRUCT(*parser);
     }
 }
 

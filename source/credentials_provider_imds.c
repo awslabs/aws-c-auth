@@ -790,15 +790,15 @@ static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int err
                 "id=%p: Connection was closed, retrying the last request on a new connection.",
                 (void *)imds_user_data->imds_provider);
             return;
-        } else {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "id=%p: Connection was closed, retries have been exhausted.",
-                (void *)imds_user_data->imds_provider);
-            /* Give up */
-            imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
-            imds_user_data->error_code = error_code;
         }
+
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: Connection was closed, retries have been exhausted.",
+            (void *)imds_user_data->imds_provider);
+        /* Give up */
+        imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        imds_user_data->error_code = error_code;
     } else {
         /* treat everything else as success on the retry token for now. if we decide we need to retry
          * http errors, we'll come back and rework this. */

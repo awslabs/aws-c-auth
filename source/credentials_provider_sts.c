@@ -630,7 +630,7 @@ static int s_sts_get_creds(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): error occurred while allocating memory: %s",
-            (void *)provider_user_data->provider,
+            (void *)provider,
             aws_error_debug_str(aws_last_error()));
         callback(NULL, aws_last_error(), user_data);
         return AWS_OP_ERR;
