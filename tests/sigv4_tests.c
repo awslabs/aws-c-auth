@@ -793,10 +793,11 @@ static int s_sigv4_skip_custom_header_test(struct aws_allocator *allocator, void
 }
 AWS_TEST_CASE(sigv4_skip_custom_header_test, s_sigv4_skip_custom_header_test);
 
-static int s_do_forbidden_header_param_test(
+static int s_do_forbidden_header_param_test_ex(
     struct aws_allocator *allocator,
     const struct aws_string *request_contents,
-    enum aws_auth_errors expected_error) {
+    enum aws_auth_errors expected_error,
+    enum aws_signing_date_header date_header) {
 
     aws_auth_library_init(allocator);
 
@@ -807,6 +808,8 @@ static int s_do_forbidden_header_param_test(
 
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
+
+    config.date_header = date_header;
 
     struct aws_byte_cursor request_cursor = aws_byte_cursor_from_string(request_contents);
 
@@ -837,6 +840,14 @@ static int s_do_forbidden_header_param_test(
     return AWS_OP_SUCCESS;
 }
 
+static int s_do_forbidden_header_param_test(
+    struct aws_allocator *allocator,
+    const struct aws_string *request_contents,
+    enum aws_auth_errors expected_error) {
+
+    return s_do_forbidden_header_param_test_ex(allocator, request_contents, expected_error, AWS_SDH_X_AMZ_DATE);
+}
+
 AWS_STATIC_STRING_FROM_LITERAL(
     s_amz_date_header_request,
     "GET / HTTP/1.1\n"
@@ -858,8 +869,8 @@ AWS_STATIC_STRING_FROM_LITERAL(
 
 static int s_sigv4_fail_vanilla_date_header_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    return s_do_forbidden_header_param_test(
-        allocator, s_vanilla_date_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+    return s_do_forbidden_header_param_test_ex(
+        allocator, s_vanilla_date_header_request, AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER, AWS_SDH_DATE);
 }
 AWS_TEST_CASE(sigv4_fail_vanilla_date_header_test, s_sigv4_fail_vanilla_date_header_test);
 

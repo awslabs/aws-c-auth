@@ -58,7 +58,7 @@ enum aws_signing_request_transform {
 
 /*
  * Which date header to sign.
- * "X-Amz-Date" is preferred, but "Date" is also acceptable.
+ * "X-Amz-Date" is preferred, but "Date" can be used instead.
  * Only applies to header signing. Query param signing always uses "X-Amz-Date".
  */
 enum aws_signing_date_header {
@@ -166,7 +166,7 @@ struct aws_signing_config_aws {
 
     /*
      * Which date header to sign.
-     * "X-Amz-Date" is preferred, but "Date" is also acceptable.
+     * "X-Amz-Date" is preferred, but "Date" can be used instead.
      * This value only affects header signing.
      * This value is ignored by query param signing, which always uses "X-Amz-Date".
      */

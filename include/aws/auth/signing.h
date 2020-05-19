@@ -42,10 +42,10 @@ AWS_EXTERN_C_BEGIN
  * When using this signing function to sign AWS http requests:
  *
  *   (1) Do not add the following headers to requests before signing:
+ *      Authorization,
  *      x-amz-content-sha256,
  *      X-Amz-Date,
- *      Date,
- *      Authorization
+ *      Date (forbidden if signing Date header, instead of X-Amz-Date)
  *
  *   (2) Do not add the following query params to requests before signing:
  *      X-Amz-Signature,

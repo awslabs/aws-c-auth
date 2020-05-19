@@ -165,10 +165,8 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    /* Do not put "Date" in s_forbidden_headers. If user is signing with "X-Amz-Date" then "Date" is not special. */
     s_vanilla_date_header_name = aws_byte_cursor_from_string(g_aws_signing_vanilla_date_header_name);
-    if (aws_hash_table_put(&s_forbidden_headers, &s_vanilla_date_header_name, NULL, NULL)) {
-        return AWS_OP_ERR;
-    }
 
     s_authorization_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
     if (aws_hash_table_put(&s_forbidden_headers, &s_authorization_header_name, NULL, NULL)) {
@@ -974,6 +972,14 @@ static int s_append_canonical_header(
 }
 
 /*
+ * Return true if Date is being used for header signing.
+ * Otherwise, X-Amz-Date is used.
+ */
+static bool s_use_vanilla_date_header(const struct aws_signing_config_aws *config) {
+    return config->date_header == AWS_SDH_DATE;
+}
+
+/*
  * Builds the list of header name-value pairs to be added to the canonical request.  The list members are
  * actually the header wrapper structs that allow for stable sorting.
  *
@@ -1047,19 +1053,18 @@ static int s_build_canonical_stable_header_list(
         /*
          * X-Amz-Date or Date
          */
-        const struct aws_string *date_name_str = state->config.date_header == AWS_SDH_DATE
-                                                     ? g_aws_signing_vanilla_date_header_name
-                                                     : g_aws_signing_amz_date_name;
+        const struct aws_byte_cursor *date_name =
+            s_use_vanilla_date_header(&state->config) ? &s_vanilla_date_header_name : &s_amz_date_header_name;
 
-        struct stable_header date_header = {.original_index = additional_header_index++,
-                                            .header = {.name = aws_byte_cursor_from_string(date_name_str),
-                                                       .value = aws_byte_cursor_from_buf(&state->date)}};
+        struct stable_header date_header = {
+            .original_index = additional_header_index++,
+            .header = {.name = *date_name, .value = aws_byte_cursor_from_buf(&state->date)}};
 
         if (aws_array_list_push_back(stable_header_list, &date_header)) {
             return AWS_OP_ERR;
         }
 
-        *out_required_capacity += date_name_str->len + state->date.len;
+        *out_required_capacity += date_name->len + state->date.len;
     }
 
     /*
@@ -1083,18 +1088,23 @@ static int s_build_canonical_stable_header_list(
     return AWS_OP_SUCCESS;
 }
 
-static int s_validate_signable_header_list(struct aws_array_list *header_list) {
+static int s_validate_signable_header_list(
+    struct aws_array_list *header_list,
+    const struct aws_signing_config_aws *config) {
+
+    const bool use_vanilla_date_header = s_use_vanilla_date_header(config);
+
     const size_t header_count = aws_array_list_length(header_list);
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_signable_property_list_pair header;
-        AWS_ZERO_STRUCT(header);
-
         aws_array_list_get_at(header_list, &header, i);
 
         struct aws_hash_element *forbidden_element = NULL;
         aws_hash_table_find(&s_forbidden_headers, &header.name, &forbidden_element);
 
-        if (forbidden_element != NULL) {
+        if (forbidden_element != NULL ||
+            (use_vanilla_date_header && aws_byte_cursor_eq_ignore_case(&s_vanilla_date_header_name, &header.name))) {
+
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_SIGNING,
                 "AWS authorization header \"" PRInSTR "\" found in request while signing",
@@ -1127,7 +1137,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_validate_signable_header_list(signable_header_list)) {
+    if (s_validate_signable_header_list(signable_header_list, &state->config)) {
         return AWS_OP_ERR;
     }
 
@@ -1855,13 +1865,11 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
     /*
      * Add X-Amz-Date (or Date) to the signing result
      */
-    const struct aws_string *date_header_name_str = state->config.date_header == AWS_SDH_DATE
-                                                        ? g_aws_signing_vanilla_date_header_name
-                                                        : g_aws_signing_amz_date_name;
-    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(date_header_name_str);
+    const struct aws_byte_cursor *date_header_name =
+        s_use_vanilla_date_header(&state->config) ? &s_vanilla_date_header_name : &s_amz_date_header_name;
     struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
     if (aws_signing_result_append_property_list(
-            &state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
+            &state->result, g_aws_http_headers_property_list_name, date_header_name, &date_header_value)) {
         return AWS_OP_ERR;
     }
 
