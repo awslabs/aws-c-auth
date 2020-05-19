@@ -2235,11 +2235,34 @@ done:
     return result;
 }
 
+#define SECRET_BUFFER_LENGTH_OVERESTIMATE 64
+
+static int s_init_secret_buf(
+    struct aws_byte_buf *secret_buf,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials) {
+    if (aws_byte_buf_init(secret_buf, allocator, SECRET_BUFFER_LENGTH_OVERESTIMATE)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor prefix_cursor = aws_byte_cursor_from_c_str("AWS4A");
+    if (aws_byte_buf_append_dynamic(secret_buf, &prefix_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials);
+    if (aws_byte_buf_append_dynamic(secret_buf, &secret_access_key_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
     struct aws_allocator *allocator,
     struct aws_credentials *credentials) {
 
-    if (credentials == NULL) {
+    if (allocator == NULL || credentials == NULL) {
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
@@ -2261,6 +2284,9 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_buf private_key_buf;
     AWS_ZERO_STRUCT(private_key_buf);
 
+    struct aws_byte_buf secret_buf;
+    AWS_ZERO_STRUCT(secret_buf);
+
     struct aws_bigint *private_key = aws_bigint_new_from_uint64(allocator, 0);
     if (private_key == NULL) {
         return NULL;
@@ -2274,6 +2300,11 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
         goto done;
     }
 
+    if (s_init_secret_buf(&secret_buf, allocator, credentials)) {
+        goto done;
+    }
+    struct aws_byte_cursor secret_cursor = aws_byte_cursor_from_buf(&secret_buf);
+
     uint32_t counter = 1;
     while (counter != 0) { /* could be while(true) but compilers hate it */
         if (s_aws_build_fixed_input_buffer(&fixed_input, credentials, counter++)) {
@@ -2282,7 +2313,6 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 
         fixed_input_hash_digest.len = 0;
         struct aws_byte_cursor fixed_input_cursor = aws_byte_cursor_from_buf(&fixed_input);
-        struct aws_byte_cursor secret_cursor = aws_credentials_get_secret_access_key(credentials);
         if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, &fixed_input_hash_digest, 0)) {
             goto done;
         }
@@ -2354,6 +2384,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 
 done:
 
+    aws_byte_buf_clean_up_secure(&secret_buf);
     aws_byte_buf_clean_up(&private_key_buf);
     aws_byte_buf_clean_up(&fixed_input_hash_digest);
     aws_byte_buf_clean_up(&fixed_input);
