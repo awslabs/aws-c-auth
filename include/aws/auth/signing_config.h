@@ -108,6 +108,14 @@ struct aws_signing_config_aws {
     struct aws_date_time date;
 
     /*
+     * Which date header to sign.
+     * "X-Amz-Date" is preferred, but "Date" can be used instead.
+     * This value only affects header signing.
+     * This value is ignored by query param signing, which always uses "X-Amz-Date".
+     */
+    enum aws_signing_date_header date_header;
+
+    /*
      * Optional function to control which parameters (header or query) are a part of the canonical request.
      * Skipping auth-required params
      * will result in an unusable signature.  Headers injected by the signing process are not skippable.
@@ -163,14 +171,6 @@ struct aws_signing_config_aws {
      * this parameter has no effect.
      */
     uint64_t expiration_in_seconds;
-
-    /*
-     * Which date header to sign.
-     * "X-Amz-Date" is preferred, but "Date" can be used instead.
-     * This value only affects header signing.
-     * This value is ignored by query param signing, which always uses "X-Amz-Date".
-     */
-    enum aws_signing_date_header date_header;
 };
 
 AWS_EXTERN_C_BEGIN
