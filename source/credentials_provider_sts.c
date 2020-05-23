@@ -561,7 +561,8 @@ static void s_start_make_request(
 
     provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4;
     provider_user_data->signing_config.transform = AWS_SRT_HEADER;
-    provider_user_data->signing_config.body_signing_type = AWS_BODY_SIGNING_ON;
+    provider_user_data->signing_config.signed_body_type = AWS_SBVT_REQUEST;
+    provider_user_data->signing_config.signed_body_header = AWS_SBHT_NONE;
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
     provider_user_data->signing_config.credentials_provider = impl->provider;
     aws_date_time_init_now(&provider_user_data->signing_config.date);

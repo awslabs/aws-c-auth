@@ -448,7 +448,7 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     config.service = aws_byte_cursor_from_string(service);
     config.use_double_uri_encode = true;
     config.should_normalize_uri_path = true;
-    config.body_signing_type = AWS_BODY_SIGNING_OFF;
+    config.signed_body_type = AWS_SBVT_EMPTY;
 
     aws_date_time_init_now(&config.date);
 

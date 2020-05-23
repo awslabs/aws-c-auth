@@ -92,7 +92,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
 done:
 
     state->on_complete(result, state->error_code, state->userdata);
-    aws_signing_state_destroy(state);
+    aws_signing_state_release(state);
 }
 
 static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials, int error_code, void *user_data) {
@@ -159,6 +159,6 @@ int aws_sign_request_aws(
 
 on_error:
 
-    aws_signing_state_destroy(signing_state);
+    aws_signing_state_release(signing_state);
     return AWS_OP_ERR;
 }

@@ -56,10 +56,16 @@ enum aws_signing_request_transform {
     AWS_SRT_QUERY_PARAM,
 };
 
-enum aws_body_signing_config_type {
-    AWS_BODY_SIGNING_OFF,
-    AWS_BODY_SIGNING_ON,
-    AWS_BODY_SIGNING_UNSIGNED_PAYLOAD,
+enum aws_signed_body_value_type {
+    AWS_SBVT_EMPTY,
+    AWS_SBVT_REQUEST,
+    AWS_SBVT_UNSIGNED_PAYLOAD,
+    AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_PAYLOAD,
+};
+
+enum aws_signed_body_header_type {
+    AWS_SBHT_NONE,
+    AWS_SBHT_X_AMZ_CONTENT_SHA256,
 };
 
 /*
@@ -122,11 +128,20 @@ struct aws_signing_config_aws {
     bool should_normalize_uri_path;
 
     /*
-     * If AWS_BODY_SIGNING_ON adds the x-amz-content-sha256 header (with sha256 hash of the payload) to the canonical
-     * request. If AWS_BODY_SIGNING_UNSIGNED_PAYLOAD, "UNSIGNED-PAYLOAD" is used for the x-amz-content-sha256 header,
-     * otherwise no paylod signing will take place.
+     * Controls what should be hashed as "the body" when creating the canonical request:
+     *  AWS_SBVT_EMPTY - the hash of the empty string should be used
+     *  AWS_SBVT_REQUEST - the hash of the request payload should be used
+     *  AWS_SBVT_UNSIGNED_PAYLOAD - the hash of 'UNSIGNED-PAYLOAD' should be used
+     *  AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_PAYLOAD - the hash of 'STREAMING_AWS4_HMAC_SHA256_PAYLOAD' should be used
      */
-    enum aws_body_signing_config_type body_signing_type;
+    enum aws_signed_body_value_type signed_body_type;
+
+    /*
+     * Controls what body hash header, if any, should be added to the canonical request and the signed request:
+     *   AWS_SBHT_NONE - no body hash header should be added
+     *   AWS_SBHT_X_AMZ_CONTENT_SHA256 - the body hash should be added in the X-Amz-Content-Sha256 header
+     */
+    enum aws_signed_body_header_type signed_body_header;
 
     /*
      * Signing key control:

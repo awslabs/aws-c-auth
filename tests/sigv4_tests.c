@@ -242,7 +242,8 @@ static int s_initialize_test_from_contents(
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->use_double_uri_encode = true;
     config->should_normalize_uri_path = true;
-    config->body_signing_type = AWS_BODY_SIGNING_OFF;
+    config->signed_body_type = AWS_SBVT_EMPTY;
+    config->signed_body_header = AWS_SBHT_NONE;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
     if (aws_date_time_init_from_str_cursor(&config->date, &date_cursor, AWS_DATE_FORMAT_ISO_8601)) {
@@ -472,7 +473,7 @@ static int s_do_sigv4_test_suite_test(
                 session_header_value.len);
         }
 
-        aws_signing_state_destroy(signing_state);
+        aws_signing_state_release(signing_state);
     }
 
     /* 2 - validate the public API */
@@ -564,7 +565,7 @@ static int s_do_sigv4_test_suite_test(
 
         aws_byte_buf_clean_up(&expected_value_uri_encoded);
 
-        aws_signing_state_destroy(signing_state);
+        aws_signing_state_release(signing_state);
     }
 
     aws_credentials_provider_release(config.credentials_provider);
@@ -693,7 +694,7 @@ static int s_do_header_skip_test(
 
     aws_credentials_provider_release(config.credentials_provider);
 
-    aws_signing_state_destroy(signing_state);
+    aws_signing_state_release(signing_state);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
     aws_credentials_release(credentials);
     aws_signable_destroy(signable);
@@ -826,7 +827,7 @@ static int s_do_forbidden_header_param_test(
     ASSERT_FAILS(aws_signing_build_canonical_request(signing_state));
     ASSERT_TRUE(aws_last_error() == expected_error);
 
-    aws_signing_state_destroy(signing_state);
+    aws_signing_state_release(signing_state);
     aws_credentials_provider_release(config.credentials_provider);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
     aws_credentials_release(credentials);

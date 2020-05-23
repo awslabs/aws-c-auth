@@ -19,6 +19,7 @@
 #include <aws/auth/auth.h>
 #include <aws/auth/signing.h>
 
+#include <aws/common/atomics.h>
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
 
@@ -39,6 +40,8 @@ struct aws_signing_result;
  */
 struct aws_signing_state_aws {
     struct aws_allocator *allocator;
+
+    struct aws_atomic_var ref_count;
 
     const struct aws_signable *signable;
     aws_signing_complete_fn *on_complete;
@@ -77,7 +80,10 @@ struct aws_signing_state_aws *aws_signing_state_new(
     void *userdata);
 
 AWS_AUTH_API
-void aws_signing_state_destroy(struct aws_signing_state_aws *state);
+void aws_signing_state_release(struct aws_signing_state_aws *state);
+
+AWS_AUTH_API
+void aws_signing_state_acquire(struct aws_signing_state_aws *state);
 
 /*
  * A set of functions that together performs the AWS signing process based
