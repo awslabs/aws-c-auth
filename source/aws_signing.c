@@ -265,27 +265,6 @@ static int s_append_sts_signature_type(struct aws_signing_state_aws *state, stru
     return aws_byte_buf_append_dynamic(dest, &algorithm_cursor);
 }
 
-void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
-    aws_signing_result_clean_up(&state->result);
-
-    aws_credentials_provider_release(state->config.credentials_provider);
-    aws_credentials_release(state->config.credentials);
-
-    aws_byte_buf_clean_up(&state->region_service_buffer);
-    aws_byte_buf_clean_up(&state->canonical_request);
-    aws_byte_buf_clean_up(&state->string_to_sign);
-    aws_byte_buf_clean_up(&state->signed_headers);
-    aws_byte_buf_clean_up(&state->canonical_header_block);
-    aws_byte_buf_clean_up(&state->payload_hash);
-    aws_byte_buf_clean_up(&state->credential_scope);
-    aws_byte_buf_clean_up(&state->access_credential_scope);
-    aws_byte_buf_clean_up(&state->date);
-    aws_byte_buf_clean_up(&state->signature);
-    aws_byte_buf_clean_up(&state->string_to_sign_payload);
-
-    aws_mem_release(state->allocator, state);
-}
-
 /*
  * signing state management
  */
@@ -360,6 +339,27 @@ struct aws_signing_state_aws *aws_signing_state_new(
 on_error:
     aws_signing_state_destroy(state);
     return NULL;
+}
+
+void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
+    aws_signing_result_clean_up(&state->result);
+
+    aws_credentials_provider_release(state->config.credentials_provider);
+    aws_credentials_release(state->config.credentials);
+
+    aws_byte_buf_clean_up(&state->region_service_buffer);
+    aws_byte_buf_clean_up(&state->canonical_request);
+    aws_byte_buf_clean_up(&state->string_to_sign);
+    aws_byte_buf_clean_up(&state->signed_headers);
+    aws_byte_buf_clean_up(&state->canonical_header_block);
+    aws_byte_buf_clean_up(&state->payload_hash);
+    aws_byte_buf_clean_up(&state->credential_scope);
+    aws_byte_buf_clean_up(&state->access_credential_scope);
+    aws_byte_buf_clean_up(&state->date);
+    aws_byte_buf_clean_up(&state->signature);
+    aws_byte_buf_clean_up(&state->string_to_sign_payload);
+
+    aws_mem_release(state->allocator, state);
 }
 
 /*
@@ -1225,19 +1225,10 @@ on_cleanup:
     return result;
 }
 
-static bool s_body_hash_requires_sha256(enum aws_signed_body_value_type body_signing_type) {
+struct aws_byte_cursor s_get_canonical_body_for_signed_body_type(enum aws_signed_body_value_type body_signing_type) {
     switch (body_signing_type) {
         case AWS_SBVT_EMPTY:
-        case AWS_SBVT_REQUEST:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-struct aws_byte_cursor s_get_body_for_signed_body_type(enum aws_signed_body_value_type body_signing_type) {
-    switch (body_signing_type) {
+            return aws_byte_cursor_from_string(s_sha256_empty_string);
         case AWS_SBVT_UNSIGNED_PAYLOAD:
             return aws_byte_cursor_from_string(s_body_unsigned_payload);
         case AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_PAYLOAD:
@@ -1253,6 +1244,97 @@ struct aws_byte_cursor s_get_body_for_signed_body_type(enum aws_signed_body_valu
     AWS_ZERO_STRUCT(empty_cursor);
 
     return empty_cursor;
+}
+
+/*
+ * Computes the canonical request payload value.
+ */
+static int s_aws_signing_build_payload(struct aws_signing_state_aws *state) {
+    const struct aws_signable *signable = state->signable;
+    struct aws_allocator *allocator = state->allocator;
+    struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
+
+    AWS_ASSERT(payload_hash_buffer->len == 0);
+
+    struct aws_byte_buf body_buffer;
+    AWS_ZERO_STRUCT(body_buffer);
+    struct aws_byte_buf digest_buffer;
+    AWS_ZERO_STRUCT(digest_buffer);
+
+    struct aws_hash *hash = NULL;
+
+    int result = AWS_OP_ERR;
+    if (state->config.signed_body_type == AWS_SBVT_REQUEST) {
+        hash = aws_sha256_new(allocator);
+        if (hash == NULL) {
+            return AWS_OP_ERR;
+        }
+
+        if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
+            aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
+            goto on_cleanup;
+        }
+
+        struct aws_input_stream *payload_stream = NULL;
+        if (aws_signable_get_payload_stream(signable, &payload_stream)) {
+            goto on_cleanup;
+        }
+
+        if (payload_stream != NULL) {
+            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+                goto on_cleanup;
+            }
+
+            struct aws_stream_status payload_status;
+            AWS_ZERO_STRUCT(payload_status);
+
+            while (!payload_status.is_end_of_stream) {
+                /* reset the temporary body buffer; we can calculate the hash in window chunks */
+                body_buffer.len = 0;
+                aws_input_stream_read(payload_stream, &body_buffer);
+                if (body_buffer.len > 0) {
+                    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
+                    aws_hash_update(hash, &body_cursor);
+                }
+
+                if (aws_input_stream_get_status(payload_stream, &payload_status)) {
+                    goto on_cleanup;
+                }
+            }
+
+            /* reset the input stream for sending */
+            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+                goto on_cleanup;
+            }
+        }
+
+        if (aws_hash_finalize(hash, &digest_buffer, 0)) {
+            goto on_cleanup;
+        }
+
+        struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
+        if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
+            goto on_cleanup;
+        }
+    } else {
+        struct aws_byte_cursor body_cursor = s_get_canonical_body_for_signed_body_type(state->config.signed_body_type);
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &body_cursor)) {
+            goto on_cleanup;
+        }
+    }
+
+    result = AWS_OP_SUCCESS;
+
+on_cleanup:
+
+    aws_byte_buf_clean_up(&digest_buffer);
+    aws_byte_buf_clean_up(&body_buffer);
+
+    if (hash) {
+        aws_hash_destroy(hash);
+    }
+
+    return result;
 }
 
 /*
@@ -1467,99 +1549,6 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
     return AWS_OP_SUCCESS;
 }
 
-/*
- * Computes the payload hash as hex digits.  We currently don't have a way
- * to rewind the stream, so the caller of the signing process will need to do
- * that manually.
- */
-static int s_aws_signing_build_payload(struct aws_signing_state_aws *state) {
-    const struct aws_signable *signable = state->signable;
-    struct aws_allocator *allocator = state->allocator;
-    struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
-
-    AWS_ASSERT(payload_hash_buffer->len == 0);
-
-    struct aws_byte_buf body_buffer;
-    AWS_ZERO_STRUCT(body_buffer);
-    struct aws_byte_buf digest_buffer;
-    AWS_ZERO_STRUCT(digest_buffer);
-
-    struct aws_hash *hash = NULL;
-
-    int result = AWS_OP_ERR;
-    if (s_body_hash_requires_sha256(state->config.signed_body_type)) {
-        hash = aws_sha256_new(allocator);
-        if (hash == NULL) {
-            return AWS_OP_ERR;
-        }
-
-        if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
-            aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
-            goto on_cleanup;
-        }
-
-        struct aws_input_stream *payload_stream = NULL;
-        if (aws_signable_get_payload_stream(signable, &payload_stream)) {
-            goto on_cleanup;
-        }
-
-        if (payload_stream != NULL && state->config.signed_body_type == AWS_SBVT_REQUEST) {
-            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
-                goto on_cleanup;
-            }
-
-            struct aws_stream_status payload_status;
-            AWS_ZERO_STRUCT(payload_status);
-
-            while (!payload_status.is_end_of_stream) {
-                /* reset the temporary body buffer; we can calculate the hash in window chunks */
-                body_buffer.len = 0;
-                aws_input_stream_read(payload_stream, &body_buffer);
-                if (body_buffer.len > 0) {
-                    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
-                    aws_hash_update(hash, &body_cursor);
-                }
-
-                if (aws_input_stream_get_status(payload_stream, &payload_status)) {
-                    goto on_cleanup;
-                }
-            }
-
-            /* reset the input stream for sending */
-            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
-                goto on_cleanup;
-            }
-        }
-
-        if (aws_hash_finalize(hash, &digest_buffer, 0)) {
-            goto on_cleanup;
-        }
-
-        struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
-        if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
-            goto on_cleanup;
-        }
-    } else {
-        struct aws_byte_cursor body_cursor = s_get_body_for_signed_body_type(state->config.signed_body_type);
-        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &body_cursor)) {
-            goto on_cleanup;
-        }
-    }
-
-    result = AWS_OP_SUCCESS;
-
-on_cleanup:
-
-    aws_byte_buf_clean_up(&digest_buffer);
-    aws_byte_buf_clean_up(&body_buffer);
-
-    if (hash) {
-        aws_hash_destroy(hash);
-    }
-
-    return result;
-}
-
 static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
@@ -1567,7 +1556,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     /* previous signature + \n */
     struct aws_byte_cursor prev_signature_cursor;
     AWS_ZERO_STRUCT(prev_signature_cursor);
-    if (aws_signable_get_property(state->signable, g_aws_signature_property_name, &prev_signature_cursor)) {
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING, "(id=%p) Chunk signable missing previous signature property", (void *)state->signable);
         return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
@@ -1944,20 +1933,20 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         goto cleanup;
     }
 
-    /*
-     * Add X-Amz-Date to the signing result
-     */
-    struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
-    struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
-    if (aws_signing_result_append_property_list(
-            &state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
-        return AWS_OP_ERR;
-    }
-
-    /*
-     * Add Security token to the signing result if a session token was present.
-     */
     if (s_is_signature_type_http_request(state->config.signature_type)) {
+        /*
+         * Add X-Amz-Date to the signing result
+         */
+        struct aws_byte_cursor date_header_name = aws_byte_cursor_from_string(g_aws_signing_date_name);
+        struct aws_byte_cursor date_header_value = aws_byte_cursor_from_buf(&state->date);
+        if (aws_signing_result_append_property_list(
+                &state->result, g_aws_http_headers_property_list_name, &date_header_name, &date_header_value)) {
+            return AWS_OP_ERR;
+        }
+
+        /*
+         * Add Security token to the signing result if a session token was present.
+         */
         struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
         if (session_token_cursor.len > 0) {
             struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);

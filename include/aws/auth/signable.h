@@ -127,9 +127,15 @@ AWS_AUTH_API extern const struct aws_string *g_aws_http_method_property_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_http_uri_property_name;
 
 /**
- * Name of the property that holds the (hex-encoded) signature value in a signing result
+ * Name of the property that holds the (hex-encoded) signature value.  This is always added to signing results.
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_signature_property_name;
+
+/**
+ * Name of the property that holds the (hex-encoded) signature value of the signing event that preceded this one.
+ * This property must appear on signables that represent chunks or events.
+ */
+AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_name;
 
 /*
  * Common signable implementations

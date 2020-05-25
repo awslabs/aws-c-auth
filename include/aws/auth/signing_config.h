@@ -53,32 +53,35 @@ enum aws_signing_algorithm {
  */
 enum aws_signature_type {
     /**
-     * A signature for the full request should be computed, with header updates applied to the signing result.
+     * A signature for a full http request should be computed, with header updates applied to the signing result.
      */
     AWS_ST_HTTP_REQUEST_HEADERS,
 
     /**
-     * A signature for the full request should be computed, with query param updates applied to the signing result.
+     * A signature for a full http request should be computed, with query param updates applied to the signing result.
      */
     AWS_ST_HTTP_REQUEST_QUERY_PARAMS,
 
     /**
-     * A signature for either a payload chunk.  The signable's input stream should be the chunk data and the
-     * signable should contain the most recent signature (either the original http request or the most recent
-     * chunk) as a property.
+     * Compute a signature for a payload chunk.  The signable's input stream should be the chunk data and the
+     * signable should contain the most recent signature value (either the original http request or the most recent
+     * chunk) in the "previous-signature" property.
      */
     AWS_ST_HTTP_REQUEST_CHUNK,
 
     /**
-     * A signature for an event stream event.  The signable's input stream should be the event payload, the
-     * signable should contain the most recent signature (either the original http request or the most recent
-     * chunk) as a property as well as any event headers that should be signed.
+     * Compute a signature for an event stream event.  The signable's input stream should be the event payload, the
+     * signable should contain the most recent signature value (either the original http request or the most recent
+     * event) in the "previous-signature" property as well as any event headers that should be signed with the
+     * exception of ":date"
+     *
+     * This option is not yet supported.
      */
     AWS_ST_HTTP_REQUEST_EVENT,
 };
 
 /**
- * When creating the canonical request, what should go in the body part?
+ * When creating the canonical request, what should go in the body value part?
  */
 enum aws_signed_body_value_type {
     /**
@@ -187,9 +190,9 @@ struct aws_signing_config_aws {
     enum aws_signed_body_value_type signed_body_type;
 
     /**
-     * Controls what body hash header, if any, should be added to the canonical request and the signed request:
-     *   AWS_SBHT_NONE - no body hash header should be added
-     *   AWS_SBHT_X_AMZ_CONTENT_SHA256 - the body hash should be added in the X-Amz-Content-Sha256 header
+     * Controls what body "hash" header, if any, should be added to the canonical request and the signed request:
+     *   AWS_SBHT_NONE - no header should be added
+     *   AWS_SBHT_X_AMZ_CONTENT_SHA256 - the body "hash" should be added in the X-Amz-Content-Sha256 header
      */
     enum aws_signed_body_header_type signed_body_header;
 

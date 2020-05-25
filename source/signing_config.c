@@ -48,6 +48,10 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
          * If we're not signing the full request then it's critical that the credentials we're using are the same
          * credentials used on the original request.  If we're using a provider to fetch credentials then that is
          * not guaranteed.  For now, force users to always pass in credentials when signing events or chunks.
+         *
+         * The correct long-term solution would be to add a way to pass the credentials used in the initial
+         * signing back to the user in the completion callback.  Then the user could supply those credentials
+         * to all subsequent chunk/event signings.  The fact that we don't do that yet doesn't invalidate this check.
          */
         if (config->credentials == NULL) {
             AWS_LOGF_ERROR(

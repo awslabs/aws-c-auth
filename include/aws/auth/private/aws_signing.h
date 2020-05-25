@@ -20,7 +20,6 @@
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_result.h>
 
-#include <aws/common/atomics.h>
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
 
@@ -87,7 +86,7 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state);
  * A set of functions that together performs the AWS signing process based
  * on the algorithm and signature type requested in the shared config.
  *
- * These should be called in sequential order:
+ * These must be called (presumably by the signer) in sequential order:
  *
  *   (1) aws_signing_build_canonical_request
  *   (2) aws_signing_build_string_to_sign
