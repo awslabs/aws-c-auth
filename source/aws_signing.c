@@ -64,7 +64,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token
 AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
-AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS-HMAC-SHA256-PAYLOAD");
+AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_body_unsigned_payload, "UNSIGNED-PAYLOAD");
 AWS_STATIC_STRING_FROM_LITERAL(s_body_streaming_aws4_hmac_sha256_payload, "STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
@@ -1507,10 +1507,6 @@ static int s_build_canonical_request_sigv4(struct aws_signing_state_aws *state) 
         goto cleanup;
     }
 
-    if (aws_date_time_to_utc_time_str(&state->config.date, AWS_DATE_FORMAT_ISO_8601_BASIC, &state->date)) {
-        goto cleanup;
-    }
-
     if (s_build_canonical_headers(state)) {
         goto cleanup;
     }
@@ -1586,7 +1582,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
         return AWS_OP_ERR;
     }
 
-    return AWS_OP_ERR;
+    return AWS_OP_SUCCESS;
 }
 
 /*
@@ -1595,6 +1591,10 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
  * string-to-sign payload that replaces the hashed canonical request in those signing procedures.
  */
 int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
+
+    if (aws_date_time_to_utc_time_str(&state->config.date, AWS_DATE_FORMAT_ISO_8601_BASIC, &state->date)) {
+        return AWS_OP_ERR;
+    }
 
     if (s_build_canonical_payload(state)) {
         return AWS_OP_ERR;

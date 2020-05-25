@@ -30,13 +30,13 @@ typedef int(aws_signable_get_payload_stream_fn)(
     const struct aws_signable *signable,
     struct aws_input_stream **out_input_stream);
 
-typedef void(aws_signable_clean_up_fn)(struct aws_signable *signable);
+typedef void(aws_signable_destroy_fn)(struct aws_signable *signable);
 
 struct aws_signable_vtable {
     aws_signable_get_property_fn *get_property;
     aws_signable_get_property_list_fn *get_property_list;
     aws_signable_get_payload_stream_fn *get_payload_stream;
-    aws_signable_clean_up_fn *clean_up;
+    aws_signable_destroy_fn *destroy;
 };
 
 /**
@@ -143,6 +143,12 @@ AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_n
 
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request);
+
+AWS_AUTH_API
+struct aws_signable *aws_signable_new_chunk(
+    struct aws_allocator *allocator,
+    struct aws_input_stream *chunk_data,
+    struct aws_byte_cursor previous_signature);
 
 AWS_EXTERN_C_END
 

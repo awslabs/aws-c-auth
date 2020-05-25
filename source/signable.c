@@ -23,12 +23,8 @@ void aws_signable_destroy(struct aws_signable *signable) {
     }
 
     if (signable->vtable != NULL) {
-        AWS_ASSERT(signable->vtable->clean_up);
-
-        signable->vtable->clean_up(signable);
+        signable->vtable->destroy(signable);
     }
-
-    aws_mem_release(signable->allocator, signable);
 }
 
 int aws_signable_get_property(
