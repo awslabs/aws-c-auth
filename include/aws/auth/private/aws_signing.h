@@ -18,6 +18,7 @@
 
 #include <aws/auth/auth.h>
 #include <aws/auth/signing.h>
+#include <aws/auth/signing_result.h>
 
 #include <aws/common/atomics.h>
 #include <aws/common/byte_buf.h>
@@ -41,8 +42,6 @@ struct aws_signing_result;
 struct aws_signing_state_aws {
     struct aws_allocator *allocator;
 
-    struct aws_atomic_var ref_count;
-
     const struct aws_signable *signable;
     aws_signing_complete_fn *on_complete;
     void *userdata;
@@ -65,6 +64,8 @@ struct aws_signing_state_aws {
     struct aws_byte_buf credential_scope;
     struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
+    struct aws_byte_buf signature;
+    struct aws_byte_buf string_to_sign_payload;
 
     char expiration_array[32]; /* serialization of the pre-signing expiration duration value */
 };
@@ -80,16 +81,13 @@ struct aws_signing_state_aws *aws_signing_state_new(
     void *userdata);
 
 AWS_AUTH_API
-void aws_signing_state_release(struct aws_signing_state_aws *state);
-
-AWS_AUTH_API
-void aws_signing_state_acquire(struct aws_signing_state_aws *state);
+void aws_signing_state_destroy(struct aws_signing_state_aws *state);
 
 /*
  * A set of functions that together performs the AWS signing process based
- * on the algorithm requested in the shared config.
+ * on the algorithm and signature type requested in the shared config.
  *
- * These must be called (presumably by the signer) in sequential order:
+ * These should be called in sequential order:
  *
  *   (1) aws_signing_build_canonical_request
  *   (2) aws_signing_build_string_to_sign

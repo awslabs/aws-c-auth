@@ -32,6 +32,30 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
+    if (config->signature_type == AWS_ST_HTTP_REQUEST_EVENT) {
+        /*
+         * Not supported yet.
+         *
+         * Need to determine how the (header) properties on the event signable precisely factor into the
+         * string-to-sign.  Transcribe's examples are insufficient.
+         */
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    }
+
+    if (config->signature_type != AWS_ST_HTTP_REQUEST_HEADERS &&
+        config->signature_type != AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+        /*
+         * If we're not signing the full request then it's critical that the credentials we're using are the same
+         * credentials used on the original request.  If we're using a provider to fetch credentials then that is
+         * not guaranteed.  For now, force users to always pass in credentials when signing events or chunks.
+         */
+        if (config->credentials == NULL) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_SIGNING, "(id=%p) Signing config is missing a region identifier", (void *)config);
+            return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+        }
+    }
+
     if (config->region.len == 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Signing config is missing a region identifier", (void *)config);
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);

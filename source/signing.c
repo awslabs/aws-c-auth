@@ -43,7 +43,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
         state->error_code = s_aws_last_error_or_unknown();
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING,
-            "(id=%p) Http request failed to build canonical request via algorithm %s, error %d(%s)",
+            "(id=%p) Signing failed to build canonical request via algorithm %s, error %d(%s)",
             (void *)state->signable,
             aws_signing_algorithm_to_string(state->config.algorithm),
             state->error_code,
@@ -53,7 +53,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
 
     AWS_LOGF_INFO(
         AWS_LS_AUTH_SIGNING,
-        "(id=%p) Http request successfully built canonical request for algorithm %s, with contents \n" PRInSTR "\n",
+        "(id=%p) Signing successfully built canonical request for algorithm %s, with contents \n" PRInSTR "\n",
         (void *)state->signable,
         aws_signing_algorithm_to_string(state->config.algorithm),
         AWS_BYTE_BUF_PRI(state->canonical_request));
@@ -62,7 +62,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
         state->error_code = s_aws_last_error_or_unknown();
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING,
-            "(id=%p) Http request failed to build string-to-sign via algorithm %s, error %d(%s)",
+            "(id=%p) Signing failed to build string-to-sign via algorithm %s, error %d(%s)",
             (void *)state->signable,
             aws_signing_algorithm_to_string(state->config.algorithm),
             state->error_code,
@@ -72,7 +72,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
 
     AWS_LOGF_INFO(
         AWS_LS_AUTH_SIGNING,
-        "(id=%p) Http request successfully built string-to-sign via algorithm %s, with contents \n" PRInSTR "\n",
+        "(id=%p) Signing successfully built string-to-sign via algorithm %s, with contents \n" PRInSTR "\n",
         (void *)state->signable,
         aws_signing_algorithm_to_string(state->config.algorithm),
         AWS_BYTE_BUF_PRI(state->string_to_sign));
@@ -81,7 +81,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
         state->error_code = s_aws_last_error_or_unknown();
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_SIGNING,
-            "(id=%p) Http request failed to build final authorization value via algorithm %s",
+            "(id=%p) Signing failed to build final authorization value via algorithm %s",
             (void *)state->signable,
             aws_signing_algorithm_to_string(state->config.algorithm));
         goto done;
@@ -92,7 +92,7 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
 done:
 
     state->on_complete(result, state->error_code, state->userdata);
-    aws_signing_state_release(state);
+    aws_signing_state_destroy(state);
 }
 
 static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials, int error_code, void *user_data) {
@@ -159,6 +159,6 @@ int aws_sign_request_aws(
 
 on_error:
 
-    aws_signing_state_release(signing_state);
+    aws_signing_state_destroy(signing_state);
     return AWS_OP_ERR;
 }

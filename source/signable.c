@@ -62,3 +62,4 @@ AWS_STRING_FROM_LITERAL(g_aws_http_headers_property_list_name, "headers");
 AWS_STRING_FROM_LITERAL(g_aws_http_query_params_property_list_name, "params");
 AWS_STRING_FROM_LITERAL(g_aws_http_method_property_name, "method");
 AWS_STRING_FROM_LITERAL(g_aws_http_uri_property_name, "uri");
+AWS_STRING_FROM_LITERAL(g_aws_signature_property_name, "signature");
