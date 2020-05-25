@@ -188,6 +188,8 @@ static void s_chunked_signing_tester_cleanup(struct chunked_signing_tester *test
 }
 
 static void s_on_request_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
+    (void)error_code;
+
     struct chunked_signing_tester *tester = userdata;
 
     struct aws_array_list *headers = NULL;
@@ -223,6 +225,8 @@ static void s_on_request_signing_complete(struct aws_signing_result *result, int
 }
 
 static void s_on_chunk_signing_complete(struct aws_signing_result *result, int error_code, void *userdata) {
+    (void)error_code;
+
     struct chunked_signing_tester *tester = userdata;
 
     tester->last_signature.len = 0;
