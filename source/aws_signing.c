@@ -1249,7 +1249,7 @@ struct aws_byte_cursor s_get_canonical_body_for_signed_body_type(enum aws_signed
 /*
  * Computes the canonical request payload value.
  */
-static int s_aws_signing_build_payload(struct aws_signing_state_aws *state) {
+static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     const struct aws_signable *signable = state->signable;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
@@ -1372,6 +1372,86 @@ static int s_append_canonical_payload_hash(struct aws_signing_state_aws *state) 
     return AWS_OP_SUCCESS;
 }
 
+AWS_STATIC_STRING_FROM_LITERAL(s_credential_scope_sigv4_terminator, "aws4_request");
+
+static int s_append_credential_scope_terminator(enum aws_signing_algorithm algorithm, struct aws_byte_buf *dest) {
+    struct aws_byte_cursor terminator_cursor;
+
+    switch (algorithm) {
+        case AWS_SIGNING_ALGORITHM_V4:
+            terminator_cursor = aws_byte_cursor_from_string(s_credential_scope_sigv4_terminator);
+            break;
+
+        default:
+            return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM);
+    }
+
+    return aws_byte_buf_append_dynamic(dest, &terminator_cursor);
+}
+
+/*
+ * Builds the credential scope string by appending a bunch of things together:
+ *   Date, region, service, algorithm terminator
+ */
+static int s_build_credential_scope(struct aws_signing_state_aws *state) {
+    AWS_ASSERT(state->credential_scope.len == 0);
+
+    const struct aws_signing_config_aws *config = &state->config;
+    struct aws_byte_buf *dest = &state->credential_scope;
+
+    /*
+     * date output uses the non-dynamic append, so make sure there's enough room first
+     */
+    if (aws_byte_buf_reserve_relative(dest, AWS_DATE_TIME_STR_MAX_LEN)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_date_time_to_utc_time_short_str(&config->date, AWS_DATE_FORMAT_ISO_8601_BASIC, dest)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(dest, '/')) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_dynamic(dest, &config->region)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(dest, '/')) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_dynamic(dest, &config->service)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(dest, '/')) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_credential_scope_terminator(state->config.algorithm, dest)) {
+        return AWS_OP_ERR;
+    }
+
+    /* While we're at it, build the accesskey/credential scope string which is used during query param signing*/
+    struct aws_byte_cursor access_key_cursor = aws_credentials_get_access_key_id(state->config.credentials);
+    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &access_key_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(&state->access_credential_scope, '/')) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor credential_scope_cursor = aws_byte_cursor_from_buf(&state->credential_scope);
+    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &credential_scope_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Hashes the canonical request and stores its hex representation
  */
@@ -1469,86 +1549,6 @@ cleanup:
     return result;
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_credential_scope_sigv4_terminator, "aws4_request");
-
-static int s_append_credential_scope_terminator(enum aws_signing_algorithm algorithm, struct aws_byte_buf *dest) {
-    struct aws_byte_cursor terminator_cursor;
-
-    switch (algorithm) {
-        case AWS_SIGNING_ALGORITHM_V4:
-            terminator_cursor = aws_byte_cursor_from_string(s_credential_scope_sigv4_terminator);
-            break;
-
-        default:
-            return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM);
-    }
-
-    return aws_byte_buf_append_dynamic(dest, &terminator_cursor);
-}
-
-/*
- * Builds the credential scope string by appending a bunch of things together:
- *   Date, region, service, algorithm terminator
- */
-static int s_build_credential_scope(struct aws_signing_state_aws *state) {
-    AWS_ASSERT(state->credential_scope.len == 0);
-
-    const struct aws_signing_config_aws *config = &state->config;
-    struct aws_byte_buf *dest = &state->credential_scope;
-
-    /*
-     * date output uses the non-dynamic append, so make sure there's enough room first
-     */
-    if (aws_byte_buf_reserve_relative(dest, AWS_DATE_TIME_STR_MAX_LEN)) {
-        return AWS_OP_ERR;
-    }
-
-    if (aws_date_time_to_utc_time_short_str(&config->date, AWS_DATE_FORMAT_ISO_8601_BASIC, dest)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(dest, '/')) {
-        return AWS_OP_ERR;
-    }
-
-    if (aws_byte_buf_append_dynamic(dest, &config->region)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(dest, '/')) {
-        return AWS_OP_ERR;
-    }
-
-    if (aws_byte_buf_append_dynamic(dest, &config->service)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(dest, '/')) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_credential_scope_terminator(state->config.algorithm, dest)) {
-        return AWS_OP_ERR;
-    }
-
-    /* While we're at it, build the accesskey/credential scope string which is used during query param signing*/
-    struct aws_byte_cursor access_key_cursor = aws_credentials_get_access_key_id(state->config.credentials);
-    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &access_key_cursor)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(&state->access_credential_scope, '/')) {
-        return AWS_OP_ERR;
-    }
-
-    struct aws_byte_cursor credential_scope_cursor = aws_byte_cursor_from_buf(&state->credential_scope);
-    if (aws_byte_buf_append_dynamic(&state->access_credential_scope, &credential_scope_cursor)) {
-        return AWS_OP_ERR;
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
 static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
@@ -1596,7 +1596,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
  */
 int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
-    if (s_aws_signing_build_payload(state)) {
+    if (s_build_canonical_payload(state)) {
         return AWS_OP_ERR;
     }
 
