@@ -67,6 +67,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires")
 AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_name, "X-Amz-Region-Set");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
+AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_http_request, "AWS4-ECDSA-P256-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_body_unsigned_payload, "UNSIGNED-PAYLOAD");
@@ -76,9 +77,6 @@ AWS_STATIC_STRING_FROM_LITERAL(s_body_streaming_aws4_hmac_sha256_events, "STREAM
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sha256_empty_string,
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-
-AWS_STATIC_STRING_FROM_LITERAL(s_sigv4_algorithm, "AWS4-HMAC-SHA256");
-AWS_STATIC_STRING_FROM_LITERAL(s_sigv4a_algorithm, "AWS4-ECDSA-P256-SHA256");
 
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
@@ -261,9 +259,9 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
         case AWS_ST_HTTP_REQUEST_HEADERS:
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
             if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
-                *cursor = aws_byte_cursor_from_string(s_sigv4_algorithm);
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
             } else {
-                *cursor = aws_byte_cursor_from_string(s_sigv4a_algorithm);
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_http_request);
             }
             break;
 
@@ -2055,8 +2053,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
          */
         struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
         if (session_token_cursor.len > 0) {
-            struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(
-                    g_aws_signing_security_token_name);
+            struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
             const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
 
             /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers
@@ -2145,7 +2142,7 @@ static int s_aws_build_fixed_input_buffer(
         return AWS_OP_ERR;
     }
 
-    struct aws_byte_cursor sigv4a_algorithm_cursor = aws_byte_cursor_from_string(s_sigv4a_algorithm);
+    struct aws_byte_cursor sigv4a_algorithm_cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_http_request);
     if (aws_byte_buf_append(fixed_input, &sigv4a_algorithm_cursor)) {
         return AWS_OP_ERR;
     }

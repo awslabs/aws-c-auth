@@ -1,6 +1,5 @@
 GET /example/.. HTTP/1.1
 Host:example.amazonaws.com
-x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 Authorization:AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=eca7ead57bb5aa5c8e28007acd4ff04e1ff9a0ff3b237ec1554a184887ff9282
 X-Amz-Date:20150830T123600Z
 

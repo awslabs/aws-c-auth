@@ -4,8 +4,7 @@ My-Header1:value4
 My-Header1:value1
 My-Header1:value3
 My-Header1:value2
-x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;x-amz-date;x-amz-region-set, Signature=3046022100a4cc2e5dde99f7e19d6d2ec6b88048a1b61426b1b75b9605f9b8127b88959b9c02210090e97c157a1944aff726faea3764d08d3875d6ca984bf60fdf70ffb293bd0b9a
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;x-amz-date;x-amz-region-set, Signature=304402206c91cdc32defdcc850835b20a3f29ccd046ca6854978714747440ccefe958d5e022052a889bc827c20330c9d6c1d980063005e8a3040572bd6d1f74572e6156bdc82
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 

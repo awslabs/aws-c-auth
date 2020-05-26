@@ -2,7 +2,6 @@ GET / HTTP/1.1
 Host:example.amazonaws.com
 My-Header1: value1
 My-Header2: "a   b   c"
-x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 Authorization:AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;my-header1;my-header2;x-amz-date, Signature=acc3ed3afb60bb290fc8d2dd0098b9911fcaa05412b367055dee359757a9c736
 X-Amz-Date:20150830T123600Z
 

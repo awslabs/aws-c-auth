@@ -201,13 +201,6 @@ struct aws_signing_config_aws {
      */
     enum aws_signed_body_header_type signed_body_header;
 
-    /**
-     * If non-zero and the signing transform is query param, then signing will add X-Amz-Expires to the query
-     * string, equal to the value specified here.  If this value is zero or if header signing is being used then
-     * this parameter has no effect.
-     */
-    uint64_t expiration_in_seconds;
-
     /*
      * Signing key control:
      *

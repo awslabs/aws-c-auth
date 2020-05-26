@@ -2,8 +2,7 @@ GET / HTTP/1.1
 Host:example.amazonaws.com
 My-Header1: value1
 My-Header2: "a   b   c"
-x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;my-header2;x-amz-date;x-amz-region-set, Signature=3045022100d572279e46f5e6c496456fb2260b479701bdc440f4b74262eae86b28949867ae022057c8c871d4641b555ba8c928a17b85d6261f7bcffbe85034a267faf9f71dd748
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;my-header2;x-amz-date;x-amz-region-set, Signature=3044022071a5cb8758829fbe6f87a0e14bbb4194abb238e7f13a291f1055f62a08b8fa900220730e7a364f4a749194723926a70faa7331d0f202774ba81fb4a9231d7e2ae294
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 
