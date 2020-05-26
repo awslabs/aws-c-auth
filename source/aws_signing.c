@@ -1264,7 +1264,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_type == AWS_SBVT_REQUEST) {
+    if (state->config.signed_body_type == AWS_SBVT_PAYLOAD) {
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
             return AWS_OP_ERR;
@@ -1486,6 +1486,46 @@ cleanup:
     return result;
 }
 
+static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
+
+    struct aws_byte_buf *dest = &state->string_to_sign_payload;
+
+    /* previous signature + \n */
+    struct aws_byte_cursor prev_signature_cursor;
+    AWS_ZERO_STRUCT(prev_signature_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING, "(id=%p) Chunk signable missing previous signature property", (void *)state->signable);
+        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
+    }
+
+    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /* empty hash + \n */
+    struct aws_byte_cursor empty_sha256_cursor = aws_byte_cursor_from_string(s_sha256_empty_string);
+    if (aws_byte_buf_append_dynamic(dest, &empty_sha256_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_append_character_to_byte_buf(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /* current hash */
+    struct aws_byte_cursor current_chunk_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
+    if (aws_byte_buf_append_dynamic(dest, &current_chunk_hash_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Builds a sigv4-signed canonical request and its hashed value
  */
@@ -1543,46 +1583,6 @@ cleanup:
     aws_uri_clean_up(&uri);
 
     return result;
-}
-
-static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
-
-    struct aws_byte_buf *dest = &state->string_to_sign_payload;
-
-    /* previous signature + \n */
-    struct aws_byte_cursor prev_signature_cursor;
-    AWS_ZERO_STRUCT(prev_signature_cursor);
-    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_SIGNING, "(id=%p) Chunk signable missing previous signature property", (void *)state->signable);
-        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
-    }
-
-    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(dest, '\n')) {
-        return AWS_OP_ERR;
-    }
-
-    /* empty hash + \n */
-    struct aws_byte_cursor empty_sha256_cursor = aws_byte_cursor_from_string(s_sha256_empty_string);
-    if (aws_byte_buf_append_dynamic(dest, &empty_sha256_cursor)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(dest, '\n')) {
-        return AWS_OP_ERR;
-    }
-
-    /* current hash */
-    struct aws_byte_cursor current_chunk_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
-    if (aws_byte_buf_append_dynamic(dest, &current_chunk_hash_cursor)) {
-        return AWS_OP_ERR;
-    }
-
-    return AWS_OP_SUCCESS;
 }
 
 /*

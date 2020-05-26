@@ -117,7 +117,7 @@ static int s_initialize_chunk_signing_config(
 
     config->use_double_uri_encode = false;
     config->should_normalize_uri_path = true;
-    config->signed_body_type = AWS_SBVT_REQUEST;
+    config->signed_body_type = AWS_SBVT_PAYLOAD;
     config->signed_body_header = AWS_SBHT_NONE;
     config->credentials = credentials;
 

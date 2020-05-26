@@ -29,7 +29,7 @@ struct aws_signing_result;
  * Note that result will be destroyed after this function returns, so either copy it,
  * or do all necessary adjustments inside the callback.
  *
- * When performing event or chunk signing, you will need to copy out the authorization value in order
+ * When performing event or chunk signing, you will need to copy out the signature value in order
  * to correctly configure the signable that wraps the event or chunk you want signed next.  The signature is
  * found in the "signature" property on the signing result.  This value must be added as the
  * "previous-signature" property on the next signable.

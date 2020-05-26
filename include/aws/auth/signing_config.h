@@ -90,9 +90,9 @@ enum aws_signed_body_value_type {
     AWS_SBVT_EMPTY,
 
     /**
-     * Use the sha256 of the actual request body.
+     * Use the sha256 of the actual (request/chunk/event) payload.
      */
-    AWS_SBVT_REQUEST,
+    AWS_SBVT_PAYLOAD,
 
     /**
      * Use the literal string 'UNSIGNED-PAYLOAD'
@@ -106,6 +106,8 @@ enum aws_signed_body_value_type {
 
     /**
      * Use the literal string 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
+     *
+     * Event signing is not yet supported
      */
     AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_EVENTS,
 };
