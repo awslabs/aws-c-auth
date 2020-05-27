@@ -1264,7 +1264,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_type == AWS_SBVT_PAYLOAD) {
+    if (state->config.signed_body_value == AWS_SBVT_PAYLOAD) {
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
             return AWS_OP_ERR;
@@ -1317,7 +1317,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             goto on_cleanup;
         }
     } else {
-        struct aws_byte_cursor body_cursor = s_get_canonical_body_for_signed_body_type(state->config.signed_body_type);
+        struct aws_byte_cursor body_cursor = s_get_canonical_body_for_signed_body_type(state->config.signed_body_value);
         if (aws_byte_buf_append_dynamic(payload_hash_buffer, &body_cursor)) {
             goto on_cleanup;
         }

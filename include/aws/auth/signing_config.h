@@ -189,7 +189,7 @@ struct aws_signing_config_aws {
     /**
      * Controls what should be used as "the body" when creating the canonical request.
      */
-    enum aws_signed_body_value_type signed_body_type;
+    enum aws_signed_body_value_type signed_body_value;
 
     /**
      * Controls what body "hash" header, if any, should be added to the canonical request and the signed request:
