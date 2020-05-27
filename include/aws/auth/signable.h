@@ -30,13 +30,13 @@ typedef int(aws_signable_get_payload_stream_fn)(
     const struct aws_signable *signable,
     struct aws_input_stream **out_input_stream);
 
-typedef void(aws_signable_clean_up_fn)(struct aws_signable *signable);
+typedef void(aws_signable_destroy_fn)(struct aws_signable *signable);
 
 struct aws_signable_vtable {
     aws_signable_get_property_fn *get_property;
     aws_signable_get_property_list_fn *get_property_list;
     aws_signable_get_payload_stream_fn *get_payload_stream;
-    aws_signable_clean_up_fn *clean_up;
+    aws_signable_destroy_fn *destroy;
 };
 
 /**
@@ -126,12 +126,33 @@ AWS_AUTH_API extern const struct aws_string *g_aws_http_method_property_name;
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_http_uri_property_name;
 
+/**
+ * Name of the property that holds the (hex-encoded) signature value.  This is always added to signing results.
+ */
+AWS_AUTH_API extern const struct aws_string *g_aws_signature_property_name;
+
+/**
+ * Name of the property that holds the (hex-encoded) signature value of the signing event that preceded this one.
+ * This property must appear on signables that represent chunks or events.
+ */
+AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_name;
+
 /*
  * Common signable implementations
  */
 
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request);
+
+/**
+ * previous_signature is the signature computed in the most recent signing that preceded this one.  It can be
+ * found by copying the "signature" property from the signing_result of that most recent signing.
+ */
+AWS_AUTH_API
+struct aws_signable *aws_signable_new_chunk(
+    struct aws_allocator *allocator,
+    struct aws_input_stream *chunk_data,
+    struct aws_byte_cursor previous_signature);
 
 AWS_EXTERN_C_END
 

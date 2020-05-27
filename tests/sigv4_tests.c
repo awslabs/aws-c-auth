@@ -237,12 +237,13 @@ static int s_initialize_test_from_contents(
 
     config->config_type = AWS_SIGNING_CONFIG_AWS;
     config->algorithm = AWS_SIGNING_ALGORITHM_V4;
-    config->transform = AWS_SRT_HEADER;
+    config->signature_type = AWS_ST_HTTP_REQUEST_HEADERS;
     config->region = aws_byte_cursor_from_string(s_test_suite_region);
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->use_double_uri_encode = true;
     config->should_normalize_uri_path = true;
-    config->body_signing_type = AWS_BODY_SIGNING_OFF;
+    config->signed_body_type = AWS_SBVT_EMPTY;
+    config->signed_body_header = AWS_SBHT_NONE;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
     if (aws_date_time_init_from_str_cursor(&config->date, &date_cursor, AWS_DATE_FORMAT_ISO_8601)) {
@@ -499,7 +500,7 @@ static int s_do_sigv4_test_suite_test(
     /* 3 - sign via query param and check for expected query params.  We don't have an X-Amz-Signature value to check
      * though so just make sure it exists */
     {
-        config.transform = AWS_SRT_QUERY_PARAM;
+        config.signature_type = AWS_ST_HTTP_REQUEST_QUERY_PARAMS;
 
         struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
         ASSERT_NOT_NULL(signing_state);
@@ -962,7 +963,7 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
     struct aws_signing_config_aws config = {
         .config_type = AWS_SIGNING_CONFIG_AWS,
         .algorithm = AWS_SIGNING_ALGORITHM_V4,
-        .transform = AWS_SRT_HEADER,
+        .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
         .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
         .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
     };

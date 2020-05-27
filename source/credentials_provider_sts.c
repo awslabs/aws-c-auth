@@ -18,6 +18,7 @@
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
+#include <aws/auth/signing_result.h>
 
 #include <aws/common/clock.h>
 #include <aws/common/string.h>
@@ -560,8 +561,9 @@ static void s_start_make_request(
     struct aws_credentials_provider_sts_impl *impl = provider->impl;
 
     provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4;
-    provider_user_data->signing_config.transform = AWS_SRT_HEADER;
-    provider_user_data->signing_config.body_signing_type = AWS_BODY_SIGNING_ON;
+    provider_user_data->signing_config.signature_type = AWS_ST_HTTP_REQUEST_HEADERS;
+    provider_user_data->signing_config.signed_body_type = AWS_SBVT_PAYLOAD;
+    provider_user_data->signing_config.signed_body_header = AWS_SBHT_NONE;
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
     provider_user_data->signing_config.credentials_provider = impl->provider;
     aws_date_time_init_now(&provider_user_data->signing_config.date);

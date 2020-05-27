@@ -79,6 +79,12 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE,
         "Valid credentials could not be sourced by the sts web identity provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_UNSUPPORTED_SIGNATURE_TYPE,
+        "Attempt to sign using an unusupported signature type"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE,
+        "Attempt to sign a streaming item without supplying a previous signature"),
 
 };
 /* clang-format on */
