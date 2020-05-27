@@ -499,7 +499,7 @@ static int s_v4_test_context_init_signing_config(
 
     /* ToDo: make the tests more fine-grained now that we have updated payload signing controls */
     if (context->should_sign_body) {
-        context->config->signed_body_type = AWS_SBVT_PAYLOAD;
+        context->config->signed_body_value = AWS_SBVT_PAYLOAD;
         context->config->signed_body_header = AWS_SBHT_X_AMZ_CONTENT_SHA256;
     }
 

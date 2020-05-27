@@ -1074,11 +1074,14 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
 
 AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_default_basic_test);
 
+AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_access_key_id_test_value, "AKISORANDOMAASORANDOM");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_secret_access_key_test_value, "q+jcrXGc+0zWN6uzclKVhvMmUsIfRPa4rlRandom");
+
 static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     struct aws_credentials *creds = aws_credentials_new_from_string(
-        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value, UINT64_MAX);
+        allocator, s_ecc_derive_access_key_id_test_value, s_ecc_derive_secret_access_key_test_value, NULL, UINT64_MAX);
 
     struct aws_ecc_key_pair *derived_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, creds);
 

@@ -1320,7 +1320,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_type == AWS_SBVT_PAYLOAD) {
+    if (state->config.signed_body_value == AWS_SBVT_PAYLOAD) {
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
             return AWS_OP_ERR;
@@ -1373,7 +1373,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             goto on_cleanup;
         }
     } else {
-        struct aws_byte_cursor body_cursor = s_get_canonical_body_for_signed_body_type(state->config.signed_body_type);
+        struct aws_byte_cursor body_cursor = s_get_canonical_body_for_signed_body_type(state->config.signed_body_value);
         if (aws_byte_buf_append_dynamic(payload_hash_buffer, &body_cursor)) {
             goto on_cleanup;
         }
@@ -2125,6 +2125,9 @@ static uint32_t s_get_counter_byte_count(uint32_t counter) {
     return 4;
 }
 
+AWS_STATIC_STRING_FROM_LITERAL(s_1_as_four_bytes_be, "\x00\x00\x00\x01");
+AWS_STATIC_STRING_FROM_LITERAL(s_256_as_four_bytes_be, "\x00\x00\x01\x00");
+
 static int s_aws_build_fixed_input_buffer(
     struct aws_byte_buf *fixed_input,
     struct aws_credentials *credentials,
@@ -2138,7 +2141,8 @@ static int s_aws_build_fixed_input_buffer(
      * A placeholder value that's not actually part of the fixed input string in the spec, but is always this value
      * and is always the first byte of the hmaced string.
      */
-    if (s_append_character_to_byte_buf(fixed_input, 1)) {
+    struct aws_byte_cursor one_cursor = aws_byte_cursor_from_string(s_1_as_four_bytes_be);
+    if (aws_byte_buf_append_dynamic(fixed_input, &one_cursor)) {
         return AWS_OP_ERR;
     }
 
@@ -2170,11 +2174,8 @@ static int s_aws_build_fixed_input_buffer(
         }
     }
 
-    if (s_append_character_to_byte_buf(fixed_input, 0x01)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_append_character_to_byte_buf(fixed_input, 0x00)) {
+    struct aws_byte_cursor encoded_bit_length_cursor = aws_byte_cursor_from_string(s_256_as_four_bytes_be);
+    if (aws_byte_buf_append_dynamic(fixed_input, &encoded_bit_length_cursor)) {
         return AWS_OP_ERR;
     }
 

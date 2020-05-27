@@ -58,7 +58,7 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
          */
         if (config->credentials == NULL) {
             AWS_LOGF_ERROR(
-                AWS_LS_AUTH_SIGNING, "(id=%p) Signing config is missing a region identifier", (void *)config);
+                AWS_LS_AUTH_SIGNING, "(id=%p) Signing a chunk or event requires explicit credentials", (void *)config);
             return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
         }
     }

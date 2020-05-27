@@ -1,6 +1,6 @@
 GET /-._~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz HTTP/1.1
 Host:example.amazonaws.com
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=30440220700a7ec245af2245df9dd19676967169ebb8d0c76348e1b94abd118ddb5f8d4202204e588baf0edec3ae912cee50befee6e5e8989d264787dc6fa59d9d4107970f25
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=3045022100ecccd265126b1d7dfa055d26f647d0b7f7ed353b248f6f40d175d2b50460f46d02202805eb1f278d85f75338a44193284ce0ef91ae1b8e29d8421d2e199903cbcc9b
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 
