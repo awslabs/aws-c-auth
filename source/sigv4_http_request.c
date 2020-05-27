@@ -265,6 +265,10 @@ struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocat
     aws_mem_acquire_many(
         allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_http_request_impl));
 
+    if (signable == NULL || impl == NULL) {
+        return NULL;
+    }
+
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
 
@@ -555,6 +559,10 @@ struct aws_signable *aws_signable_new_chunk(
     struct aws_signable_chunk_impl *impl = NULL;
     aws_mem_acquire_many(
         allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_chunk_impl));
+
+    if (signable == NULL || impl == NULL) {
+        return NULL;
+    }
 
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);

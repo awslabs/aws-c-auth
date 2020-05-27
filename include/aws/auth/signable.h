@@ -144,6 +144,10 @@ AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_n
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request);
 
+/**
+ * previous_signature is the signature computed in the most recent signing that preceded this one.  It can be
+ * found by copying the "signature" property from the signing_result of that most recent signing.
+ */
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_chunk(
     struct aws_allocator *allocator,
