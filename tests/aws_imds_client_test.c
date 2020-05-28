@@ -306,7 +306,7 @@ static void s_aws_wait_for_resource_result(void) {
 
 static void s_get_resource_callback(struct aws_byte_buf *resource, int error_code, void *user_data) {
     (void)user_data;
-
+    (void)error_code;
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_resource_callback = true;
     if (resource && resource->len) {
