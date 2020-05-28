@@ -85,12 +85,12 @@ enum aws_signature_type {
  */
 enum aws_signed_body_value_type {
     /**
-     * Use the sha256 of the empty string.
+     * Use the SHA-256 of the empty string.
      */
     AWS_SBVT_EMPTY,
 
     /**
-     * Use the sha256 of the actual (request/chunk/event) payload.
+     * Use the SHA-256 of the actual (request/chunk/event) payload.
      */
     AWS_SBVT_PAYLOAD,
 
@@ -122,7 +122,7 @@ enum aws_signed_body_header_type {
     AWS_SBHT_NONE,
 
     /**
-     * Add the the "x-amz-content-sha256" header with the canonical request's body value
+     * Add the "x-amz-content-sha256" header with the canonical request's body value
      */
     AWS_SBHT_X_AMZ_CONTENT_SHA256,
 };
