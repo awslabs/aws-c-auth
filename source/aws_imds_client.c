@@ -14,20 +14,12 @@
  */
 
 #include <aws/auth/aws_imds_client.h>
-#include <aws/auth/credentials.h>
-
-#include <aws/auth/external/cJSON.h>
-#include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
-#include <aws/common/date_time.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
-#include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
-#include <aws/io/logging.h>
-#include <aws/io/retry_strategy.h>
 #include <aws/io/socket.h>
 #include <ctype.h>
 
@@ -144,8 +136,11 @@ struct aws_imds_client *aws_imds_client_new(
         .max_retries = IMDS_MAX_RETRIES,
     };
 
-    client->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
-
+    if (options->retry_strategy) {
+        client->retry_strategy = options->retry_strategy;
+    } else {
+        client->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
+    }
     if (!client->retry_strategy) {
         goto on_error;
     }
@@ -189,15 +184,16 @@ struct aws_imds_client_user_data {
     struct aws_http_message *request;
     struct aws_byte_buf current_result;
     struct aws_byte_buf token_result;
-    struct aws_byte_buf resource_path;
+    struct aws_string *resource_path;
     struct aws_byte_cursor token;
     struct aws_retry_token *retry_token;
     /*
-     * initial value is copy of impl->token_required,
+     * initial value is copy of client->token_required,
      * will be adapted according to response.
      */
     bool token_required;
     int status_code;
+    int error_code;
 
     struct aws_atomic_var ref_count;
     bool callback_invoked;
@@ -216,7 +212,7 @@ static void s_user_data_destroy(struct aws_imds_client_user_data *user_data) {
 
     aws_byte_buf_clean_up(&user_data->current_result);
     aws_byte_buf_clean_up(&user_data->token_result);
-    aws_byte_buf_clean_up(&user_data->resource_path);
+    aws_string_destroy(user_data->resource_path);
 
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
@@ -252,7 +248,9 @@ static struct aws_imds_client_user_data *s_user_data_new(
         goto on_error;
     }
 
-    if (aws_byte_buf_init_copy_from_cursor(&wrapped_user_data->resource_path, client->allocator, resource_path)) {
+    wrapped_user_data->resource_path =
+        aws_string_new_from_array(client->allocator, resource_path.ptr, resource_path.len);
+    if (!wrapped_user_data->resource_path) {
         goto on_error;
     }
 
@@ -551,7 +549,7 @@ static void s_query_resource(struct aws_imds_client_user_data *user_data) {
 
     user_data->query_state = AWS_IMDS_QS_RESOURCE_RESP;
 
-    struct aws_byte_cursor path_cursor = aws_byte_cursor_from_buf(&user_data->resource_path);
+    struct aws_byte_cursor path_cursor = aws_byte_cursor_from_string(user_data->resource_path);
     if (s_make_imds_http_query(user_data, &verb, &path_cursor, headers_array_ptr, headers_count)) {
         user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
         return;
@@ -592,12 +590,12 @@ static void s_on_resource_response(struct aws_imds_client_user_data *user_data) 
 static void s_query_complete(struct aws_imds_client_user_data *user_data) {
     AWS_PRECONDITION(user_data->query_state == AWS_IMDS_QS_COMPLETE);
 
-    user_data->original_callback(aws_byte_cursor_from_buf(&user_data->current_result), user_data->original_user_data);
+    user_data->original_callback(&user_data->current_result, user_data->error_code, user_data->original_user_data);
     AWS_LOGF_INFO(
         AWS_LS_IMDS_CLIENT,
         "(id=%p) IMDS client successfully queried resource %s.",
         (void *)user_data->client,
-        (const char *)user_data->resource_path.buffer);
+        aws_string_c_str(user_data->resource_path));
 }
 
 static void s_query_error(struct aws_imds_client_user_data *user_data) {
@@ -606,18 +604,18 @@ static void s_query_error(struct aws_imds_client_user_data *user_data) {
         user_data->query_state == AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK);
 
     if (!user_data->callback_invoked) {
-        struct aws_byte_cursor null_cursor = {
-            .len = 0,
-            .ptr = NULL,
-        };
-        user_data->original_callback(null_cursor, user_data->original_user_data);
+        user_data->error_code = aws_last_error();
+        if (user_data->error_code == AWS_ERROR_SUCCESS) {
+            user_data->error_code = AWS_ERROR_UNKNOWN;
+        }
+        user_data->original_callback(NULL, user_data->error_code, user_data->original_user_data);
         user_data->callback_invoked = true;
     }
     AWS_LOGF_WARN(
         AWS_LS_IMDS_CLIENT,
         "(id=%p) IMDS client failed to query resource %s.",
         (void *)user_data->client,
-        (const char *)user_data->resource_path.buffer);
+        aws_string_c_str(user_data->resource_path));
 }
 
 /* Okay, some explanation on this state machine. There are two drivers.
@@ -672,7 +670,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
             (void *)imds_user_data->client,
             error_code,
             aws_error_str(error_code));
-
+        imds_user_data->error_code = error_code;
         imds_user_data->query_state = AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK;
     } else {
         /* prevent user_data from being destroyed under the hood. */
@@ -738,6 +736,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 AWS_LS_IMDS_CLIENT, "id=%p: Connection was closed, retries have been exhausted.", (void *)client);
             /* roll back to the last request we made, and let it retry. */
             imds_user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+            imds_user_data->error_code = error_code;
         }
     } else {
         /* treat everything else as success on the retry token for now. if we decide we need to retry
@@ -782,12 +781,13 @@ static void s_on_retry_token_acquired(
         client->function_table->aws_http_connection_manager_acquire_connection(
             client->connection_manager, s_on_acquire_connection, imds_user_data);
     } else {
+        imds_user_data->error_code = error_code;
         s_query_state_machine[AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK](imds_user_data);
         s_user_data_release(imds_user_data);
     }
 }
 
-int aws_ec2_metadata_client_get_resource_async(
+int aws_imds_client_get_resource_async(
     struct aws_imds_client *client,
     struct aws_byte_cursor resource_path,
     aws_imds_client_on_get_resource_callback_fn callback,

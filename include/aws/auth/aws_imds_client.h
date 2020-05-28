@@ -15,7 +15,7 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
-#include <aws/auth/auth.h>
+
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/http/connection_manager.h>
 #include <aws/io/retry_strategy.h>
@@ -60,7 +60,8 @@ struct aws_imds_client_options {
     struct aws_imds_client_system_vtable *function_table;
 };
 
-typedef void(aws_imds_client_on_get_resource_callback_fn)(struct aws_byte_cursor resource, void *user_data);
+typedef void(
+    aws_imds_client_on_get_resource_callback_fn)(struct aws_byte_buf *resource, int error_code, void *user_data);
 
 AWS_EXTERN_C_BEGIN
 
@@ -79,7 +80,7 @@ AWS_AUTH_API
 void aws_imds_client_release(struct aws_imds_client *client);
 
 AWS_AUTH_API
-int aws_ec2_metadata_client_get_resource_async(
+int aws_imds_client_get_resource_async(
     struct aws_imds_client *client,
     struct aws_byte_cursor resource_path,
     aws_imds_client_on_get_resource_callback_fn callback,
