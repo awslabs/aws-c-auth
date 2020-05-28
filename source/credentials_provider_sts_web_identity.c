@@ -34,6 +34,7 @@
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
+#include <inttypes.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
@@ -474,13 +475,37 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     s_finalize_get_credentials_query(user_data);
 }
 
+static struct aws_http_header s_host_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
+};
+
+static struct aws_http_header s_content_type_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
+};
+
+static struct aws_http_header s_api_version_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15"),
+};
+static struct aws_http_header s_accept_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Accept"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("*/*"),
+};
+
+static struct aws_http_header s_user_agent_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("User-Agent"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-sdk-crt/sts-web-identity-credentials-provider"),
+};
+
+static struct aws_http_header s_keep_alive_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Connection"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("keep-alive"),
+};
+
+static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
-AWS_STATIC_STRING_FROM_LITERAL(s_accept_header, "Accept");
-AWS_STATIC_STRING_FROM_LITERAL(s_accept_header_value, "*/*");
-AWS_STATIC_STRING_FROM_LITERAL(s_user_agent_header, "User-Agent");
-AWS_STATIC_STRING_FROM_LITERAL(s_user_agent_header_value, "aws-sdk-crt/sts-web-identity-credentials-provider");
-AWS_STATIC_STRING_FROM_LITERAL(s_h1_0_keep_alive_header, "Connection");
-AWS_STATIC_STRING_FROM_LITERAL(s_h1_0_keep_alive_header_value, "keep-alive");
 
 static int s_make_sts_web_identity_http_query(
     struct sts_web_identity_user_data *user_data,
@@ -496,27 +521,40 @@ static int s_make_sts_web_identity_http_query(
 
     struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
 
-    struct aws_http_header accept_header = {
-        .name = aws_byte_cursor_from_string(s_accept_header),
-        .value = aws_byte_cursor_from_string(s_accept_header_value),
+    char content_length[21];
+    AWS_ZERO_ARRAY(content_length);
+    snprintf(content_length, sizeof(content_length), "%" PRIu64, (uint64_t)body_cursor->len);
+
+    struct aws_http_header content_len_header = {
+        .name = s_content_length,
+        .value = aws_byte_cursor_from_c_str(content_length),
     };
-    if (aws_http_message_add_header(request, accept_header)) {
+
+    if (aws_http_message_add_header(request, content_len_header)) {
         goto on_error;
     }
 
-    struct aws_http_header user_agent_header = {
-        .name = aws_byte_cursor_from_string(s_user_agent_header),
-        .value = aws_byte_cursor_from_string(s_user_agent_header_value),
-    };
-    if (aws_http_message_add_header(request, user_agent_header)) {
+    if (aws_http_message_add_header(request, s_content_type_header)) {
         goto on_error;
     }
 
-    struct aws_http_header keep_alive_header = {
-        .name = aws_byte_cursor_from_string(s_h1_0_keep_alive_header),
-        .value = aws_byte_cursor_from_string(s_h1_0_keep_alive_header_value),
-    };
-    if (aws_http_message_add_header(request, keep_alive_header)) {
+    if (aws_http_message_add_header(request, s_host_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_api_version_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_accept_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_user_agent_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_keep_alive_header)) {
         goto on_error;
     }
 
@@ -532,7 +570,7 @@ static int s_make_sts_web_identity_http_query(
         goto on_error;
     }
 
-    if (aws_http_message_set_request_method(request, aws_http_method_get)) {
+    if (aws_http_message_set_request_method(request, aws_http_method_post)) {
         goto on_error;
     }
 
