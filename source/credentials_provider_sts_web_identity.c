@@ -83,12 +83,14 @@ struct sts_web_identity_user_data {
     struct aws_http_message *request;
     struct aws_input_stream *input_stream;
     struct aws_byte_buf response;
+    struct aws_byte_buf payload_buf;
     int status_code;
     int attempt_count;
 };
 
 static void s_user_data_reset_request_and_response(struct sts_web_identity_user_data *user_data) {
     aws_byte_buf_reset(&user_data->response, true /*zero out*/);
+    aws_byte_buf_reset(&user_data->payload_buf, true /*zero out*/);
     user_data->status_code = 0;
     aws_input_stream_destroy(user_data->input_stream);
     user_data->input_stream = NULL;
@@ -109,6 +111,7 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     }
     s_user_data_reset_request_and_response(user_data);
     aws_byte_buf_clean_up(&user_data->response);
+    aws_byte_buf_clean_up(&user_data->payload_buf);
     aws_credentials_provider_release(user_data->sts_web_identity_provider);
     aws_mem_release(user_data->allocator, user_data);
 }
@@ -134,6 +137,10 @@ static struct sts_web_identity_user_data *s_user_data_new(
             &wrapped_user_data->response,
             sts_web_identity_provider->allocator,
             STS_WEB_IDENTITY_RESPONSE_SIZE_INITIAL)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_init(&wrapped_user_data->payload_buf, sts_web_identity_provider->allocator, 1024)) {
         goto on_error;
     }
 
@@ -622,36 +629,34 @@ static void s_query_credentials(struct sts_web_identity_user_data *user_data) {
      * + "&RoleArn=" + url_encode(role_arn)
      * + "&WebIdentityToken=" + url_encode(token);
      */
-    struct aws_byte_buf body_buf;
     struct aws_byte_buf token_buf;
     bool success = false;
 
-    AWS_ZERO_STRUCT(body_buf);
     AWS_ZERO_STRUCT(token_buf);
 
     struct aws_byte_cursor work_cursor =
         aws_byte_cursor_from_c_str("Action=AssumeRoleWithWebIdentity&Version=2011-06-15&RoleArn=");
-    if (aws_byte_buf_init_copy_from_cursor(&body_buf, user_data->allocator, work_cursor)) {
+    if (aws_byte_buf_append_dynamic(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_string(impl->role_arn);
-    if (aws_byte_buf_append_encoding_uri_param(&body_buf, &work_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_c_str("&RoleSessionName=");
-    if (aws_byte_buf_append_dynamic(&body_buf, &work_cursor)) {
+    if (aws_byte_buf_append_dynamic(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_string(impl->role_session_name);
-    if (aws_byte_buf_append_encoding_uri_param(&body_buf, &work_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_c_str("&WebIdentityToken=");
-    if (aws_byte_buf_append_dynamic(&body_buf, &work_cursor)) {
+    if (aws_byte_buf_append_dynamic(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
@@ -659,10 +664,10 @@ static void s_query_credentials(struct sts_web_identity_user_data *user_data) {
         goto on_finish;
     }
     work_cursor = aws_byte_cursor_from_buf(&token_buf);
-    if (aws_byte_buf_append_encoding_uri_param(&body_buf, &work_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
-    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buf);
+    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&user_data->payload_buf);
 
     if (s_make_sts_web_identity_http_query(user_data, &body_cursor) == AWS_OP_ERR) {
         goto on_finish;
@@ -671,7 +676,6 @@ static void s_query_credentials(struct sts_web_identity_user_data *user_data) {
 
 on_finish:
     aws_byte_buf_clean_up(&token_buf);
-    aws_byte_buf_clean_up(&body_buf);
     if (!success) {
         s_finalize_get_credentials_query(user_data);
     }

@@ -486,7 +486,7 @@ static int s_credentials_provider_sts_web_identity_new_failed_without_env_and_co
     ASSERT_TRUE(empty_content != NULL);
     s_aws_sts_web_identity_test_init_config_profile(allocator, empty_content);
     aws_string_destroy(empty_content);
-    
+
     s_aws_sts_web_identity_test_unset_env_parameters();
 
     ASSERT_TRUE(aws_unset_environment_value(s_default_profile_env_variable_name) == AWS_OP_SUCCESS);
