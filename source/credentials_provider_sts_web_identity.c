@@ -81,7 +81,6 @@ struct sts_web_identity_user_data {
     /* mutable */
     struct aws_http_connection *connection;
     struct aws_http_message *request;
-    struct aws_input_stream *input_stream;
     struct aws_byte_buf response;
     struct aws_byte_buf payload_buf;
     int status_code;
@@ -92,8 +91,9 @@ static void s_user_data_reset_request_and_response(struct sts_web_identity_user_
     aws_byte_buf_reset(&user_data->response, true /*zero out*/);
     aws_byte_buf_reset(&user_data->payload_buf, true /*zero out*/);
     user_data->status_code = 0;
-    aws_input_stream_destroy(user_data->input_stream);
-    user_data->input_stream = NULL;
+    if (user_data->request) {
+        aws_input_stream_destroy(aws_http_message_get_body_stream(user_data->request));
+    }
     aws_http_message_destroy(user_data->request);
     user_data->request = NULL;
 }
@@ -569,7 +569,6 @@ static int s_make_sts_web_identity_http_query(
     if (!input_stream) {
         goto on_error;
     }
-    user_data->input_stream = input_stream;
 
     aws_http_message_set_body_stream(request, input_stream);
 
