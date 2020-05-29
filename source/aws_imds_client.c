@@ -15,6 +15,8 @@
 
 #include <aws/auth/aws_imds_client.h>
 #include <aws/common/clock.h>
+#include <aws/common/condition_variable.h>
+#include <aws/common/mutex.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/request_response.h>
@@ -42,6 +44,12 @@ struct aws_imds_client {
     struct aws_imds_client_shutdown_options shutdown_options;
     /* will be set to true by default, means using IMDS V2 */
     bool token_required;
+    struct aws_byte_buf cached_token;
+    bool cached_token_available;
+    bool in_progress_token_update;
+    bool token_update_failed;
+    struct aws_mutex token_lock;
+    struct aws_condition_variable token_signal;
 
     struct aws_atomic_var ref_count;
 };
@@ -68,6 +76,9 @@ static void s_aws_imds_client_destroy(struct aws_imds_client *client) {
      * thus nothing is going to try and access retry_strategy again at this point.
      */
     aws_retry_strategy_release(client->retry_strategy);
+    aws_condition_variable_clean_up(&client->token_signal);
+    aws_mutex_clean_up(&client->token_lock);
+    aws_byte_buf_clean_up(&client->cached_token);
     client->function_table->aws_http_connection_manager_release(client->connection_manager);
     /* freeing the provider takes place in the shutdown callback below */
 }
@@ -105,6 +116,19 @@ struct aws_imds_client *aws_imds_client_new(
     if (!client) {
         return NULL;
     }
+
+    if (aws_mutex_init(&client->token_lock)) {
+        goto on_error;
+    }
+
+    if (aws_condition_variable_init(&client->token_signal)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_init(&client->cached_token, allocator, IMDS_RESPONSE_TOKEN_SIZE_INITIAL)) {
+        goto on_error;
+    }
+
     aws_atomic_store_int(&client->ref_count, 1);
     client->allocator = allocator;
     client->function_table = options->function_table ? options->function_table : &s_default_function_table;
@@ -156,8 +180,6 @@ on_error:
     return NULL;
 }
 
-static void s_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data);
-
 /*
  * This tracks which request we're on.
  */
@@ -189,7 +211,6 @@ struct aws_imds_client_user_data {
     struct aws_byte_buf current_result;
     struct aws_byte_buf token_result;
     struct aws_string *resource_path;
-    struct aws_byte_cursor token;
     struct aws_retry_token *retry_token;
     /*
      * initial value is copy of client->token_required,
@@ -302,6 +323,75 @@ static void s_reset_scratch_user_data(struct aws_imds_client_user_data *user_dat
         aws_http_message_destroy(user_data->request);
         user_data->request = NULL;
     }
+}
+
+static bool s_imds_client_should_update_cached_token(struct aws_imds_client *client) {
+    return (!client->cached_token_available && !client->in_progress_token_update);
+}
+
+static bool s_requester_test_and_try_dominate_cached_token_update(struct aws_imds_client_user_data *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    struct aws_imds_client *client = user_data->client;
+    aws_mutex_lock(&client->token_lock);
+    bool ret = false;
+    if (s_imds_client_should_update_cached_token(client)) {
+        client->in_progress_token_update = true;
+        ret = true;
+    }
+    aws_mutex_unlock(&client->token_lock);
+    return ret;
+}
+
+static bool s_imds_client_cached_token_available(void *user_data) {
+    struct aws_imds_client *client = user_data;
+    return client->cached_token_available;
+}
+
+static bool s_imds_client_copy_token_to_user_data_safely(struct aws_imds_client_user_data *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    struct aws_imds_client *client = user_data->client;
+    aws_mutex_lock(&client->token_lock);
+    aws_condition_variable_wait_pred(
+        &client->token_signal, &client->token_lock, s_imds_client_cached_token_available, (void *)client);
+    if (client->token_update_failed) {
+        aws_mutex_unlock(&client->token_lock);
+        return false;
+    }
+    aws_byte_buf_reset(&user_data->token_result, true);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+    aws_byte_buf_append_dynamic(&user_data->token_result, &cursor);
+    aws_mutex_unlock(&client->token_lock);
+    return true;
+}
+
+static void s_requester_try_invalidate_cached_token_safely(struct aws_imds_client_user_data *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    aws_mutex_lock(&user_data->client->token_lock);
+    if (aws_byte_buf_eq(&user_data->token_result, &user_data->client->cached_token)) {
+        user_data->client->cached_token_available = false;
+    }
+    aws_mutex_unlock(&user_data->client->token_lock);
+}
+
+/**
+ * Once a requseter returns from token request, it should call this function to unblock all other
+ * waiting requesters. When the token parameter is NULL, means the token request failed. Now we need
+ * a new requester to acquire the token again.
+ */
+static void s_imds_client_update_token_safely(struct aws_imds_client *client, struct aws_byte_buf *token) {
+    AWS_FATAL_ASSERT(client);
+    aws_mutex_lock(&client->token_lock);
+    if (token) {
+        aws_byte_buf_reset(&client->cached_token, true);
+        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+        aws_byte_buf_append_dynamic(&client->cached_token, &cursor);
+    } else {
+        client->token_update_failed = true;
+    }
+    client->cached_token_available = true;
+    client->in_progress_token_update = false;
+    aws_condition_variable_notify_all(&client->token_signal);
+    aws_mutex_unlock(&client->token_lock);
 }
 
 static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *data, void *user_data) {
@@ -464,11 +554,28 @@ on_error:
 }
 
 typedef void(imds_state_fn)(struct aws_imds_client_user_data *);
+static void s_query_resource(struct aws_imds_client_user_data *user_data);
 
 /* Make an http request to put a ttl and hopefully get a token back. */
 static void s_query_token(struct aws_imds_client_user_data *user_data) {
     AWS_PRECONDITION(user_data->query_state == AWS_IMDS_QS_TOKEN_REQ);
 
+    /**
+     * If this requester shouldn't update token, meaning either the token is available,
+     * or the token is updating by other requester, this requester should just either copy
+     * token or wait for the update then copy.
+     */
+    while (!s_requester_test_and_try_dominate_cached_token_update(user_data)) {
+        /* if then token copied. */
+        if (s_imds_client_copy_token_to_user_data_safely(user_data)) {
+            user_data->query_state = AWS_IMDS_QS_RESOURCE_REQ;
+            s_query_resource(user_data);
+            return;
+        }
+        /* try dominate the token update */
+    }
+
+    /* start query token for imds client */
     struct aws_byte_cursor uri = aws_byte_cursor_from_string(s_imds_token_resource_path);
 
     struct aws_http_header token_ttl_header = {
@@ -498,6 +605,7 @@ static void s_on_token_response(struct aws_imds_client_user_data *user_data) {
     /* Gets 400 means token is required but the request itself failed. */
     if (user_data->status_code == AWS_HTTP_STATUS_CODE_400_BAD_REQUEST) {
         user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+        s_imds_client_update_token_safely(user_data->client, NULL);
         return;
     }
 
@@ -509,17 +617,19 @@ static void s_on_token_response(struct aws_imds_client_user_data *user_data) {
     if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || user_data->current_result.len == 0) {
         user_data->token_required = false;
     } else {
-        user_data->token = aws_byte_cursor_from_buf(&(user_data->current_result));
-        aws_byte_cursor_trim_pred(&(user_data->token), aws_char_is_space);
-        if (user_data->token.len == 0) {
+        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&(user_data->current_result));
+        aws_byte_cursor_trim_pred(&cursor, aws_char_is_space);
+        if (cursor.len == 0) {
             user_data->token_required = false;
         } else {
             aws_byte_buf_reset(&user_data->token_result, true /*zero contents*/);
-            if (aws_byte_buf_append_and_update(&user_data->token_result, &user_data->token)) {
+            if (aws_byte_buf_append_and_update(&user_data->token_result, &cursor)) {
                 user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+                s_imds_client_update_token_safely(user_data->client, NULL);
                 return;
             }
         }
+        s_imds_client_update_token_safely(user_data->client, cursor.len == 0 ? NULL : &user_data->token_result);
     }
     s_reset_scratch_user_data(user_data);
     /* No matter token acquire succeeded or not, moving forward to next step. */
@@ -534,7 +644,7 @@ static void s_query_resource(struct aws_imds_client_user_data *user_data) {
 
     struct aws_http_header token_header = {
         .name = aws_byte_cursor_from_string(s_imds_token_header),
-        .value = user_data->token,
+        .value = aws_byte_cursor_from_buf(&user_data->token_result),
     };
 
     struct aws_http_header headers[] = {
@@ -568,6 +678,7 @@ static void s_on_resource_response(struct aws_imds_client_user_data *user_data) 
 
     /* In this case we fallback to the secure imds flow. */
     if (user_data->status_code == AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED) {
+        s_requester_try_invalidate_cached_token_safely(user_data);
         s_reset_scratch_user_data(user_data);
         user_data->token_required = true;
         user_data->query_state = AWS_IMDS_QS_TOKEN_REQ;
