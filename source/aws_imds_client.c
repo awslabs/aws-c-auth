@@ -30,9 +30,9 @@
 /* instance role credentials body response is currently ~ 1300 characters + name length */
 #define IMDS_RESPONSE_SIZE_INITIAL 2048
 #define IMDS_RESPONSE_TOKEN_SIZE_INITIAL 64
-#define IMDS_RESPONSE_SIZE_LIMIT 10000
+#define IMDS_RESPONSE_SIZE_LIMIT 65535
 #define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
-#define IMDS_MAX_RETRIES 1
+#define IMDS_DEFAULT_RETRIES 1
 
 struct aws_imds_client {
     struct aws_allocator *allocator;
@@ -63,6 +63,10 @@ static void s_aws_imds_client_destroy(struct aws_imds_client *client) {
     if (!client) {
         return;
     }
+    /**
+     * s_aws_imds_client_destroy is only called after all in-flight requests are finished,
+     * thus nothing is going to try and access retry_strategy again at this point.
+     */
     aws_retry_strategy_release(client->retry_strategy);
     client->function_table->aws_http_connection_manager_release(client->connection_manager);
     /* freeing the provider takes place in the shutdown callback below */
@@ -89,7 +93,7 @@ void aws_imds_client_release(struct aws_imds_client *client) {
     }
 }
 
-void s_aws_imds_client_acquire(struct aws_imds_client *client) {
+void aws_imds_client_acquire(struct aws_imds_client *client) {
     aws_atomic_fetch_add(&client->ref_count, 1);
 }
 
@@ -104,7 +108,7 @@ struct aws_imds_client *aws_imds_client_new(
     aws_atomic_store_int(&client->ref_count, 1);
     client->allocator = allocator;
     client->function_table = options->function_table ? options->function_table : &s_default_function_table;
-    client->token_required = options->imds_version == IMDS_CLIENT_V1 ? false : true;
+    client->token_required = options->imds_version == IMDS_PROTOCOL_V1 ? false : true;
     client->shutdown_options = options->shutdown_options;
 
     struct aws_socket_options socket_options;
@@ -131,14 +135,14 @@ struct aws_imds_client *aws_imds_client_new(
         goto on_error;
     }
 
-    struct aws_exponential_backoff_retry_options retry_options = {
-        .el_group = options->bootstrap->event_loop_group,
-        .max_retries = IMDS_MAX_RETRIES,
-    };
-
     if (options->retry_strategy) {
         client->retry_strategy = options->retry_strategy;
+        aws_retry_strategy_acquire(client->retry_strategy);
     } else {
+        struct aws_exponential_backoff_retry_options retry_options = {
+            .el_group = options->bootstrap->event_loop_group,
+            .max_retries = IMDS_DEFAULT_RETRIES,
+        };
         client->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
     }
     if (!client->retry_strategy) {
@@ -236,7 +240,7 @@ static struct aws_imds_client_user_data *s_user_data_new(
 
     wrapped_user_data->allocator = client->allocator;
     wrapped_user_data->client = client;
-    s_aws_imds_client_acquire(client);
+    aws_imds_client_acquire(client);
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
@@ -700,6 +704,12 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
         client->function_table->aws_http_connection_manager_acquire_connection(
             client->connection_manager, s_on_acquire_connection, user_data);
     } else {
+        AWS_LOGF_WARN(
+            AWS_LS_IMDS_CLIENT,
+            "id=%p: IMDS Client failed to retry the request with error code %d(%s)",
+            (void *)client,
+            error_code,
+            aws_error_str(error_code));
         s_query_state_machine[AWS_IMDS_QS_UNRECOVERABLE_ERROR](imds_user_data);
         imds_user_data->query_state = AWS_IMDS_QS_PENDING_DESTROY;
         s_user_data_release(imds_user_data);
@@ -722,6 +732,12 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
      * Note these are connection level errors, not http level. Since we obviously connected, it's likely
      * we're on EC2, plus we have max retries so it's likely safer to just retry everything.*/
     if (error_code) {
+        AWS_LOGF_WARN(
+            AWS_LS_IMDS_CLIENT,
+            "id=%p: Connection was closed with error code %d(%s)",
+            (void *)client,
+            error_code,
+            aws_error_str(error_code));
         /* for now we're only going to retry transient errors. If we find IMDS consistently throttles, we'll come back
          * and retry http errors as well. */
         if (!aws_retry_strategy_schedule_retry(
@@ -772,15 +788,22 @@ static void s_on_retry_token_acquired(
     struct aws_retry_token *token,
     void *user_data) {
     (void)strategy;
+
     struct aws_imds_client_user_data *imds_user_data = user_data;
+    struct aws_imds_client *client = imds_user_data->client;
 
     if (!error_code) {
-        struct aws_imds_client *client = imds_user_data->client;
+        AWS_LOGF_WARN(AWS_LS_IMDS_CLIENT, "id=%p: IMDS Client successfully acquired retry token.", (void *)client);
         imds_user_data->retry_token = token;
-
         client->function_table->aws_http_connection_manager_acquire_connection(
             client->connection_manager, s_on_acquire_connection, imds_user_data);
     } else {
+        AWS_LOGF_WARN(
+            AWS_LS_IMDS_CLIENT,
+            "id=%p: IMDS Client failed to acquire retry token, error code %d(%s)",
+            (void *)client,
+            error_code,
+            aws_error_str(error_code));
         imds_user_data->error_code = error_code;
         s_query_state_machine[AWS_IMDS_QS_QUERY_NEVER_CLEARED_STACK](imds_user_data);
         s_user_data_release(imds_user_data);

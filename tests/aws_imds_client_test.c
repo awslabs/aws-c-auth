@@ -674,7 +674,7 @@ static int s_imds_client_insecure_then_secure_resource_request_success(struct aw
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .imds_version = IMDS_CLIENT_V1,
+        .imds_version = IMDS_PROTOCOL_V1,
     };
 
     struct aws_imds_client *client = aws_imds_client_new(allocator, &options);

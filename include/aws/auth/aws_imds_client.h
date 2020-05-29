@@ -1,5 +1,5 @@
-#ifndef AWS_AUTH_EC2_METADATA_CLIENT_H
-#define AWS_AUTH_EC2_METADATA_CLIENT_H
+#ifndef AWS_AUTH_IMDS_CLIENT_H
+#define AWS_AUTH_IMDS_CLIENT_H
 
 /*
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
@@ -15,7 +15,7 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
-
+#include <aws/auth/auth.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/http/connection_manager.h>
 #include <aws/io/retry_strategy.h>
@@ -24,10 +24,11 @@
  * EC2 IMDS_V1 takes one http request to get resource, while IMDS_V2 takes one more token (Http PUT) request
  * to get secure token used in following request.
  */
-enum aws_imds_client_versions {
-    /* defaults to try IMDS_V2, if IMDS_V2 is not available (on some old instances), fall back to IMDS_V1 */
-    IMDS_CLIENT_V2,
-    IMDS_CLIENT_V1,
+enum aws_imds_protocol_version {
+    /* defaults to try IMDS_PROTOCOL_V2, if IMDS_PROTOCOL_V2 is not available (on some old instances), fall back to
+       IMDS_PROTOCOL_V1 */
+    IMDS_PROTOCOL_V2,
+    IMDS_PROTOCOL_V1,
 };
 
 struct aws_imds_client_system_vtable {
@@ -54,8 +55,8 @@ struct aws_imds_client_options {
     struct aws_imds_client_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
     struct aws_retry_strategy *retry_strategy;
-    /* If not set, this value will be false, means use IMDS_V2 */
-    enum aws_imds_client_versions imds_version;
+    /* Defaults to IMDS_PROTOCOL_V2 */
+    enum aws_imds_protocol_version imds_version;
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_imds_client_system_vtable *function_table;
 };
@@ -68,13 +69,15 @@ AWS_EXTERN_C_BEGIN
 /**
  * AWS EC2 Metadata Client is used to retrieve AWS EC2 Instance Metadata info.
  */
-AWS_AUTH_API
 struct aws_imds_client;
 
 AWS_AUTH_API
 struct aws_imds_client *aws_imds_client_new(
     struct aws_allocator *allocator,
     const struct aws_imds_client_options *options);
+
+AWS_AUTH_API
+void aws_imds_client_acquire(struct aws_imds_client *client);
 
 AWS_AUTH_API
 void aws_imds_client_release(struct aws_imds_client *client);
@@ -88,4 +91,4 @@ int aws_imds_client_get_resource_async(
 
 AWS_EXTERN_C_END
 
-#endif /* AWS_AUTH_CREDENTIALS_H */
+#endif /* AWS_AUTH_IMDS_CLIENT_H */
