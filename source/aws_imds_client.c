@@ -339,38 +339,64 @@ static bool s_requester_test_and_try_dominate_cached_token_update(struct aws_imd
         ret = true;
     }
     aws_mutex_unlock(&client->token_lock);
+    if (ret) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT,
+            "(id=%p) IMDS client's token update is now dominated by requester %p",
+            (void *)client,
+            (void *)user_data);
+    }
     return ret;
 }
 
-static bool s_imds_client_cached_token_available(void *user_data) {
+static bool s_imds_client_should_stop_waiting_for_cached_token(void *user_data) {
     struct aws_imds_client *client = user_data;
-    return client->cached_token_available;
+    return client->cached_token_available || client->token_update_failed;
 }
 
 static bool s_imds_client_copy_token_to_user_data_safely(struct aws_imds_client_user_data *user_data) {
     AWS_FATAL_ASSERT(user_data);
     struct aws_imds_client *client = user_data->client;
+    bool copied = false;
     aws_mutex_lock(&client->token_lock);
     aws_condition_variable_wait_pred(
-        &client->token_signal, &client->token_lock, s_imds_client_cached_token_available, (void *)client);
-    if (client->token_update_failed) {
-        aws_mutex_unlock(&client->token_lock);
-        return false;
+        &client->token_signal, &client->token_lock, s_imds_client_should_stop_waiting_for_cached_token, (void *)client);
+    if (!client->token_update_failed) {
+        aws_byte_buf_reset(&user_data->token_result, true);
+        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+        aws_byte_buf_append_dynamic(&user_data->token_result, &cursor);
+        copied = true;
     }
-    aws_byte_buf_reset(&user_data->token_result, true);
-    struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
-    aws_byte_buf_append_dynamic(&user_data->token_result, &cursor);
     aws_mutex_unlock(&client->token_lock);
-    return true;
+    if (copied) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client copied token to requester %p.", (void *)client, (void *)user_data);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_IMDS_CLIENT,
+            "(id=%p) IMDS client found invalid token for requester %p, try updating or keep waiting.",
+            (void *)client,
+            (void *)user_data);
+    }
+    return copied;
 }
 
 static void s_requester_try_invalidate_cached_token_safely(struct aws_imds_client_user_data *user_data) {
     AWS_FATAL_ASSERT(user_data);
+    bool invalidated = false;
     aws_mutex_lock(&user_data->client->token_lock);
     if (aws_byte_buf_eq(&user_data->token_result, &user_data->client->cached_token)) {
         user_data->client->cached_token_available = false;
+        invalidated = true;
     }
     aws_mutex_unlock(&user_data->client->token_lock);
+    if (invalidated) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT,
+            "(id=%p) IMDS client's cached token is set to be invalid by requester %p.",
+            (void *)user_data->client,
+            (void *)user_data);
+    }
 }
 
 /**
@@ -385,13 +411,21 @@ static void s_imds_client_update_token_safely(struct aws_imds_client *client, st
         aws_byte_buf_reset(&client->cached_token, true);
         struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
         aws_byte_buf_append_dynamic(&client->cached_token, &cursor);
+        client->token_update_failed = false;
+        client->cached_token_available = true;
     } else {
         client->token_update_failed = true;
+        client->cached_token_available = false;
     }
-    client->cached_token_available = true;
     client->in_progress_token_update = false;
     aws_condition_variable_notify_all(&client->token_signal);
     aws_mutex_unlock(&client->token_lock);
+    if (token) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client updated the cached token successfully.", (void *)client);
+    } else {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client failed to acquire token from IMDS.", (void *)client);
+    }
 }
 
 static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *data, void *user_data) {
@@ -401,8 +435,6 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 
     struct aws_imds_client_user_data *imds_user_data = user_data;
     struct aws_imds_client *client = imds_user_data->client;
-
-    AWS_LOGF_DEBUG(AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client received %zu response bytes", (void *)client, data->len);
 
     if (data->len + imds_user_data->current_result.len > IMDS_RESPONSE_SIZE_LIMIT) {
         client->function_table->aws_http_connection_close(imds_user_data->connection);
@@ -448,9 +480,10 @@ static int s_on_incoming_headers_fn(
             }
             AWS_LOGF_DEBUG(
                 AWS_LS_IMDS_CLIENT,
-                "(id=%p) IMDS client query received http status code %d",
+                "(id=%p) IMDS client query received http status code %d for requester %p.",
                 (void *)client,
-                imds_user_data->status_code);
+                imds_user_data->status_code,
+                user_data);
         }
     }
 
@@ -615,6 +648,7 @@ static void s_on_token_response(struct aws_imds_client_user_data *user_data) {
      * token in following requests.
      */
     if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || user_data->current_result.len == 0) {
+        s_imds_client_update_token_safely(user_data->client, NULL);
         user_data->token_required = false;
     } else {
         struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&(user_data->current_result));

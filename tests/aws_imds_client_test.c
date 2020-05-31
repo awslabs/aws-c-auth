@@ -20,6 +20,7 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
+#include <aws/common/device_random.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/http/request_response.h>
@@ -54,6 +55,8 @@ struct aws_mock_imds_client_tester {
     bool alternate_closed_connections;
 
     struct aws_byte_buf resource;
+
+    int successful_requests;
 };
 
 static struct aws_mock_imds_client_tester s_tester;
@@ -312,6 +315,7 @@ static void s_get_resource_callback(struct aws_byte_buf *resource, int error_cod
     if (resource && resource->len) {
         struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(resource);
         aws_byte_buf_append_dynamic(&s_tester.resource, &cursor);
+        s_tester.successful_requests++;
     }
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
@@ -711,6 +715,121 @@ static int s_imds_client_insecure_then_secure_resource_request_success(struct aw
 AWS_TEST_CASE(
     imds_client_insecure_then_secure_resource_request_success,
     s_imds_client_insecure_then_secure_resource_request_success);
+
+static int s_aws_http_stream_get_multiple_incoming_response_status_mock(
+    const struct aws_http_stream *stream,
+    int *out_status_code) {
+
+    (void)stream;
+    /* randomly return 400/401/200 */
+    uint32_t rand_output;
+    int ret[2] = {AWS_HTTP_STATUS_CODE_200_OK, AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED};
+    aws_device_random_u32(&rand_output);
+    *out_status_code = ret[rand_output % 2];
+    return AWS_OP_SUCCESS;
+}
+
+static struct aws_http_stream *s_aws_http_connection_make_multiple_requests_mock(
+    struct aws_http_connection *client_connection,
+    const struct aws_http_make_request_options *options) {
+
+    (void)client_connection;
+    (void)options;
+
+    struct aws_byte_cursor path;
+    AWS_ZERO_STRUCT(path);
+    aws_http_message_get_request_path(options->request, &path);
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&path, "/latest/api/token")) {
+        s_validate_token_ttl_header(options->request);
+        s_invoke_mock_request_callbacks(options, &s_tester.response_data_callbacks[0]);
+    } else {
+        s_validate_token_header(options->request);
+        s_invoke_mock_request_callbacks(options, &s_tester.response_data_callbacks[1]);
+    }
+    return (struct aws_http_stream *)1;
+}
+
+static bool s_has_tester_received_expected_resources(void *user_data) {
+    return s_tester.successful_requests == (*(int *)user_data);
+}
+
+static void s_aws_wait_for_all_resources(int expected_resources_cnt) {
+    aws_mutex_lock(&s_tester.lock);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_expected_resources, &expected_resources_cnt);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static void s_multiple_request_get_resource_callback(struct aws_byte_buf *resource, int error_code, void *user_data) {
+    (void)user_data;
+    (void)error_code;
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.has_received_resource_callback = true;
+    if (resource && resource->len) {
+        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(resource);
+        aws_byte_buf_reset(&s_tester.resource, true);
+        aws_byte_buf_append_dynamic(&s_tester.resource, &cursor);
+        s_tester.successful_requests++;
+    }
+    aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static int s_imds_client_multiple_resource_requests_random_responses_finally_all_success(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .imds_version = IMDS_PROTOCOL_V1,
+    };
+
+    options.function_table->aws_http_stream_get_incoming_response_status =
+        s_aws_http_stream_get_multiple_incoming_response_status_mock;
+    options.function_table->aws_http_connection_make_request = s_aws_http_connection_make_multiple_requests_mock;
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    for (int i = 0; i < 5000; i++) {
+        aws_imds_client_get_resource_async(
+            client,
+            aws_byte_cursor_from_string(s_expected_imds_resource_uri),
+            s_multiple_request_get_resource_callback,
+            NULL);
+    }
+    s_aws_wait_for_all_resources(5000);
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_good_response);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    imds_client_multiple_resource_requests_random_responses_finally_all_success,
+    s_imds_client_multiple_resource_requests_random_responses_finally_all_success);
 
 static int s_imds_client_real_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
