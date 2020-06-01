@@ -381,7 +381,7 @@ static int s_make_ecs_http_query(
 on_error:
     impl->function_table->aws_http_stream_release(stream);
     aws_http_message_destroy(request);
-
+    ecs_user_data->request = NULL;
     return AWS_OP_ERR;
 }
 

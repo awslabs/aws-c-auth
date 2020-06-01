@@ -608,7 +608,7 @@ on_error:
     impl->function_table->aws_http_stream_release(stream);
     aws_input_stream_destroy(input_stream);
     aws_http_message_destroy(request);
-
+    user_data->request = NULL;
     return AWS_OP_ERR;
 }
 
