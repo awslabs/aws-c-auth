@@ -101,7 +101,7 @@ static void s_aws_imds_client_destroy(struct aws_imds_client *client) {
     aws_mutex_clean_up(&client->token_lock);
     aws_byte_buf_clean_up(&client->cached_token);
     client->function_table->aws_http_connection_manager_release(client->connection_manager);
-    /* freeing the provider takes place in the shutdown callback below */
+    /* freeing the client takes place in the shutdown callback below */
 }
 
 static void s_on_connection_manager_shutdown(void *user_data) {
@@ -218,7 +218,7 @@ enum aws_imds_query_state {
 };
 
 /*
- * Tracking structure for each outstanding async query to an imds provider
+ * Tracking structure for each outstanding async query to an imds client
  */
 struct aws_imds_client_user_data {
     /* immutable post-creation */
@@ -617,7 +617,7 @@ static void s_query_resource(struct aws_imds_client_user_data *user_data) {
 }
 
 /*
- * Process the http response for fetching the role name for the ec2 instance.
+ * Process the http response for fetching the resource for the ec2 instance.
  */
 static void s_on_resource_response(struct aws_imds_client_user_data *user_data) {
     AWS_PRECONDITION(user_data->query_state == AWS_IMDS_QS_RESOURCE_RESP);
