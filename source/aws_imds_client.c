@@ -36,6 +36,28 @@
 #define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 #define IMDS_DEFAULT_RETRIES 1
 
+enum aws_imds_client_token_state {
+    AWS_IMDS_TK_ST_INVALID,
+    AWS_IMDS_TK_ST_VALID,
+    AWS_IMDS_TK_ST_UPDATE_IN_PROGRESS,
+};
+
+enum aws_imds_client_copy_token_result {
+    /* Token is valid and copied to requester */
+    AWS_IMDS_TK_CP_RS_SUCCESS,
+    /* Token is updating, so requester is added in waiting queue */
+    AWS_IMDS_TK_CP_RS_WAITING_IN_QUEUE,
+    /* Token is invalid, requester is mastering the update */
+    AWS_IMDS_TK_CP_RS_UPDATING,
+    /* unexpected error,like mem allocation error */
+    AWS_IMDS_TK_CP_RS_UNEXPECTED_ERROR,
+};
+
+struct aws_imds_client_token_query {
+    struct aws_linked_list_node node;
+    void *user_data;
+};
+
 struct aws_imds_client {
     struct aws_allocator *allocator;
     struct aws_http_connection_manager *connection_manager;
@@ -45,9 +67,8 @@ struct aws_imds_client {
     /* will be set to true by default, means using IMDS V2 */
     bool token_required;
     struct aws_byte_buf cached_token;
-    bool cached_token_available;
-    bool in_progress_token_update;
-    bool token_update_failed;
+    enum aws_imds_client_token_state token_state;
+    struct aws_linked_list pending_queries;
     struct aws_mutex token_lock;
     struct aws_condition_variable token_signal;
 
@@ -128,6 +149,8 @@ struct aws_imds_client *aws_imds_client_new(
     if (aws_byte_buf_init(&client->cached_token, allocator, IMDS_RESPONSE_TOKEN_SIZE_INITIAL)) {
         goto on_error;
     }
+
+    aws_linked_list_init(&client->pending_queries);
 
     aws_atomic_store_int(&client->ref_count, 1);
     client->allocator = allocator;
@@ -217,6 +240,7 @@ struct aws_imds_client_user_data {
      * will be adapted according to response.
      */
     bool token_required;
+    bool is_updating_token_for_client;
     int status_code;
     int error_code;
 
@@ -325,108 +349,11 @@ static void s_reset_scratch_user_data(struct aws_imds_client_user_data *user_dat
     }
 }
 
-static bool s_imds_client_should_update_cached_token(struct aws_imds_client *client) {
-    return (!client->cached_token_available && !client->in_progress_token_update);
-}
-
-static bool s_requester_test_and_try_dominate_cached_token_update(struct aws_imds_client_user_data *user_data) {
-    AWS_FATAL_ASSERT(user_data);
-    struct aws_imds_client *client = user_data->client;
-    aws_mutex_lock(&client->token_lock);
-    bool ret = false;
-    if (s_imds_client_should_update_cached_token(client)) {
-        client->in_progress_token_update = true;
-        ret = true;
-    }
-    aws_mutex_unlock(&client->token_lock);
-    if (ret) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_IMDS_CLIENT,
-            "(id=%p) IMDS client's token update is now dominated by requester %p",
-            (void *)client,
-            (void *)user_data);
-    }
-    return ret;
-}
-
-static bool s_imds_client_should_stop_waiting_for_cached_token(void *user_data) {
-    struct aws_imds_client *client = user_data;
-    return client->cached_token_available || client->token_update_failed;
-}
-
-static bool s_imds_client_copy_token_to_user_data_safely(struct aws_imds_client_user_data *user_data) {
-    AWS_FATAL_ASSERT(user_data);
-    struct aws_imds_client *client = user_data->client;
-    bool copied = false;
-    aws_mutex_lock(&client->token_lock);
-    aws_condition_variable_wait_pred(
-        &client->token_signal, &client->token_lock, s_imds_client_should_stop_waiting_for_cached_token, (void *)client);
-    if (!client->token_update_failed) {
-        aws_byte_buf_reset(&user_data->token_result, true);
-        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
-        aws_byte_buf_append_dynamic(&user_data->token_result, &cursor);
-        copied = true;
-    }
-    aws_mutex_unlock(&client->token_lock);
-    if (copied) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client copied token to requester %p.", (void *)client, (void *)user_data);
-    } else {
-        AWS_LOGF_ERROR(
-            AWS_LS_IMDS_CLIENT,
-            "(id=%p) IMDS client found invalid token for requester %p, try updating or keep waiting.",
-            (void *)client,
-            (void *)user_data);
-    }
-    return copied;
-}
-
-static void s_requester_try_invalidate_cached_token_safely(struct aws_imds_client_user_data *user_data) {
-    AWS_FATAL_ASSERT(user_data);
-    bool invalidated = false;
-    aws_mutex_lock(&user_data->client->token_lock);
-    if (aws_byte_buf_eq(&user_data->token_result, &user_data->client->cached_token)) {
-        user_data->client->cached_token_available = false;
-        invalidated = true;
-    }
-    aws_mutex_unlock(&user_data->client->token_lock);
-    if (invalidated) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_IMDS_CLIENT,
-            "(id=%p) IMDS client's cached token is set to be invalid by requester %p.",
-            (void *)user_data->client,
-            (void *)user_data);
-    }
-}
-
-/**
- * Once a requseter returns from token request, it should call this function to unblock all other
- * waiting requesters. When the token parameter is NULL, means the token request failed. Now we need
- * a new requester to acquire the token again.
- */
-static void s_imds_client_update_token_safely(struct aws_imds_client *client, struct aws_byte_buf *token) {
-    AWS_FATAL_ASSERT(client);
-    aws_mutex_lock(&client->token_lock);
-    if (token) {
-        aws_byte_buf_reset(&client->cached_token, true);
-        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
-        aws_byte_buf_append_dynamic(&client->cached_token, &cursor);
-        client->token_update_failed = false;
-        client->cached_token_available = true;
-    } else {
-        client->token_update_failed = true;
-        client->cached_token_available = false;
-    }
-    client->in_progress_token_update = false;
-    aws_condition_variable_notify_all(&client->token_signal);
-    aws_mutex_unlock(&client->token_lock);
-    if (token) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client updated the cached token successfully.", (void *)client);
-    } else {
-        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client failed to acquire token from IMDS.", (void *)client);
-    }
-}
+static enum aws_imds_client_copy_token_result s_requester_copy_token_safely(
+    struct aws_imds_client_user_data *user_data);
+static void s_requester_try_invalidate_cached_token_safely(struct aws_imds_client_user_data *user_data);
+static void s_requester_try_invalidate_cached_token_safely(struct aws_imds_client_user_data *user_data);
+static bool s_imds_client_update_token_safely(struct aws_imds_client *client, struct aws_byte_buf *token);
 
 static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *data, void *user_data) {
 
@@ -586,27 +513,11 @@ on_error:
     return AWS_OP_ERR;
 }
 
-typedef void(imds_state_fn)(struct aws_imds_client_user_data *);
 static void s_query_resource(struct aws_imds_client_user_data *user_data);
 
 /* Make an http request to put a ttl and hopefully get a token back. */
 static void s_query_token(struct aws_imds_client_user_data *user_data) {
     AWS_PRECONDITION(user_data->query_state == AWS_IMDS_QS_TOKEN_REQ);
-
-    /**
-     * If this requester shouldn't update token, meaning either the token is available,
-     * or the token is updating by other requester, this requester should just either copy
-     * token or wait for the update then copy.
-     */
-    while (!s_requester_test_and_try_dominate_cached_token_update(user_data)) {
-        /* if then token copied. */
-        if (s_imds_client_copy_token_to_user_data_safely(user_data)) {
-            user_data->query_state = AWS_IMDS_QS_RESOURCE_REQ;
-            s_query_resource(user_data);
-            return;
-        }
-        /* try dominate the token update */
-    }
 
     /* start query token for imds client */
     struct aws_byte_cursor uri = aws_byte_cursor_from_string(s_imds_token_resource_path);
@@ -635,6 +546,7 @@ static void s_query_token(struct aws_imds_client_user_data *user_data) {
 static void s_on_token_response(struct aws_imds_client_user_data *user_data) {
     AWS_PRECONDITION(user_data->query_state == AWS_IMDS_QS_TOKEN_RESP);
 
+    user_data->is_updating_token_for_client = false;
     /* Gets 400 means token is required but the request itself failed. */
     if (user_data->status_code == AWS_HTTP_STATUS_CODE_400_BAD_REQUEST) {
         user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
@@ -742,9 +654,10 @@ static void s_query_complete(struct aws_imds_client_user_data *user_data) {
     user_data->original_callback(&user_data->current_result, user_data->error_code, user_data->original_user_data);
     AWS_LOGF_INFO(
         AWS_LS_IMDS_CLIENT,
-        "(id=%p) IMDS client successfully queried resource %s.",
+        "(id=%p) IMDS client successfully queried resource %s for requester %p",
         (void *)user_data->client,
-        aws_string_c_str(user_data->resource_path));
+        aws_string_c_str(user_data->resource_path),
+        (void *)user_data);
 }
 
 static void s_query_error(struct aws_imds_client_user_data *user_data) {
@@ -765,6 +678,10 @@ static void s_query_error(struct aws_imds_client_user_data *user_data) {
         "(id=%p) IMDS client failed to query resource %s.",
         (void *)user_data->client,
         aws_string_c_str(user_data->resource_path));
+
+    if (user_data->is_updating_token_for_client) {
+        s_imds_client_update_token_safely(user_data->client, NULL);
+    }
 }
 
 /* Okay, some explanation on this state machine. There are two drivers.
@@ -778,6 +695,7 @@ static void s_query_error(struct aws_imds_client_user_data *user_data) {
  *
  * For your convenience, the functions in this table are in order above.
  */
+typedef void(imds_state_fn)(struct aws_imds_client_user_data *);
 static imds_state_fn *s_query_state_machine[] = {
     [AWS_IMDS_QS_TOKEN_REQ] = s_query_token,
     [AWS_IMDS_QS_TOKEN_RESP] = s_on_token_response,
@@ -955,6 +873,197 @@ static void s_on_retry_token_acquired(
     }
 }
 
+static enum aws_imds_client_copy_token_result s_requester_copy_token_safely(
+    struct aws_imds_client_user_data *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    struct aws_imds_client *client = user_data->client;
+    enum aws_imds_client_copy_token_result ret = AWS_IMDS_TK_CP_RS_UNEXPECTED_ERROR;
+    aws_mutex_lock(&client->token_lock);
+    switch (client->token_state) {
+        case AWS_IMDS_TK_ST_VALID: {
+            aws_byte_buf_reset(&user_data->token_result, true);
+            struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+            if (aws_byte_buf_append_dynamic(&user_data->token_result, &cursor)) {
+                ret = AWS_IMDS_TK_CP_RS_UNEXPECTED_ERROR;
+            } else {
+                ret = AWS_IMDS_TK_CP_RS_SUCCESS;
+            }
+            break;
+        }
+
+        case AWS_IMDS_TK_ST_INVALID: {
+            client->token_state = AWS_IMDS_TK_ST_UPDATE_IN_PROGRESS;
+            user_data->is_updating_token_for_client = true;
+            ret = AWS_IMDS_TK_CP_RS_UPDATING;
+            break;
+        }
+
+        case AWS_IMDS_TK_ST_UPDATE_IN_PROGRESS: {
+            struct aws_imds_client_token_query *query =
+                aws_mem_calloc(client->allocator, 1, sizeof(struct aws_imds_client_token_query));
+            if (query != NULL) {
+                query->user_data = user_data;
+                aws_linked_list_push_back(&client->pending_queries, &query->node);
+                ret = AWS_IMDS_TK_CP_RS_WAITING_IN_QUEUE;
+            } else {
+                ret = AWS_IMDS_TK_CP_RS_UNEXPECTED_ERROR;
+            }
+            break;
+        }
+    }
+    aws_mutex_unlock(&client->token_lock);
+    switch (ret) {
+        case AWS_IMDS_TK_CP_RS_SUCCESS:
+            AWS_LOGF_DEBUG(
+                AWS_LS_IMDS_CLIENT,
+                "(id=%p) IMDS client copied token to requester %p successfully.",
+                (void *)user_data->client,
+                (void *)user_data);
+            break;
+
+        case AWS_IMDS_TK_CP_RS_UPDATING:
+            AWS_LOGF_DEBUG(
+                AWS_LS_IMDS_CLIENT,
+                "(id=%p) IMDS client's token is invalid and will be updating by requester %p.",
+                (void *)user_data->client,
+                (void *)user_data);
+            break;
+
+        case AWS_IMDS_TK_CP_RS_WAITING_IN_QUEUE:
+            AWS_LOGF_DEBUG(
+                AWS_LS_IMDS_CLIENT,
+                "(id=%p) IMDS client's token is updating, add requester %p to waiting queue.",
+                (void *)user_data->client,
+                (void *)user_data);
+            break;
+
+        case AWS_IMDS_TK_CP_RS_UNEXPECTED_ERROR:
+            AWS_LOGF_DEBUG(
+                AWS_LS_IMDS_CLIENT,
+                "(id=%p) IMDS client encountered unexpected error when processing token query for requester %p, error: "
+                "%s.",
+                (void *)user_data->client,
+                (void *)user_data,
+                aws_error_str(aws_last_error()));
+            break;
+    }
+    return ret;
+}
+
+static void s_requester_try_invalidate_cached_token_safely(struct aws_imds_client_user_data *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    bool invalidated = false;
+    aws_mutex_lock(&user_data->client->token_lock);
+    if (aws_byte_buf_eq(&user_data->token_result, &user_data->client->cached_token)) {
+        user_data->client->token_state = AWS_IMDS_TK_ST_INVALID;
+        invalidated = true;
+    }
+    aws_mutex_unlock(&user_data->client->token_lock);
+    if (invalidated) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT,
+            "(id=%p) IMDS client's cached token is set to be invalid by requester %p.",
+            (void *)user_data->client,
+            (void *)user_data);
+    }
+}
+
+/**
+ * Once a requseter returns from token request, it should call this function to unblock all other
+ * waiting requesters. When the token parameter is NULL, means the token request failed. Now we need
+ * a new requester to acquire the token again.
+ */
+static bool s_imds_client_update_token_safely(struct aws_imds_client *client, struct aws_byte_buf *token) {
+    AWS_FATAL_ASSERT(client);
+    bool updated = false;
+
+    aws_mutex_lock(&client->token_lock);
+    if (token) {
+        aws_byte_buf_reset(&client->cached_token, true);
+        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+        if (aws_byte_buf_append_dynamic(&client->cached_token, &cursor) == AWS_OP_SUCCESS) {
+            client->token_state = AWS_IMDS_TK_ST_VALID;
+            updated = true;
+        }
+    } else {
+        client->token_state = AWS_IMDS_TK_ST_INVALID;
+    }
+
+    /* poll all pending queries if there is any */
+    while (!aws_linked_list_empty(&client->pending_queries)) {
+        struct aws_linked_list_node *node = aws_linked_list_pop_back(&client->pending_queries);
+        struct aws_imds_client_token_query *query = AWS_CONTAINER_OF(node, struct aws_imds_client_token_query, node);
+        struct aws_imds_client_user_data *user_data = query->user_data;
+        aws_mem_release(client->allocator, query);
+
+        /* if the update is not success, we need to choose a new requester to update it again */
+        if (!updated) {
+            user_data->query_state = AWS_IMDS_QS_TOKEN_REQ;
+            if (aws_retry_strategy_acquire_retry_token(
+                    client->retry_strategy, NULL, s_on_retry_token_acquired, user_data, 100)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client failed to allocate retry token for requester %p to update IMDS token.",
+                    (void *)client,
+                    (void *)user_data);
+                user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+                s_query_state_machine[AWS_IMDS_QS_UNRECOVERABLE_ERROR](user_data);
+                s_user_data_release(user_data);
+            } else {
+                /* find a new requester to update the token and the work is scheduled */
+                client->token_state = AWS_IMDS_TK_ST_UPDATE_IN_PROGRESS;
+                user_data->is_updating_token_for_client = true;
+                AWS_LOGF_DEBUG(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client now relies on requester %p to update IMDS token.",
+                    (void *)client,
+                    (void *)user_data);
+                break;
+            }
+
+            /**
+             * if the update is success, copy the token to user_data and schedule follow up resource request.
+             * if encountered error during this process, fail the requester's work.
+             */
+        } else {
+            user_data->query_state = AWS_IMDS_QS_RESOURCE_REQ;
+            aws_byte_buf_reset(&user_data->token_result, true);
+            struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+            bool success = true;
+            if (aws_byte_buf_append_dynamic(&user_data->token_result, &cursor)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client failed to copy IMDS token for requester %p.",
+                    (void *)client,
+                    (void *)user_data);
+                success = false;
+            } else if (aws_retry_strategy_acquire_retry_token(
+                           client->retry_strategy, NULL, s_on_retry_token_acquired, user_data, 100)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client failed to allocate retry token for requester %p to send resource request.",
+                    (void *)client,
+                    (void *)user_data);
+                success = false;
+            }
+            if (!success) {
+                user_data->query_state = AWS_IMDS_QS_UNRECOVERABLE_ERROR;
+                s_query_state_machine[AWS_IMDS_QS_UNRECOVERABLE_ERROR](user_data);
+                s_user_data_release(user_data);
+            }
+        }
+    }
+    aws_mutex_unlock(&client->token_lock);
+
+    if (updated) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client updated the cached token successfully.", (void *)client);
+    } else {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client failed to update the token from IMDS.", (void *)client);
+    }
+    return updated;
+}
+
 int aws_imds_client_get_resource_async(
     struct aws_imds_client *client,
     struct aws_byte_cursor resource_path,
@@ -966,11 +1075,29 @@ int aws_imds_client_get_resource_async(
         goto error;
     }
 
-    if (aws_retry_strategy_acquire_retry_token(
-            client->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, 100)) {
-        goto error;
-    }
+    if (!wrapped_user_data->token_required) {
+        if (aws_retry_strategy_acquire_retry_token(
+                client->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, 100)) {
+            goto error;
+        }
+    } else {
+        enum aws_imds_client_copy_token_result res = s_requester_copy_token_safely(wrapped_user_data);
+        if (res == AWS_IMDS_TK_CP_RS_SUCCESS) {
+            wrapped_user_data->query_state = AWS_IMDS_QS_RESOURCE_REQ;
+        }
 
+        if (res == AWS_IMDS_TK_CP_RS_SUCCESS || res == AWS_IMDS_TK_CP_RS_UPDATING) {
+            if (aws_retry_strategy_acquire_retry_token(
+                    client->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, 100)) {
+                if (wrapped_user_data->is_updating_token_for_client) {
+                    s_imds_client_update_token_safely(client, NULL);
+                }
+                goto error;
+            }
+        } else if (res == AWS_IMDS_TK_CP_RS_UNEXPECTED_ERROR) {
+            goto error;
+        }
+    }
     return AWS_OP_SUCCESS;
 
 error:

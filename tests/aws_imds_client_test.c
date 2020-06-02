@@ -797,7 +797,7 @@ static int s_imds_client_multiple_resource_requests_random_responses_finally_all
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .imds_version = IMDS_PROTOCOL_V1,
+        .imds_version = IMDS_PROTOCOL_V2,
     };
 
     options.function_table->aws_http_stream_get_incoming_response_status =
