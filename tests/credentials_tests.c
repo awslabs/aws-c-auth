@@ -56,36 +56,6 @@ static int s_credentials_create_destroy_test(struct aws_allocator *allocator, vo
 
 AWS_TEST_CASE(credentials_create_destroy_test, s_credentials_create_destroy_test);
 
-static int s_credentials_copy_test(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    struct aws_credentials *source = aws_credentials_new_from_string(
-        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value, UINT64_MAX);
-
-    struct aws_credentials *credentials = aws_credentials_new_clone(source);
-
-    // Verify string equality and pointer inequality
-    ASSERT_TRUE(aws_credentials_equals(source, credentials));
-
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_access_key_id_test_value);
-    ASSERT_TRUE(aws_credentials_get_access_key_id(credentials).ptr != aws_credentials_get_access_key_id(source).ptr);
-
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_secret_access_key(credentials), s_secret_access_key_test_value);
-    ASSERT_TRUE(
-        aws_credentials_get_secret_access_key(credentials).ptr != aws_credentials_get_secret_access_key(source).ptr);
-
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_session_token_test_value);
-    ASSERT_TRUE(aws_credentials_get_session_token(credentials).ptr != aws_credentials_get_session_token(source).ptr);
-
-    aws_credentials_release(credentials);
-    aws_credentials_release(source);
-
-    return 0;
-}
-
-AWS_TEST_CASE(credentials_copy_test, s_credentials_copy_test);
-
 struct aws_credentials_shutdown_checker {
     struct aws_mutex lock;
     struct aws_condition_variable signal;

@@ -287,9 +287,6 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_clone(struct aws_credentials *credentials);
-
-AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_from_string(
     struct aws_allocator *allocator,
     const struct aws_string *access_key_id,
@@ -302,9 +299,6 @@ void aws_credentials_acquire(struct aws_credentials *credentials);
 
 AWS_AUTH_API
 void aws_credentials_release(struct aws_credentials *credentials);
-
-AWS_AUTH_API
-bool aws_credentials_equals(struct aws_credentials *lhs, struct aws_credentials *rhs);
 
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials);

@@ -7,7 +7,6 @@ file(GLOB TEST_HDRS "*.h")
 file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC})
 
 add_test_case(credentials_create_destroy_test)
-add_test_case(credentials_copy_test)
 add_test_case(static_credentials_provider_basic_test)
 add_test_case(environment_credentials_provider_basic_test)
 add_test_case(environment_credentials_provider_negative_test)

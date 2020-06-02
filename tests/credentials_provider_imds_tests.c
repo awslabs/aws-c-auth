@@ -326,9 +326,8 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, int 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
     s_tester.error_code = error_code;
-    if (credentials != NULL) {
-        s_tester.credentials = aws_credentials_new_clone(credentials);
-    }
+    s_tester.credentials = credentials;
+    aws_credentials_acquire(credentials);
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
 }
