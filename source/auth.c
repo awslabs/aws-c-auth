@@ -85,6 +85,9 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE,
         "Attempt to sign a streaming item without supplying a previous signature"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_INVALID_CREDENTIALS,
+        "Attempt to perform a signing operation with invalid credentials"),
 };
 /* clang-format on */
 

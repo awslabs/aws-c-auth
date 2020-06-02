@@ -15,6 +15,8 @@
 
 #include <aws/auth/signing_config.h>
 
+#include <aws/auth/credentials.h>
+
 const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm) {
     switch (algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
@@ -81,6 +83,16 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
                     "(id=%p) Sigv4 signing config is missing a credentials provider or credentials",
                     (void *)config);
                 return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+            }
+            if (config->credentials != NULL) {
+                if (aws_credentials_get_access_key_id(config->credentials).len == 0 ||
+                    aws_credentials_get_secret_access_key(config->credentials).len == 0) {
+                    AWS_LOGF_ERROR(
+                        AWS_LS_AUTH_SIGNING,
+                        "(id=%p) Sigv4 signing configured with invalid credentials",
+                        (void *)config);
+                    return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CREDENTIALS);
+                }
             }
             break;
 

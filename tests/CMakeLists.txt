@@ -7,7 +7,6 @@ file(GLOB TEST_HDRS "*.h")
 file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC})
 
 add_test_case(credentials_create_destroy_test)
-add_test_case(credentials_copy_test)
 add_test_case(static_credentials_provider_basic_test)
 add_test_case(environment_credentials_provider_basic_test)
 add_test_case(environment_credentials_provider_negative_test)
@@ -170,6 +169,7 @@ add_test_case(signer_null_credentials_test)
 add_test_case(sigv4_chunked_signing_test)
 
 add_test_case(credentials_derive_ecc_key_create_destroy)
+add_test_case(credentials_derive_ecc_create_destroy)
 
 add_test_case(sigv4a_get_header_key_duplicate_test)
 add_test_case(sigv4a_get_header_value_multiline_test)

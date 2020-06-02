@@ -308,10 +308,6 @@ struct aws_signing_state_aws *aws_signing_state_new(
 
     /* Make our own copy of the signing config */
     state->config = *config;
-    if (state->config.ecc_signing_key != NULL) {
-        aws_ecc_key_pair_acquire(state->config.ecc_signing_key);
-    }
-
     if (state->config.credentials_provider != NULL) {
         aws_credentials_provider_acquire(state->config.credentials_provider);
     }
@@ -368,7 +364,6 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
     aws_signing_result_clean_up(&state->result);
 
     aws_credentials_provider_release(state->config.credentials_provider);
-    aws_ecc_key_pair_release(state->config.ecc_signing_key);
     aws_credentials_release(state->config.credentials);
 
     aws_byte_buf_clean_up(&state->region_service_buffer);
@@ -1867,7 +1862,12 @@ static int s_calculate_sigv4a_signature_value(struct aws_signing_state_aws *stat
     struct aws_byte_buf sha256_digest;
     AWS_ZERO_STRUCT(sha256_digest);
 
-    if (aws_byte_buf_init(&ecdsa_digest, allocator, aws_ecc_key_pair_signature_length(state->config.ecc_signing_key)) ||
+    struct aws_ecc_key_pair *ecc_key = aws_credentials_get_ecc_key_pair(state->config.credentials);
+    if (ecc_key == NULL) {
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CREDENTIALS);
+    }
+
+    if (aws_byte_buf_init(&ecdsa_digest, allocator, aws_ecc_key_pair_signature_length(ecc_key)) ||
         aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN)) {
         goto cleanup;
     }
@@ -1878,7 +1878,7 @@ static int s_calculate_sigv4a_signature_value(struct aws_signing_state_aws *stat
     }
 
     struct aws_byte_cursor sha256_digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
-    if (aws_ecc_key_pair_sign_message(state->config.ecc_signing_key, &sha256_digest_cursor, &ecdsa_digest)) {
+    if (aws_ecc_key_pair_sign_message(ecc_key, &sha256_digest_cursor, &ecdsa_digest)) {
         goto cleanup;
     }
 

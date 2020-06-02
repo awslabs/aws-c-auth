@@ -286,9 +286,6 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_clone(struct aws_credentials *credentials);
-
-AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_from_string(
     struct aws_allocator *allocator,
     const struct aws_string *access_key_id,
@@ -303,9 +300,6 @@ AWS_AUTH_API
 void aws_credentials_release(struct aws_credentials *credentials);
 
 AWS_AUTH_API
-bool aws_credentials_equals(struct aws_credentials *lhs, struct aws_credentials *rhs);
-
-AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials);
 
 AWS_AUTH_API
@@ -316,6 +310,9 @@ struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_creden
 
 AWS_AUTH_API
 uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_credentials *credentials);
+
+AWS_AUTH_API
+struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
 /*
  * Credentials provider APIs
@@ -469,6 +466,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_chain_default_options *options);
 
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_ecc(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor access_key_id,
+    struct aws_ecc_key_pair *ecc_key,
+    struct aws_byte_cursor session_token,
+    uint64_t expiration_timepoint_in_seconds);
+
 /*
  * Takes a pair of AWS credentials and performs the sigv4a key expansion algorithm to generate a unique
  * ecc P256 key pair based on the credentials.  The ecc key is written to the buffer in DER format.
@@ -476,6 +481,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
  * Sigv4a signing takes the raw DER-encoded ecc key as an optional parameter in signing (if not present,
  * key expansion will be done for the caller before signing).
  */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials);
+
 AWS_AUTH_API
 struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
     struct aws_allocator *allocator,

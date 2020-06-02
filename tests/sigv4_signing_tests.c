@@ -239,33 +239,45 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     }
 
     cJSON *credentials_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_credentials_name));
-    if (credentials_node != NULL) {
-        /*
-         * Pull out the three credentials components
-         */
-        cJSON *access_key_id =
-            cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_access_key_id_name));
-        cJSON *secret_access_key =
-            cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_secret_access_key_name));
-        cJSON *session_token =
-            cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_session_token_name));
+    AWS_FATAL_ASSERT(credentials_node != NULL);
 
-        if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL) ||
-            !cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
-            goto done;
-        }
+    /*
+     * Pull out the three credentials components
+     */
+    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_access_key_id_name));
+    cJSON *secret_access_key =
+        cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_secret_access_key_name));
+    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_session_token_name));
 
-        struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-        struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
-        struct aws_byte_cursor session_token_cursor = {};
+    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
+        goto done;
+    }
 
-        if (cJSON_IsString(session_token) && session_token->valuestring != NULL) {
-            session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
-        }
+    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
+    struct aws_byte_cursor secret_access_key_cursor = {};
+    struct aws_byte_cursor session_token_cursor = {};
 
+    if (cJSON_IsString(session_token) && session_token->valuestring != NULL) {
+        session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
+    }
+
+    if (cJSON_IsString(secret_access_key) && secret_access_key->valuestring != NULL) {
+        secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
+    }
+
+    if (context->ecc_key == NULL) {
         context->credentials = aws_credentials_new(
             context->allocator, access_key_id_cursor, secret_access_key_cursor, session_token_cursor, UINT64_MAX);
+        context->ecc_key =
+            aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(context->allocator, context->credentials);
+    } else {
+        context->credentials = aws_credentials_new_ecc(
+            context->allocator, access_key_id_cursor, context->ecc_key, session_token_cursor, UINT64_MAX);
+        context->ecc_key = aws_credentials_get_ecc_key_pair(context->credentials);
+        aws_ecc_key_pair_acquire(context->ecc_key);
     }
+
+    AWS_FATAL_ASSERT(context->credentials != NULL);
 
     cJSON *region_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_region_name));
     if (region_node == NULL || !cJSON_IsString(region_node) || (region_node->valuestring == NULL)) {
@@ -590,6 +602,10 @@ static int s_v4_test_context_init(
         return AWS_OP_ERR;
     }
 
+    if (s_v4_test_context_parse_key(context)) {
+        return AWS_OP_ERR;
+    }
+
     if (s_v4_test_context_parse_context_file(context)) {
         return AWS_OP_ERR;
     }
@@ -603,10 +619,6 @@ static int s_v4_test_context_init(
     }
 
     if (s_v4_test_context_init_signing_config(context, signature_type)) {
-        return AWS_OP_ERR;
-    }
-
-    if (s_v4_test_context_parse_key(context)) {
         return AWS_OP_ERR;
     }
 
@@ -649,120 +661,6 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
     context->done = true;
     aws_condition_variable_notify_one(&context->signal);
     aws_mutex_unlock(&context->lock);
-}
-
-#define DEFAULT_BUFFER_SIZE 1024
-#define BASE64_CHARS_PER_LINE 80
-
-static int s_write_key_to_file(struct aws_allocator *allocator, struct aws_ecc_key_pair *ecc_key, FILE *fp) {
-    int result = AWS_OP_ERR;
-
-    struct aws_byte_buf der_key_buffer;
-    AWS_ZERO_STRUCT(der_key_buffer);
-    struct aws_byte_buf base64_buffer;
-    AWS_ZERO_STRUCT(base64_buffer);
-
-    size_t encoded_length = 0;
-    if (aws_ecc_key_pair_get_asn1_encoding_length(ecc_key, &encoded_length)) {
-        goto done;
-    }
-
-    if (aws_byte_buf_init(&der_key_buffer, allocator, encoded_length)) {
-        goto done;
-    }
-
-    if (aws_ecc_key_pair_append_asn1_encoding(ecc_key, &der_key_buffer)) {
-        goto done;
-    }
-
-    size_t base64_length = 0;
-    if (aws_base64_compute_encoded_len(der_key_buffer.len, &base64_length)) {
-        goto done;
-    }
-
-    if (aws_byte_buf_init(&base64_buffer, allocator, base64_length)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor der_cursor = aws_byte_cursor_from_array(der_key_buffer.buffer, der_key_buffer.len);
-    if (aws_base64_encode(&der_cursor, &base64_buffer)) {
-        goto done;
-    }
-
-    fprintf(fp, "-----BEGIN EC PRIVATE KEY-----\n");
-    struct aws_byte_cursor base64_cursor = aws_byte_cursor_from_array(base64_buffer.buffer, base64_buffer.len);
-    while (base64_cursor.len > 0) {
-        size_t to_write = base64_cursor.len;
-        if (to_write > BASE64_CHARS_PER_LINE) {
-            to_write = BASE64_CHARS_PER_LINE;
-        }
-
-        struct aws_byte_cursor line_cursor = {.ptr = base64_cursor.ptr, .len = to_write};
-        fprintf(fp, PRInSTR "\n", AWS_BYTE_CURSOR_PRI(line_cursor));
-
-        aws_byte_cursor_advance(&base64_cursor, to_write);
-    }
-
-    fprintf(fp, "-----END EC PRIVATE KEY-----\n");
-
-    result = AWS_OP_SUCCESS;
-
-done:
-
-    aws_byte_buf_clean_up(&der_key_buffer);
-    aws_byte_buf_clean_up(&base64_buffer);
-
-    return result;
-}
-
-static int s_write_key_to_test_case_file(
-    struct v4_test_context *test_context,
-    struct aws_ecc_key_pair *ecc_key,
-    const char *parent_folder,
-    const char *test_name) {
-
-    FILE *fp = NULL;
-    char path[1024];
-    snprintf(path, AWS_ARRAY_SIZE(path), "./%s/%s/%s", parent_folder, test_name, aws_string_c_str(s_ecc_key_filename));
-
-    fp = fopen(path, "w");
-    if (fp == NULL) {
-        return AWS_OP_ERR;
-    }
-
-    int result = s_write_key_to_file(test_context->allocator, ecc_key, fp);
-
-    fclose(fp);
-
-    return result;
-}
-
-static int s_check_derived_ecc_key(struct v4_test_context *test_context, struct aws_ecc_key_pair *derived_ecc_key) {
-    struct aws_byte_cursor derived_pub_x;
-    AWS_ZERO_STRUCT(derived_pub_x);
-    struct aws_byte_cursor derived_pub_y;
-    AWS_ZERO_STRUCT(derived_pub_y);
-    struct aws_byte_cursor derived_private_d;
-    AWS_ZERO_STRUCT(derived_private_d);
-
-    aws_ecc_key_pair_get_public_key(derived_ecc_key, &derived_pub_x, &derived_pub_y);
-    aws_ecc_key_pair_get_private_key(derived_ecc_key, &derived_private_d);
-
-    struct aws_byte_cursor pub_x;
-    AWS_ZERO_STRUCT(pub_x);
-    struct aws_byte_cursor pub_y;
-    AWS_ZERO_STRUCT(pub_y);
-    struct aws_byte_cursor private_d;
-    AWS_ZERO_STRUCT(private_d);
-
-    aws_ecc_key_pair_get_public_key(test_context->ecc_key, &pub_x, &pub_y);
-    aws_ecc_key_pair_get_private_key(test_context->ecc_key, &private_d);
-
-    ASSERT_BIN_ARRAYS_EQUALS(derived_pub_x.ptr, derived_pub_x.len, pub_x.ptr, pub_x.len);
-    ASSERT_BIN_ARRAYS_EQUALS(derived_pub_y.ptr, derived_pub_y.len, pub_y.ptr, pub_y.len);
-    ASSERT_BIN_ARRAYS_EQUALS(derived_private_d.ptr, derived_private_d.len, private_d.ptr, private_d.len);
-
-    return AWS_OP_SUCCESS;
 }
 
 static int s_write_test_file(
@@ -839,24 +737,7 @@ static int s_generate_test_case(
     {
         struct aws_signing_state_aws *signing_state = test_context->signing_state;
 
-        /* 1a - generate ecc key */
-        if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-            if (test_context->credentials != NULL) {
-                struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-                    test_context->allocator, test_context->credentials);
-                ASSERT_NOT_NULL(derived_ecc_key);
-                ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
-
-                ASSERT_SUCCESS(s_write_key_to_test_case_file(test_context, derived_ecc_key, parent_folder, test_name));
-                aws_ecc_key_pair_release(test_context->ecc_key);
-                test_context->ecc_key = derived_ecc_key;
-            }
-
-            signing_state->config.ecc_signing_key = test_context->ecc_key;
-            aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
-        }
-
-        /* 1b - generate canonical request */
+        /* 1a - generate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
         ASSERT_SUCCESS(s_write_test_file(
             parent_folder,
@@ -864,7 +745,7 @@ static int s_generate_test_case(
             s_get_canonical_request_filename(test_context->config->signature_type),
             &signing_state->canonical_request));
 
-        /* 1c- generate string to sign */
+        /* 1b- generate string to sign */
         ASSERT_TRUE(aws_signing_build_string_to_sign(signing_state) == AWS_OP_SUCCESS);
         ASSERT_SUCCESS(s_write_test_file(
             parent_folder,
@@ -883,26 +764,7 @@ static int s_check_piecewise_test_case(
     {
         struct aws_signing_state_aws *signing_state = test_context->signing_state;
 
-        /* 1a - validate ecc key if credentials present */
-        if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-            ASSERT_TRUE(test_context->ecc_key != NULL);
-            if (test_context->credentials != NULL) {
-                struct aws_ecc_key_pair *derived_ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-                    test_context->allocator, test_context->credentials);
-                ASSERT_NOT_NULL(derived_ecc_key);
-
-                ASSERT_SUCCESS(aws_ecc_key_pair_derive_public_key(derived_ecc_key));
-
-                ASSERT_SUCCESS(s_check_derived_ecc_key(test_context, derived_ecc_key));
-
-                aws_ecc_key_pair_release(derived_ecc_key);
-            }
-
-            signing_state->config.ecc_signing_key = test_context->ecc_key;
-            aws_ecc_key_pair_acquire(signing_state->config.ecc_signing_key);
-        }
-
-        /* 1b -  validate canonical request */
+        /* 1a -  validate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
         ASSERT_BIN_ARRAYS_EQUALS(
             test_context->test_case_data.expected_canonical_request.buffer,
@@ -910,7 +772,7 @@ static int s_check_piecewise_test_case(
             signing_state->canonical_request.buffer,
             signing_state->canonical_request.len);
 
-        /* 1c- validate string to sign */
+        /* 1b- validate string to sign */
         ASSERT_TRUE(aws_signing_build_string_to_sign(signing_state) == AWS_OP_SUCCESS);
         ASSERT_BIN_ARRAYS_EQUALS(
             test_context->test_case_data.expected_string_to_sign.buffer,

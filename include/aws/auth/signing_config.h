@@ -204,42 +204,24 @@ struct aws_signing_config_aws {
     /*
      * Signing key control:
      *
-     * If requested algorithm is sigv4:
      *   (1) If "credentials" is valid, use it
-     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
+     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result.  If
+     *   sigv4a is being used, use the ecc-based credentials derived from the query result
      *   (3) Else fail
      *
-     * If requested algorithm is sigv4 asymmetric:
-     *   (1) If "ecc_signing_key" is valid, use it
-     *   (2) Else If "credentials" is valid, derive a signing key via
-     *       aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials() and use the result
-     *   (3) Else If "credentials_provider" is valid, query credentials from the provider, derive a signing key from
-     *       the result, and use the derived key
-     *   (4) Else fail
      *
-     *   Note that any step that fails (other than "is something valid") causes the whole process to fail.  For example,
-     *   if credentials is valid (rule 2) but the key derivation procedure fails for some reason, we do *NOT* fall
-     *   through to (3), we instead fail completely.
-     *
-     *   Key derivation is not cheap, and so users are encouraged to cache derived ecc signing keys relative
-     *   to aws credential instances.
+     *   Ecc key derivation is not cheap, and so users are encouraged to cache derived ecc-based credentials.
      */
 
     /*
-     * Ecc key to use as part of an asymmetric sigv4 signing process.  If the signing algorithm is not sigv4a then
-     * this parameter has no effect.
-     */
-    struct aws_ecc_key_pair *ecc_signing_key;
-
-    /*
-     * AWS Credentials to sign with.  If the signing algorithm is asymmetric sigv4, then the ecc key pair will be
-     * derived from the credentials.
+     * AWS Credentials to sign with.  If Sigv4a is the algorithm and the credentials supplied are not ecc-based,
+     * a temporary ecc-based credentials object will be built and used instead.
      */
     struct aws_credentials *credentials;
 
     /*
      * AWS credentials provider to fetch credentials from.  If the signing algorithm is asymmetric sigv4, then the
-     * ecc key pair will be derived from the fetched credentials.
+     * ecc-based credentials will be derived from the fetched credentials.
      */
     struct aws_credentials_provider *credentials_provider;
 
