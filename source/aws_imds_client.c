@@ -973,16 +973,32 @@ static struct aws_byte_cursor s_ec2_credentials_root =
 static struct aws_byte_cursor s_ec2_userdata_root = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/latest/user-data/");
 static struct aws_byte_cursor s_ec2_dynamicdata_root = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/latest/dynamic/");
 
-struct imds_client_resource_callback_user_data {
+struct imds_get_array_user_data {
     struct aws_allocator *allocator;
-    void *original_callback;
-    void *original_user_data;
+    aws_imds_client_on_get_array_callback_fn *callback;
+    void *user_data;
+};
+
+struct imds_get_credentials_user_data {
+    struct aws_allocator *allocator;
+    aws_imds_client_on_get_credentials_callback_fn *callback;
+    void *user_data;
+};
+
+struct imds_get_iam_user_data {
+    struct aws_allocator *allocator;
+    aws_imds_client_on_get_iam_profile_callback_fn *callback;
+    void *user_data;
+};
+
+struct imds_get_instance_user_data {
+    struct aws_allocator *allocator;
+    aws_imds_client_on_get_instance_info_callback_fn *callback;
+    void *user_data;
 };
 
 static void s_process_array_resource(const struct aws_byte_buf *resource, int error_code, void *user_data) {
-
-    AWS_FATAL_ASSERT(user_data);
-    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct imds_get_array_user_data *wrapped_user_data = user_data;
     struct aws_array_list resource_array;
     AWS_ZERO_STRUCT(resource_array);
 
@@ -995,21 +1011,22 @@ static void s_process_array_resource(const struct aws_byte_buf *resource, int er
         aws_byte_cursor_split_on_char(&resource_cursor, '\n', &resource_array);
     }
 
-on_finish:;
-    aws_imds_client_on_get_array_callback_fn *callback =
-        (aws_imds_client_on_get_array_callback_fn *)wrapped_user_data->original_callback;
-    callback(&resource_array, error_code, wrapped_user_data->original_user_data);
+on_finish:
+    wrapped_user_data->callback(&resource_array, error_code, wrapped_user_data->user_data);
     aws_array_list_clean_up_secure(&resource_array);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
 }
 
 static void s_process_credentials_resource(const struct aws_byte_buf *resource, int error_code, void *user_data) {
-    AWS_FATAL_ASSERT(user_data);
-    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct imds_get_credentials_user_data *wrapped_user_data = user_data;
     struct aws_credentials *credentials = NULL;
 
     struct aws_byte_buf json_data;
     AWS_ZERO_STRUCT(json_data);
+
+    if (!resource || error_code) {
+        goto on_finish;
+    }
 
     if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
         goto on_finish;
@@ -1031,10 +1048,8 @@ static void s_process_credentials_resource(const struct aws_byte_buf *resource, 
     credentials = aws_parse_credentials_from_json_document(
         wrapped_user_data->allocator, (const char *)json_data.buffer, &parse_options);
 
-on_finish:;
-    aws_imds_client_on_get_credentials_callback_fn *callback =
-        (aws_imds_client_on_get_credentials_callback_fn *)wrapped_user_data->original_callback;
-    callback(credentials, error_code, wrapped_user_data->original_user_data);
+on_finish:
+    wrapped_user_data->callback(credentials, error_code, wrapped_user_data->user_data);
     aws_credentials_destroy(credentials);
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
@@ -1047,13 +1062,7 @@ on_finish:;
   "InstanceProfileId" : "AIPAQOHATHEGTGNQ5THQB"
 }
  */
-static int s_parse_iam_profile(
-    struct aws_allocator *allocator,
-    const char *document,
-    struct aws_imds_iam_profile_info *dest) {
-    AWS_FATAL_ASSERT(allocator);
-    AWS_FATAL_ASSERT(document);
-    AWS_FATAL_ASSERT(dest);
+static int s_parse_iam_profile(const char *document, struct aws_imds_iam_profile *dest) {
 
     bool success = false;
     cJSON *document_root = cJSON_Parse(document);
@@ -1104,14 +1113,17 @@ done:
     return success ? AWS_OP_ERR : AWS_OP_SUCCESS;
 }
 
-static void s_process_iam_profile_info(const struct aws_byte_buf *resource, int error_code, void *user_data) {
-    AWS_FATAL_ASSERT(user_data);
-    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
-    struct aws_imds_iam_profile_info iam;
+static void s_process_iam_profile(const struct aws_byte_buf *resource, int error_code, void *user_data) {
+    struct imds_get_iam_user_data *wrapped_user_data = user_data;
+    struct aws_imds_iam_profile iam;
     AWS_ZERO_STRUCT(iam);
 
     struct aws_byte_buf json_data;
     AWS_ZERO_STRUCT(json_data);
+
+    if (!resource || error_code) {
+        goto on_finish;
+    }
 
     if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
         goto on_finish;
@@ -1121,14 +1133,12 @@ static void s_process_iam_profile_info(const struct aws_byte_buf *resource, int 
         goto on_finish;
     }
 
-    if (s_parse_iam_profile(wrapped_user_data->allocator, (const char *)json_data.buffer, &iam)) {
+    if (s_parse_iam_profile((const char *)json_data.buffer, &iam)) {
         goto on_finish;
     }
 
-on_finish:;
-    aws_imds_client_on_get_iam_profile_info_callback_fn *callback =
-        (aws_imds_client_on_get_iam_profile_info_callback_fn *)wrapped_user_data->original_callback;
-    callback(&iam, error_code, wrapped_user_data->original_user_data);
+on_finish:
+    wrapped_user_data->callback(&iam, error_code, wrapped_user_data->user_data);
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
 }
@@ -1151,13 +1161,7 @@ on_finish:;
   "region" : "us-west-2",
   "version" : "2017-09-30"
  */
-static int s_parse_instance_info(
-    struct aws_allocator *allocator,
-    const char *document,
-    struct aws_imds_instance_info *dest) {
-    AWS_FATAL_ASSERT(allocator);
-    AWS_FATAL_ASSERT(document);
-    AWS_FATAL_ASSERT(dest);
+static int s_parse_instance_info(const char *document, struct aws_imds_instance_info *dest) {
 
     bool success = false;
     cJSON *document_root = cJSON_Parse(document);
@@ -1273,13 +1277,16 @@ done:
 }
 
 static void s_process_instance_info(const struct aws_byte_buf *resource, int error_code, void *user_data) {
-    AWS_FATAL_ASSERT(user_data);
-    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct imds_get_instance_user_data *wrapped_user_data = user_data;
     struct aws_imds_instance_info instance_info;
     AWS_ZERO_STRUCT(instance_info);
 
     struct aws_byte_buf json_data;
     AWS_ZERO_STRUCT(json_data);
+
+    if (!resource || error_code) {
+        goto on_finish;
+    }
 
     if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
         goto on_finish;
@@ -1289,14 +1296,12 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
         goto on_finish;
     }
 
-    if (s_parse_instance_info(wrapped_user_data->allocator, (const char *)json_data.buffer, &instance_info)) {
+    if (s_parse_instance_info((const char *)json_data.buffer, &instance_info)) {
         goto on_finish;
     }
 
-on_finish:;
-    aws_imds_client_on_get_instance_info_callback_fn *callback =
-        (aws_imds_client_on_get_instance_info_callback_fn *)wrapped_user_data->original_callback;
-    callback(&instance_info, error_code, wrapped_user_data->original_user_data);
+on_finish:
+    wrapped_user_data->callback(&instance_info, error_code, wrapped_user_data->user_data);
     aws_array_list_clean_up_secure(&instance_info.billing_products);
     aws_array_list_clean_up_secure(&instance_info.marketplace_product_codes);
     aws_byte_buf_clean_up_secure(&json_data);
@@ -1332,14 +1337,8 @@ int s_aws_imds_get_converted_resource(
     struct aws_byte_cursor path,
     struct aws_byte_cursor name,
     aws_imds_client_on_get_resource_callback_fn conversion_fn,
-    void *callback,
     void *user_data) {
-    struct imds_client_resource_callback_user_data *wrapped_user_data =
-        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_client_resource_callback_user_data));
-    wrapped_user_data->allocator = client->allocator;
-    wrapped_user_data->original_callback = callback;
-    wrapped_user_data->original_user_data = user_data;
-    return s_aws_imds_get_resource(client, path, name, conversion_fn, wrapped_user_data);
+    return s_aws_imds_get_resource(client, path, name, conversion_fn, user_data);
 }
 
 int aws_imds_client_get_ami_id(
@@ -1370,13 +1369,23 @@ int aws_imds_client_get_ancestor_ami_ids(
     struct aws_imds_client *client,
     aws_imds_client_on_get_array_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_array_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_array_user_data));
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
+
     return s_aws_imds_get_converted_resource(
         client,
         s_ec2_metadata_root,
         aws_byte_cursor_from_c_str("/ancestor-ami-ids"),
         s_process_array_resource,
-        (void *)callback,
-        user_data);
+        wrapped_user_data);
 }
 
 int aws_imds_client_get_instance_action(
@@ -1463,39 +1472,69 @@ int aws_imds_client_get_security_groups(
     struct aws_imds_client *client,
     aws_imds_client_on_get_array_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_array_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_array_user_data));
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
+
     return s_aws_imds_get_converted_resource(
         client,
         s_ec2_metadata_root,
         aws_byte_cursor_from_c_str("/security-groups"),
         s_process_array_resource,
-        (void *)callback,
-        user_data);
+        wrapped_user_data);
 }
 
 int aws_imds_client_get_block_device_mapping(
     struct aws_imds_client *client,
     aws_imds_client_on_get_array_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_array_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_array_user_data));
+
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
     return s_aws_imds_get_converted_resource(
         client,
         s_ec2_metadata_root,
         aws_byte_cursor_from_c_str("/block-device-mapping"),
         s_process_array_resource,
-        (void *)callback,
-        user_data);
+        wrapped_user_data);
 }
 
 int aws_imds_client_get_attached_iam_roles(
     struct aws_imds_client *client,
     aws_imds_client_on_get_array_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_array_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_array_user_data));
+
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
     return s_aws_imds_get_converted_resource(
         client,
         s_ec2_metadata_root,
         aws_byte_cursor_from_c_str("/iam/security-credentials/"),
         s_process_array_resource,
-        (void *)callback,
-        user_data);
+        wrapped_user_data);
 }
 
 int aws_imds_client_get_credentials(
@@ -1503,21 +1542,38 @@ int aws_imds_client_get_credentials(
     struct aws_byte_cursor iam_role_name,
     aws_imds_client_on_get_credentials_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_credentials_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_credentials_user_data));
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
+
     return s_aws_imds_get_converted_resource(
-        client, s_ec2_credentials_root, iam_role_name, s_process_credentials_resource, (void *)callback, user_data);
+        client, s_ec2_credentials_root, iam_role_name, s_process_credentials_resource, wrapped_user_data);
 }
 
-int aws_imds_client_get_iam_profile_info(
+int aws_imds_client_get_iam_profile(
     struct aws_imds_client *client,
-    aws_imds_client_on_get_iam_profile_info_callback_fn callback,
+    aws_imds_client_on_get_iam_profile_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_iam_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_iam_user_data));
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
+
     return s_aws_imds_get_converted_resource(
-        client,
-        s_ec2_metadata_root,
-        aws_byte_cursor_from_c_str("/iam/info"),
-        s_process_iam_profile_info,
-        (void *)callback,
-        user_data);
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/iam/info"), s_process_iam_profile, wrapped_user_data);
 }
 
 int aws_imds_client_get_user_data(
@@ -1538,11 +1594,17 @@ int aws_imds_client_get_instance_info(
     struct aws_imds_client *client,
     aws_imds_client_on_get_instance_info_callback_fn callback,
     void *user_data) {
+
+    struct imds_get_instance_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_instance_user_data));
+    if (!wrapped_user_data) {
+        return AWS_OP_ERR;
+    }
+
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->callback = callback;
+    wrapped_user_data->user_data = user_data;
+
     return s_aws_imds_get_converted_resource(
-        client,
-        s_ec2_dynamicdata_root,
-        s_instance_identity_document,
-        s_process_instance_info,
-        (void *)callback,
-        user_data);
+        client, s_ec2_dynamicdata_root, s_instance_identity_document, s_process_instance_info, wrapped_user_data);
 }

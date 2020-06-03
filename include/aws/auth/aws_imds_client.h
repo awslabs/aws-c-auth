@@ -94,7 +94,7 @@ int aws_imds_client_get_resource_async(
 /**
  * https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
  */
-struct aws_imds_iam_profile_info {
+struct aws_imds_iam_profile {
     struct aws_date_time last_updated;
     struct aws_byte_cursor instance_profile_arn;
     struct aws_byte_cursor instance_profile_id;
@@ -130,10 +130,12 @@ typedef void(aws_imds_client_on_get_credentials_callback_fn)(
     const struct aws_credentials *credentials,
     int error_code,
     void *user_data);
-typedef void(aws_imds_client_on_get_iam_profile_info_callback_fn)(
-    const struct aws_imds_iam_profile_info *iam_profile_info,
+
+typedef void(aws_imds_client_on_get_iam_profile_callback_fn)(
+    const struct aws_imds_iam_profile *iam_profile_info,
     int error_code,
     void *user_data);
+
 typedef void(aws_imds_client_on_get_instance_info_callback_fn)(
     const struct aws_imds_instance_info *instance_info,
     int error_code,
