@@ -290,10 +290,6 @@ static int s_imds_on_incoming_headers_fn(
     return AWS_OP_SUCCESS;
 }
 
-static bool s_isspace(uint8_t c) {
-    return isspace((int)c) != 0;
-}
-
 static void s_imds_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_metadata_resource_path, "/latest/meta-data/iam/security-credentials/");
@@ -388,7 +384,7 @@ static int s_make_imds_http_query(
 on_error:
     impl->function_table->aws_http_stream_release(stream);
     aws_http_message_destroy(request);
-
+    imds_user_data->request = NULL;
     return AWS_OP_ERR;
 }
 
@@ -439,7 +435,7 @@ static void s_imds_on_token_response(struct imds_user_data *imds_user_data) {
         imds_user_data->token_required = false;
     } else {
         imds_user_data->token = aws_byte_cursor_from_buf(&(imds_user_data->current_result));
-        aws_byte_cursor_trim_pred(&(imds_user_data->token), s_isspace);
+        aws_byte_cursor_trim_pred(&(imds_user_data->token), aws_isspace);
         if (imds_user_data->token.len == 0) {
             imds_user_data->token_required = false;
         } else {

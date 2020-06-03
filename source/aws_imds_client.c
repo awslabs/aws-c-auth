@@ -774,14 +774,14 @@ static enum imds_token_copy_result s_copy_token_safely(struct imds_user_data *us
     while (!aws_linked_list_empty(&pending_queries)) {
         struct aws_linked_list_node *node = aws_linked_list_pop_back(&pending_queries);
         struct imds_token_query *query = AWS_CONTAINER_OF(node, struct imds_token_query, node);
-        struct imds_user_data *user_data = query->user_data;
+        struct imds_user_data *requester = query->user_data;
         aws_mem_release(client->allocator, query);
 
-        user_data->error_code = aws_last_error();
-        if (user_data->error_code == AWS_ERROR_SUCCESS) {
-            user_data->error_code = AWS_ERROR_UNKNOWN;
+        requester->error_code = aws_last_error();
+        if (requester->error_code == AWS_ERROR_SUCCESS) {
+            requester->error_code = AWS_ERROR_UNKNOWN;
         }
-        s_query_complete(user_data);
+        s_query_complete(requester);
     }
 
     switch (ret) {
