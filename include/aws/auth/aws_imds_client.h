@@ -17,6 +17,8 @@
  */
 #include <aws/auth/auth.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/array_list.h>
+#include <aws/common/date_time.h>
 #include <aws/http/connection_manager.h>
 #include <aws/io/retry_strategy.h>
 
@@ -87,6 +89,54 @@ int aws_imds_client_get_resource_async(
     struct aws_imds_client *client,
     struct aws_byte_cursor resource_path,
     aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+/**
+ * https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+ */
+struct aws_imds_iam_profile_info {
+    struct aws_date_time last_updated;
+    struct aws_byte_cursor instance_profile_arn;
+    struct aws_byte_cursor instance_profile_id;
+};
+
+/**
+ * https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-identity-documents.html
+ */
+struct aws_imds_instance_info {
+    /* an array of aws_byte_cursor */
+    struct aws_array_list marketplace_product_codes;
+    struct aws_byte_cursor availability_zone;
+    struct aws_byte_cursor private_ip;
+    struct aws_byte_cursor version;
+    struct aws_byte_cursor instance_id;
+    /* an array of aws_byte_cursor */
+    struct aws_array_list billing_products;
+    struct aws_byte_cursor instance_type;
+    struct aws_byte_cursor account_id;
+    struct aws_byte_cursor image_id;
+    struct aws_date_time pending_time;
+    struct aws_byte_cursor architecture;
+    struct aws_byte_cursor kernel_id;
+    struct aws_byte_cursor ramdisk_id;
+    struct aws_byte_cursor region;
+};
+
+/* the item typed stored in array is pointer to aws_byte_cursor */
+typedef void(
+    aws_imds_client_on_get_array_callback_fn)(const struct aws_array_list *array, int error_code, void *user_data);
+
+typedef void(aws_imds_client_on_get_credentials_callback_fn)(
+    const struct aws_credentials *credentials,
+    int error_code,
+    void *user_data);
+typedef void(aws_imds_client_on_get_iam_profile_info_callback_fn)(
+    const struct aws_imds_iam_profile_info *iam_profile_info,
+    int error_code,
+    void *user_data);
+typedef void(aws_imds_client_on_get_instance_info_callback_fn)(
+    const struct aws_imds_instance_info *instance_info,
+    int error_code,
     void *user_data);
 
 AWS_EXTERN_C_END

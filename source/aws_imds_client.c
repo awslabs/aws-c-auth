@@ -951,3 +951,598 @@ error:
 
     return AWS_OP_ERR;
 }
+
+/**
+ * Higher level API definitions to get specific IMDS info
+ * Reference:
+ * https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+ * https://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/com/amazonaws/util/EC2MetadataUtils.html
+ * https://github.com/aws/aws-sdk-java-v2/blob/25f640c3b4f2e339c93a7da1494ab3310e128248/core/regions/src/main/java/software/amazon/awssdk/regions/internal/util/EC2MetadataUtils.java
+ * IMDS client only implements resource acquisition that needs one resource request.
+ * Complicated resource like network interface information defined in Java V2 SDK is not implemented here.
+ * To get a full map of network interface information, we need more than ten requests, but sometimes we only care about
+ * one or two of them.
+ */
+static struct aws_byte_cursor s_instance_identity_document =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("instance-identity/document");
+static struct aws_byte_cursor s_instance_identity_signature =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("instance-identity/signature");
+static struct aws_byte_cursor s_ec2_metadata_root = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/latest/meta-data");
+static struct aws_byte_cursor s_ec2_credentials_root =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/latest/meta-data/iam/security-credentials/");
+static struct aws_byte_cursor s_ec2_userdata_root = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/latest/user-data/");
+static struct aws_byte_cursor s_ec2_dynamicdata_root = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/latest/dynamic/");
+
+struct imds_client_resource_callback_user_data {
+    struct aws_allocator *allocator;
+    void *original_callback;
+    void *original_user_data;
+};
+
+static void s_process_array_resource(const struct aws_byte_buf *resource, int error_code, void *user_data) {
+
+    AWS_FATAL_ASSERT(user_data);
+    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct aws_array_list resource_array;
+    AWS_ZERO_STRUCT(resource_array);
+
+    if (resource && !error_code) {
+        struct aws_byte_cursor resource_cursor = aws_byte_cursor_from_buf(resource);
+        if (aws_array_list_init_dynamic(
+                &resource_array, wrapped_user_data->allocator, 10, sizeof(struct aws_byte_cursor))) {
+            goto on_finish;
+        }
+        aws_byte_cursor_split_on_char(&resource_cursor, '\n', &resource_array);
+    }
+
+on_finish:;
+    aws_imds_client_on_get_array_callback_fn *callback =
+        (aws_imds_client_on_get_array_callback_fn *)wrapped_user_data->original_callback;
+    callback(&resource_array, error_code, wrapped_user_data->original_user_data);
+    aws_array_list_clean_up_secure(&resource_array);
+    aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+}
+
+static void s_process_credentials_resource(const struct aws_byte_buf *resource, int error_code, void *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct aws_credentials *credentials = NULL;
+
+    struct aws_byte_buf json_data;
+    AWS_ZERO_STRUCT(json_data);
+
+    if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
+        goto on_finish;
+    }
+
+    if (aws_byte_buf_append_null_terminator(&json_data)) {
+        goto on_finish;
+    }
+
+    struct aws_parse_credentials_from_json_doc_options parse_options = {
+        .access_key_id_name = "AccessKeyId",
+        .secrete_access_key_name = "SecretAccessKey",
+        .token_name = "Token",
+        .expiration_name = "Expiration",
+        .token_required = true,
+        .expiration_required = true,
+    };
+
+    credentials = aws_parse_credentials_from_json_document(
+        wrapped_user_data->allocator, (const char *)json_data.buffer, &parse_options);
+
+on_finish:;
+    aws_imds_client_on_get_credentials_callback_fn *callback =
+        (aws_imds_client_on_get_credentials_callback_fn *)wrapped_user_data->original_callback;
+    callback(credentials, error_code, wrapped_user_data->original_user_data);
+    aws_credentials_destroy(credentials);
+    aws_byte_buf_clean_up_secure(&json_data);
+    aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+}
+
+/**
+ * {
+  "LastUpdated" : "2020-06-03T20:42:19Z",
+  "InstanceProfileArn" : "arn:aws:iam::030535792909:instance-profile/CloudWatchAgentServerRole",
+  "InstanceProfileId" : "AIPAQOHATHEGTGNQ5THQB"
+}
+ */
+static int s_parse_iam_profile(
+    struct aws_allocator *allocator,
+    const char *document,
+    struct aws_imds_iam_profile_info *dest) {
+    AWS_FATAL_ASSERT(allocator);
+    AWS_FATAL_ASSERT(document);
+    AWS_FATAL_ASSERT(dest);
+
+    bool success = false;
+    cJSON *document_root = cJSON_Parse(document);
+    if (document_root == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for iam profile.");
+        goto done;
+    }
+
+    cJSON *last_updated = cJSON_GetObjectItemCaseSensitive(document_root, "LastUpdated");
+    if (!cJSON_IsString(last_updated) || (last_updated->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse LastUpdated from Json document for iam profile.");
+        goto done;
+    }
+
+    cJSON *profile_arn = cJSON_GetObjectItemCaseSensitive(document_root, "InstanceProfileArn");
+    if (!cJSON_IsString(profile_arn) || (profile_arn->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse InstanceProfileArn from Json document for iam profile.");
+        goto done;
+    }
+
+    cJSON *profile_id = cJSON_GetObjectItemCaseSensitive(document_root, "InstanceProfileId");
+    if (!cJSON_IsString(profile_id) || (profile_id->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse InstanceProfileId from Json document for iam profile.");
+        goto done;
+    }
+
+    struct aws_byte_cursor last_updated_cursor = aws_byte_cursor_from_c_str(last_updated->valuestring);
+    struct aws_byte_cursor profile_arn_cursor = aws_byte_cursor_from_c_str(profile_arn->valuestring);
+    struct aws_byte_cursor profile_id_cursor = aws_byte_cursor_from_c_str(profile_id->valuestring);
+
+    if (last_updated_cursor.len == 0 || profile_arn_cursor.len == 0 || profile_id_cursor.len == 0) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Parsed an unexpected Json document fro iam profile.");
+        goto done;
+    }
+
+    if (aws_date_time_init_from_str_cursor(&dest->last_updated, &last_updated_cursor, AWS_DATE_FORMAT_ISO_8601)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_IMDS_CLIENT, "LastUpdate in iam profile Json document is not a valid ISO_8601 date string.");
+        goto done;
+    }
+
+    dest->instance_profile_arn = profile_arn_cursor;
+    dest->instance_profile_id = profile_id_cursor;
+
+    success = true;
+
+done:
+    return success ? AWS_OP_ERR : AWS_OP_SUCCESS;
+}
+
+static void s_process_iam_profile_info(const struct aws_byte_buf *resource, int error_code, void *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct aws_imds_iam_profile_info iam;
+    AWS_ZERO_STRUCT(iam);
+
+    struct aws_byte_buf json_data;
+    AWS_ZERO_STRUCT(json_data);
+
+    if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
+        goto on_finish;
+    }
+
+    if (aws_byte_buf_append_null_terminator(&json_data)) {
+        goto on_finish;
+    }
+
+    if (s_parse_iam_profile(wrapped_user_data->allocator, (const char *)json_data.buffer, &iam)) {
+        goto on_finish;
+    }
+
+on_finish:;
+    aws_imds_client_on_get_iam_profile_info_callback_fn *callback =
+        (aws_imds_client_on_get_iam_profile_info_callback_fn *)wrapped_user_data->original_callback;
+    callback(&iam, error_code, wrapped_user_data->original_user_data);
+    aws_byte_buf_clean_up_secure(&json_data);
+    aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+}
+
+/**
+ * {
+  "accountId" : "030535792909",
+  "architecture" : "x86_64",
+  "availabilityZone" : "us-west-2a",
+  "billingProducts" : null, ------------>array
+  "devpayProductCodes" : null, ----------->deprecated
+  "marketplaceProductCodes" : null, -------->array
+  "imageId" : "ami-5b70e323",
+  "instanceId" : "i-022a93b5e640c0248",
+  "instanceType" : "c4.8xlarge",
+  "kernelId" : null,
+  "pendingTime" : "2020-05-27T08:41:17Z",
+  "privateIp" : "172.31.22.164",
+  "ramdiskId" : null,
+  "region" : "us-west-2",
+  "version" : "2017-09-30"
+ */
+static int s_parse_instance_info(
+    struct aws_allocator *allocator,
+    const char *document,
+    struct aws_imds_instance_info *dest) {
+    AWS_FATAL_ASSERT(allocator);
+    AWS_FATAL_ASSERT(document);
+    AWS_FATAL_ASSERT(dest);
+
+    bool success = false;
+    cJSON *document_root = cJSON_Parse(document);
+    if (document_root == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for ec2 instance info.");
+        goto done;
+    }
+
+    cJSON *account_id = cJSON_GetObjectItemCaseSensitive(document_root, "accountId");
+    if (!cJSON_IsString(account_id) || (account_id->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse accountId from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->account_id = aws_byte_cursor_from_c_str(account_id->valuestring);
+
+    cJSON *architecture = cJSON_GetObjectItemCaseSensitive(document_root, "architecture");
+    if (!cJSON_IsString(architecture) || (architecture->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse architecture from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->architecture = aws_byte_cursor_from_c_str(architecture->valuestring);
+
+    cJSON *availability_zone = cJSON_GetObjectItemCaseSensitive(document_root, "availabilityZone");
+    if (!cJSON_IsString(availability_zone) || (availability_zone->valuestring == NULL)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_IMDS_CLIENT, "Failed to parse availabilityZone from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->availability_zone = aws_byte_cursor_from_c_str(availability_zone->valuestring);
+
+    AWS_ZERO_STRUCT(dest->billing_products);
+    cJSON *billing_products = cJSON_GetObjectItemCaseSensitive(document_root, "billingProducts");
+    if (cJSON_IsArray(billing_products)) {
+        cJSON *element;
+        cJSON_ArrayForEach(element, billing_products) {
+            if (cJSON_IsString(element) && (element->valuestring != NULL)) {
+                struct aws_byte_cursor item = aws_byte_cursor_from_c_str(element->valuestring);
+                aws_array_list_push_back(&dest->billing_products, (const void *)&item);
+            }
+        }
+    }
+
+    AWS_ZERO_STRUCT(dest->marketplace_product_codes);
+    cJSON *marketplace_product_codes = cJSON_GetObjectItemCaseSensitive(document_root, "marketplaceProductCodes");
+    if (cJSON_IsArray(marketplace_product_codes)) {
+        cJSON *element;
+        cJSON_ArrayForEach(element, marketplace_product_codes) {
+            if (cJSON_IsString(element) && (element->valuestring != NULL)) {
+                struct aws_byte_cursor item = aws_byte_cursor_from_c_str(element->valuestring);
+                aws_array_list_push_back(&dest->marketplace_product_codes, (const void *)&item);
+            }
+        }
+    }
+
+    cJSON *image_id = cJSON_GetObjectItemCaseSensitive(document_root, "imageId");
+    if (cJSON_IsString(image_id) && (image_id->valuestring != NULL)) {
+        dest->image_id = aws_byte_cursor_from_c_str(image_id->valuestring);
+    }
+
+    cJSON *instance_id = cJSON_GetObjectItemCaseSensitive(document_root, "instanceId");
+    if (!cJSON_IsString(instance_id) || (instance_id->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse instanceId from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->instance_id = aws_byte_cursor_from_c_str(instance_id->valuestring);
+
+    cJSON *kernel_id = cJSON_GetObjectItemCaseSensitive(document_root, "kernelId");
+    if (cJSON_IsString(kernel_id) && (kernel_id->valuestring != NULL)) {
+        dest->kernel_id = aws_byte_cursor_from_c_str(kernel_id->valuestring);
+    }
+
+    cJSON *private_ip = cJSON_GetObjectItemCaseSensitive(document_root, "privateIp");
+    if (cJSON_IsString(private_ip) && (private_ip->valuestring != NULL)) {
+        dest->private_ip = aws_byte_cursor_from_c_str(private_ip->valuestring);
+    }
+
+    cJSON *ramdisk_id = cJSON_GetObjectItemCaseSensitive(document_root, "ramdiskId");
+    if (cJSON_IsString(ramdisk_id) && (ramdisk_id->valuestring != NULL)) {
+        dest->ramdisk_id = aws_byte_cursor_from_c_str(ramdisk_id->valuestring);
+    }
+
+    cJSON *region = cJSON_GetObjectItemCaseSensitive(document_root, "region");
+    if (!cJSON_IsString(region) || (region->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse region from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->region = aws_byte_cursor_from_c_str(region->valuestring);
+
+    cJSON *version = cJSON_GetObjectItemCaseSensitive(document_root, "version");
+    if (!cJSON_IsString(version) || (version->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse version from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->version = aws_byte_cursor_from_c_str(version->valuestring);
+
+    cJSON *pending_time = cJSON_GetObjectItemCaseSensitive(document_root, "pendingTime");
+    if (!cJSON_IsString(pending_time) || (pending_time->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse pendingTime from Json document for ec2 instance info.");
+        goto done;
+    }
+
+    struct aws_byte_cursor pending_time_cursor = aws_byte_cursor_from_c_str(pending_time->valuestring);
+    if (aws_date_time_init_from_str_cursor(&dest->pending_time, &pending_time_cursor, AWS_DATE_FORMAT_ISO_8601)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_IMDS_CLIENT, "pendingTime in instance info Json document is not a valid ISO_8601 date string.");
+        goto done;
+    }
+
+    success = true;
+
+done:
+    return success ? AWS_OP_ERR : AWS_OP_SUCCESS;
+}
+
+static void s_process_instance_info(const struct aws_byte_buf *resource, int error_code, void *user_data) {
+    AWS_FATAL_ASSERT(user_data);
+    struct imds_client_resource_callback_user_data *wrapped_user_data = user_data;
+    struct aws_imds_instance_info instance_info;
+    AWS_ZERO_STRUCT(instance_info);
+
+    struct aws_byte_buf json_data;
+    AWS_ZERO_STRUCT(json_data);
+
+    if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
+        goto on_finish;
+    }
+
+    if (aws_byte_buf_append_null_terminator(&json_data)) {
+        goto on_finish;
+    }
+
+    if (s_parse_instance_info(wrapped_user_data->allocator, (const char *)json_data.buffer, &instance_info)) {
+        goto on_finish;
+    }
+
+on_finish:;
+    aws_imds_client_on_get_instance_info_callback_fn *callback =
+        (aws_imds_client_on_get_instance_info_callback_fn *)wrapped_user_data->original_callback;
+    callback(&instance_info, error_code, wrapped_user_data->original_user_data);
+    aws_array_list_clean_up_secure(&instance_info.billing_products);
+    aws_array_list_clean_up_secure(&instance_info.marketplace_product_codes);
+    aws_byte_buf_clean_up_secure(&json_data);
+    aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+}
+
+static int s_aws_imds_get_resource(
+    struct aws_imds_client *client,
+    struct aws_byte_cursor path,
+    struct aws_byte_cursor name,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+
+    struct aws_byte_buf resource;
+    if (aws_byte_buf_init_copy_from_cursor(&resource, client->allocator, path)) {
+        return AWS_OP_ERR;
+    }
+    if (aws_byte_buf_append_dynamic(&resource, &name)) {
+        goto error;
+    }
+    if (aws_imds_client_get_resource_async(client, aws_byte_cursor_from_buf(&resource), callback, user_data)) {
+        goto error;
+    }
+    return AWS_OP_SUCCESS;
+
+error:
+    aws_byte_buf_clean_up(&resource);
+    return AWS_OP_ERR;
+}
+
+int s_aws_imds_get_converted_resource(
+    struct aws_imds_client *client,
+    struct aws_byte_cursor path,
+    struct aws_byte_cursor name,
+    aws_imds_client_on_get_resource_callback_fn conversion_fn,
+    void *callback,
+    void *user_data) {
+    struct imds_client_resource_callback_user_data *wrapped_user_data =
+        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_client_resource_callback_user_data));
+    wrapped_user_data->allocator = client->allocator;
+    wrapped_user_data->original_callback = callback;
+    wrapped_user_data->original_user_data = user_data;
+    return s_aws_imds_get_resource(client, path, name, conversion_fn, wrapped_user_data);
+}
+
+int aws_imds_client_get_ami_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/ami-id"), callback, user_data);
+}
+
+int aws_imds_client_get_ami_launch_index(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/ami-launch-index"), callback, user_data);
+}
+
+int aws_imds_client_get_ami_manifest_path(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/ami-manifest-path"), callback, user_data);
+}
+
+int aws_imds_client_get_ancestor_ami_ids(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client,
+        s_ec2_metadata_root,
+        aws_byte_cursor_from_c_str("/ancestor-ami-ids"),
+        s_process_array_resource,
+        (void *)callback,
+        user_data);
+}
+
+int aws_imds_client_get_instance_action(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/instance-action"), callback, user_data);
+}
+
+int aws_imds_client_get_instance_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/instance-id"), callback, user_data);
+}
+
+int aws_imds_client_get_instance_type(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/instance-type"), callback, user_data);
+}
+
+int aws_imds_client_get_mac_address(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/mac"), callback, user_data);
+}
+
+int aws_imds_client_get_private_ip_address(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/local-ipv4"), callback, user_data);
+}
+
+int aws_imds_client_get_availability_zone(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/placement/availability-zone"), callback, user_data);
+}
+
+int aws_imds_client_get_product_codes(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/product-codes"), callback, user_data);
+}
+
+int aws_imds_client_get_public_key(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/public-keys/0/openssh-key"), callback, user_data);
+}
+
+int aws_imds_client_get_ramdisk_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/ramdisk-id"), callback, user_data);
+}
+
+int aws_imds_client_get_reservation_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/reservation-id"), callback, user_data);
+}
+
+int aws_imds_client_get_security_groups(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client,
+        s_ec2_metadata_root,
+        aws_byte_cursor_from_c_str("/security-groups"),
+        s_process_array_resource,
+        (void *)callback,
+        user_data);
+}
+
+int aws_imds_client_get_block_device_mapping(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client,
+        s_ec2_metadata_root,
+        aws_byte_cursor_from_c_str("/block-device-mapping"),
+        s_process_array_resource,
+        (void *)callback,
+        user_data);
+}
+
+int aws_imds_client_get_attached_iam_roles(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client,
+        s_ec2_metadata_root,
+        aws_byte_cursor_from_c_str("/iam/security-credentials/"),
+        s_process_array_resource,
+        (void *)callback,
+        user_data);
+}
+
+int aws_imds_client_get_credentials(
+    struct aws_imds_client *client,
+    struct aws_byte_cursor iam_role_name,
+    aws_imds_client_on_get_credentials_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client, s_ec2_credentials_root, iam_role_name, s_process_credentials_resource, (void *)callback, user_data);
+}
+
+int aws_imds_client_get_iam_profile_info(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_iam_profile_info_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client,
+        s_ec2_metadata_root,
+        aws_byte_cursor_from_c_str("/iam/info"),
+        s_process_iam_profile_info,
+        (void *)callback,
+        user_data);
+}
+
+int aws_imds_client_get_user_data(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(client, s_ec2_userdata_root, aws_byte_cursor_from_c_str(""), callback, user_data);
+}
+
+int aws_imds_client_get_instance_signature(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_resource(client, s_ec2_dynamicdata_root, s_instance_identity_signature, callback, user_data);
+}
+
+int aws_imds_client_get_instance_info(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_instance_info_callback_fn callback,
+    void *user_data) {
+    return s_aws_imds_get_converted_resource(
+        client,
+        s_ec2_dynamicdata_root,
+        s_instance_identity_document,
+        s_process_instance_info,
+        (void *)callback,
+        user_data);
+}
