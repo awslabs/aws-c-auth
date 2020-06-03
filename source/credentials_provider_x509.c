@@ -420,7 +420,7 @@ static int s_make_x509_http_query(
 on_error:
     impl->function_table->aws_http_stream_release(stream);
     aws_http_message_destroy(request);
-
+    x509_user_data->request = NULL;
     return AWS_OP_ERR;
 }
 
