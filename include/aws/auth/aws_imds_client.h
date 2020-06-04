@@ -238,9 +238,9 @@ int aws_imds_client_get_block_device_mapping(
     void *user_data);
 
 AWS_AUTH_API
-int aws_imds_client_get_attached_iam_roles(
+int aws_imds_client_get_attached_iam_role(
     struct aws_imds_client *client,
-    aws_imds_client_on_get_array_callback_fn callback,
+    aws_imds_client_on_get_resource_callback_fn callback,
     void *user_data);
 
 AWS_AUTH_API

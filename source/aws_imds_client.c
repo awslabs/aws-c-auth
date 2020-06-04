@@ -1533,27 +1533,12 @@ int aws_imds_client_get_block_device_mapping(
         wrapped_user_data);
 }
 
-int aws_imds_client_get_attached_iam_roles(
+int aws_imds_client_get_attached_iam_role(
     struct aws_imds_client *client,
-    aws_imds_client_on_get_array_callback_fn callback,
+    aws_imds_client_on_get_resource_callback_fn callback,
     void *user_data) {
-
-    struct imds_get_array_user_data *wrapped_user_data =
-        aws_mem_calloc(client->allocator, 1, sizeof(struct imds_get_array_user_data));
-
-    if (!wrapped_user_data) {
-        return AWS_OP_ERR;
-    }
-
-    wrapped_user_data->allocator = client->allocator;
-    wrapped_user_data->callback = callback;
-    wrapped_user_data->user_data = user_data;
-    return s_aws_imds_get_converted_resource(
-        client,
-        s_ec2_metadata_root,
-        aws_byte_cursor_from_c_str("/iam/security-credentials/"),
-        s_process_array_resource,
-        wrapped_user_data);
+    return s_aws_imds_get_resource(
+        client, s_ec2_metadata_root, aws_byte_cursor_from_c_str("/iam/security-credentials/"), callback, user_data);
 }
 
 int aws_imds_client_get_credentials(
