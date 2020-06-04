@@ -59,7 +59,7 @@ struct aws_mock_sts_web_identity_tester {
  */
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
     struct aws_string *token_file_path;
@@ -219,7 +219,7 @@ static struct aws_http_connection *s_aws_http_stream_get_connection_mock(const s
     return (struct aws_http_connection *)1;
 }
 
-static struct aws_credentials_provider_system_vtable s_mock_function_table = {
+static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,

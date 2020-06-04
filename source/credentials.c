@@ -68,7 +68,9 @@ struct aws_credentials *aws_credentials_new(
         session_token != NULL ? &session_token_cursor : NULL);
 }
 
-struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials) {
+struct aws_credentials *aws_credentials_new_copy(
+    struct aws_allocator *allocator,
+    const struct aws_credentials *credentials) {
     if (credentials != NULL) {
         struct aws_credentials *copy = aws_credentials_new(
             allocator, credentials->access_key_id, credentials->secret_access_key, credentials->session_token);

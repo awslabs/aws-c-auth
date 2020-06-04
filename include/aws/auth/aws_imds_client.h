@@ -16,7 +16,7 @@
  * permissions and limitations under the License.
  */
 #include <aws/auth/auth.h>
-#include <aws/auth/private/credentials_utils.h>
+#include <aws/auth/credentials.h>
 #include <aws/common/array_list.h>
 #include <aws/common/date_time.h>
 #include <aws/http/connection_manager.h>
@@ -33,19 +33,6 @@ enum aws_imds_protocol_version {
     IMDS_PROTOCOL_V1,
 };
 
-struct aws_imds_client_system_vtable {
-    aws_http_connection_manager_new_fn *aws_http_connection_manager_new;
-    aws_http_connection_manager_release_fn *aws_http_connection_manager_release;
-    aws_http_connection_manager_acquire_connection_fn *aws_http_connection_manager_acquire_connection;
-    aws_http_connection_manager_release_connection_fn *aws_http_connection_manager_release_connection;
-    aws_http_connection_make_request_fn *aws_http_connection_make_request;
-    aws_http_stream_activate_fn *aws_http_stream_activate;
-    aws_http_stream_get_connection_fn *aws_http_stream_get_connection;
-    aws_http_stream_get_incoming_response_status_fn *aws_http_stream_get_incoming_response_status;
-    aws_http_stream_release_fn *aws_http_stream_release;
-    aws_http_connection_close_fn *aws_http_connection_close;
-};
-
 typedef void(aws_imds_client_shutdown_completed_fn)(void *user_data);
 
 struct aws_imds_client_shutdown_options {
@@ -60,7 +47,7 @@ struct aws_imds_client_options {
     /* Defaults to IMDS_PROTOCOL_V2 */
     enum aws_imds_protocol_version imds_version;
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_imds_client_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 typedef void(
