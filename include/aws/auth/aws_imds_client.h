@@ -62,7 +62,7 @@ struct aws_imds_client_options {
 };
 
 typedef void(
-    aws_imds_client_on_get_resource_callback_fn)(struct aws_byte_buf *resource, int error_code, void *user_data);
+    aws_imds_client_on_get_resource_callback_fn)(const struct aws_byte_buf *resource, int error_code, void *user_data);
 
 AWS_EXTERN_C_BEGIN
 

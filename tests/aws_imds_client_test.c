@@ -307,7 +307,7 @@ static void s_aws_wait_for_resource_result(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_get_resource_callback(struct aws_byte_buf *resource, int error_code, void *user_data) {
+static void s_get_resource_callback(const struct aws_byte_buf *resource, int error_code, void *user_data) {
     (void)user_data;
     (void)error_code;
     aws_mutex_lock(&s_tester.lock);
@@ -761,7 +761,10 @@ static void s_aws_wait_for_all_resources(int expected_resources_cnt) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_multiple_request_get_resource_callback(struct aws_byte_buf *resource, int error_code, void *user_data) {
+static void s_multiple_request_get_resource_callback(
+    const struct aws_byte_buf *resource,
+    int error_code,
+    void *user_data) {
     (void)user_data;
     (void)error_code;
     aws_mutex_lock(&s_tester.lock);
