@@ -1028,7 +1028,7 @@ static void s_process_credentials_resource(const struct aws_byte_buf *resource, 
         goto on_finish;
     }
 
-    if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
+    if (aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
         goto on_finish;
     }
 
@@ -1125,7 +1125,7 @@ static void s_process_iam_profile(const struct aws_byte_buf *resource, int error
         goto on_finish;
     }
 
-    if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
+    if (aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
         goto on_finish;
     }
 
@@ -1160,6 +1160,7 @@ on_finish:
   "ramdiskId" : null,
   "region" : "us-west-2",
   "version" : "2017-09-30"
+  }
  */
 static int s_parse_instance_info(const char *document, struct aws_imds_instance_info *dest) {
 
@@ -1192,7 +1193,6 @@ static int s_parse_instance_info(const char *document, struct aws_imds_instance_
     }
     dest->availability_zone = aws_byte_cursor_from_c_str(availability_zone->valuestring);
 
-    AWS_ZERO_STRUCT(dest->billing_products);
     cJSON *billing_products = cJSON_GetObjectItemCaseSensitive(document_root, "billingProducts");
     if (cJSON_IsArray(billing_products)) {
         cJSON *element;
@@ -1204,7 +1204,6 @@ static int s_parse_instance_info(const char *document, struct aws_imds_instance_
         }
     }
 
-    AWS_ZERO_STRUCT(dest->marketplace_product_codes);
     cJSON *marketplace_product_codes = cJSON_GetObjectItemCaseSensitive(document_root, "marketplaceProductCodes");
     if (cJSON_IsArray(marketplace_product_codes)) {
         cJSON *element;
@@ -1227,6 +1226,13 @@ static int s_parse_instance_info(const char *document, struct aws_imds_instance_
         goto done;
     }
     dest->instance_id = aws_byte_cursor_from_c_str(instance_id->valuestring);
+
+    cJSON *instance_type = cJSON_GetObjectItemCaseSensitive(document_root, "instanceType");
+    if (!cJSON_IsString(instance_type) || (instance_type->valuestring == NULL)) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse instanceType from Json document for ec2 instance info.");
+        goto done;
+    }
+    dest->instance_type = aws_byte_cursor_from_c_str(instance_type->valuestring);
 
     cJSON *kernel_id = cJSON_GetObjectItemCaseSensitive(document_root, "kernelId");
     if (cJSON_IsString(kernel_id) && (kernel_id->valuestring != NULL)) {
@@ -1280,15 +1286,27 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
     struct imds_get_instance_user_data *wrapped_user_data = user_data;
     struct aws_imds_instance_info instance_info;
     AWS_ZERO_STRUCT(instance_info);
-
     struct aws_byte_buf json_data;
     AWS_ZERO_STRUCT(json_data);
+
+    if (aws_array_list_init_dynamic(
+            &instance_info.billing_products, wrapped_user_data->allocator, 10, sizeof(struct aws_byte_cursor))) {
+        goto on_finish;
+    }
+
+    if (aws_array_list_init_dynamic(
+            &instance_info.marketplace_product_codes,
+            wrapped_user_data->allocator,
+            10,
+            sizeof(struct aws_byte_cursor))) {
+        goto on_finish;
+    }
 
     if (!resource || error_code) {
         goto on_finish;
     }
 
-    if (!aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
+    if (aws_byte_buf_init_copy(&json_data, wrapped_user_data->allocator, resource)) {
         goto on_finish;
     }
 
@@ -1325,6 +1343,7 @@ static int s_aws_imds_get_resource(
     if (aws_imds_client_get_resource_async(client, aws_byte_cursor_from_buf(&resource), callback, user_data)) {
         goto error;
     }
+    aws_byte_buf_clean_up(&resource);
     return AWS_OP_SUCCESS;
 
 error:

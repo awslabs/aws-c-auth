@@ -141,6 +141,139 @@ typedef void(aws_imds_client_on_get_instance_info_callback_fn)(
     int error_code,
     void *user_data);
 
+AWS_AUTH_API
+int aws_imds_client_get_ami_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_ami_launch_index(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_ami_manifest_path(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_ancestor_ami_ids(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_instance_action(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_instance_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_instance_type(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_mac_address(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_private_ip_address(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_availability_zone(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_product_codes(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_public_key(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_ramdisk_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_reservation_id(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_security_groups(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_block_device_mapping(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_attached_iam_roles(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_array_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_credentials(
+    struct aws_imds_client *client,
+    struct aws_byte_cursor iam_role_name,
+    aws_imds_client_on_get_credentials_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_iam_profile(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_iam_profile_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_user_data(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_instance_signature(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_resource_callback_fn callback,
+    void *user_data);
+
+AWS_AUTH_API
+int aws_imds_client_get_instance_info(
+    struct aws_imds_client *client,
+    aws_imds_client_on_get_instance_info_callback_fn callback,
+    void *user_data);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_IMDS_CLIENT_H */
