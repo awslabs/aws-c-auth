@@ -183,7 +183,7 @@ static int s_initialize_test_from_contents(
             break;
         }
 
-        if (isspace(*current_line.ptr)) {
+        if (aws_isspace(*current_line.ptr)) {
             /* multi-line header, append the entire line to the most recent header's value */
             size_t current_header_count = aws_array_list_length(&contents->header_set);
             AWS_FATAL_ASSERT(current_header_count > 0);
