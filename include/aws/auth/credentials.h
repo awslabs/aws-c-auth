@@ -17,14 +17,13 @@
  */
 
 #include <aws/auth/auth.h>
-
 #include <aws/common/array_list.h>
 #include <aws/common/atomics.h>
 #include <aws/common/linked_list.h>
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
-struct aws_credentials_provider_system_vtable;
+struct aws_auth_http_system_vtable;
 struct aws_string;
 
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
@@ -132,7 +131,7 @@ struct aws_credentials_provider_profile_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_cached_options {
@@ -152,23 +151,22 @@ struct aws_credentials_provider_chain_options {
 };
 
 /*
- * IMDS_V1 takes two http requests to get IMDS credentials.
- * Prior to these two requests, IMDS_V2 takes one more token (Http PUT) request
- * to get secure token used in following requests.
+ * EC2 IMDS_V1 takes one http request to get resource, while IMDS_V2 takes one more token (Http PUT) request
+ * to get secure token used in following request.
  */
-enum aws_credentials_provider_imds_versions {
-    /* defaults to use IMDS_V2 */
-    IMDS_V2,
-    IMDS_V1
+enum aws_imds_protocol_version {
+    /* defaults to try IMDS_PROTOCOL_V2, if IMDS_PROTOCOL_V2 is not available (on some old instances), fall back to
+       IMDS_PROTOCOL_V1 */
+    IMDS_PROTOCOL_V2,
+    IMDS_PROTOCOL_V1,
 };
 
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
-    /* If not set, this value will be false, means use IMDS_V2 */
-    enum aws_credentials_provider_imds_versions imds_version;
+    enum aws_imds_protocol_version imds_version;
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 /*
@@ -197,7 +195,7 @@ struct aws_credentials_provider_ecs_options {
     bool use_tls;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 /**
@@ -231,7 +229,7 @@ struct aws_credentials_provider_x509_options {
     const struct aws_http_proxy_options *proxy_options;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 /**
@@ -256,7 +254,7 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_sts_options {
@@ -269,7 +267,7 @@ struct aws_credentials_provider_sts_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /* For mocking, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     aws_io_clock_fn *system_clock_fn;
 };
 
@@ -320,7 +318,9 @@ struct aws_credentials *aws_credentials_new(
     const struct aws_string *session_token);
 
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_copy(struct aws_allocator *allocator, struct aws_credentials *credentials);
+struct aws_credentials *aws_credentials_new_copy(
+    struct aws_allocator *allocator,
+    const struct aws_credentials *credentials);
 
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_from_cursors(

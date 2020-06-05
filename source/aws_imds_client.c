@@ -14,6 +14,7 @@
  */
 
 #include <aws/auth/aws_imds_client.h>
+#include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/mutex.h>
@@ -60,7 +61,7 @@ struct aws_imds_client {
     struct aws_allocator *allocator;
     struct aws_http_connection_manager *connection_manager;
     struct aws_retry_strategy *retry_strategy;
-    struct aws_imds_client_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     struct aws_imds_client_shutdown_options shutdown_options;
     /* will be set to true by default, means using IMDS V2 */
     bool token_required;
@@ -73,7 +74,7 @@ struct aws_imds_client {
     struct aws_atomic_var ref_count;
 };
 
-static struct aws_imds_client_system_vtable s_default_function_table = {
+static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
