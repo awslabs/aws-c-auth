@@ -25,6 +25,10 @@
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/logging.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4204)
+#endif /* _MSC_VER */
+
 struct aws_credentials_provider_imds_impl {
     struct aws_imds_client *client;
 };
