@@ -93,6 +93,12 @@ add_test_case(imds_client_resource_request_success)
 add_test_case(imds_client_insecure_resource_request_success)
 add_test_case(imds_client_insecure_then_secure_resource_request_success)
 add_test_case(imds_client_multiple_resource_requests_random_responses_finally_all_success)
+add_test_case(imds_client_get_ami_id_success)
+add_test_case(imds_client_get_ancestor_ami_ids_success)
+add_test_case(imds_client_get_iam_profile_success)
+add_test_case(imds_client_get_instance_info_success)
+add_test_case(imds_client_get_credentials_success)
+
 if(AWS_BUILDING_ON_EC2)
     add_test_case(imds_client_real_success)
 endif()
@@ -225,4 +231,3 @@ add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
 
 file(GLOB FUZZ_TESTS "fuzz/*.c")
 aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")
-

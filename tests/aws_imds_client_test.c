@@ -30,11 +30,15 @@
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4244)
+#endif /* _MSC_VER */
+
 #define IMDS_CLIENT_MAX_REQUESTS 3
 struct aws_mock_imds_client_tester {
     struct aws_byte_buf request_uris[IMDS_CLIENT_MAX_REQUESTS];
     struct aws_array_list response_data_callbacks[IMDS_CLIENT_MAX_REQUESTS];
-
+    struct aws_allocator *allocator;
     int current_request;
     int token_response_code;
     int token_request_idx;
@@ -225,7 +229,7 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
-static struct aws_imds_client_system_vtable s_mock_function_table = {
+static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,
@@ -238,6 +242,8 @@ static struct aws_imds_client_system_vtable s_mock_function_table = {
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
+
+    s_tester.allocator = allocator;
     for (int i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
                 &s_tester.response_data_callbacks[i], allocator, 10, sizeof(struct aws_byte_cursor))) {
@@ -462,6 +468,55 @@ static int s_validate_uri_path_and_resource(int expected_requests, bool get_reso
     return 0;
 }
 
+static int s_validate_uri_path(int expected_requests, struct aws_byte_cursor resource_uri) {
+
+    ASSERT_UINT_EQUALS(expected_requests, s_tester.current_request);
+
+    int idx = s_tester.token_request_idx;
+    if (s_tester.current_request >= 1) {
+        ASSERT_BIN_ARRAYS_EQUALS(
+            s_tester.request_uris[idx].buffer,
+            s_tester.request_uris[idx].len,
+            s_expected_imds_token_uri->bytes,
+            s_expected_imds_token_uri->len);
+    }
+    idx++;
+    if (s_tester.current_request >= 2) {
+        ASSERT_BIN_ARRAYS_EQUALS(
+            s_tester.request_uris[idx].buffer, s_tester.request_uris[idx].len, resource_uri.ptr, resource_uri.len);
+    }
+    return 0;
+}
+
+static int s_validate_uri_path_and_excpected_resource(
+    int expected_requests,
+    struct aws_byte_cursor resource_uri,
+    struct aws_byte_cursor expected_resource) {
+
+    ASSERT_UINT_EQUALS(expected_requests, s_tester.current_request);
+
+    int idx = s_tester.token_request_idx;
+    if (s_tester.current_request >= 1) {
+        ASSERT_BIN_ARRAYS_EQUALS(
+            s_tester.request_uris[idx].buffer,
+            s_tester.request_uris[idx].len,
+            s_expected_imds_token_uri->bytes,
+            s_expected_imds_token_uri->len);
+    }
+    idx++;
+    if (s_tester.current_request >= 2) {
+        ASSERT_BIN_ARRAYS_EQUALS(
+            s_tester.request_uris[idx].buffer, s_tester.request_uris[idx].len, resource_uri.ptr, resource_uri.len);
+    }
+
+    ASSERT_TRUE(s_tester.has_received_resource_callback == true);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.resource.buffer, s_tester.resource.len, expected_resource.ptr, expected_resource.len);
+
+    return 0;
+}
+
 static int s_imds_client_token_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -556,6 +611,10 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_good_response,
     "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
     "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key, "SuccessfulAccessKey");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_key, "SuccessfulSecret");
+AWS_STATIC_STRING_FROM_LITERAL(s_token, "TokenSuccess");
+AWS_STATIC_STRING_FROM_LITERAL(s_expiration, "2020-02-25T06:03:31Z");
 
 static int s_imds_client_resource_request_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -895,3 +954,438 @@ static int s_imds_client_real_success(struct aws_allocator *allocator, void *ctx
 }
 
 AWS_TEST_CASE(imds_client_real_success, s_imds_client_real_success);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_test_ami_id, "ami-5b70e32");
+static int s_imds_client_get_ami_id_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_test_ami_id);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    aws_imds_client_get_ami_id(client, s_get_resource_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(
+        s_validate_uri_path_and_excpected_resource(
+            2, aws_byte_cursor_from_c_str("/latest/meta-data/ami-id"), good_response_cursor) == 0);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_test_ami_id);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(imds_client_get_ami_id_success, s_imds_client_get_ami_id_success);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_test_ancestor_ami_ids, "ami-5b70e32\nami-5b70e33\nami-5b70e34");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_ancestor_ami_id1, "ami-5b70e32");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_ancestor_ami_id2, "ami-5b70e33");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_ancestor_ami_id3, "ami-5b70e34");
+static struct aws_byte_cursor s_newline_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("\n");
+
+static int s_assert_get_ancestor_ami_ids(const struct aws_array_list *array) {
+    s_tester.has_received_resource_callback = true;
+    size_t len = aws_array_list_length(array);
+    ASSERT_TRUE(len == 3);
+    struct aws_byte_cursor cursor[3];
+    for (int i = 0; i < len; i++) {
+        aws_array_list_get_at(array, &cursor[i], i);
+        aws_byte_buf_append_dynamic(&s_tester.resource, &cursor[i]);
+        aws_byte_buf_append_dynamic(&s_tester.resource, &s_newline_cursor);
+    }
+    s_tester.resource.len--;
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(cursor[0], s_test_ancestor_ami_id1);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(cursor[1], s_test_ancestor_ami_id2);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(cursor[2], s_test_ancestor_ami_id3);
+
+    if (array) {
+        s_tester.successful_requests++;
+    }
+    return 0;
+}
+static void s_get_ancestor_ami_ids_callback(const struct aws_array_list *array, int error_code, void *user_data) {
+    (void)user_data;
+    (void)error_code;
+    aws_mutex_lock(&s_tester.lock);
+    s_assert_get_ancestor_ami_ids(array);
+    aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static int s_imds_client_get_ancestor_ami_ids_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_test_ancestor_ami_ids);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    aws_imds_client_get_ancestor_ami_ids(client, s_get_ancestor_ami_ids_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(
+        s_validate_uri_path_and_excpected_resource(
+            2, aws_byte_cursor_from_c_str("/latest/meta-data/ancestor-ami-ids"), good_response_cursor) == 0);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_test_ancestor_ami_ids);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(imds_client_get_ancestor_ami_ids_success, s_imds_client_get_ancestor_ami_ids_success);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_iam_profile,
+    "{\"LastUpdated\" : \"2020-06-03T20:42:19Z\", \n "
+    "\"InstanceProfileArn\" : \"arn:aws:iam::030535792909:instance-profile/CloudWatchAgentServerRole\", \n "
+    "\"InstanceProfileId\" : \"AIPAQOHATHEGTGNQ5THQB\"}");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_test_last_updated, "2020-06-03T20:42:19Z");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_profile_arn,
+    "arn:aws:iam::030535792909:instance-profile/CloudWatchAgentServerRole");
+AWS_STATIC_STRING_FROM_LITERAL(s_test_profile_id, "AIPAQOHATHEGTGNQ5THQB");
+
+static int s_assert_get_iam_profile(const struct aws_imds_iam_profile *iam) {
+    s_tester.has_received_resource_callback = true;
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(iam->instance_profile_arn, s_test_profile_arn);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(iam->instance_profile_id, s_test_profile_id);
+    struct aws_byte_buf buf;
+    aws_byte_buf_init(&buf, s_tester.allocator, 100);
+    aws_date_time_to_utc_time_str(&iam->last_updated, AWS_DATE_FORMAT_ISO_8601, &buf);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&buf), s_test_last_updated);
+    aws_byte_buf_clean_up(&buf);
+    if (iam) {
+        s_tester.successful_requests++;
+    }
+    return 0;
+}
+
+static void s_get_iam_profile_callback(const struct aws_imds_iam_profile *iam, int error_code, void *user_data) {
+    (void)user_data;
+    (void)error_code;
+    aws_mutex_lock(&s_tester.lock);
+    s_assert_get_iam_profile(iam);
+    aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static int s_imds_client_get_iam_profile_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_iam_profile);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    aws_imds_client_get_iam_profile(client, s_get_iam_profile_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_validate_uri_path(2, aws_byte_cursor_from_c_str("/latest/meta-data/iam/info")) == 0);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(imds_client_get_iam_profile_success, s_imds_client_get_iam_profile_success);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_instance_info,
+    "{\"accountId\" : \"030535792909\", \n"
+    "\"architecture\" : \"x86_64\", \n"
+    "\"availabilityZone\" : \"us-west-2a\", \n"
+    "\"billingProducts\" : [\"1234\", \"abcd\"], \n"
+    "\"devpayProductCodes\" : null, \n"
+    "\"marketplaceProductCodes\" : null, \n"
+    "\"imageId\" : \"ami-5b70e323\", \n"
+    "\"instanceId\" : \"i-022a93b5e640c0248\", \n"
+    "\"instanceType\" : \"c4.8xlarge\", \n"
+    "\"kernelId\" : null, \n"
+    "\"pendingTime\" : \"2020-05-27T08:41:17Z\", \n"
+    "\"privateIp\" : \"172.31.22.164\", \n"
+    "\"ramdiskId\" : null, \n"
+    "\"region\" : \"us-west-2\", \n"
+    "\"version\" : \"2017-09-30\" \n}");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_account_id, "030535792909");
+AWS_STATIC_STRING_FROM_LITERAL(s_architecture, "x86_64");
+AWS_STATIC_STRING_FROM_LITERAL(s_availability_zone, "us-west-2a");
+AWS_STATIC_STRING_FROM_LITERAL(s_image_id, "ami-5b70e323");
+AWS_STATIC_STRING_FROM_LITERAL(s_instance_id, "i-022a93b5e640c0248");
+AWS_STATIC_STRING_FROM_LITERAL(s_instance_type, "c4.8xlarge");
+AWS_STATIC_STRING_FROM_LITERAL(s_pending_time, "2020-05-27T08:41:17Z");
+AWS_STATIC_STRING_FROM_LITERAL(s_private_ip, "172.31.22.164");
+AWS_STATIC_STRING_FROM_LITERAL(s_region, "us-west-2");
+AWS_STATIC_STRING_FROM_LITERAL(s_version, "2017-09-30");
+AWS_STATIC_STRING_FROM_LITERAL(s_billing_product1, "1234");
+AWS_STATIC_STRING_FROM_LITERAL(s_billing_product2, "abcd");
+
+static int s_assert_get_instance_info(const struct aws_imds_instance_info *instance) {
+    s_tester.has_received_resource_callback = true;
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->account_id, s_account_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->architecture, s_architecture);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->availability_zone, s_availability_zone);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->image_id, s_image_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->instance_id, s_instance_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->instance_type, s_instance_type);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->private_ip, s_private_ip);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->region, s_region);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->version, s_version);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(instance->availability_zone, s_availability_zone);
+
+    ASSERT_TRUE(aws_array_list_length(&instance->billing_products) == 2);
+    ASSERT_TRUE(aws_array_list_length(&instance->marketplace_product_codes) == 0);
+
+    struct aws_byte_cursor cursor[2];
+    for (int i = 0; i < 2; i++) {
+        aws_array_list_get_at(&instance->billing_products, &cursor[i], i);
+    }
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(cursor[0], s_billing_product1);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(cursor[1], s_billing_product2);
+
+    struct aws_byte_buf buf;
+    aws_byte_buf_init(&buf, s_tester.allocator, 100);
+    aws_date_time_to_utc_time_str(&instance->pending_time, AWS_DATE_FORMAT_ISO_8601, &buf);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&buf), s_pending_time);
+    aws_byte_buf_clean_up(&buf);
+    if (instance) {
+        s_tester.successful_requests++;
+    }
+    return 0;
+}
+
+static void s_get_instance_info_callback(
+    const struct aws_imds_instance_info *instance,
+    int error_code,
+    void *user_data) {
+    (void)user_data;
+    (void)error_code;
+    aws_mutex_lock(&s_tester.lock);
+    s_assert_get_instance_info(instance);
+    aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static int s_imds_client_get_instance_info_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_instance_info);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    aws_imds_client_get_instance_info(client, s_get_instance_info_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_validate_uri_path(2, aws_byte_cursor_from_c_str("/latest/dynamic/instance-identity/document")) == 0);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(imds_client_get_instance_info_success, s_imds_client_get_instance_info_success);
+
+static int s_assert_get_credentials_info(const struct aws_credentials *creds) {
+    s_tester.has_received_resource_callback = true;
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_string(creds->access_key_id), s_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_string(creds->secret_access_key), s_secret_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_string(creds->session_token), s_token);
+
+    struct aws_byte_buf buf;
+    aws_byte_buf_init(&buf, s_tester.allocator, 100);
+    struct aws_date_time date;
+    aws_date_time_init_epoch_secs(&date, creds->expiration_timepoint_seconds);
+    aws_date_time_to_utc_time_str(&date, AWS_DATE_FORMAT_ISO_8601, &buf);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&buf), s_expiration);
+    aws_byte_buf_clean_up(&buf);
+    if (creds) {
+        s_tester.successful_requests++;
+    }
+    return 0;
+}
+
+static void s_get_credentails_callback(const struct aws_credentials *creds, int error_code, void *user_data) {
+    (void)user_data;
+    (void)error_code;
+    aws_mutex_lock(&s_tester.lock);
+    s_assert_get_credentials_info(creds);
+    aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static int s_imds_client_get_credentials_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(
+        s_validate_uri_path(2, aws_byte_cursor_from_c_str("/latest/meta-data/iam/security-credentials/test_role")) ==
+        0);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_header_expected[1]);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    s_aws_imds_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(imds_client_get_credentials_success, s_imds_client_get_credentials_success);
