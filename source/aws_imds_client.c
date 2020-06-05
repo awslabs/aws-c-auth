@@ -418,8 +418,6 @@ static int s_make_imds_http_query(
         return AWS_OP_ERR;
     }
 
-    s_user_data_acquire(user_data);
-
     if (headers && aws_http_message_add_header_array(request, headers, header_count)) {
         goto on_error;
     }
@@ -468,12 +466,15 @@ static int s_make_imds_http_query(
         .request = request,
     };
 
+    /* for test with mocking http stack where make request finishes
+    immediately and releases client before stream activate call */
+    s_user_data_acquire(user_data);
     stream = client->function_table->aws_http_connection_make_request(user_data->connection, &request_options);
     if (!stream || client->function_table->aws_http_stream_activate(stream)) {
         goto on_error;
     }
-
     s_user_data_release(user_data);
+
     return AWS_OP_SUCCESS;
 
 on_error:
@@ -679,7 +680,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     if (error_code) {
         AWS_LOGF_WARN(
             AWS_LS_IMDS_CLIENT,
-            "id=%p: Connection was closed with error code %d(%s)",
+            "id=%p: Stream completed with error code %d(%s)",
             (void *)client,
             error_code,
             aws_error_str(error_code));
@@ -688,12 +689,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 imds_user_data->retry_token, AWS_RETRY_ERROR_TYPE_TRANSIENT, s_on_retry_ready, user_data)) {
             AWS_LOGF_DEBUG(
                 AWS_LS_IMDS_CLIENT,
-                "id=%p: Connection was closed, retrying the last request on a new connection.",
+                "id=%p: Stream completed, retrying the last request on a new connection.",
                 (void *)client);
             return;
         } else {
-            AWS_LOGF_ERROR(
-                AWS_LS_IMDS_CLIENT, "id=%p: Connection was closed, retries have been exhausted.", (void *)client);
+            AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "id=%p: Stream completed, retries have been exhausted.", (void *)client);
             imds_user_data->error_code = error_code;
         }
     } else if (aws_retry_strategy_token_record_success(imds_user_data->retry_token)) {
@@ -718,7 +718,7 @@ static void s_on_retry_token_acquired(
     struct aws_imds_client *client = imds_user_data->client;
 
     if (!error_code) {
-        AWS_LOGF_WARN(AWS_LS_IMDS_CLIENT, "id=%p: IMDS Client successfully acquired retry token.", (void *)client);
+        AWS_LOGF_DEBUG(AWS_LS_IMDS_CLIENT, "id=%p: IMDS Client successfully acquired retry token.", (void *)client);
         imds_user_data->retry_token = token;
         client->function_table->aws_http_connection_manager_acquire_connection(
             client->connection_manager, s_on_acquire_connection, imds_user_data);
@@ -731,6 +731,56 @@ static void s_on_retry_token_acquired(
             aws_error_str(error_code));
         imds_user_data->error_code = error_code;
         s_query_complete(imds_user_data);
+    }
+}
+
+static void s_complete_pending_queries(
+    struct aws_imds_client *client,
+    struct aws_linked_list *queries,
+    bool token_required,
+    struct aws_byte_buf *token) {
+
+    /* poll swapped out pending queries if there is any */
+    while (!aws_linked_list_empty(queries)) {
+        struct aws_linked_list_node *node = aws_linked_list_pop_back(queries);
+        struct imds_token_query *query = AWS_CONTAINER_OF(node, struct imds_token_query, node);
+        struct imds_user_data *requester = query->user_data;
+        aws_mem_release(client->allocator, query);
+
+        requester->imds_token_required = token_required;
+        bool should_continue = true;
+        if (token) {
+            aws_byte_buf_reset(&requester->imds_token, true);
+            struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(token);
+            if (aws_byte_buf_append_dynamic(&requester->imds_token, &cursor)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client failed to copy IMDS token for requester %p.",
+                    (void *)client,
+                    (void *)requester);
+                should_continue = false;
+            }
+        } else if (token_required) {
+            should_continue = false;
+        }
+
+        if (should_continue && aws_retry_strategy_acquire_retry_token(
+                                   client->retry_strategy, NULL, s_on_retry_token_acquired, requester, 100)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_IMDS_CLIENT,
+                "(id=%p) IMDS client failed to allocate retry token for requester %p to send resource request.",
+                (void *)client,
+                (void *)should_continue);
+            should_continue = false;
+        }
+
+        if (!should_continue) {
+            requester->error_code = aws_last_error();
+            if (requester->error_code == AWS_ERROR_SUCCESS) {
+                requester->error_code = AWS_ERROR_UNKNOWN;
+            }
+            s_query_complete(requester);
+        }
     }
 }
 
@@ -771,19 +821,7 @@ static enum imds_token_copy_result s_copy_token_safely(struct imds_user_data *us
     }
     aws_mutex_unlock(&client->token_lock);
 
-    /* poll swapped out pending queries if there is any */
-    while (!aws_linked_list_empty(&pending_queries)) {
-        struct aws_linked_list_node *node = aws_linked_list_pop_back(&pending_queries);
-        struct imds_token_query *query = AWS_CONTAINER_OF(node, struct imds_token_query, node);
-        struct imds_user_data *requester = query->user_data;
-        aws_mem_release(client->allocator, query);
-
-        requester->error_code = aws_last_error();
-        if (requester->error_code == AWS_ERROR_SUCCESS) {
-            requester->error_code = AWS_ERROR_UNKNOWN;
-        }
-        s_query_complete(requester);
-    }
+    s_complete_pending_queries(client, &pending_queries, true, NULL);
 
     switch (ret) {
         case AWS_IMDS_TCR_SUCCESS:
@@ -857,48 +895,7 @@ static bool s_update_token_safely(struct aws_imds_client *client, struct aws_byt
     aws_linked_list_swap_contents(&pending_queries, &client->pending_queries);
     aws_mutex_unlock(&client->token_lock);
 
-    /* poll all pending queries if there is any */
-    while (!aws_linked_list_empty(&pending_queries)) {
-        struct aws_linked_list_node *node = aws_linked_list_pop_back(&pending_queries);
-        struct imds_token_query *query = AWS_CONTAINER_OF(node, struct imds_token_query, node);
-        struct imds_user_data *user_data = query->user_data;
-        aws_mem_release(client->allocator, query);
-
-        bool success = true;
-        user_data->imds_token_required = token_required;
-        if (token) {
-            aws_byte_buf_reset(&user_data->imds_token, true);
-            struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(token);
-            if (aws_byte_buf_append_dynamic(&user_data->imds_token, &cursor)) {
-                AWS_LOGF_ERROR(
-                    AWS_LS_IMDS_CLIENT,
-                    "(id=%p) IMDS client failed to copy IMDS token for requester %p.",
-                    (void *)client,
-                    (void *)user_data);
-                success = false;
-            }
-        } else if (token_required) {
-            success = false;
-        }
-
-        if (success && aws_retry_strategy_acquire_retry_token(
-                           client->retry_strategy, NULL, s_on_retry_token_acquired, user_data, 100)) {
-            AWS_LOGF_ERROR(
-                AWS_LS_IMDS_CLIENT,
-                "(id=%p) IMDS client failed to allocate retry token for requester %p to send resource request.",
-                (void *)client,
-                (void *)user_data);
-            success = false;
-        }
-
-        if (!success) {
-            user_data->error_code = aws_last_error();
-            if (user_data->error_code == AWS_ERROR_SUCCESS) {
-                user_data->error_code = AWS_ERROR_UNKNOWN;
-            }
-            s_query_complete(user_data);
-        }
-    }
+    s_complete_pending_queries(client, &pending_queries, token_required, token);
 
     if (updated) {
         AWS_LOGF_DEBUG(

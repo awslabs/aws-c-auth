@@ -2,7 +2,7 @@
 #define AWS_AUTH_CREDENTIALS_H
 
 /*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -155,8 +155,11 @@ struct aws_credentials_provider_chain_options {
  * to get secure token used in following request.
  */
 enum aws_imds_protocol_version {
-    /* defaults to try IMDS_PROTOCOL_V2, if IMDS_PROTOCOL_V2 is not available (on some old instances), fall back to
-       IMDS_PROTOCOL_V1 */
+    /**
+     * Defaults to IMDS_PROTOCOL_V2. It can be set to either one and IMDS Client
+     * will figure out (by looking at response code) which protocol an instance
+     * is using. But a more clear setting will reduce unnecessary network request.
+     */
     IMDS_PROTOCOL_V2,
     IMDS_PROTOCOL_V1,
 };
