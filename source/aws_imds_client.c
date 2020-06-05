@@ -770,7 +770,7 @@ static void s_complete_pending_queries(
                 AWS_LS_IMDS_CLIENT,
                 "(id=%p) IMDS client failed to allocate retry token for requester %p to send resource request.",
                 (void *)client,
-                (void *)should_continue);
+                (void *)requester);
             should_continue = false;
         }
 
