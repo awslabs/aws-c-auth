@@ -14,8 +14,6 @@
  */
 
 #include <aws/auth/aws_imds_client.h>
-
-#include <aws/auth/aws_imds_client.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>

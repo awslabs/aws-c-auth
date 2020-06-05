@@ -16,14 +16,7 @@
 #include <aws/auth/aws_imds_client.h>
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/common/clock.h>
-#include <aws/common/condition_variable.h>
-#include <aws/common/date_time.h>
-#include <aws/common/mutex.h>
 #include <aws/common/string.h>
-#include <aws/http/connection_manager.h>
-#include <aws/io/channel_bootstrap.h>
-#include <aws/io/logging.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
