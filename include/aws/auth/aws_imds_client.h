@@ -22,17 +22,6 @@
 #include <aws/http/connection_manager.h>
 #include <aws/io/retry_strategy.h>
 
-/*
- * EC2 IMDS_V1 takes one http request to get resource, while IMDS_V2 takes one more token (Http PUT) request
- * to get secure token used in following request.
- */
-enum aws_imds_protocol_version {
-    /* defaults to try IMDS_PROTOCOL_V2, if IMDS_PROTOCOL_V2 is not available (on some old instances), fall back to
-       IMDS_PROTOCOL_V1 */
-    IMDS_PROTOCOL_V2,
-    IMDS_PROTOCOL_V1,
-};
-
 typedef void(aws_imds_client_shutdown_completed_fn)(void *user_data);
 
 struct aws_imds_client_shutdown_options {
