@@ -30,6 +30,10 @@
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4244)
+#endif /* _MSC_VER */
+
 #define IMDS_CLIENT_MAX_REQUESTS 3
 struct aws_mock_imds_client_tester {
     struct aws_byte_buf request_uris[IMDS_CLIENT_MAX_REQUESTS];
