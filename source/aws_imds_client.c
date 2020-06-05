@@ -845,7 +845,7 @@ static bool s_update_token_safely(struct aws_imds_client *client, struct aws_byt
     client->token_required = token_required;
     if (token) {
         aws_byte_buf_reset(&client->cached_token, true);
-        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&client->cached_token);
+        struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(token);
         if (aws_byte_buf_append_dynamic(&client->cached_token, &cursor) == AWS_OP_SUCCESS) {
             client->token_state = AWS_IMDS_TS_VALID;
             updated = true;
