@@ -530,7 +530,7 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
      * service actually performing sigv4 on a double-encoding of the path.  In order to match those
      * services, we must double encode in our calculation as well.
      */
-    if (config->use_double_uri_encode) {
+    if (config->flags.use_double_uri_encode) {
         struct aws_byte_cursor path_cursor;
 
         /*
@@ -541,7 +541,7 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
          * All this does is skip the temporary normalized path in the case where we don't need to
          * double encode.
          */
-        if (config->should_normalize_uri_path) {
+        if (config->flags.should_normalize_uri_path) {
             if (aws_byte_buf_init(&normalized_path, state->allocator, uri->path.len)) {
                 goto cleanup;
             }
@@ -563,7 +563,7 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
          * If we don't need to perform any kind of transformation on the normalized path, just append it directly
          * into the canonical request buffer
          */
-        if (config->should_normalize_uri_path) {
+        if (config->flags.should_normalize_uri_path) {
             if (s_append_normalized_path(&uri->path, allocator, canonical_request_buffer)) {
                 goto cleanup;
             }
@@ -677,9 +677,9 @@ static int s_add_authorization_query_param_with_encoding(
  * Checks the header against both an internal skip list as well as an optional user-supplied filter
  * function.  Only sign the header if both functions allow it.
  */
-static bool s_should_sign_param(struct aws_signing_state_aws *state, struct aws_byte_cursor *name) {
-    if (state->config.should_sign_param) {
-        if (!state->config.should_sign_param(name, state->config.should_sign_param_ud)) {
+static bool s_should_sign_header(struct aws_signing_state_aws *state, struct aws_byte_cursor *name) {
+    if (state->config.should_sign_header) {
+        if (!state->config.should_sign_header(name, state->config.should_sign_header_ud)) {
             return false;
         }
     }
@@ -769,7 +769,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     /* X-Amz-Security-token */
     struct aws_byte_cursor security_token_name_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-    if (session_token_cursor.len > 0 && s_should_sign_param(state, &security_token_name_cur)) {
+    if (session_token_cursor.len > 0 && !state->config.flags.omit_session_token_query_param) {
         struct aws_uri_param security_token_param = {
             .key = security_token_name_cur,
             .value = session_token_cursor,
@@ -1031,7 +1031,7 @@ static int s_build_canonical_stable_header_list(
         }
 
         struct aws_byte_cursor *header_name_cursor = &header_wrapper.header.name;
-        if (!s_should_sign_param(state, header_name_cursor)) {
+        if (!s_should_sign_header(state, header_name_cursor)) {
             continue;
         }
 
@@ -1047,7 +1047,7 @@ static int s_build_canonical_stable_header_list(
     struct aws_byte_cursor security_token_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
 
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-    if (session_token_cursor.len > 0 && s_should_sign_param(state, &security_token_cur)) {
+    if (session_token_cursor.len > 0) {
         /* X-Amz-Security-Token */
         struct stable_header session_token_header = {
             .original_index = additional_header_index++,

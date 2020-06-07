@@ -92,8 +92,8 @@ static int s_initialize_request_signing_config(
         return AWS_OP_ERR;
     }
 
-    config->use_double_uri_encode = false;
-    config->should_normalize_uri_path = true;
+    config->flags.use_double_uri_encode = false;
+    config->flags.should_normalize_uri_path = true;
     config->signed_body_value = AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_PAYLOAD;
     config->signed_body_header = AWS_SBHT_X_AMZ_CONTENT_SHA256;
     config->credentials = credentials;
@@ -115,8 +115,8 @@ static int s_initialize_chunk_signing_config(
         return AWS_OP_ERR;
     }
 
-    config->use_double_uri_encode = false;
-    config->should_normalize_uri_path = true;
+    config->flags.use_double_uri_encode = false;
+    config->flags.should_normalize_uri_path = true;
     config->signed_body_value = AWS_SBVT_PAYLOAD;
     config->signed_body_header = AWS_SBHT_NONE;
     config->credentials = credentials;
