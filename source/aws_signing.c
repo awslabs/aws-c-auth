@@ -1078,7 +1078,7 @@ static int s_build_canonical_stable_header_list(
     struct aws_byte_cursor security_token_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
 
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-    if (session_token_cursor.len > 0 && !state->config.flags.omit_session_token) {
+    if (session_token_cursor.len > 0 && state->config.signature_type != AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
         /* X-Amz-Security-Token */
         struct stable_header session_token_header = {
             .original_index = additional_header_index++,
