@@ -4,7 +4,7 @@ My-Header1:value4
 My-Header1:value1
 My-Header1:value3
 My-Header1:value2
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;x-amz-date;x-amz-region-set, Signature=3046022100c70dcb902dc55dc31374702ed3505894edba34470245c350413a7ae6b7eda41a02210080ad0ce0c38b37aa85ba8ec63f9593b585675d6e6d75c88b2f8fc09770a85a6c
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;my-header1;x-amz-date;x-amz-region-set, Signature=30450220375345f80dd6237452075c25c25069430f89ce6c3fdff7ae4103a50b4f7bb8af022100bfb21ebd1ab175dbfaae98deb966edb65f241d11a2fd2f534a101f81fd63fc0b
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 

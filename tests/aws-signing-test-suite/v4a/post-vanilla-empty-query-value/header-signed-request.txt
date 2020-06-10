@@ -1,6 +1,6 @@
 POST /?Param1=value1 HTTP/1.1
 Host:example.amazonaws.com
-Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=30450220508d268ab605a99387b4e014582c5fd40122fc3c280fe52df444f67df421733602210093aef6f8d4985ceea16f466ef0d43ab31d3c9e6d68868855e7a0b0db277c5f17
+Authorization:AWS4-ECDSA-P256-SHA256 Credential=AKIDEXAMPLE/20150830/service/aws4_request, SignedHeaders=host;x-amz-date;x-amz-region-set, Signature=3046022100d66e04fc495272ce846986c50c78fc9322f87aaaecd6de738c656a4a123d6512022100b4fccd58346443cdc5cf1d4138876c8e5ebd7bd634d741d4af874187b6e53a4c
 X-Amz-Date:20150830T123600Z
 X-Amz-Region-Set:us-east-1
 
