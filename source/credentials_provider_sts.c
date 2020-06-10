@@ -569,7 +569,7 @@ static void s_start_make_request(
     aws_date_time_init_now(&provider_user_data->signing_config.date);
     provider_user_data->signing_config.region = s_signing_region;
     provider_user_data->signing_config.service = s_service_name;
-    provider_user_data->signing_config.use_double_uri_encode = false;
+    provider_user_data->signing_config.flags.use_double_uri_encode = false;
 
     if (aws_sign_request_aws(
             provider->allocator,

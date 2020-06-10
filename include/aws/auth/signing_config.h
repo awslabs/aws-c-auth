@@ -23,7 +23,7 @@
 
 struct aws_credentials;
 
-typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name, void *userdata);
+typedef bool(aws_should_sign_header_fn)(const struct aws_byte_cursor *name, void *userdata);
 
 /**
  * A primitive RTTI indicator for signing configuration structs
@@ -163,28 +163,40 @@ struct aws_signing_config_aws {
     struct aws_date_time date;
 
     /**
-     * Optional function to control which parameters (header or query) are a part of the canonical request.
-     * Skipping auth-required params
-     * will result in an unusable signature.  Headers injected by the signing process are not skippable.
+     * Optional function to control which headers are a part of the canonical request.
+     * Skipping auth-required headers will result in an unusable signature.  Headers injected by the signing process
+     * are not skippable.
      *
      * This function does not override the internal check function (x-amzn-trace-id, user-agent), but rather
      * supplements it.  In particular, a header will get signed if and only if it returns true to both
      * the internal check (skips x-amzn-trace-id, user-agent) and this function (if defined).
      */
-    aws_should_sign_param_fn *should_sign_param;
-    void *should_sign_param_ud;
+    aws_should_sign_header_fn *should_sign_header;
+    void *should_sign_header_ud;
 
-    /**
-     * We assume the uri will be encoded once in preparation for transmission.  Certain services
-     * do not decode before checking signature, requiring us to actually double-encode the uri in the canonical request
-     * in order to pass a signature check.
+    /*
+     * Put all flags in here at the end.  If this grows, stay aware of bit-space overflow and ABI compatibilty.
      */
-    bool use_double_uri_encode;
+    struct {
+        /**
+         * We assume the uri will be encoded once in preparation for transmission.  Certain services
+         * do not decode before checking signature, requiring us to actually double-encode the uri in the canonical
+         * request in order to pass a signature check.
+         */
+        uint32_t use_double_uri_encode : 1;
 
-    /**
-     * Controls whether or not the uri paths should be normalized when building the canonical request
-     */
-    bool should_normalize_uri_path;
+        /**
+         * Controls whether or not the uri paths should be normalized when building the canonical request
+         */
+        uint32_t should_normalize_uri_path : 1;
+
+        /**
+         * Should the "X-Amz-Security-Token" query param be omitted?
+         * Normally, this parameter is added during signing if the credentials have a session token.
+         * The only known case where this should be true is when signing a websocket handshake to IoT Core.
+         */
+        uint32_t omit_session_token_query_param : 1;
+    } flags;
 
     /**
      * Controls what should be used as "the body" when creating the canonical request.
