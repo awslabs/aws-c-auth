@@ -878,7 +878,7 @@ cleanup:
  * included in the trimming done to headers
  */
 static bool s_is_space(uint8_t value) {
-    return isspace(value);
+    return aws_isspace(value);
 }
 
 /*

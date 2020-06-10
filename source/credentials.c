@@ -79,7 +79,6 @@ struct aws_credentials {
 /*
  * Credentials API implementations
  */
-
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
     struct aws_byte_cursor access_key_id_cursor,
