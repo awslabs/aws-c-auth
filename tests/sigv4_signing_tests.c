@@ -506,8 +506,8 @@ static int s_v4_test_context_init_signing_config(
     context->config->signature_type = signature_type;
     context->config->region = aws_byte_cursor_from_string(context->region_config);
     context->config->service = aws_byte_cursor_from_string(context->service);
-    context->config->use_double_uri_encode = true;
-    context->config->should_normalize_uri_path = context->should_normalize;
+    context->config->flags.use_double_uri_encode = true;
+    context->config->flags.should_normalize_uri_path = context->should_normalize;
 
     /* ToDo: make the tests more fine-grained now that we have updated payload signing controls */
     if (context->should_sign_body) {
@@ -1286,7 +1286,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_date, "2015-08-30T12:36:00Z");
 
 static int s_do_header_skip_test(
     struct aws_allocator *allocator,
-    aws_should_sign_param_fn *should_sign,
+    aws_should_sign_header_fn *should_sign,
     const struct aws_string *request_contents,
     const struct aws_string *expected_canonical_request) {
 
@@ -1303,7 +1303,7 @@ static int s_do_header_skip_test(
     config.signature_type = AWS_ST_HTTP_REQUEST_HEADERS;
     config.region = aws_byte_cursor_from_string(s_test_suite_region);
     config.service = aws_byte_cursor_from_string(s_test_suite_service);
-    config.should_sign_param = should_sign;
+    config.should_sign_header = should_sign;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
     ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(&config.date, &date_cursor, AWS_DATE_FORMAT_ISO_8601));
