@@ -44,6 +44,7 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
          * Need to determine how the (header) properties on the event signable precisely factor into the
          * string-to-sign.  Transcribe's examples are insufficient.
          */
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Event signing is not yet supported", (void *)config);
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
@@ -60,7 +61,9 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
          */
         if (config->credentials == NULL) {
             AWS_LOGF_ERROR(
-                AWS_LS_AUTH_SIGNING, "(id=%p) Signing a chunk or event requires explicit credentials", (void *)config);
+                AWS_LS_AUTH_SIGNING,
+                "(id=%p) Chunk/event signing config must contain explicit credentials",
+                (void *)config);
             return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
         }
     }

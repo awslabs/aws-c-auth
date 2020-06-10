@@ -23,7 +23,7 @@
 
 struct aws_credentials;
 
-typedef bool(aws_should_sign_param_fn)(const struct aws_byte_cursor *name, void *userdata);
+typedef bool(aws_should_sign_header_fn)(const struct aws_byte_cursor *name, void *userdata);
 
 /**
  * A primitive RTTI indicator for signing configuration structs
@@ -86,12 +86,12 @@ enum aws_signature_type {
  */
 enum aws_signed_body_value_type {
     /**
-     * Use the sha256 of the empty string.
+     * Use the SHA-256 of the empty string.
      */
     AWS_SBVT_EMPTY,
 
     /**
-     * Use the sha256 of the actual (request/chunk/event) payload.
+     * Use the SHA-256 of the actual (request/chunk/event) payload.
      */
     AWS_SBVT_PAYLOAD,
 
@@ -123,7 +123,7 @@ enum aws_signed_body_header_type {
     AWS_SBHT_NONE,
 
     /**
-     * Add the the "x-amz-content-sha256" header with the canonical request's body value
+     * Add the "x-amz-content-sha256" header with the canonical request's body value
      */
     AWS_SBHT_X_AMZ_CONTENT_SHA256,
 };
@@ -166,28 +166,40 @@ struct aws_signing_config_aws {
     struct aws_date_time date;
 
     /**
-     * Optional function to control which parameters (header or query) are a part of the canonical request.
-     * Skipping auth-required params
-     * will result in an unusable signature.  Headers injected by the signing process are not skippable.
+     * Optional function to control which headers are a part of the canonical request.
+     * Skipping auth-required headers will result in an unusable signature.  Headers injected by the signing process
+     * are not skippable.
      *
      * This function does not override the internal check function (x-amzn-trace-id, user-agent), but rather
      * supplements it.  In particular, a header will get signed if and only if it returns true to both
      * the internal check (skips x-amzn-trace-id, user-agent) and this function (if defined).
      */
-    aws_should_sign_param_fn *should_sign_param;
-    void *should_sign_param_ud;
+    aws_should_sign_header_fn *should_sign_header;
+    void *should_sign_header_ud;
 
-    /**
-     * We assume the uri will be encoded once in preparation for transmission.  Certain services
-     * do not decode before checking signature, requiring us to actually double-encode the uri in the canonical request
-     * in order to pass a signature check.
+    /*
+     * Put all flags in here at the end.  If this grows, stay aware of bit-space overflow and ABI compatibilty.
      */
-    bool use_double_uri_encode;
+    struct {
+        /**
+         * We assume the uri will be encoded once in preparation for transmission.  Certain services
+         * do not decode before checking signature, requiring us to actually double-encode the uri in the canonical
+         * request in order to pass a signature check.
+         */
+        uint32_t use_double_uri_encode : 1;
 
-    /**
-     * Controls whether or not the uri paths should be normalized when building the canonical request
-     */
-    bool should_normalize_uri_path;
+        /**
+         * Controls whether or not the uri paths should be normalized when building the canonical request
+         */
+        uint32_t should_normalize_uri_path : 1;
+
+        /**
+         * Should the "X-Amz-Security-Token" query param be omitted?
+         * Normally, this parameter is added during signing if the credentials have a session token.
+         * The only known case where this should be true is when signing a websocket handshake to IoT Core.
+         */
+        uint32_t omit_session_token : 1;
+    } flags;
 
     /**
      * Controls what should be used as "the body" when creating the canonical request.
@@ -225,7 +237,7 @@ struct aws_signing_config_aws {
      */
     struct aws_credentials_provider *credentials_provider;
 
-    /*
+    /**
      * If non-zero and the signing transform is query param, then signing will add X-Amz-Expires to the query
      * string, equal to the value specified here.  If this value is zero or if header signing is being used then
      * this parameter has no effect.

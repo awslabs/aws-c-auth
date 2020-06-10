@@ -45,6 +45,7 @@
  */
 #define IMDS_MAX_REQUESTS (8)
 struct aws_mock_imds_tester {
+    struct aws_allocator *allocator;
     struct aws_byte_buf request_uris[IMDS_MAX_REQUESTS];
     struct aws_array_list response_data_callbacks[IMDS_MAX_REQUESTS];
 
@@ -73,6 +74,10 @@ struct aws_mock_imds_tester {
 };
 
 static struct aws_mock_imds_tester s_tester;
+
+struct aws_credentials_provider_imds_impl {
+    struct aws_imds_client *client;
+};
 
 static void s_on_shutdown_complete(void *user_data) {
     (void)user_data;
@@ -238,7 +243,7 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
-static struct aws_credentials_provider_system_vtable s_mock_function_table = {
+static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,
@@ -260,7 +265,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
             return AWS_OP_ERR;
         }
     }
-
+    s_tester.allocator = allocator;
     s_tester.token_response_code = 0;
     s_tester.token_request_idx = 0;
     s_tester.insecure_then_secure_attempt = false;
@@ -353,6 +358,8 @@ static int s_credentials_provider_imds_new_destroy(struct aws_allocator *allocat
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -392,6 +399,8 @@ static int s_credentials_provider_imds_connect_failure(struct aws_allocator *all
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -512,6 +521,8 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -559,6 +570,8 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -615,6 +628,8 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -663,6 +678,8 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -740,6 +757,8 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -791,6 +810,8 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -849,6 +870,8 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -883,7 +906,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .imds_version = IMDS_V1,
+        .imds_version = IMDS_PROTOCOL_V1,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
@@ -915,6 +938,8 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -970,6 +995,8 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();
@@ -1030,6 +1057,8 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
     s_aws_imds_tester_cleanup();

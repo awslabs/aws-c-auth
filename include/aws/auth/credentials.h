@@ -2,7 +2,7 @@
 #define AWS_AUTH_CREDENTIALS_H
 
 /*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -17,14 +17,13 @@
  */
 
 #include <aws/auth/auth.h>
-
 #include <aws/common/array_list.h>
 #include <aws/common/atomics.h>
 #include <aws/common/linked_list.h>
 #include <aws/io/io.h>
 
 struct aws_client_bootstrap;
-struct aws_credentials_provider_system_vtable;
+struct aws_auth_http_system_vtable;
 struct aws_string;
 
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
@@ -94,7 +93,7 @@ struct aws_credentials_provider_profile_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_cached_options {
@@ -114,23 +113,25 @@ struct aws_credentials_provider_chain_options {
 };
 
 /*
- * IMDS_V1 takes two http requests to get IMDS credentials.
- * Prior to these two requests, IMDS_V2 takes one more token (Http PUT) request
- * to get secure token used in following requests.
+ * EC2 IMDS_V1 takes one http request to get resource, while IMDS_V2 takes one more token (Http PUT) request
+ * to get secure token used in following request.
  */
-enum aws_credentials_provider_imds_versions {
-    /* defaults to use IMDS_V2 */
-    IMDS_V2,
-    IMDS_V1
+enum aws_imds_protocol_version {
+    /**
+     * Defaults to IMDS_PROTOCOL_V2. It can be set to either one and IMDS Client
+     * will figure out (by looking at response code) which protocol an instance
+     * is using. But a more clear setting will reduce unnecessary network request.
+     */
+    IMDS_PROTOCOL_V2,
+    IMDS_PROTOCOL_V1,
 };
 
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_client_bootstrap *bootstrap;
-    /* If not set, this value will be false, means use IMDS_V2 */
-    enum aws_credentials_provider_imds_versions imds_version;
+    enum aws_imds_protocol_version imds_version;
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 /*
@@ -159,7 +160,7 @@ struct aws_credentials_provider_ecs_options {
     bool use_tls;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 /**
@@ -193,7 +194,7 @@ struct aws_credentials_provider_x509_options {
     const struct aws_http_proxy_options *proxy_options;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 /**
@@ -218,7 +219,7 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 struct aws_credentials_provider_sts_options {
@@ -231,7 +232,7 @@ struct aws_credentials_provider_sts_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /* For mocking, leave NULL otherwise */
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     aws_io_clock_fn *system_clock_fn;
 };
 

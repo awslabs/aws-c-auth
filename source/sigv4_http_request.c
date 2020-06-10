@@ -265,6 +265,10 @@ struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocat
     aws_mem_acquire_many(
         allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_http_request_impl));
 
+    if (signable == NULL || impl == NULL) {
+        return NULL;
+    }
+
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
 
@@ -441,8 +445,8 @@ int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_all
     config.signature_type = AWS_ST_HTTP_REQUEST_HEADERS;
     config.region = aws_byte_cursor_from_string(region);
     config.service = aws_byte_cursor_from_string(service);
-    config.use_double_uri_encode = true;
-    config.should_normalize_uri_path = true;
+    config.flags.use_double_uri_encode = true;
+    config.flags.should_normalize_uri_path = true;
     config.signed_body_value = AWS_SBVT_EMPTY;
 
     aws_date_time_init_now(&config.date);
@@ -555,6 +559,10 @@ struct aws_signable *aws_signable_new_chunk(
     struct aws_signable_chunk_impl *impl = NULL;
     aws_mem_acquire_many(
         allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_chunk_impl));
+
+    if (signable == NULL || impl == NULL) {
+        return NULL;
+    }
 
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);

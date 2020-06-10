@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -31,8 +31,10 @@
 #include <aws/io/file_utils.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
+#include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
+#include <inttypes.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
@@ -46,7 +48,7 @@
 
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
     struct aws_string *token_file_path;
@@ -54,7 +56,7 @@ struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_tls_connection_options connection_options;
 };
 
-static struct aws_credentials_provider_system_vtable s_default_function_table = {
+static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
@@ -86,10 +88,32 @@ struct sts_web_identity_user_data {
     struct aws_string *session_token;
     uint64_t expiration_timepoint_in_seconds;
 
+    struct aws_byte_buf payload_buf;
+
     int status_code;
     int error_code;
     int attempt_count;
 };
+
+static void s_user_data_reset_request_and_response(struct sts_web_identity_user_data *user_data) {
+    aws_byte_buf_reset(&user_data->response, true /*zero out*/);
+    aws_byte_buf_reset(&user_data->payload_buf, true /*zero out*/);
+    user_data->status_code = 0;
+    if (user_data->request) {
+        aws_input_stream_destroy(aws_http_message_get_body_stream(user_data->request));
+    }
+    aws_http_message_destroy(user_data->request);
+    user_data->request = NULL;
+
+    aws_string_destroy(user_data->access_key_id);
+    user_data->access_key_id = NULL;
+
+    aws_string_destroy_secure(user_data->secret_access_key);
+    user_data->secret_access_key = NULL;
+
+    aws_string_destroy_secure(user_data->session_token);
+    user_data->session_token = NULL;
+}
 
 static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     if (user_data == NULL) {
@@ -102,16 +126,14 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
         impl->function_table->aws_http_connection_manager_release_connection(
             impl->connection_manager, user_data->connection);
     }
-
+    s_user_data_reset_request_and_response(user_data);
     aws_byte_buf_clean_up(&user_data->response);
-
-    if (user_data->request) {
-        aws_http_message_destroy(user_data->request);
-    }
 
     aws_string_destroy(user_data->access_key_id);
     aws_string_destroy_secure(user_data->secret_access_key);
     aws_string_destroy_secure(user_data->session_token);
+
+    aws_byte_buf_clean_up(&user_data->payload_buf);
 
     aws_credentials_provider_release(user_data->sts_web_identity_provider);
     aws_mem_release(user_data->allocator, user_data);
@@ -141,6 +163,10 @@ static struct sts_web_identity_user_data *s_user_data_new(
         goto on_error;
     }
 
+    if (aws_byte_buf_init(&wrapped_user_data->payload_buf, sts_web_identity_provider->allocator, 1024)) {
+        goto on_error;
+    }
+
     return wrapped_user_data;
 
 on_error:
@@ -148,25 +174,6 @@ on_error:
     s_user_data_destroy(wrapped_user_data);
 
     return NULL;
-}
-
-static void s_user_data_reset_response(struct sts_web_identity_user_data *sts_web_identity_user_data) {
-    sts_web_identity_user_data->response.len = 0;
-    sts_web_identity_user_data->status_code = 0;
-
-    if (sts_web_identity_user_data->request) {
-        aws_http_message_destroy(sts_web_identity_user_data->request);
-        sts_web_identity_user_data->request = NULL;
-    }
-
-    aws_string_destroy(sts_web_identity_user_data->access_key_id);
-    sts_web_identity_user_data->access_key_id = NULL;
-
-    aws_string_destroy_secure(sts_web_identity_user_data->secret_access_key);
-    sts_web_identity_user_data->secret_access_key = NULL;
-
-    aws_string_destroy_secure(sts_web_identity_user_data->session_token);
-    sts_web_identity_user_data->session_token = NULL;
 }
 
 /*
@@ -357,69 +364,69 @@ on_finish:
 /*
  * No matter the result, this always gets called assuming that user_data is successfully allocated
  */
-static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *sts_web_identity_user_data) {
+static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *user_data) {
     /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials = NULL;
-    if (sts_web_identity_user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
-        credentials =
-            s_parse_credentials_from_response(sts_web_identity_user_data, &sts_web_identity_user_data->response);
-    }
-
-    if (credentials == NULL && sts_web_identity_user_data->error_code == AWS_ERROR_SUCCESS) {
-        sts_web_identity_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE;
+    if (user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
+        credentials = s_parse_credentials_from_response(user_data, &user_data->response);
     }
 
     if (credentials != NULL) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) STS_WEB_IDENTITY credentials provider successfully queried credentials",
-            (void *)sts_web_identity_user_data->sts_web_identity_provider);
+            (void *)user_data->sts_web_identity_provider);
     } else {
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) STS_WEB_IDENTITY credentials provider failed to query credentials",
-            (void *)sts_web_identity_user_data->sts_web_identity_provider);
+            (void *)user_data->sts_web_identity_provider);
+
+        if (user_data->error_code == AWS_ERROR_SUCCESS) {
+            user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE;
+        }
     }
 
     /* pass the credentials back */
-    sts_web_identity_user_data->original_callback(
-        credentials, sts_web_identity_user_data->error_code, sts_web_identity_user_data->original_user_data);
+    user_data->original_callback(credentials, user_data->error_code, user_data->original_user_data);
 
     /* clean up */
-    s_user_data_destroy(sts_web_identity_user_data);
+    s_user_data_destroy(user_data);
     aws_credentials_release(credentials);
 }
 
-static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *data, void *user_data) {
+static int s_on_incoming_body_fn(
+    struct aws_http_stream *stream,
+    const struct aws_byte_cursor *body,
+    void *wrapped_user_data) {
 
     (void)stream;
 
-    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
-    struct aws_credentials_provider_sts_web_identity_impl *impl =
-        sts_web_identity_user_data->sts_web_identity_provider->impl;
+    struct sts_web_identity_user_data *user_data = wrapped_user_data;
+    struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
 
     AWS_LOGF_TRACE(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) STS_WEB_IDENTITY credentials provider received %zu response bytes",
-        (void *)sts_web_identity_user_data->sts_web_identity_provider,
-        data->len);
+        (void *)user_data->sts_web_identity_provider,
+        body->len);
 
-    if (data->len + sts_web_identity_user_data->response.len > STS_WEB_IDENTITY_RESPONSE_SIZE_LIMIT) {
-        impl->function_table->aws_http_connection_close(sts_web_identity_user_data->connection);
+    if (body->len + user_data->response.len > STS_WEB_IDENTITY_RESPONSE_SIZE_LIMIT) {
+        impl->function_table->aws_http_connection_close(user_data->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) STS_WEB_IDENTITY credentials provider query response exceeded maximum allowed length",
-            (void *)sts_web_identity_user_data->sts_web_identity_provider);
+            (void *)user_data->sts_web_identity_provider);
 
         return aws_raise_error(AWS_ERROR_SHORT_BUFFER);
     }
 
-    if (aws_byte_buf_append_dynamic(&sts_web_identity_user_data->response, data)) {
-        impl->function_table->aws_http_connection_close(sts_web_identity_user_data->connection);
+    if (aws_byte_buf_append_dynamic(&user_data->response, body)) {
+        impl->function_table->aws_http_connection_close(user_data->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) STS_WEB_IDENTITY credentials provider query error appending response: %s",
-            (void *)sts_web_identity_user_data->sts_web_identity_provider,
+            (void *)user_data->sts_web_identity_provider,
             aws_error_str(aws_last_error()));
 
         return AWS_OP_ERR;
@@ -433,7 +440,7 @@ static int s_on_incoming_headers_fn(
     enum aws_http_header_block header_block,
     const struct aws_http_header *header_array,
     size_t num_headers,
-    void *user_data) {
+    void *wrapped_user_data) {
 
     (void)header_array;
     (void)num_headers;
@@ -442,18 +449,15 @@ static int s_on_incoming_headers_fn(
         return AWS_OP_SUCCESS;
     }
 
-    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+    struct sts_web_identity_user_data *user_data = wrapped_user_data;
     if (header_block == AWS_HTTP_HEADER_BLOCK_MAIN) {
-        if (sts_web_identity_user_data->status_code == 0) {
-            struct aws_credentials_provider_sts_web_identity_impl *impl =
-                sts_web_identity_user_data->sts_web_identity_provider->impl;
-            if (impl->function_table->aws_http_stream_get_incoming_response_status(
-                    stream, &sts_web_identity_user_data->status_code)) {
-
+        if (user_data->status_code == 0) {
+            struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
+            if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &user_data->status_code)) {
                 AWS_LOGF_ERROR(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                     "(id=%p) STS_WEB_IDENTITY credentials provider failed to get http status code: %s",
-                    (void *)sts_web_identity_user_data->sts_web_identity_provider,
+                    (void *)user_data->sts_web_identity_provider,
                     aws_error_str(aws_last_error()));
 
                 return AWS_OP_ERR;
@@ -461,24 +465,20 @@ static int s_on_incoming_headers_fn(
             AWS_LOGF_DEBUG(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p) STS_WEB_IDENTITY credentials provider query received http status code %d",
-                (void *)sts_web_identity_user_data->sts_web_identity_provider,
-                sts_web_identity_user_data->status_code);
+                (void *)user_data->sts_web_identity_provider,
+                user_data->status_code);
         }
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static void s_query_credentials(struct sts_web_identity_user_data *sts_web_identity_user_data);
+static void s_query_credentials(struct sts_web_identity_user_data *user_data);
 
-static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
-    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *data) {
+    struct sts_web_identity_user_data *user_data = data;
 
-    aws_http_message_destroy(sts_web_identity_user_data->request);
-    sts_web_identity_user_data->request = NULL;
-
-    struct aws_credentials_provider_sts_web_identity_impl *impl =
-        sts_web_identity_user_data->sts_web_identity_provider->impl;
+    struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
     struct aws_http_connection *connection = impl->function_table->aws_http_stream_get_connection(stream);
     impl->function_table->aws_http_stream_release(stream);
     impl->function_table->aws_http_connection_manager_release_connection(impl->connection_manager, connection);
@@ -487,74 +487,117 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
      * On anything other than a 200, if we can retry the request based on
      * error response, retry it, otherwise, call the finalize function.
      */
-    if (sts_web_identity_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
-        if (++sts_web_identity_user_data->attempt_count < STS_WEB_IDENTITY_MAX_ATTEMPTS &&
-            sts_web_identity_user_data->response.len) {
-            if (s_parse_retryable_error_from_response(
-                    sts_web_identity_user_data->allocator, &sts_web_identity_user_data->response)) {
-                s_query_credentials(sts_web_identity_user_data);
+    if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
+        if (++user_data->attempt_count < STS_WEB_IDENTITY_MAX_ATTEMPTS && user_data->response.len) {
+            if (s_parse_retryable_error_from_response(user_data->allocator, &user_data->response)) {
+                s_query_credentials(user_data);
                 return;
             }
         }
     }
 
-    s_finalize_get_credentials_query(sts_web_identity_user_data);
+    s_finalize_get_credentials_query(user_data);
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_accept_header, "Accept");
-AWS_STATIC_STRING_FROM_LITERAL(s_accept_header_value, "*/*");
-AWS_STATIC_STRING_FROM_LITERAL(s_user_agent_header, "User-Agent");
-AWS_STATIC_STRING_FROM_LITERAL(s_user_agent_header_value, "aws-sdk-crt/sts-web-identity-credentials-provider");
-AWS_STATIC_STRING_FROM_LITERAL(s_h1_0_keep_alive_header, "Connection");
-AWS_STATIC_STRING_FROM_LITERAL(s_h1_0_keep_alive_header_value, "keep-alive");
+static struct aws_http_header s_host_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
+};
+
+static struct aws_http_header s_content_type_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
+};
+
+static struct aws_http_header s_api_version_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15"),
+};
+static struct aws_http_header s_accept_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Accept"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("*/*"),
+};
+
+static struct aws_http_header s_user_agent_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("User-Agent"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-sdk-crt/sts-web-identity-credentials-provider"),
+};
+
+static struct aws_http_header s_keep_alive_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Connection"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("keep-alive"),
+};
+
+static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
+static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 
 static int s_make_sts_web_identity_http_query(
-    struct sts_web_identity_user_data *sts_web_identity_user_data,
-    struct aws_byte_cursor *uri) {
-    AWS_FATAL_ASSERT(sts_web_identity_user_data->connection);
+    struct sts_web_identity_user_data *user_data,
+    struct aws_byte_cursor *body_cursor) {
+    AWS_FATAL_ASSERT(user_data->connection);
 
     struct aws_http_stream *stream = NULL;
-    struct aws_http_message *request = aws_http_message_new_request(sts_web_identity_user_data->allocator);
+    struct aws_input_stream *input_stream = NULL;
+    struct aws_http_message *request = aws_http_message_new_request(user_data->allocator);
     if (request == NULL) {
         return AWS_OP_ERR;
     }
 
-    struct aws_credentials_provider_sts_web_identity_impl *impl =
-        sts_web_identity_user_data->sts_web_identity_provider->impl;
+    struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
 
-    struct aws_http_header accept_header = {
-        .name = aws_byte_cursor_from_string(s_accept_header),
-        .value = aws_byte_cursor_from_string(s_accept_header_value),
+    char content_length[21];
+    AWS_ZERO_ARRAY(content_length);
+    snprintf(content_length, sizeof(content_length), "%" PRIu64, (uint64_t)body_cursor->len);
+
+    struct aws_http_header content_len_header = {
+        .name = s_content_length,
+        .value = aws_byte_cursor_from_c_str(content_length),
     };
-    if (aws_http_message_add_header(request, accept_header)) {
+
+    if (aws_http_message_add_header(request, content_len_header)) {
         goto on_error;
     }
 
-    struct aws_http_header user_agent_header = {
-        .name = aws_byte_cursor_from_string(s_user_agent_header),
-        .value = aws_byte_cursor_from_string(s_user_agent_header_value),
-    };
-    if (aws_http_message_add_header(request, user_agent_header)) {
+    if (aws_http_message_add_header(request, s_content_type_header)) {
         goto on_error;
     }
 
-    struct aws_http_header keep_alive_header = {
-        .name = aws_byte_cursor_from_string(s_h1_0_keep_alive_header),
-        .value = aws_byte_cursor_from_string(s_h1_0_keep_alive_header_value),
-    };
-    if (aws_http_message_add_header(request, keep_alive_header)) {
+    if (aws_http_message_add_header(request, s_host_header)) {
         goto on_error;
     }
 
-    if (aws_http_message_set_request_path(request, *uri)) {
+    if (aws_http_message_add_header(request, s_api_version_header)) {
         goto on_error;
     }
 
-    if (aws_http_message_set_request_method(request, aws_http_method_get)) {
+    if (aws_http_message_add_header(request, s_accept_header)) {
         goto on_error;
     }
 
-    sts_web_identity_user_data->request = request;
+    if (aws_http_message_add_header(request, s_user_agent_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_keep_alive_header)) {
+        goto on_error;
+    }
+
+    input_stream = aws_input_stream_new_from_cursor(user_data->allocator, body_cursor);
+    if (!input_stream) {
+        goto on_error;
+    }
+
+    aws_http_message_set_body_stream(request, input_stream);
+
+    if (aws_http_message_set_request_path(request, s_path)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_set_request_method(request, aws_http_method_post)) {
+        goto on_error;
+    }
+
+    user_data->request = request;
 
     struct aws_http_make_request_options request_options = {
         .self_size = sizeof(request_options),
@@ -562,12 +605,11 @@ static int s_make_sts_web_identity_http_query(
         .on_response_header_block_done = NULL,
         .on_response_body = s_on_incoming_body_fn,
         .on_complete = s_on_stream_complete_fn,
-        .user_data = sts_web_identity_user_data,
+        .user_data = user_data,
         .request = request,
     };
 
-    stream = impl->function_table->aws_http_connection_make_request(
-        sts_web_identity_user_data->connection, &request_options);
+    stream = impl->function_table->aws_http_connection_make_request(user_data->connection, &request_options);
 
     if (!stream) {
         goto on_error;
@@ -581,102 +623,98 @@ static int s_make_sts_web_identity_http_query(
 
 on_error:
     impl->function_table->aws_http_stream_release(stream);
+    aws_input_stream_destroy(input_stream);
     aws_http_message_destroy(request);
-
+    user_data->request = NULL;
     return AWS_OP_ERR;
 }
 
-static void s_query_credentials(struct sts_web_identity_user_data *sts_web_identity_user_data) {
-    AWS_FATAL_ASSERT(sts_web_identity_user_data->connection);
+static void s_query_credentials(struct sts_web_identity_user_data *user_data) {
+    AWS_FATAL_ASSERT(user_data->connection);
 
-    struct aws_credentials_provider_sts_web_identity_impl *impl =
-        sts_web_identity_user_data->sts_web_identity_provider->impl;
+    struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
 
     /* "Clear" the result */
-    s_user_data_reset_response(sts_web_identity_user_data);
+    s_user_data_reset_request_and_response(user_data);
 
     /*
-     * Calculate query string:
-     * "/?Action=AssumeRoleWithWebIdentity"
+     * Calculate body message:
+     * "Action=AssumeRoleWithWebIdentity"
      * + "&Version=2011-06-15"
      * + "&RoleSessionName=" + url_encode(role_session_name)
      * + "&RoleArn=" + url_encode(role_arn)
      * + "&WebIdentityToken=" + url_encode(token);
      */
-    struct aws_byte_buf query_buf;
     struct aws_byte_buf token_buf;
     bool success = false;
 
-    AWS_ZERO_STRUCT(query_buf);
     AWS_ZERO_STRUCT(token_buf);
 
     struct aws_byte_cursor work_cursor =
-        aws_byte_cursor_from_c_str("/Action=AssumeRoleWithWebIdentity&Version=2011-06-15&RoleArn=");
-    if (aws_byte_buf_init_copy_from_cursor(&query_buf, sts_web_identity_user_data->allocator, work_cursor)) {
+        aws_byte_cursor_from_c_str("Action=AssumeRoleWithWebIdentity&Version=2011-06-15&RoleArn=");
+    if (aws_byte_buf_append_dynamic(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_string(impl->role_arn);
-    if (aws_byte_buf_append_encoding_uri_param(&query_buf, &work_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_c_str("&RoleSessionName=");
-    if (aws_byte_buf_append_dynamic(&query_buf, &work_cursor)) {
+    if (aws_byte_buf_append_dynamic(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_string(impl->role_session_name);
-    if (aws_byte_buf_append_encoding_uri_param(&query_buf, &work_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
     work_cursor = aws_byte_cursor_from_c_str("&WebIdentityToken=");
-    if (aws_byte_buf_append_dynamic(&query_buf, &work_cursor)) {
+    if (aws_byte_buf_append_dynamic(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
 
-    if (aws_byte_buf_init_from_file(
-            &token_buf, sts_web_identity_user_data->allocator, aws_string_c_str(impl->token_file_path))) {
+    if (aws_byte_buf_init_from_file(&token_buf, user_data->allocator, aws_string_c_str(impl->token_file_path))) {
         goto on_finish;
     }
     work_cursor = aws_byte_cursor_from_buf(&token_buf);
-    if (aws_byte_buf_append_encoding_uri_param(&query_buf, &work_cursor)) {
+    if (aws_byte_buf_append_encoding_uri_param(&user_data->payload_buf, &work_cursor)) {
         goto on_finish;
     }
-    struct aws_byte_cursor query_cursor = aws_byte_cursor_from_buf(&query_buf);
+    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&user_data->payload_buf);
 
-    if (s_make_sts_web_identity_http_query(sts_web_identity_user_data, &query_cursor) == AWS_OP_ERR) {
+    if (s_make_sts_web_identity_http_query(user_data, &body_cursor) == AWS_OP_ERR) {
         goto on_finish;
     }
     success = true;
 
 on_finish:
     aws_byte_buf_clean_up(&token_buf);
-    aws_byte_buf_clean_up(&query_buf);
     if (!success) {
-        s_finalize_get_credentials_query(sts_web_identity_user_data);
+        s_finalize_get_credentials_query(user_data);
     }
 }
 
-static void s_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
-    struct sts_web_identity_user_data *sts_web_identity_user_data = user_data;
+static void s_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *data) {
+    struct sts_web_identity_user_data *user_data = data;
 
     if (connection == NULL) {
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: STS_WEB_IDENTITY provider failed to acquire a connection, error code %d(%s)",
-            (void *)sts_web_identity_user_data->sts_web_identity_provider,
+            (void *)user_data->sts_web_identity_provider,
             error_code,
             aws_error_str(error_code));
 
-        s_finalize_get_credentials_query(sts_web_identity_user_data);
+        s_finalize_get_credentials_query(user_data);
         return;
     }
 
-    sts_web_identity_user_data->connection = connection;
+    user_data->connection = connection;
 
-    s_query_credentials(sts_web_identity_user_data);
+    s_query_credentials(user_data);
 }
 
 static int s_credentials_provider_sts_web_identity_get_credentials_async(

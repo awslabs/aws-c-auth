@@ -73,7 +73,7 @@ static const int s_max_retries = 8;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
 
-static struct aws_credentials_provider_system_vtable s_default_function_table = {
+static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
@@ -94,7 +94,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     struct aws_retry_strategy *retry_strategy;
     bool owns_ctx;
     aws_io_clock_fn *system_clock_fn;
@@ -569,7 +569,7 @@ static void s_start_make_request(
     aws_date_time_init_now(&provider_user_data->signing_config.date);
     provider_user_data->signing_config.region = s_signing_region;
     provider_user_data->signing_config.service = s_service_name;
-    provider_user_data->signing_config.use_double_uri_encode = false;
+    provider_user_data->signing_config.flags.use_double_uri_encode = false;
 
     if (aws_sign_request_aws(
             provider->allocator,
