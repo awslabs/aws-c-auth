@@ -769,7 +769,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     /* X-Amz-Security-token */
     struct aws_byte_cursor security_token_name_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-    if (session_token_cursor.len > 0 && !state->config.flags.omit_session_token_query_param) {
+    if (session_token_cursor.len > 0 && !state->config.flags.omit_session_token) {
         struct aws_uri_param security_token_param = {
             .key = security_token_name_cur,
             .value = session_token_cursor,
@@ -1047,7 +1047,7 @@ static int s_build_canonical_stable_header_list(
     struct aws_byte_cursor security_token_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
 
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
-    if (session_token_cursor.len > 0) {
+    if (session_token_cursor.len > 0 && !state->config.flags.omit_session_token) {
         /* X-Amz-Security-Token */
         struct stable_header session_token_header = {
             .original_index = additional_header_index++,

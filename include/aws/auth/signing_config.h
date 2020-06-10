@@ -195,7 +195,7 @@ struct aws_signing_config_aws {
          * Normally, this parameter is added during signing if the credentials have a session token.
          * The only known case where this should be true is when signing a websocket handshake to IoT Core.
          */
-        uint32_t omit_session_token_query_param : 1;
+        uint32_t omit_session_token : 1;
     } flags;
 
     /**
