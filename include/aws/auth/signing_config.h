@@ -174,6 +174,9 @@ struct aws_signing_config_aws {
     aws_should_sign_header_fn *should_sign_header;
     void *should_sign_header_ud;
 
+    /*
+     * Put all flags in here at the end.  If this grows, stay aware of bit-space overflow and ABI compatibilty.
+     */
     struct {
         /**
          * We assume the uri will be encoded once in preparation for transmission.  Certain services
@@ -188,8 +191,9 @@ struct aws_signing_config_aws {
         uint32_t should_normalize_uri_path : 1;
 
         /**
-         * Should the sesssion token query param be omitted from the canonical request?  This is a special case that
-         * should only be true when performing a websocket handshake to succcessfully authenticate to iot core.
+         * Should the "X-Amz-Security-Token" query param be omitted?
+         * Normally, this parameter is added during signing if the credentials have a session token.
+         * The only known case where this should be true is when signing a websocket handshake to IoT Core.
          */
         uint32_t omit_session_token_query_param : 1;
     } flags;
