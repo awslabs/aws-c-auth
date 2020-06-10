@@ -13,7 +13,7 @@ This library is licensed under the Apache 2.0 License.
 
 Note that aws-c-auth has several dependencies that need to be built.  If you are building on Linux, you will also need to build s2n before being able to build the aws-c-io dependency.  For our CRT's, we build s2n at a specific commit, and recommend doing the same when using it with this library.  That commit hash can be found [here](https://github.com/awslabs/aws-crt-cpp/tree/master/aws-common-runtime).  Build instructions for s2n can be found [here](https://github.com/awslabs/s2n/blob/master/docs/USAGE-GUIDE.md).
 
-````
+```
 git clone git@github.com:awslabs/aws-c-common.git
 cmake -DCMAKE_PREFIX_PATH=<install-path> -DCMAKE_INSTALL_PREFIX=<install-path> -S aws-c-common -B aws-c-common/build
 cmake --build aws-c-common/build --target install
@@ -37,4 +37,4 @@ cmake --build aws-c-cal/build --target install
 git clone git@github.com:awslabs/aws-c-auth.git
 cmake -DCMAKE_PREFIX_PATH=<install-path> -DCMAKE_INSTALL_PREFIX=<install-path> -S aws-c-auth -B aws-c-auth/build
 cmake --build aws-c-auth/build --target install
-````
+```
