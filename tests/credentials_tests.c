@@ -17,6 +17,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/cal/ecc.h>
+#include <aws/common/bigint.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/environment.h>
@@ -1047,6 +1048,9 @@ AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_de
 AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_access_key_id_test_value, "AKISORANDOMAASORANDOM");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_secret_access_key_test_value, "q+jcrXGc+0zWN6uzclKVhvMmUsIfRPa4rlRandom");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_x, "15d242ceebf8d8169fd6a8b5a746c41140414c3b07579038da06af89190fffcb");
+AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_y, "515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
+
 static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -1054,8 +1058,38 @@ static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *all
         allocator, s_ecc_derive_access_key_id_test_value, s_ecc_derive_secret_access_key_test_value, NULL, UINT64_MAX);
 
     struct aws_ecc_key_pair *derived_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, creds);
-
     ASSERT_TRUE(derived_key != NULL);
+
+    aws_ecc_key_pair_derive_public_key(derived_key);
+
+    struct aws_byte_cursor pub_x_cursor;
+    AWS_ZERO_STRUCT(pub_x_cursor);
+    struct aws_byte_cursor pub_y_cursor;
+    AWS_ZERO_STRUCT(pub_y_cursor);
+
+    aws_ecc_key_pair_get_public_key(derived_key, &pub_x_cursor, &pub_y_cursor);
+
+    struct aws_bigint *pub_x = aws_bigint_new_from_binary_cursor(allocator, pub_x_cursor, 256);
+
+    struct aws_byte_buf pub_coord_x;
+    ASSERT_SUCCESS(aws_byte_buf_init(&pub_coord_x, allocator, 128));
+
+    aws_bigint_bytebuf_append_as_hex(pub_x, &pub_coord_x);
+    ASSERT_BIN_ARRAYS_EQUALS(s_expected_pub_x->bytes, s_expected_pub_x->len, pub_coord_x.buffer, pub_coord_x.len);
+
+    struct aws_bigint *pub_y = aws_bigint_new_from_binary_cursor(allocator, pub_y_cursor, 256);
+
+    struct aws_byte_buf pub_coord_y;
+    ASSERT_SUCCESS(aws_byte_buf_init(&pub_coord_y, allocator, 128));
+
+    aws_bigint_bytebuf_append_as_hex(pub_y, &pub_coord_y);
+    ASSERT_BIN_ARRAYS_EQUALS(s_expected_pub_y->bytes, s_expected_pub_y->len, pub_coord_y.buffer, pub_coord_y.len);
+
+    aws_byte_buf_clean_up(&pub_coord_x);
+    aws_byte_buf_clean_up(&pub_coord_y);
+
+    aws_bigint_destroy(pub_x);
+    aws_bigint_destroy(pub_y);
 
     aws_ecc_key_pair_release(derived_key);
     aws_credentials_release(creds);
@@ -1064,22 +1098,3 @@ static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *all
 }
 
 AWS_TEST_CASE(credentials_derive_ecc_key_create_destroy, s_credentials_derive_ecc_key_create_destroy);
-
-static int s_credentials_derive_ecc_create_destroy(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    struct aws_credentials *creds = aws_credentials_new_from_string(
-        allocator, s_ecc_derive_access_key_id_test_value, s_ecc_derive_secret_access_key_test_value, NULL, UINT64_MAX);
-
-    struct aws_credentials *derived_creds = aws_credentials_new_ecc_from_aws_credentials(allocator, creds);
-    struct aws_ecc_key_pair *derived_key = aws_credentials_get_ecc_key_pair(derived_creds);
-
-    ASSERT_TRUE(derived_key != NULL);
-
-    aws_credentials_release(derived_creds);
-    aws_credentials_release(creds);
-
-    return 0;
-}
-
-AWS_TEST_CASE(credentials_derive_ecc_create_destroy, s_credentials_derive_ecc_create_destroy);

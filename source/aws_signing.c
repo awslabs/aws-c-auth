@@ -2183,6 +2183,8 @@ static int s_aws_build_fixed_input_buffer(
     return AWS_OP_SUCCESS;
 }
 
+#define NUM_KEY_BITS 256
+
 /* In the spec, this is N-1 */
 static const char *s_n_minus_1 = "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632550";
 
@@ -2194,7 +2196,7 @@ static enum aws_key_derivation_result s_aws_derive_ecc_private_key(
     struct aws_byte_buf *k0) {
     AWS_FATAL_ASSERT(k0->len == 32);
 
-    struct aws_bigint *c = aws_bigint_new_from_cursor(allocator, aws_byte_cursor_from_buf(k0));
+    struct aws_bigint *c = aws_bigint_new_from_binary_cursor(allocator, aws_byte_cursor_from_buf(k0), NUM_KEY_BITS);
     if (c == NULL) {
         return AKDR_FAILURE;
     }
@@ -2203,18 +2205,18 @@ static enum aws_key_derivation_result s_aws_derive_ecc_private_key(
     struct aws_bigint *threshold = NULL;
     struct aws_bigint *one = NULL;
 
-    threshold = aws_bigint_new_from_hex(allocator, aws_byte_cursor_from_c_str(s_n_minus_1));
+    threshold = aws_bigint_new_from_hex_cursor(allocator, aws_byte_cursor_from_c_str(s_n_minus_1), NUM_KEY_BITS);
     if (threshold == NULL) {
         goto done;
     }
 
     /* c > N-2 is equivalent c >= N-1 */
-    if (aws_bigint_greater_than_or_equals(c, threshold)) {
+    if (aws_bigint_compare(c, threshold) != AWS_ORDERING_LT) {
         result = AKDR_INCREMENT_COUNTER;
         goto done;
     }
 
-    one = aws_bigint_new_from_uint64(allocator, 1);
+    one = aws_bigint_new_one(allocator, NUM_KEY_BITS);
     if (one == NULL) {
         goto done;
     }
@@ -2257,6 +2259,12 @@ static int s_init_secret_buf(
     return AWS_OP_SUCCESS;
 }
 
+/*
+ * Not really in the spec but it's what the server implementation did and the probability that this value ever
+ * gets reached is absurdly low.
+ */
+#define MAX_KEY_DERIVATION_COUNTER_VALUE 254
+
 struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
     struct aws_allocator *allocator,
     struct aws_credentials *credentials) {
@@ -2286,7 +2294,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_buf secret_buf;
     AWS_ZERO_STRUCT(secret_buf);
 
-    struct aws_bigint *private_key = aws_bigint_new_from_uint64(allocator, 0);
+    struct aws_bigint *private_key = aws_bigint_new_zero(allocator, NUM_KEY_BITS);
     if (private_key == NULL) {
         return NULL;
     }
@@ -2305,7 +2313,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_cursor secret_cursor = aws_byte_cursor_from_buf(&secret_buf);
 
     uint32_t counter = 1;
-    while (counter != 0) { /* could be while(true) but compilers hate it */
+    while (counter <= MAX_KEY_DERIVATION_COUNTER_VALUE) {
         if (s_aws_build_fixed_input_buffer(&fixed_input, credentials, counter++)) {
             goto done;
         }
@@ -2320,17 +2328,18 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
             s_aws_derive_ecc_private_key(private_key, allocator, &fixed_input_hash_digest);
         if (result == AKDR_SUCCESS) {
             break;
-        } else if (result == AKDR_FAILURE || counter == 0) {
+        } else if (result == AKDR_FAILURE || counter == MAX_KEY_DERIVATION_COUNTER_VALUE) {
             goto done;
         }
     }
 
     size_t key_length = aws_ecc_key_coordinate_byte_size_from_curve_name(AWS_CAL_ECDSA_P256);
+    AWS_FATAL_ASSERT(key_length * 8 == NUM_KEY_BITS);
     if (aws_byte_buf_init(&private_key_buf, allocator, key_length)) {
         goto done;
     }
 
-    if (aws_bigint_bytebuf_append_as_big_endian(private_key, &private_key_buf, key_length)) {
+    if (aws_bigint_bytebuf_append_as_big_endian(private_key, &private_key_buf, NUM_KEY_BITS)) {
         goto done;
     }
 
@@ -2343,7 +2352,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_logger *logger = aws_logger_get();
     if (logger != NULL && logger->vtable->get_log_level(logger, AWS_LS_AUTH_SIGNING) == AWS_LL_TRACE) {
         /*
-         * Open Q: maybe make this unconditional?  It costs time but it's weird that the returned
+         * Open Q: maybe make this unconditional?  It costs time but it's a little weird that the returned
          * key may or may not have the public bits available depending on the log level.
          */
         aws_ecc_key_pair_derive_public_key(ecc_key_pair);
@@ -2355,8 +2364,8 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 
         aws_ecc_key_pair_get_public_key(ecc_key_pair, &pub_x_cursor, &pub_y_cursor);
 
-        pub_x = aws_bigint_new_from_cursor(allocator, pub_x_cursor);
-        pub_y = aws_bigint_new_from_cursor(allocator, pub_y_cursor);
+        pub_x = aws_bigint_new_from_binary_cursor(allocator, pub_x_cursor, NUM_KEY_BITS);
+        pub_y = aws_bigint_new_from_binary_cursor(allocator, pub_y_cursor, NUM_KEY_BITS);
 
         if (aws_byte_buf_init(&log_buf, allocator, 512)) {
             goto done;
@@ -2364,20 +2373,18 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 
         struct aws_byte_cursor x_cursor = aws_byte_cursor_from_c_str("X = ");
         aws_byte_buf_append_dynamic(&log_buf, &x_cursor);
-        aws_bigint_bytebuf_debug_output(pub_x, &log_buf);
+        aws_bigint_bytebuf_append_as_hex(pub_x, &log_buf);
 
         struct aws_byte_cursor y_cursor = aws_byte_cursor_from_c_str(" ; Y = ");
         aws_byte_buf_append_dynamic(&log_buf, &y_cursor);
-        aws_bigint_bytebuf_debug_output(pub_y, &log_buf);
+        aws_bigint_bytebuf_append_as_hex(pub_y, &log_buf);
 
         struct aws_byte_cursor access_key_id = aws_credentials_get_access_key_id(credentials);
-        struct aws_byte_cursor secret_access_key = aws_credentials_get_secret_access_key(credentials);
 
         AWS_LOGF_TRACE(
             AWS_LS_AUTH_SIGNING,
-            "Deriving ecc key for credentials(" PRInSTR " : " PRInSTR ") yielding public key " PRInSTR,
+            "Deriving ecc key for credentials with access key \"" PRInSTR "\" yielding public key " PRInSTR,
             AWS_BYTE_CURSOR_PRI(access_key_id),
-            AWS_BYTE_CURSOR_PRI(secret_access_key),
             AWS_BYTE_BUF_PRI(log_buf));
     }
 
