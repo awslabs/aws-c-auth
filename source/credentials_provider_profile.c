@@ -123,12 +123,20 @@ static int s_profile_file_credentials_provider_get_credentials_async(
             (void *)provider);
     }
 
-    callback(credentials, user_data);
+    int error_code = AWS_ERROR_SUCCESS;
+    if (credentials == NULL) {
+        error_code = aws_last_error();
+        if (error_code == AWS_ERROR_SUCCESS) {
+            error_code = AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE;
+        }
+    }
+
+    callback(credentials, error_code, user_data);
 
     /*
      * clean up
      */
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
     aws_profile_collection_destroy(merged_profiles);
     aws_profile_collection_destroy(config_profiles);
     aws_profile_collection_destroy(credentials_profiles);

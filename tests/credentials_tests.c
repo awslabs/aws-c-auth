@@ -41,45 +41,20 @@ AWS_STATIC_STRING_FROM_LITERAL(s_session_token_test_value, "Some Session Token")
 static int s_credentials_create_destroy_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials *credentials = aws_credentials_new(
-        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value);
+    struct aws_credentials *credentials = aws_credentials_new_from_string(
+        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value, UINT64_MAX);
 
-    ASSERT_TRUE(aws_string_compare(credentials->access_key_id, s_access_key_id_test_value) == 0);
-    ASSERT_TRUE(aws_string_compare(credentials->secret_access_key, s_secret_access_key_test_value) == 0);
-    ASSERT_TRUE(aws_string_compare(credentials->session_token, s_session_token_test_value) == 0);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_access_key_id_test_value);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(credentials), s_secret_access_key_test_value);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_session_token_test_value);
 
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
 
     return 0;
 }
 
 AWS_TEST_CASE(credentials_create_destroy_test, s_credentials_create_destroy_test);
-
-static int s_credentials_copy_test(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    struct aws_credentials *source = aws_credentials_new(
-        allocator, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value);
-
-    struct aws_credentials *credentials = aws_credentials_new_copy(allocator, source);
-
-    /* Verify string equality and pointer inequality */
-    ASSERT_TRUE(aws_string_compare(credentials->access_key_id, s_access_key_id_test_value) == 0);
-    ASSERT_TRUE(credentials->access_key_id != source->access_key_id);
-
-    ASSERT_TRUE(aws_string_compare(credentials->secret_access_key, s_secret_access_key_test_value) == 0);
-    ASSERT_TRUE(credentials->secret_access_key != source->secret_access_key);
-
-    ASSERT_TRUE(aws_string_compare(credentials->session_token, s_session_token_test_value) == 0);
-    ASSERT_TRUE(credentials->session_token != source->session_token);
-
-    aws_credentials_destroy(credentials);
-    aws_credentials_destroy(source);
-
-    return 0;
-}
-
-AWS_TEST_CASE(credentials_copy_test, s_credentials_copy_test);
 
 struct aws_credentials_shutdown_checker {
     struct aws_mutex lock;
@@ -146,23 +121,17 @@ static int s_do_basic_provider_test(
     ASSERT_TRUE(callback_results.count == expected_calls);
 
     if (callback_results.credentials != NULL) {
-        if (expected_access_key_id != NULL) {
-            ASSERT_TRUE(aws_string_compare(callback_results.credentials->access_key_id, expected_access_key_id) == 0);
-        } else {
-            ASSERT_TRUE(callback_results.credentials->access_key_id == NULL);
-        }
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_access_key_id(callback_results.credentials), expected_access_key_id);
 
-        if (expected_secret_access_key != NULL) {
-            ASSERT_TRUE(
-                aws_string_compare(callback_results.credentials->secret_access_key, expected_secret_access_key) == 0);
-        } else {
-            ASSERT_TRUE(callback_results.credentials->secret_access_key == NULL);
-        }
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_secret_access_key(callback_results.credentials), expected_secret_access_key);
 
         if (expected_session_token != NULL) {
-            ASSERT_TRUE(aws_string_compare(callback_results.credentials->session_token, expected_session_token) == 0);
+            ASSERT_CURSOR_VALUE_STRING_EQUALS(
+                aws_credentials_get_session_token(callback_results.credentials), expected_session_token);
         } else {
-            ASSERT_TRUE(callback_results.credentials->session_token == NULL);
+            ASSERT_TRUE(aws_credentials_get_session_token(callback_results.credentials).len == 0);
         }
     } else {
         ASSERT_TRUE(expected_access_key_id == NULL);
@@ -351,28 +320,23 @@ static int s_verify_callback_status(
     aws_mutex_lock(&results->sync);
     ASSERT_TRUE(results->count == expected_call_count);
 
-    if (results->credentials == NULL || results->credentials->access_key_id == NULL) {
-        ASSERT_TRUE(expected_access_key_id == NULL);
+    if (expected_access_key_id == NULL) {
+        ASSERT_NULL(results->credentials);
     } else {
-        ASSERT_TRUE(
-            expected_access_key_id != NULL &&
-            aws_string_compare(results->credentials->access_key_id, expected_access_key_id) == 0);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_access_key_id(results->credentials), expected_access_key_id);
     }
 
-    if (results->credentials == NULL || results->credentials->secret_access_key == NULL) {
-        ASSERT_TRUE(expected_secret_access_key == NULL);
+    if (expected_secret_access_key == NULL) {
+        ASSERT_NULL(results->credentials);
     } else {
-        ASSERT_TRUE(
-            expected_secret_access_key != NULL &&
-            aws_string_compare(results->credentials->secret_access_key, expected_secret_access_key) == 0);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_secret_access_key(results->credentials), expected_secret_access_key);
     }
 
-    if (results->credentials == NULL || results->credentials->session_token == NULL) {
-        ASSERT_TRUE(expected_session_token == NULL);
-    } else {
-        ASSERT_TRUE(
-            expected_session_token != NULL &&
-            aws_string_compare(results->credentials->session_token, expected_session_token) == 0);
+    if (expected_session_token != NULL) {
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_session_token(results->credentials), expected_session_token);
     }
 
     aws_mutex_unlock(&results->sync);
@@ -388,10 +352,10 @@ static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allo
 
     s_aws_credentials_shutdown_checker_init();
 
-    struct aws_credentials *first_creds =
-        aws_credentials_new(allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1);
-    struct aws_credentials *second_creds =
-        aws_credentials_new(allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2);
+    struct aws_credentials *first_creds = aws_credentials_new_from_string(
+        allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, UINT64_MAX);
+    struct aws_credentials *second_creds = aws_credentials_new_from_string(
+        allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2, UINT64_MAX);
 
     struct get_credentials_mock_result mock_results[] = {{.error_code = 0, .credentials = first_creds},
                                                          {.error_code = 0, .credentials = second_creds}};
@@ -475,8 +439,8 @@ static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allo
 
     s_aws_credentials_shutdown_checker_clean_up();
 
-    aws_credentials_destroy(second_creds);
-    aws_credentials_destroy(first_creds);
+    aws_credentials_release(second_creds);
+    aws_credentials_release(first_creds);
 
     return 0;
 }
@@ -491,10 +455,10 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     mock_aws_set_system_time(0);
     mock_aws_set_high_res_time(1);
 
-    struct aws_credentials *first_creds =
-        aws_credentials_new(allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1);
-    struct aws_credentials *second_creds =
-        aws_credentials_new(allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2);
+    struct aws_credentials *first_creds = aws_credentials_new_from_string(
+        allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, UINT64_MAX);
+    struct aws_credentials *second_creds = aws_credentials_new_from_string(
+        allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2, UINT64_MAX);
 
     struct get_credentials_mock_result mock_results[] = {{.error_code = 0, .credentials = first_creds},
                                                          {.error_code = 0, .credentials = second_creds}};
@@ -582,8 +546,8 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     aws_credentials_provider_mock_async_controller_clean_up(&controller);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
-    aws_credentials_destroy(second_creds);
-    aws_credentials_destroy(first_creds);
+    aws_credentials_release(second_creds);
+    aws_credentials_release(first_creds);
 
     return 0;
 }
@@ -714,12 +678,16 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_credentials_contents,
     "[foo]\naws_access_key_id=foo_access\naws_secret_access_key=foo_secret\naws_session_token=foo_session\n");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_fake_access, "fake_access_key");
+AWS_STATIC_STRING_FROM_LITERAL(s_fake_secret, "fake_secret_key");
+
 int s_verify_default_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->access_key_id), "fake_access_key") == 0);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->secret_access_key), "fake_secret_key") == 0);
-    ASSERT_TRUE(callback_results->credentials->session_token == NULL);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(callback_results->credentials), s_fake_access);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(callback_results->credentials), s_fake_secret);
+    ASSERT_TRUE(aws_credentials_get_session_token(callback_results->credentials).len == 0);
 
     return AWS_OP_SUCCESS;
 }
@@ -760,12 +728,17 @@ AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_p
 
 AWS_STATIC_STRING_FROM_LITERAL(s_foo_profile, "foo");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_foo_access, "foo_access");
+AWS_STATIC_STRING_FROM_LITERAL(s_foo_secret, "foo_secret");
+AWS_STATIC_STRING_FROM_LITERAL(s_foo_session, "foo_session");
+
 int s_verify_nondefault_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->access_key_id), "foo_access") == 0);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->secret_access_key), "foo_secret") == 0);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->session_token), "foo_session") == 0);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(callback_results->credentials), s_foo_access);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(callback_results->credentials), s_foo_secret);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(callback_results->credentials), s_foo_session);
 
     return AWS_OP_SUCCESS;
 }
@@ -905,9 +878,12 @@ static int s_do_provider_chain_test(
 int s_verify_first_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(aws_string_eq(callback_results->credentials->access_key_id, s_access_key_id_value1));
-    ASSERT_TRUE(aws_string_eq(callback_results->credentials->secret_access_key, s_secret_access_key_value1));
-    ASSERT_TRUE(aws_string_eq(callback_results->credentials->session_token, s_session_token_value1));
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_access_key_id(callback_results->credentials), s_access_key_id_value1);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(callback_results->credentials), s_secret_access_key_value1);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_session_token(callback_results->credentials), s_session_token_value1);
 
     return AWS_OP_SUCCESS;
 }
@@ -936,12 +912,16 @@ static int s_credentials_provider_first_in_chain_test(struct aws_allocator *allo
 
 AWS_TEST_CASE(credentials_provider_first_in_chain_test, s_credentials_provider_first_in_chain_test);
 
+AWS_STATIC_STRING_FROM_LITERAL(s_access2, "Access2");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret2, "Secret2");
+AWS_STATIC_STRING_FROM_LITERAL(s_session2, "Session2");
+
 int s_verify_second_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
     ASSERT_TRUE(callback_results->credentials != NULL);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->access_key_id), "Access2") == 0);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->secret_access_key), "Secret2") == 0);
-    ASSERT_TRUE(strcmp(aws_string_c_str(callback_results->credentials->session_token), "Session2") == 0);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(callback_results->credentials), s_access2);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(callback_results->credentials), s_secret2);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(callback_results->credentials), s_session2);
 
     return AWS_OP_SUCCESS;
 }

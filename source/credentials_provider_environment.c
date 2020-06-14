@@ -30,35 +30,32 @@ static int s_credentials_provider_environment_get_credentials_async(
 
     struct aws_allocator *allocator = provider->allocator;
 
-    struct aws_credentials *credentials = aws_mem_acquire(allocator, sizeof(struct aws_credentials));
-    if (credentials == NULL) {
-        callback(NULL, user_data);
-        return AWS_OP_ERR;
-    }
+    struct aws_string *access_key_id = NULL;
+    struct aws_string *secret_access_key = NULL;
+    struct aws_string *session_token = NULL;
+    struct aws_credentials *credentials = NULL;
+    int error_code = AWS_ERROR_SUCCESS;
 
-    AWS_ZERO_STRUCT(*credentials);
-    credentials->allocator = allocator;
+    aws_get_environment_value(allocator, s_access_key_id_env_var, &access_key_id);
+    aws_get_environment_value(allocator, s_secret_access_key_env_var, &secret_access_key);
+    aws_get_environment_value(allocator, s_session_token_env_var, &session_token);
 
-    if (aws_get_environment_value(allocator, s_access_key_id_env_var, &credentials->access_key_id) != 0 ||
-        aws_get_environment_value(allocator, s_secret_access_key_env_var, &credentials->secret_access_key) != 0 ||
-        credentials->access_key_id == NULL || credentials->secret_access_key == NULL) {
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Environment credentials provider was unable to source credentials",
-            (void *)provider);
-        callback(NULL, user_data);
+    if (access_key_id != NULL && secret_access_key != NULL) {
+        credentials =
+            aws_credentials_new_from_string(allocator, access_key_id, secret_access_key, session_token, UINT64_MAX);
+        if (credentials == NULL) {
+            error_code = aws_last_error();
+        }
     } else {
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Environment credentials provider successfully sourced credentials",
-            (void *)provider);
-        aws_get_environment_value(allocator, s_session_token_env_var, &credentials->session_token);
-        callback(credentials, user_data);
+        error_code = AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT;
     }
 
-    if (credentials != NULL) {
-        aws_credentials_destroy(credentials);
-    }
+    callback(credentials, error_code, user_data);
+
+    aws_credentials_release(credentials);
+    aws_string_destroy(session_token);
+    aws_string_destroy(secret_access_key);
+    aws_string_destroy(access_key_id);
 
     return AWS_OP_SUCCESS;
 }

@@ -74,6 +74,7 @@ struct aws_credentials_provider_ecs_user_data {
     struct aws_http_message *request;
     struct aws_byte_buf current_result;
     int status_code;
+    int error_code;
 };
 
 static void s_aws_credentials_provider_ecs_user_data_destroy(struct aws_credentials_provider_ecs_user_data *user_data) {
@@ -179,18 +180,27 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
             "(id=%p) ECS credentials provider successfully queried instance role credentials",
             (void *)ecs_user_data->ecs_provider);
     } else {
+        /* no credentials, make sure we have a valid error to report */
+        if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
+            ecs_user_data->error_code = aws_last_error();
+            if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
+                ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_SOURCE_FAILURE;
+            }
+        }
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) ECS credentials provider failed to query instance role credentials",
-            (void *)ecs_user_data->ecs_provider);
+            "(id=%p) ECS credentials provider failed to query instance role credentials with error %d(%s)",
+            (void *)ecs_user_data->ecs_provider,
+            ecs_user_data->error_code,
+            aws_error_str(ecs_user_data->error_code));
     }
 
     /* pass the credentials back */
-    ecs_user_data->original_callback(credentials, ecs_user_data->original_user_data);
+    ecs_user_data->original_callback(credentials, ecs_user_data->error_code, ecs_user_data->original_user_data);
 
     /* clean up */
     s_aws_credentials_provider_ecs_user_data_destroy(ecs_user_data);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
 }
 
 static int s_ecs_on_incoming_body_fn(
@@ -288,6 +298,12 @@ static void s_ecs_on_stream_complete_fn(struct aws_http_stream *stream, int erro
      */
     if (ecs_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
         ecs_user_data->current_result.len = 0;
+
+        if (error_code != AWS_OP_SUCCESS) {
+            ecs_user_data->error_code = error_code;
+        } else {
+            ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
+        }
     }
 
     s_ecs_finalize_get_credentials_query(ecs_user_data);
@@ -410,6 +426,7 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
             error_code,
             aws_error_str(error_code));
 
+        ecs_user_data->error_code = error_code;
         s_ecs_finalize_get_credentials_query(ecs_user_data);
         return;
     }

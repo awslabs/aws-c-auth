@@ -47,19 +47,43 @@ struct aws_credentials_provider_cached {
 static void s_aws_credentials_query_list_notify_and_clean_up(
     struct aws_linked_list *query_list,
     struct aws_allocator *allocator,
-    struct aws_credentials *credentials) {
+    struct aws_credentials *credentials,
+    int error_code) {
 
     while (!aws_linked_list_empty(query_list)) {
         struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
         struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
-        query->callback(credentials, query->user_data);
+        query->callback(credentials, error_code, query->user_data);
         aws_credentials_query_clean_up(query);
         aws_mem_release(allocator, query);
     }
 }
 
+static void s_swap_cached_credentials(
+    struct aws_credentials_provider *provider,
+    struct aws_credentials *new_credentials) {
+    struct aws_credentials_provider_cached *cached_provider = provider->impl;
+
+    aws_credentials_release(cached_provider->cached_credentials);
+    cached_provider->cached_credentials = new_credentials;
+    if (cached_provider->cached_credentials != NULL) {
+        aws_credentials_acquire(cached_provider->cached_credentials);
+
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider succesfully sourced credentials on refresh",
+            (void *)provider);
+    } else {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider was unable to source credentials on refresh",
+            (void *)provider);
+    }
+}
+
 static void s_cached_credentials_provider_get_credentials_async_callback(
     struct aws_credentials *credentials,
+    int error_code,
     void *user_data) {
 
     struct aws_credentials_provider *provider = user_data;
@@ -83,17 +107,22 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
             next_refresh_time_in_ns = high_res_now + impl->refresh_interval_in_ns;
         }
 
-        if (credentials && credentials->expiration_timepoint_seconds < UINT64_MAX) {
+        uint64_t credentials_expiration_timepoint_seconds = UINT64_MAX;
+        if (credentials != NULL) {
+            credentials_expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials);
+        }
+
+        if (credentials_expiration_timepoint_seconds < UINT64_MAX) {
             uint64_t system_now = 0;
             if (!impl->system_clock_fn(&system_now)) {
 
                 uint64_t system_now_seconds =
                     aws_timestamp_convert(system_now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
-                if (credentials->expiration_timepoint_seconds >=
+                if (credentials_expiration_timepoint_seconds >=
                     system_now_seconds + REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS) {
                     uint64_t early_refresh_time_ns = high_res_now;
                     early_refresh_time_ns += aws_timestamp_convert(
-                        credentials->expiration_timepoint_seconds - system_now_seconds -
+                        credentials_expiration_timepoint_seconds - system_now_seconds -
                             REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS,
                         AWS_TIMESTAMP_SECS,
                         AWS_TIMESTAMP_NANOS,
@@ -115,23 +144,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         (void *)provider,
         impl->next_refresh_time);
 
-    if (impl->cached_credentials != NULL) {
-        aws_credentials_destroy(impl->cached_credentials);
-    }
-
-    if (credentials != NULL) {
-        impl->cached_credentials = aws_credentials_new_copy(provider->allocator, credentials);
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Cached credentials provider successfully sourced credentials on refresh",
-            (void *)provider);
-    } else {
-        impl->cached_credentials = NULL;
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Cached credentials provider was unable to source credentials on refresh",
-            (void *)provider);
-    }
+    s_swap_cached_credentials(provider, credentials);
 
     aws_mutex_unlock(&impl->lock);
 
@@ -140,7 +153,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         "(id=%p) Cached credentials provider notifying pending queries of new credentials",
         (void *)provider);
 
-    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, impl->cached_credentials);
+    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials, error_code);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(
@@ -161,7 +174,8 @@ static int s_cached_credentials_provider_get_credentials_async(
 
     if (impl->cached_credentials != NULL && current_time < impl->next_refresh_time) {
         perform_callback = true;
-        credentials = aws_credentials_new_copy(provider->allocator, impl->cached_credentials);
+        credentials = impl->cached_credentials;
+        aws_credentials_acquire(credentials);
     } else {
         struct aws_credentials_query *query =
             aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_query));
@@ -204,8 +218,8 @@ static int s_cached_credentials_provider_get_credentials_async(
                 "(id=%p) Cached credentials provider failed to source credentials while skipping requery",
                 (void *)provider);
         }
-        callback(credentials, user_data);
-        aws_credentials_destroy(credentials);
+        callback(credentials, (credentials != NULL) ? AWS_ERROR_SUCCESS : aws_last_error(), user_data);
+        aws_credentials_release(credentials);
     }
 
     return AWS_OP_SUCCESS;
@@ -242,7 +256,7 @@ static void s_on_credentials_provider_shutdown(void *user_data) {
     aws_credentials_provider_invoke_shutdown_callback(provider);
 
     if (impl->cached_credentials != NULL) {
-        aws_credentials_destroy(impl->cached_credentials);
+        aws_credentials_release(impl->cached_credentials);
     }
 
     aws_mutex_clean_up(&impl->lock);

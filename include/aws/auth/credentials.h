@@ -27,49 +27,12 @@ struct aws_auth_http_system_vtable;
 struct aws_string;
 
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
-/*
- * A structure that wraps the public/private data needed to sign an authenticated AWS request
- */
-struct aws_credentials {
-    struct aws_allocator *allocator;
-    struct aws_string *access_key_id;
-    struct aws_string *secret_access_key;
-    struct aws_string *session_token;
 
-    /*
-     * A timepoint, in seconds since epoch, at which the credentials should no longer be used because they
-     * will have expired.
-     *
-     *
-     * The primary purpose of this value is to allow providers to communicate to the caching provider any
-     * additional constraints on how the sourced credentials should be used (STS).  After refreshing the cached
-     * credentials, the caching provider uses the following calculation to determine the next requery time:
-     *
-     *   next_requery_time = now + cached_expiration_config;
-     *   if (cached_creds->expiration_timepoint_seconds < next_requery_time) {
-     *       next_requery_time = cached_creds->expiration_timepoint_seconds;
-     *
-     *  The cached provider may, at its discretion, use a smaller requery time to avoid edge-case scenarios where
-     *  credential expiration becomes a race condition.
-     *
-     * The following leaf providers always set this value to UINT64_MAX (indefinite):
-     *    static
-     *    environment
-     *    imds
-     *    profile_config*
-     *
-     *  * - profile_config may invoke sts which will use a non-max value
-     *
-     *  The following leaf providers set this value to a sensible timepoint:
-     *    sts - value is based on current time + options->duration_seconds
-     *
-     */
-    uint64_t expiration_timepoint_seconds;
-};
+struct aws_credentials;
 
 struct aws_credentials_provider;
 
-typedef void(aws_on_get_credentials_callback_fn)(struct aws_credentials *credentials, void *user_data);
+typedef void(aws_on_get_credentials_callback_fn)(struct aws_credentials *credentials, int error_code, void *user_data);
 
 typedef int(aws_credentials_provider_get_credentials_fn)(
     struct aws_credentials_provider *provider,
@@ -311,29 +274,44 @@ AWS_EXTERN_C_BEGIN
 
 /*
  * Credentials APIs
+ *
+ * expiration_timepoint_seconds is the timepoint, in seconds since epoch, that the credentials will no longer
+ * be valid.  For credentials that do not expire, use UINT64_MAX.
  */
 
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
+    struct aws_byte_cursor access_key_id_cursor,
+    struct aws_byte_cursor secret_access_key_cursor,
+    struct aws_byte_cursor session_token_cursor,
+    uint64_t expiration_timepoint_seconds);
+
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_from_string(
+    struct aws_allocator *allocator,
     const struct aws_string *access_key_id,
     const struct aws_string *secret_access_key,
-    const struct aws_string *session_token);
+    const struct aws_string *session_token,
+    uint64_t expiration_timepoint_seconds);
 
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_copy(
-    struct aws_allocator *allocator,
-    const struct aws_credentials *credentials);
+void aws_credentials_acquire(struct aws_credentials *credentials);
 
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_from_cursors(
-    struct aws_allocator *allocator,
-    const struct aws_byte_cursor *access_key_id_cursor,
-    const struct aws_byte_cursor *secret_access_key_cursor,
-    const struct aws_byte_cursor *session_token_cursor);
+void aws_credentials_release(struct aws_credentials *credentials);
 
 AWS_AUTH_API
-void aws_credentials_destroy(struct aws_credentials *credentials);
+struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials);
+
+AWS_AUTH_API
+struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials);
+
+AWS_AUTH_API
+struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials);
+
+AWS_AUTH_API
+uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_credentials *credentials);
 
 /*
  * Credentials provider APIs

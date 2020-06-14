@@ -1313,14 +1313,14 @@ AWS_TEST_CASE(imds_client_get_instance_info_success, s_imds_client_get_instance_
 static int s_assert_get_credentials_info(const struct aws_credentials *creds) {
     s_tester.has_received_resource_callback = true;
 
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_string(creds->access_key_id), s_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_string(creds->secret_access_key), s_secret_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_string(creds->session_token), s_token);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(creds), s_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(creds), s_secret_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(creds), s_token);
 
     struct aws_byte_buf buf;
     aws_byte_buf_init(&buf, s_tester.allocator, 100);
     struct aws_date_time date;
-    aws_date_time_init_epoch_secs(&date, creds->expiration_timepoint_seconds);
+    aws_date_time_init_epoch_secs(&date, aws_credentials_get_expiration_timepoint_seconds(creds));
     aws_date_time_to_utc_time_str(&date, AWS_DATE_FORMAT_ISO_8601, &buf);
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&buf), s_expiration);
     aws_byte_buf_clean_up(&buf);

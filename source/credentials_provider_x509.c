@@ -73,6 +73,7 @@ struct aws_credentials_provider_x509_user_data {
     struct aws_http_message *request;
     struct aws_byte_buf response;
     int status_code;
+    int error_code;
 };
 
 static void s_aws_credentials_provider_x509_user_data_destroy(
@@ -190,6 +191,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     }
 
 done:
+
     if (document_root != NULL) {
         cJSON_Delete(document_root);
     }
@@ -211,18 +213,27 @@ static void s_x509_finalize_get_credentials_query(struct aws_credentials_provide
             "(id=%p) X509 credentials provider successfully queried credentials",
             (void *)x509_user_data->x509_provider);
     } else {
+        if (x509_user_data->error_code == AWS_ERROR_SUCCESS) {
+            x509_user_data->error_code = aws_last_error();
+            if (x509_user_data->error_code == AWS_ERROR_SUCCESS) {
+                x509_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_X509_SOURCE_FAILURE;
+            }
+        }
+
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) X509 credentials provider failed to query credentials",
-            (void *)x509_user_data->x509_provider);
+            "(id=%p) X509 credentials provider failed to query credentials with error %d(%s)",
+            (void *)x509_user_data->x509_provider,
+            x509_user_data->error_code,
+            aws_error_str(x509_user_data->error_code));
     }
 
     /* pass the credentials back */
-    x509_user_data->original_callback(credentials, x509_user_data->original_user_data);
+    x509_user_data->original_callback(credentials, x509_user_data->error_code, x509_user_data->original_user_data);
 
     /* clean up */
     s_aws_credentials_provider_x509_user_data_destroy(x509_user_data);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
 }
 
 static int s_x509_on_incoming_body_fn(
@@ -318,6 +329,12 @@ static void s_x509_on_stream_complete_fn(struct aws_http_stream *stream, int err
      */
     if (x509_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
         x509_user_data->response.len = 0;
+
+        if (error_code != AWS_OP_SUCCESS) {
+            x509_user_data->error_code = error_code;
+        } else {
+            x509_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
+        }
     }
 
     s_x509_finalize_get_credentials_query(x509_user_data);
@@ -448,6 +465,8 @@ static void s_x509_on_acquire_connection(struct aws_http_connection *connection,
             (void *)x509_user_data->x509_provider,
             error_code,
             aws_error_str(error_code));
+
+        x509_user_data->error_code = error_code;
 
         s_x509_finalize_get_credentials_query(x509_user_data);
         return;

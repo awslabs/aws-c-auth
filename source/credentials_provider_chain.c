@@ -40,7 +40,7 @@ struct aws_credentials_provider_chain_user_data {
     void *original_user_data;
 };
 
-void aws_provider_chain_member_callback(struct aws_credentials *credentials, void *user_data) {
+static void s_aws_provider_chain_member_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     struct aws_credentials_provider_chain_user_data *wrapped_user_data = user_data;
     struct aws_credentials_provider *provider = wrapped_user_data->provider_chain;
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
@@ -50,13 +50,23 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
     if (credentials != NULL || wrapped_user_data->current_provider_index + 1 >= provider_count) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Credentials provider chain ending query on chain member %zu with %s credentials",
+            "(id=%p) Credentials provider chain callback terminating on index %zu, with %s credentials and error code "
+            "%d",
             (void *)provider,
             wrapped_user_data->current_provider_index + 1,
-            (credentials != NULL) ? "valid" : "invalid");
+            (credentials != NULL) ? "valid" : "invalid",
+            error_code);
 
         goto on_terminate_chain;
     }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p) Credentials provider chain callback %zu invoked with %s credentials and error code %d",
+        (void *)provider,
+        wrapped_user_data->current_provider_index + 1,
+        (credentials != NULL) ? "valid" : "invalid",
+        error_code);
 
     wrapped_user_data->current_provider_index++;
 
@@ -74,13 +84,13 @@ void aws_provider_chain_member_callback(struct aws_credentials *credentials, voi
         (void *)provider,
         wrapped_user_data->current_provider_index);
 
-    aws_credentials_provider_get_credentials(next_provider, aws_provider_chain_member_callback, wrapped_user_data);
+    aws_credentials_provider_get_credentials(next_provider, s_aws_provider_chain_member_callback, wrapped_user_data);
 
     return;
 
 on_terminate_chain:
 
-    wrapped_user_data->original_callback(credentials, wrapped_user_data->original_user_data);
+    wrapped_user_data->original_callback(credentials, error_code, wrapped_user_data->original_user_data);
     aws_credentials_provider_release(provider);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
 }
@@ -118,7 +128,7 @@ static int s_credentials_provider_chain_get_credentials_async(
         "(id=%p) Credentials provider chain get credentials dispatch",
         (void *)provider);
 
-    aws_credentials_provider_get_credentials(first_provider, aws_provider_chain_member_callback, wrapped_user_data);
+    aws_credentials_provider_get_credentials(first_provider, s_aws_provider_chain_member_callback, wrapped_user_data);
 
     return AWS_OP_SUCCESS;
 }

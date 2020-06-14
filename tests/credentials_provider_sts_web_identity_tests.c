@@ -49,6 +49,7 @@ struct aws_mock_sts_web_identity_tester {
 
     int attempts;
     int response_code;
+    int error_code;
 } s_tester;
 
 /**
@@ -329,7 +330,7 @@ static void s_aws_sts_web_identity_tester_cleanup(void) {
     aws_byte_buf_clean_up(&s_tester.request_body);
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
-    aws_credentials_destroy(s_tester.credentials);
+    aws_credentials_release(s_tester.credentials);
     aws_io_library_clean_up();
 }
 
@@ -346,13 +347,15 @@ static void s_aws_wait_for_credentials_result(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
+static void s_get_credentials_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)user_data;
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
+    s_tester.credentials = credentials;
+    s_tester.error_code = error_code;
     if (credentials != NULL) {
-        s_tester.credentials = aws_credentials_new_copy(credentials->allocator, credentials);
+        aws_credentials_acquire(credentials);
     }
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
@@ -566,11 +569,11 @@ static int s_verify_credentials(bool request_made, bool from_config, bool got_cr
     if (got_credentials) {
         ASSERT_TRUE(s_tester.credentials != NULL);
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
-            aws_byte_cursor_from_string(s_tester.credentials->access_key_id), s_good_access_key_id);
+            aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
-            aws_byte_cursor_from_string(s_tester.credentials->secret_access_key), s_good_secret_access_key);
+            aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
-            aws_byte_cursor_from_string(s_tester.credentials->session_token), s_good_session_token);
+            aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
     } else {
         ASSERT_TRUE(s_tester.credentials == NULL);
     }
@@ -932,7 +935,8 @@ static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_
     struct aws_date_time expiration;
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == (uint64_t)expiration.timestamp);
+    ASSERT_INT_EQUALS(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials), (uint64_t)expiration.timestamp);
 
     aws_credentials_provider_release(provider);
 
@@ -1005,7 +1009,8 @@ static int s_credentials_provider_sts_web_identity_basic_success_config(struct a
     struct aws_date_time expiration;
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == (uint64_t)expiration.timestamp);
+    ASSERT_INT_EQUALS(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials), (uint64_t)expiration.timestamp);
 
     aws_credentials_provider_release(provider);
 
@@ -1099,7 +1104,8 @@ static int s_credentials_provider_sts_web_identity_success_multi_part_doc(struct
     struct aws_date_time expiration;
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == (uint64_t)expiration.timestamp);
+    ASSERT_INT_EQUALS(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials), (uint64_t)expiration.timestamp);
 
     aws_credentials_provider_release(provider);
 

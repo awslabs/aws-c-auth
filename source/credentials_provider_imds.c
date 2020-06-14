@@ -148,9 +148,8 @@ on_error:
 static void s_on_get_credentials(const struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)error_code;
     struct imds_user_data *wrapped_user_data = user_data;
-    struct aws_credentials *creds = aws_credentials_new_copy(wrapped_user_data->allocator, credentials);
-    wrapped_user_data->original_callback(creds, wrapped_user_data->original_user_data);
-    aws_credentials_destroy(creds);
+    wrapped_user_data->original_callback(
+        (struct aws_credentials *)credentials, error_code, wrapped_user_data->original_user_data);
     s_imds_user_data_destroy(wrapped_user_data);
 }
 
@@ -174,7 +173,8 @@ static void s_on_get_role(const struct aws_byte_buf *role, int error_code, void 
     return;
 
 on_error:
-    wrapped_user_data->original_callback(NULL, wrapped_user_data->original_user_data);
+    wrapped_user_data->original_callback(
+        NULL, AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, wrapped_user_data->original_user_data);
     s_imds_user_data_destroy(wrapped_user_data);
 }
 

@@ -47,6 +47,7 @@ struct aws_get_credentials_test_callback_result {
     struct aws_credentials *credentials;
     int count;
     int required_count;
+    int last_error;
 };
 
 void aws_get_credentials_test_callback_result_init(
@@ -56,7 +57,7 @@ void aws_get_credentials_test_callback_result_clean_up(struct aws_get_credential
 
 void aws_wait_on_credentials_callback(struct aws_get_credentials_test_callback_result *result);
 
-void aws_test_get_credentials_async_callback(struct aws_credentials *credentials, void *user_data);
+void aws_test_get_credentials_async_callback(struct aws_credentials *credentials, int error_code, void *user_data);
 
 struct get_credentials_mock_result {
     int error_code;

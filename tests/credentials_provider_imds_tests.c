@@ -63,6 +63,9 @@ struct aws_mock_imds_tester {
     struct aws_client_bootstrap *bootstrap;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+
+    int error_code;
+
     bool token_ttl_header_exist[IMDS_MAX_REQUESTS];
     bool token_ttl_header_expected[IMDS_MAX_REQUESTS];
     bool token_header_exist[IMDS_MAX_REQUESTS];
@@ -278,6 +281,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
+    s_tester.error_code = AWS_ERROR_SUCCESS;
 
     ASSERT_SUCCESS(aws_event_loop_group_default_init(&s_tester.el_group, allocator, 1));
     struct aws_client_bootstrap_options bootstrap_options = {
@@ -301,7 +305,8 @@ static void s_aws_imds_tester_cleanup(void) {
 
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
-    aws_credentials_destroy(s_tester.credentials);
+
+    aws_credentials_release(s_tester.credentials);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_clean_up(&s_tester.el_group);
@@ -320,14 +325,14 @@ static void s_aws_wait_for_credentials_result(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
+static void s_get_credentials_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)user_data;
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
-    if (credentials != NULL) {
-        s_tester.credentials = aws_credentials_new_copy(credentials->allocator, credentials);
-    }
+    s_tester.error_code = error_code;
+    s_tester.credentials = credentials;
+    aws_credentials_acquire(credentials);
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
 }
@@ -692,6 +697,14 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 
+static int s_verify_credentials(struct aws_credentials *credentials) {
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(credentials), s_good_secret_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_good_session_token);
+
+    return AWS_OP_SUCCESS;
+}
+
 static int s_credentials_provider_imds_secure_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -736,21 +749,8 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     ASSERT_TRUE(s_tester.token_header_exist[2]);
     ASSERT_TRUE(s_tester.token_header_expected[2]);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -803,21 +803,7 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -877,21 +863,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
     ASSERT_FALSE(s_tester.token_header_exist[2]);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -959,21 +931,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     ASSERT_TRUE(s_tester.token_header_exist[3]);
     ASSERT_TRUE(s_tester.token_header_expected[3]);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -1030,21 +988,7 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
 
     s_validate_uri_path_and_creds(3, true);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
@@ -1106,21 +1050,7 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
 
     s_validate_uri_path_and_creds(3, true);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 

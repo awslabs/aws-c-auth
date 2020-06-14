@@ -1048,7 +1048,7 @@ static void s_process_credentials_resource(const struct aws_byte_buf *resource, 
 
 on_finish:
     wrapped_user_data->callback(credentials, error_code, wrapped_user_data->user_data);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
 }
