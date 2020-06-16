@@ -1048,6 +1048,9 @@ AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_de
 AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_access_key_id_test_value, "AKISORANDOMAASORANDOM");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_secret_access_key_test_value, "q+jcrXGc+0zWN6uzclKVhvMmUsIfRPa4rlRandom");
 
+/*
+ * Values derived in synchronicity with Goland and IAM implementations
+ */
 AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_x, "15d242ceebf8d8169fd6a8b5a746c41140414c3b07579038da06af89190fffcb");
 AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_y, "515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
 
