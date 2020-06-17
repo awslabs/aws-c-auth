@@ -869,7 +869,7 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
         }
 
         if (s_append_canonical_query_param(
-                &param, canonical_request_buffer, state->config.flags.use_double_uri_encode)) {
+                &param, canonical_request_buffer, (bool)state->config.flags.use_double_uri_encode)) {
             goto cleanup;
         }
 
