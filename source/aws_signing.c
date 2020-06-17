@@ -594,11 +594,14 @@ int s_canonical_query_param_comparator(const void *lhs, const void *rhs) {
     const struct aws_uri_param *left_param = lhs;
     const struct aws_uri_param *right_param = rhs;
 
+    /* Note: Sigv4 spec says to sort parameter names by character code point,
+     * which fortunately is the same as sorting UTF-8 byte by byte */
     int key_compare = aws_byte_cursor_compare_lexical(&left_param->key, &right_param->key);
     if (key_compare != 0) {
         return key_compare;
     }
 
+    /* Parameters with duplicate names should be sorted by value */
     return aws_byte_cursor_compare_lexical(&left_param->value, &right_param->value);
 }
 
@@ -636,17 +639,33 @@ int s_canonical_header_comparator(const void *lhs, const void *rhs) {
     return 1;
 }
 
-static int s_append_canonical_query_param(struct aws_uri_param *param, struct aws_byte_buf *buffer) {
-    if (aws_byte_buf_append_encoding_uri_param(buffer, &param->key)) {
-        return AWS_OP_ERR;
+static int s_append_canonical_query_param(
+    struct aws_uri_param *param,
+    struct aws_byte_buf *buffer,
+    bool use_double_uri_encode) {
+
+    if (use_double_uri_encode) {
+        if (aws_byte_buf_append_encoding_uri_param(buffer, &param->key)) {
+            return AWS_OP_ERR;
+        }
+    } else {
+        if (aws_byte_buf_append(buffer, &param->key)) {
+            return AWS_OP_ERR;
+        }
     }
 
     if (s_append_character_to_byte_buf(buffer, '=')) {
         return AWS_OP_ERR;
     }
 
-    if (aws_byte_buf_append_encoding_uri_param(buffer, &param->value)) {
-        return AWS_OP_ERR;
+    if (use_double_uri_encode) {
+        if (aws_byte_buf_append_encoding_uri_param(buffer, &param->value)) {
+            return AWS_OP_ERR;
+        }
+    } else {
+        if (aws_byte_buf_append(buffer, &param->value)) {
+            return AWS_OP_ERR;
+        }
     }
 
     return AWS_OP_SUCCESS;
@@ -849,7 +868,8 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
             goto cleanup;
         }
 
-        if (s_append_canonical_query_param(&param, canonical_request_buffer)) {
+        if (s_append_canonical_query_param(
+                &param, canonical_request_buffer, state->config.flags.use_double_uri_encode)) {
             goto cleanup;
         }
 
