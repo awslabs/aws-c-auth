@@ -271,6 +271,8 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         aws_ecc_key_pair_acquire(context->ecc_key);
     }
 
+    aws_ecc_key_pair_derive_public_key(context->ecc_key);
+
     AWS_FATAL_ASSERT(context->credentials != NULL);
 
     cJSON *region_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_region_name));
