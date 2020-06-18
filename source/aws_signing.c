@@ -387,6 +387,9 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
  *
  */
 
+/*
+ * This should get moved to io
+ */
 int aws_byte_buf_append_byte_dynamic(struct aws_byte_buf *buffer, uint8_t value) {
 
 #if defined(_MSC_VER)
