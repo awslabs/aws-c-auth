@@ -21,7 +21,6 @@
 #include <aws/cal/ecc.h>
 #include <aws/cal/hash.h>
 #include <aws/cal/hmac.h>
-#include <aws/common/bigint.h>
 #include <aws/common/date_time.h>
 #include <aws/common/encoding.h>
 #include <aws/common/string.h>
@@ -2183,57 +2182,134 @@ static int s_aws_build_fixed_input_buffer(
     return AWS_OP_SUCCESS;
 }
 
+/*
+ * In the following function gt and eq are updated in little "blocks".  After each block update, the variables will be
+ * in one of the following states:
+ *
+ *  (1) gt is 0, eq is 1, and from an ordering perspective, lhs == rhs, as checked "so far"
+ *  (2) gt is 1, eq is 0, (lhs > rhs)
+ *  (3) gt is 0, eq is 0, (lhs < rhs)
+ *
+ *  States (2) and (3) are terminal states that cannot be exited since eq is 0 and is the and-wise mask of all
+ *  subsequent gt updates.  Similarly, once eq is zero it cannot ever become non-zero.
+ *
+ *  Intuitively these ideas match the standard way of comparing magnitude equality by considering digit count and
+ *  digits from most significant to least significant.
+ *
+ *  Let l and r be the the two digits that we are
+ *  comparing between lhs and rhs.  Assume l and r are both non-negative and can each be represented
+ *  by an int32:
+ *
+ *  gt is maintained by the following bit trick:
+ *
+ *      l > r <=>
+ *      (r - l) < 0 <=>
+ *      (r - l) as an int32 has the high bit set <=>
+ *      ((r - l) >> 31) & 0x01 == 1
+ *
+ *  eq is maintained by the following bit trick:
+ *
+ *      l == r <=>
+ *      l ^ r == 0 <=>
+ *      (l ^ r) - 1 == -1 <=>
+ *      (((l ^ r) - 1) >> 31) & 0x01 == 1   // only true if l and r are < (1U << 31)
+ *
+ *      I found this last step confusing and a little uncomfortable.  Everywhere else we naturally think of l and
+ *      r as arbitrary, but here there's a bound as to under what conditions that last equivalence holds.
+ *
+ */
+static int s_be_bytes_less_than(
+    struct aws_byte_buf *raw_be_bigint_lhs,
+    struct aws_byte_buf *raw_be_bigint_rhs,
+    int *comparison_result) {
+    /*
+     * We only need to support comparing byte sequences of the same length here
+     */
+    size_t lhs_len = raw_be_bigint_lhs->len;
+    if (lhs_len != raw_be_bigint_rhs->len) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+
+    volatile uint8_t gt = 0;
+    volatile uint8_t eq = 1;
+
+    uint8_t *raw_lhs_bytes = raw_be_bigint_lhs->buffer;
+    uint8_t *raw_rhs_bytes = raw_be_bigint_rhs->buffer;
+    for (size_t i = 0; i < lhs_len; ++i) {
+        volatile int32_t lhs_digit = (int32_t)raw_lhs_bytes[i];
+        volatile int32_t rhs_digit = (int32_t)raw_rhs_bytes[i];
+
+        /*
+         * For each digit, check for a state (1) => (2) ie lhs > rhs, or (1) => (3) ie lhs < rhs transition
+         * based on comparing the two digits in constant time using the ideas explained in the giant comment
+         * block above this function.
+         */
+        gt |= ((rhs_digit - lhs_digit) >> 31) & eq;
+        eq &= (((lhs_digit ^ rhs_digit) - 1) >> 31) & 0x01;
+    }
+
+    *comparison_result = gt + gt + eq - 1;
+
+    return AWS_OP_SUCCESS;
+}
+
+static void s_be_bytes_add_one(struct aws_byte_buf *raw_be_bigint) {
+    size_t byte_count = raw_be_bigint->len;
+
+    volatile uint32_t carry = 1;
+    uint8_t *raw_bytes = raw_be_bigint->buffer;
+
+    for (size_t i = 0; i < byte_count; ++i) {
+        size_t index = byte_count - i - 1;
+
+        volatile uint32_t current_byte = raw_bytes[index];
+        current_byte += carry;
+
+        volatile uint8_t byte = (current_byte & 0xFF);
+        carry = (current_byte >> 8) & 0x01;
+
+        raw_bytes[index] = byte;
+    }
+}
+
 #define NUM_KEY_BITS 256
 
 /* In the spec, this is N-1 */
-static const char *s_n_minus_1 = "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632550";
+static uint8_t s_n_minus_1[32] = {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF,
+                                  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xBC, 0xE6, 0xFA, 0xAD, 0xA7, 0x17,
+                                  0x9E, 0x84, 0xF3, 0xB9, 0xCA, 0xC2, 0xFC, 0x63, 0x25, 0x50};
 
 enum aws_key_derivation_result { AKDR_SUCCESS, AKDR_INCREMENT_COUNTER, AKDR_FAILURE };
 
 static enum aws_key_derivation_result s_aws_derive_ecc_private_key(
-    struct aws_bigint *private_key_value,
-    struct aws_allocator *allocator,
+    struct aws_byte_buf *private_key_value,
     struct aws_byte_buf *k0) {
     AWS_FATAL_ASSERT(k0->len == 32);
 
-    struct aws_bigint *c = aws_bigint_new_from_binary_cursor(allocator, aws_byte_cursor_from_buf(k0), NUM_KEY_BITS);
-    if (c == NULL) {
+    struct aws_byte_buf s_n_minus_1_buf = {
+        .allocator = NULL,
+        .buffer = s_n_minus_1,
+        .capacity = AWS_ARRAY_SIZE(s_n_minus_1),
+        .len = AWS_ARRAY_SIZE(s_n_minus_1),
+    };
+
+    int comparison_result = 0;
+    if (s_be_bytes_less_than(k0, &s_n_minus_1_buf, &comparison_result)) {
         return AKDR_FAILURE;
     }
 
-    int result = AKDR_FAILURE;
-    struct aws_bigint *threshold = NULL;
-    struct aws_bigint *one = NULL;
-
-    threshold = aws_bigint_new_from_hex_cursor(allocator, aws_byte_cursor_from_c_str(s_n_minus_1), NUM_KEY_BITS);
-    if (threshold == NULL) {
-        goto done;
+    if (comparison_result >= 0) {
+        return AKDR_INCREMENT_COUNTER;
     }
 
-    /* c > N-2 is equivalent c >= N-1 */
-    if (aws_bigint_compare(c, threshold) != AWS_ORDERING_LT) {
-        result = AKDR_INCREMENT_COUNTER;
-        goto done;
+    struct aws_byte_cursor k0_cursor = aws_byte_cursor_from_buf(k0);
+    if (aws_byte_buf_append(private_key_value, &k0_cursor)) {
+        return AWS_OP_ERR;
     }
 
-    one = aws_bigint_new_one(allocator, NUM_KEY_BITS);
-    if (one == NULL) {
-        goto done;
-    }
+    s_be_bytes_add_one(private_key_value);
 
-    if (aws_bigint_add(private_key_value, c, one)) {
-        goto done;
-    }
-
-    result = AKDR_SUCCESS;
-
-done:
-
-    aws_bigint_destroy(c);
-    aws_bigint_destroy(threshold);
-    aws_bigint_destroy(one);
-
-    return result;
+    return AKDR_SUCCESS;
 }
 
 #define SECRET_BUFFER_LENGTH_OVERESTIMATE 64
@@ -2276,12 +2352,6 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 
     struct aws_ecc_key_pair *ecc_key_pair = NULL;
 
-    struct aws_bigint *pub_x = NULL;
-    struct aws_bigint *pub_y = NULL;
-
-    struct aws_byte_buf log_buf;
-    AWS_ZERO_STRUCT(log_buf);
-
     struct aws_byte_buf fixed_input;
     AWS_ZERO_STRUCT(fixed_input);
 
@@ -2294,16 +2364,17 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_buf secret_buf;
     AWS_ZERO_STRUCT(secret_buf);
 
-    struct aws_bigint *private_key = aws_bigint_new_zero(allocator, NUM_KEY_BITS);
-    if (private_key == NULL) {
-        return NULL;
-    }
-
     if (aws_byte_buf_init(&fixed_input, allocator, SIGV4A_FIXED_INPUT_SIZE_OVERESTIMATE)) {
         goto done;
     }
 
     if (aws_byte_buf_init(&fixed_input_hash_digest, allocator, AWS_SHA256_LEN)) {
+        goto done;
+    }
+
+    size_t key_length = aws_ecc_key_coordinate_byte_size_from_curve_name(AWS_CAL_ECDSA_P256);
+    AWS_FATAL_ASSERT(key_length * 8 == NUM_KEY_BITS);
+    if (aws_byte_buf_init(&private_key_buf, allocator, key_length)) {
         goto done;
     }
 
@@ -2318,14 +2389,15 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
             goto done;
         }
 
-        fixed_input_hash_digest.len = 0;
+        aws_byte_buf_reset(&fixed_input_hash_digest, true);
+
         struct aws_byte_cursor fixed_input_cursor = aws_byte_cursor_from_buf(&fixed_input);
         if (aws_sha256_hmac_compute(allocator, &secret_cursor, &fixed_input_cursor, &fixed_input_hash_digest, 0)) {
             goto done;
         }
 
         enum aws_key_derivation_result result =
-            s_aws_derive_ecc_private_key(private_key, allocator, &fixed_input_hash_digest);
+            s_aws_derive_ecc_private_key(&private_key_buf, &fixed_input_hash_digest);
         if (result == AKDR_SUCCESS) {
             break;
         } else if (result == AKDR_FAILURE || counter == MAX_KEY_DERIVATION_COUNTER_VALUE) {
@@ -2333,60 +2405,8 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
         }
     }
 
-    size_t key_length = aws_ecc_key_coordinate_byte_size_from_curve_name(AWS_CAL_ECDSA_P256);
-    AWS_FATAL_ASSERT(key_length * 8 == NUM_KEY_BITS);
-    if (aws_byte_buf_init(&private_key_buf, allocator, key_length)) {
-        goto done;
-    }
-
-    if (aws_bigint_bytebuf_append_as_big_endian(private_key, &private_key_buf, NUM_KEY_BITS)) {
-        goto done;
-    }
-
     struct aws_byte_cursor private_key_cursor = aws_byte_cursor_from_buf(&private_key_buf);
     ecc_key_pair = aws_ecc_key_pair_new_from_private_key(allocator, AWS_CAL_ECDSA_P256, &private_key_cursor);
-
-    /*
-     * We do a lot of work here to log the public key, so let's only do it if trace is actually enabled.
-     */
-    struct aws_logger *logger = aws_logger_get();
-    if (logger != NULL && logger->vtable->get_log_level(logger, AWS_LS_AUTH_SIGNING) == AWS_LL_TRACE) {
-        /*
-         * Open Q: maybe make this unconditional?  It costs time but it's a little weird that the returned
-         * key may or may not have the public bits available depending on the log level.
-         */
-        aws_ecc_key_pair_derive_public_key(ecc_key_pair);
-
-        struct aws_byte_cursor pub_x_cursor;
-        AWS_ZERO_STRUCT(pub_x_cursor);
-        struct aws_byte_cursor pub_y_cursor;
-        AWS_ZERO_STRUCT(pub_y_cursor);
-
-        aws_ecc_key_pair_get_public_key(ecc_key_pair, &pub_x_cursor, &pub_y_cursor);
-
-        pub_x = aws_bigint_new_from_binary_cursor(allocator, pub_x_cursor, NUM_KEY_BITS);
-        pub_y = aws_bigint_new_from_binary_cursor(allocator, pub_y_cursor, NUM_KEY_BITS);
-
-        if (aws_byte_buf_init(&log_buf, allocator, 512)) {
-            goto done;
-        }
-
-        struct aws_byte_cursor x_cursor = aws_byte_cursor_from_c_str("X = ");
-        aws_byte_buf_append_dynamic(&log_buf, &x_cursor);
-        aws_bigint_bytebuf_append_as_hex(pub_x, &log_buf);
-
-        struct aws_byte_cursor y_cursor = aws_byte_cursor_from_c_str(" ; Y = ");
-        aws_byte_buf_append_dynamic(&log_buf, &y_cursor);
-        aws_bigint_bytebuf_append_as_hex(pub_y, &log_buf);
-
-        struct aws_byte_cursor access_key_id = aws_credentials_get_access_key_id(credentials);
-
-        AWS_LOGF_TRACE(
-            AWS_LS_AUTH_SIGNING,
-            "Deriving ecc key for credentials with access key \"" PRInSTR "\" yielding public key " PRInSTR,
-            AWS_BYTE_CURSOR_PRI(access_key_id),
-            AWS_BYTE_BUF_PRI(log_buf));
-    }
 
 done:
 
@@ -2394,11 +2414,6 @@ done:
     aws_byte_buf_clean_up(&private_key_buf);
     aws_byte_buf_clean_up(&fixed_input_hash_digest);
     aws_byte_buf_clean_up(&fixed_input);
-    aws_bigint_destroy(private_key);
-
-    aws_bigint_destroy(pub_x);
-    aws_bigint_destroy(pub_y);
-    aws_byte_buf_clean_up(&log_buf);
 
     return ecc_key_pair;
 }

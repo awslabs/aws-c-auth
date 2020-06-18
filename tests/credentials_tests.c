@@ -17,9 +17,9 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/cal/ecc.h>
-#include <aws/common/bigint.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
+#include <aws/common/encoding.h>
 #include <aws/common/environment.h>
 #include <aws/common/mutex.h>
 #include <aws/common/string.h>
@@ -1049,10 +1049,10 @@ AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_access_key_id_test_value, "AKISORAND
 AWS_STATIC_STRING_FROM_LITERAL(s_ecc_derive_secret_access_key_test_value, "q+jcrXGc+0zWN6uzclKVhvMmUsIfRPa4rlRandom");
 
 /*
- * Values derived in synchronicity with Goland and IAM implementations
+ * Values derived in synchronicity with Golang and IAM implementations
  */
 AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_x, "15d242ceebf8d8169fd6a8b5a746c41140414c3b07579038da06af89190fffcb");
-AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_y, "515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
+AWS_STATIC_STRING_FROM_LITERAL(s_expected_pub_y, "0515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
 
 static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -1072,27 +1072,22 @@ static int s_credentials_derive_ecc_key_create_destroy(struct aws_allocator *all
 
     aws_ecc_key_pair_get_public_key(derived_key, &pub_x_cursor, &pub_y_cursor);
 
-    struct aws_bigint *pub_x = aws_bigint_new_from_binary_cursor(allocator, pub_x_cursor, 256);
-
     struct aws_byte_buf pub_coord_x;
     ASSERT_SUCCESS(aws_byte_buf_init(&pub_coord_x, allocator, 128));
 
-    aws_bigint_bytebuf_append_as_hex(pub_x, &pub_coord_x);
+    ASSERT_SUCCESS(aws_hex_encode(&pub_x_cursor, &pub_coord_x));
+    pub_coord_x.len -= 1;
     ASSERT_BIN_ARRAYS_EQUALS(s_expected_pub_x->bytes, s_expected_pub_x->len, pub_coord_x.buffer, pub_coord_x.len);
-
-    struct aws_bigint *pub_y = aws_bigint_new_from_binary_cursor(allocator, pub_y_cursor, 256);
 
     struct aws_byte_buf pub_coord_y;
     ASSERT_SUCCESS(aws_byte_buf_init(&pub_coord_y, allocator, 128));
 
-    aws_bigint_bytebuf_append_as_hex(pub_y, &pub_coord_y);
+    ASSERT_SUCCESS(aws_hex_encode(&pub_y_cursor, &pub_coord_y));
+    pub_coord_y.len -= 1;
     ASSERT_BIN_ARRAYS_EQUALS(s_expected_pub_y->bytes, s_expected_pub_y->len, pub_coord_y.buffer, pub_coord_y.len);
 
     aws_byte_buf_clean_up(&pub_coord_x);
     aws_byte_buf_clean_up(&pub_coord_y);
-
-    aws_bigint_destroy(pub_x);
-    aws_bigint_destroy(pub_y);
 
     aws_ecc_key_pair_release(derived_key);
     aws_credentials_release(creds);
