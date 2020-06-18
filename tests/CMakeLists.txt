@@ -186,7 +186,8 @@ add_test_case(sigv4_fail_signed_headers_param_test)
 add_test_case(signer_null_credentials_test)
 add_test_case(sigv4_chunked_signing_test)
 
-add_test_case(credentials_derive_ecc_key_create_destroy)
+add_test_case(credentials_derive_ecc_key_fixed)
+add_test_case(credentials_derive_ecc_key_suite)
 
 add_test_case(sigv4a_get_header_key_duplicate_test)
 add_test_case(sigv4a_get_header_value_multiline_test)

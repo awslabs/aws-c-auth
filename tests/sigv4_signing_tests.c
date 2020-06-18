@@ -37,7 +37,6 @@
 #include "credentials_provider_utils.h"
 #include "test_signable.h"
 
-AWS_STATIC_STRING_FROM_LITERAL(s_ecc_key_filename, "key.pem");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_canonical_request_filename, "header-canonical-request.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_string_to_sign_filename, "header-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_signed_request_filename, "header-signed-request.txt");
@@ -117,11 +116,6 @@ static int s_v4_test_case_context_init_from_file_set(
     if (s_load_test_case_file(allocator, parent_folder, test_name, "request.txt", &contents->request) ||
         s_load_test_case_file(allocator, parent_folder, test_name, "context.json", &contents->context)) {
         return AWS_OP_ERR;
-    }
-
-    if (algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        s_load_test_case_file(
-            allocator, parent_folder, test_name, aws_string_c_str(s_ecc_key_filename), &contents->key);
     }
 
     s_load_test_case_file(

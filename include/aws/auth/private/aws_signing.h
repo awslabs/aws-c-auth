@@ -114,6 +114,7 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signing_signed_headers_query_
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_header_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_security_token_name;
+AWS_AUTH_API extern const struct aws_string *g_signature_type_sigv4a_http_request;
 
 /**
  * Initializes the internal table of headers that should not be signed
@@ -126,6 +127,9 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator);
  */
 AWS_AUTH_API
 void aws_signing_clean_up_signing_tables(void);
+
+AWS_AUTH_API
+int aws_byte_buf_append_byte_dynamic(struct aws_byte_buf *buffer, uint8_t value);
 
 AWS_EXTERN_C_END
 
