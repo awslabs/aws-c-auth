@@ -28,6 +28,7 @@
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
+#    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
 /* instance role credentials body response is currently ~ 1300 characters + name length */
