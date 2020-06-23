@@ -92,6 +92,11 @@ static int s_aws_build_fixed_input_buffer(
 }
 
 /*
+ * A pair of constant-time arithmetic functions that operate on raw bytes as if they were unbounded integers in
+ * a big-endian base 255 format.
+ */
+
+/*
  * In the following function gt and eq are updated in little "blocks".  After each block update, the variables will be
  * in one of the following states:
  *
@@ -126,6 +131,12 @@ static int s_aws_build_fixed_input_buffer(
  *      I found this last step confusing and a little uncomfortable.  Everywhere else we naturally think of l and
  *      r as arbitrary, but here there's a bound as to under what conditions that last equivalence holds.
  *
+ */
+
+/**
+ * Compares two large unsigned integers in a raw byte format.
+ * The two operands *must* be the same size (simplifies the problem significantly)
+ * Returns -1, 0, 1 for less-than, equal, or greater-than respectively.
  */
 int aws_be_bytes_compare(
     const struct aws_byte_buf *raw_be_bigint_lhs,
@@ -162,6 +173,9 @@ int aws_be_bytes_compare(
     return AWS_OP_SUCCESS;
 }
 
+/**
+ * Adds one to a large unsigned integer represented by a sequence of bytes.
+ */
 void aws_be_bytes_add_one(struct aws_byte_buf *raw_be_bigint) {
     size_t byte_count = raw_be_bigint->len;
 
@@ -195,7 +209,7 @@ static uint8_t s_n_minus_1[32] = {
 
 enum aws_key_derivation_result {
     AKDR_SUCCESS,
-    AKDR_INCREMENT_COUNTER,
+    AKDR_NEXT_COUNTER,
     AKDR_FAILURE,
 };
 
@@ -219,7 +233,7 @@ static enum aws_key_derivation_result s_aws_derive_ecc_private_key(
     }
 
     if (comparison_result >= 0) {
-        return AKDR_INCREMENT_COUNTER;
+        return AKDR_NEXT_COUNTER;
     }
 
     struct aws_byte_cursor k0_cursor = aws_byte_cursor_from_buf(k0);
@@ -296,7 +310,8 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_cursor secret_cursor = aws_byte_cursor_from_buf(&secret_buf);
 
     uint32_t counter = 1;
-    while (counter <= MAX_KEY_DERIVATION_COUNTER_VALUE) {
+    enum aws_key_derivation_result result = AKDR_NEXT_COUNTER;
+    while (result == AKDR_NEXT_COUNTER && counter <= MAX_KEY_DERIVATION_COUNTER_VALUE) {
         if (s_aws_build_fixed_input_buffer(&fixed_input, credentials, counter++)) {
             break;
         }
@@ -308,16 +323,12 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
             break;
         }
 
-        enum aws_key_derivation_result result =
-            s_aws_derive_ecc_private_key(&private_key_buf, &fixed_input_hash_digest);
-        if (result == AKDR_SUCCESS) {
-            struct aws_byte_cursor private_key_cursor = aws_byte_cursor_from_buf(&private_key_buf);
-            ecc_key_pair = aws_ecc_key_pair_new_from_private_key(allocator, AWS_CAL_ECDSA_P256, &private_key_cursor);
-        }
+        result = s_aws_derive_ecc_private_key(&private_key_buf, &fixed_input_hash_digest);
+    }
 
-        if (result != AKDR_INCREMENT_COUNTER) {
-            break;
-        }
+    if (result == AKDR_SUCCESS) {
+        struct aws_byte_cursor private_key_cursor = aws_byte_cursor_from_buf(&private_key_buf);
+        ecc_key_pair = aws_ecc_key_pair_new_from_private_key(allocator, AWS_CAL_ECDSA_P256, &private_key_cursor);
     }
 
 done:
