@@ -66,6 +66,9 @@ struct aws_signing_state_aws {
     struct aws_byte_buf signature;
     struct aws_byte_buf string_to_sign_payload;
 
+    /* temp buf for writing out strings */
+    struct aws_byte_buf scratch_buf;
+
     char expiration_array[32]; /* serialization of the pre-signing expiration duration value */
 };
 
