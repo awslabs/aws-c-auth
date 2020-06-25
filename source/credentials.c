@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright 2010-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License").
  * You may not use this file except in compliance with the License.
@@ -491,7 +491,7 @@ on_error:
 
 struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
     struct aws_allocator *allocator,
-    struct aws_credentials *credentials) {
+    const struct aws_credentials *credentials) {
 
     struct aws_ecc_key_pair *ecc_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, credentials);
 

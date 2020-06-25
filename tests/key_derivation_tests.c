@@ -77,7 +77,7 @@ static int s_be_sequence_add_one(struct aws_allocator *allocator, void *ctx) {
             .allocator = NULL,
         };
 
-        aws_be_bytes_add_one(&input);
+        aws_be_bytes_add_one_constant_time(&input);
 
         ASSERT_BIN_ARRAYS_EQUALS(
             test_case->expected_output, test_case->expected_output_length, input.buffer, input.len);
@@ -171,7 +171,7 @@ static int s_be_sequence_compare(struct aws_allocator *allocator, void *ctx) {
         };
 
         int comparison_result = 0;
-        int result = aws_be_bytes_compare(&lhs, &rhs, &comparison_result);
+        int result = aws_be_bytes_compare_constant_time(&lhs, &rhs, &comparison_result);
 
         ASSERT_INT_EQUALS(test_case->expected_return_value, result);
         if (result == AWS_OP_SUCCESS) {
@@ -179,7 +179,7 @@ static int s_be_sequence_compare(struct aws_allocator *allocator, void *ctx) {
         }
 
         int swapped_comparison_result = 0;
-        int swapped_result = aws_be_bytes_compare(&rhs, &lhs, &swapped_comparison_result);
+        int swapped_result = aws_be_bytes_compare_constant_time(&rhs, &lhs, &swapped_comparison_result);
         ASSERT_INT_EQUALS(test_case->expected_return_value, swapped_result);
         if (swapped_result == AWS_OP_SUCCESS) {
             ASSERT_INT_EQUALS(-test_case->expected_result, swapped_comparison_result);

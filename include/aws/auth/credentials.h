@@ -485,12 +485,12 @@ struct aws_credentials *aws_credentials_new_ecc(
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
     struct aws_allocator *allocator,
-    struct aws_credentials *credentials);
+    const struct aws_credentials *credentials);
 
 AWS_AUTH_API
 struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
     struct aws_allocator *allocator,
-    struct aws_credentials *credentials);
+    const struct aws_credentials *credentials);
 
 AWS_EXTERN_C_END
 
