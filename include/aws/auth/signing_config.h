@@ -216,13 +216,17 @@ struct aws_signing_config_aws {
     /*
      * Signing key control:
      *
-     *   (1) If "credentials" is valid, use it
-     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result.  If
-     *   sigv4a is being used, use the ecc-based credentials derived from the query result
-     *   (3) Else fail
+     *   If "credentials" is valid:
+     *      use it
+     *   Else if "credentials_provider" is valid
+     *      query credentials from the provider
+     *      If sigv4a is being used
+     *          use the ecc-based credentials derived from the query result
+     *      Else
+     *          use the query result
+     *   Else
+     *      fail
      *
-     *
-     *   Ecc key derivation is not cheap, and so users are encouraged to cache derived ecc-based credentials.
      */
 
     /*

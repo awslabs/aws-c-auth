@@ -16,7 +16,6 @@
 #include <aws/auth/private/key_derivation.h>
 
 #include <aws/auth/credentials.h>
-#include <aws/auth/private/aws_signing.h>
 #include <aws/cal/ecc.h>
 #include <aws/cal/hash.h>
 #include <aws/cal/hmac.h>
@@ -34,7 +33,8 @@
 
 /*
  * The maximum number of iterations we will attempt to derive a valid ecc key for.  The probability that this counter
- * value ever gets reached is absurdly low -- with reasonable uniformity assumptions, it's approximately
+ * value ever gets reached is vanishingly low -- with reasonable uniformity/independence assumptions, it's
+ * approximately
  *
  *  2 ^ (-32 * 254)
  */
@@ -131,7 +131,7 @@ static int s_aws_build_fixed_input_buffer(
  *  digits from most significant to least significant.
  *
  *  Let l and r be the the two digits that we are
- *  comparing between lhs and rhs.  Assume 0 <= l, r <= 255
+ *  comparing between lhs and rhs.  Assume 0 <= l, r <= 255 seated in 32-bit integers
  *
  *  gt is maintained by the following bit trick:
  *
@@ -287,12 +287,12 @@ static int s_init_secret_buf(
     }
 
     struct aws_byte_cursor prefix_cursor = aws_byte_cursor_from_c_str("AWS4A");
-    if (aws_byte_buf_append_dynamic(secret_buf, &prefix_cursor)) {
+    if (aws_byte_buf_append_dynamic_secure(secret_buf, &prefix_cursor)) {
         return AWS_OP_ERR;
     }
 
     struct aws_byte_cursor secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials);
-    if (aws_byte_buf_append_dynamic(secret_buf, &secret_access_key_cursor)) {
+    if (aws_byte_buf_append_dynamic_secure(secret_buf, &secret_access_key_cursor)) {
         return AWS_OP_ERR;
     }
 

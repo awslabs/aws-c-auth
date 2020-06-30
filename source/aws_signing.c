@@ -387,26 +387,6 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
  *
  */
 
-/*
- * This should get moved to io
- */
-int aws_byte_buf_append_byte_dynamic(struct aws_byte_buf *buffer, uint8_t value) {
-
-#if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4221)
-#endif /* _MSC_VER */
-
-    /* msvc isn't a fan of this pointer-to-local assignment */
-    struct aws_byte_cursor eq_cursor = {.len = 1, .ptr = &value};
-
-#if defined(_MSC_VER)
-#    pragma warning(pop)
-#endif /* _MSC_VER */
-
-    return aws_byte_buf_append_dynamic(buffer, &eq_cursor);
-}
-
 static int s_append_canonical_method(struct aws_signing_state_aws *state) {
     const struct aws_signable *signable = state->signable;
     struct aws_byte_buf *buffer = &state->canonical_request;
