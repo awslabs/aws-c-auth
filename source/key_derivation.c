@@ -13,13 +13,14 @@
 #include <aws/common/string.h>
 
 /*
- * Overestimates against maximum lengths based on the current IAM bounds for AWS credentials.
+ * Overestimate against maximum length of the fixed input buffer.  This maximum is a function of fixed values
+ * (the sigv4a key derivation process) and the (maximum) length of an IAM access_key_id which may be subject
+ * to change in the future.
  *
- * If these overestimates becomes invalidated by future IAM changes, we'll want to change them in order to
+ * If this overestimate becomes invalidated by future IAM changes, we'll want to increase it in order to
  * avoid needless allocations.
  */
 #define SIGV4A_FIXED_INPUT_LENGTH_OVERESTIMATE 256
-#define SECRET_BUFFER_LENGTH_OVERESTIMATE 64
 
 /*
  * The maximum number of iterations we will attempt to derive a valid ecc key for.  The probability that this counter
@@ -42,6 +43,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_1_as_four_bytes_be, "\x00\x00\x00\x01");
 AWS_STATIC_STRING_FROM_LITERAL(s_256_as_four_bytes_be, "\x00\x00\x01\x00");
 
 AWS_STRING_FROM_LITERAL(g_signature_type_sigv4a_http_request, "AWS4-ECDSA-P256-SHA256");
+
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_buffer_prefix, "AWS4A");
 
 /*
  * This constructs the fixed input byte sequence of the Sigv4a key derivation specification.  It also includes the
@@ -272,17 +275,19 @@ static int s_init_secret_buf(
     struct aws_byte_buf *secret_buf,
     struct aws_allocator *allocator,
     const struct aws_credentials *credentials) {
-    if (aws_byte_buf_init(secret_buf, allocator, SECRET_BUFFER_LENGTH_OVERESTIMATE)) {
-        return AWS_OP_ERR;
-    }
-
-    struct aws_byte_cursor prefix_cursor = aws_byte_cursor_from_c_str("AWS4A");
-    if (aws_byte_buf_append_dynamic_secure(secret_buf, &prefix_cursor)) {
-        return AWS_OP_ERR;
-    }
 
     struct aws_byte_cursor secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials);
-    if (aws_byte_buf_append_dynamic_secure(secret_buf, &secret_access_key_cursor)) {
+    size_t secret_buffer_length = secret_access_key_cursor.len + s_secret_buffer_prefix->len;
+    if (aws_byte_buf_init(secret_buf, allocator, secret_buffer_length)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor prefix_cursor = aws_byte_cursor_from_string(s_secret_buffer_prefix);
+    if (aws_byte_buf_append(secret_buf, &prefix_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append(secret_buf, &secret_access_key_cursor)) {
         return AWS_OP_ERR;
     }
 
