@@ -15,13 +15,14 @@
 struct aws_client_bootstrap;
 struct aws_auth_http_system_vtable;
 struct aws_string;
+struct aws_credentials;
+struct aws_credentials_provider;
 
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
 
-struct aws_credentials;
-
-struct aws_credentials_provider;
-
+/*
+ * Signature for the credentials sourcing callback
+ */
 typedef void(aws_on_get_credentials_callback_fn)(struct aws_credentials *credentials, int error_code, void *user_data);
 
 typedef int(aws_credentials_provider_get_credentials_fn)(
@@ -30,6 +31,9 @@ typedef int(aws_credentials_provider_get_credentials_fn)(
     void *user_data);
 typedef void(aws_credentials_provider_destroy_fn)(struct aws_credentials_provider *provider);
 
+/*
+ * Common function table that all credentials provider implementations must support
+ */
 struct aws_credentials_provider_vtable {
     aws_credentials_provider_get_credentials_fn *get_credentials;
     aws_credentials_provider_destroy_fn *destroy;
@@ -49,7 +53,7 @@ struct aws_credentials_provider_shutdown_options {
     void *shutdown_user_data;
 };
 
-/*
+/**
  * An interface for a variety of different methods for sourcing credentials.
  * Ref-counted.  Thread-safe.
  */
@@ -269,6 +273,18 @@ AWS_EXTERN_C_BEGIN
  * be valid.  For credentials that do not expire, use UINT64_MAX.
  */
 
+/**
+ * Creates a new set of aws credentials
+ *
+ * @param allocator memory allocator to use
+ * @param access_key_id_cursor value for the aws access key id field
+ * @param secret_access_key_cursor value for the secret access key field
+ * @param session_token_cursor (optional) security token associated with the credentials
+ * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
+ * be valid past.  For credentials that do not expire, use UINT64_MAX
+ *
+ * @return a valid credentials object, or NULL
+ */
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,

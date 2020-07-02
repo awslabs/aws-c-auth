@@ -97,6 +97,11 @@ int aws_signable_get_property_list(
 
 /**
  * Retrieves the signable's message payload as a stream.
+ *
+ * @param signable signable to get the payload of
+ * @param input_stream output parameter for the payload stream
+ *
+ * @return AWS_OP_SUCCESS if successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream);
@@ -138,15 +143,29 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signature_property_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_name;
 
 /*
- * Common signable implementations
+ * Common signable constructors
  */
 
+/**
+ * Creates a signable wrapper around an http request.
+ *
+ * @param allocator memory allocator to use to create the signable
+ * @param request http request to create a signable for
+ *
+ * @return the new signable object, or NULL if failure
+ */
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request);
 
 /**
- * previous_signature is the signature computed in the most recent signing that preceded this one.  It can be
+ * Creates a signable that represents a unit of chunked encoding within an http request.
+ *
+ * @param allocator memory allocator use to create the signable
+ * @param chunk_data stream representing the data in the chunk; it should be in its final, encoded form
+ * @param previous_signature the signature computed in the most recent signing that preceded this one.  It can be
  * found by copying the "signature" property from the signing_result of that most recent signing.
+ *
+ * @return the new signable object, or NULL if failure
  */
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_chunk(

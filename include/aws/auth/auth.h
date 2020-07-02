@@ -52,6 +52,8 @@ AWS_EXTERN_C_BEGIN
 /**
  * Initializes internal datastructures used by aws-c-auth.
  * Must be called before using any functionality in aws-c-auth.
+ *
+ * @param allocator memory allocator to use for any module-level memory allocation
  */
 AWS_AUTH_API
 void aws_auth_library_init(struct aws_allocator *allocator);
