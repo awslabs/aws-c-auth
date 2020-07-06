@@ -21,6 +21,7 @@
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
+#    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
 /* IoT Core credentials body response is currently ~ 1100 Bytes*/
