@@ -32,6 +32,8 @@
 #    pragma warning(disable : 4204)
 /* allow passing of address of automatic variable */
 #    pragma warning(disable : 4221)
+/* function pointer to dll symbol */
+#    pragma warning(disable : 4232)
 #endif
 
 static struct aws_http_header s_host_header = {
