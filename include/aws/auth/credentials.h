@@ -54,7 +54,9 @@ struct aws_credentials_provider_shutdown_options {
 };
 
 /**
- * An interface for a variety of different methods for sourcing credentials.
+ * A baseclass for credentials providers.  A credentials provider is an object that has an asynchronous
+ * query function for retrieving AWS credentials.
+ *
  * Ref-counted.  Thread-safe.
  */
 struct aws_credentials_provider {
@@ -69,6 +71,9 @@ struct aws_credentials_provider {
  * Config structs for creating all the different credentials providers
  */
 
+/**
+ * Configuration options for a provider that returns a fixed set of credentials
+ */
 struct aws_credentials_provider_static_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     struct aws_byte_cursor access_key_id;
@@ -76,24 +81,63 @@ struct aws_credentials_provider_static_options {
     struct aws_byte_cursor session_token;
 };
 
+/**
+ * Configuration options for a provider that returns credentials based on environment variable values
+ */
 struct aws_credentials_provider_environment_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 };
 
+/**
+ * Configuration options for a provider that sources credentials from the aws profile and credentials files
+ * (by default ~/.aws/profile and ~/.aws/credentials)
+ */
 struct aws_credentials_provider_profile_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Override of what profile to use to source credentials from ('default' by default)
+     */
     struct aws_byte_cursor profile_name_override;
+
+    /*
+     * Override path to the profile config file (~/.aws/config by default)
+     */
     struct aws_byte_cursor config_file_name_override;
+
+    /*
+     * Override path to the profile credentials file (~/.aws/credentials by default)
+     */
     struct aws_byte_cursor credentials_file_name_override;
+
+    /*
+     * Bootstrap to use for any network connections made while sourcing credentials (for example,
+     * a profile that uses assume-role will need to hit STS)
+     */
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };
 
+/**
+ * Configuration options for a provider that functions as a caching decorator.  Credentials sourced through this
+ * provider will be cached within it until their expiration time.  When the cached credentials expire, new
+ * credentials will be fetched when next queried.
+ */
 struct aws_credentials_provider_cached_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * The provider to cache credentials query results from
+     */
     struct aws_credentials_provider *source;
+
+    /*
+     * An optional expiration time period for sourced credentials.  For a given set of cached credentials,
+     * the refresh time period will be the minimum of this time and any expiration timestamp on the credentials
+     * themselves.
+     */
     uint64_t refresh_time_in_milliseconds;
 
     /* For mocking, leave NULL otherwise */
@@ -101,9 +145,22 @@ struct aws_credentials_provider_cached_options {
     aws_io_clock_fn *system_clock_fn;
 };
 
+/**
+ * Configuration options for a provider that queries, in order, a list of providers.  This provider uses the
+ * first set of credentials successfully queried.  Providers are queried one at a time; a provider is not queried
+ * until the preceding provider has failed to source credentials.
+ */
 struct aws_credentials_provider_chain_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Pointer to an array of credentials providers to use
+     */
     struct aws_credentials_provider **providers;
+
+    /*
+     * Number of elements in the array of credentials providers
+     */
     size_t provider_count;
 };
 
@@ -121,15 +178,29 @@ enum aws_imds_protocol_version {
     IMDS_PROTOCOL_V1,
 };
 
+/**
+ * Configuration options for the provider that sources credentials from ec2 instance metadata
+ */
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
     struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Which version of the imds query protocol to use.
+     */
     enum aws_imds_protocol_version imds_version;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };
 
 /*
+ * Configuration options for the provider that sources credentials from ECS container metadata
+ *
  * ECS creds provider can be used to access creds via either
  * relative uri to a fixed endpoint http://169.254.170.2,
  * or via a full uri specified by environment variables:
@@ -146,12 +217,31 @@ struct aws_credentials_provider_imds_options {
  */
 struct aws_credentials_provider_ecs_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
     struct aws_client_bootstrap *bootstrap;
 
+    /*
+     * Host to query credentials from
+     */
     struct aws_byte_cursor host;
+
+    /*
+     * Http path and query string for the credentials query
+     */
     struct aws_byte_cursor path_and_query;
+
+    /*
+     * Authorization token to include in the credentials query
+     */
     struct aws_byte_cursor auth_token;
-    /* it is also used to determine the port: 443 or 80 */
+
+    /*
+     * Whether or not to make the query using tls.
+     * This also determines the port: 443 or 80
+     */
     bool use_tls;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
@@ -159,6 +249,8 @@ struct aws_credentials_provider_ecs_options {
 };
 
 /**
+ * Configuration options for the X509 credentials provider
+ *
  * The x509 credentials provider sources temporary credentials from AWS IoT Core using TLS mutual authentication.
  * See details: https://docs.aws.amazon.com/iot/latest/developerguide/authorizing-direct-aws.html
  * An end to end demo with detailed steps can be found here:
@@ -166,6 +258,10 @@ struct aws_credentials_provider_ecs_options {
  */
 struct aws_credentials_provider_x509_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
     struct aws_client_bootstrap *bootstrap;
 
     /* TLS connection options that have been initialized with your x509 certificate and private key */
@@ -180,11 +276,13 @@ struct aws_credentials_provider_x509_options {
     /**
      * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo
      * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
+     *
+     * This a different endpoint than the IoT data mqtt broker endpoint.
      */
     struct aws_byte_cursor endpoint;
 
     /**
-     * (Optional) proxy configuration for the http request that fetches credentials
+     * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *proxy_options;
 
@@ -193,6 +291,8 @@ struct aws_credentials_provider_x509_options {
 };
 
 /**
+ * Configuration options for the STS web identity provider
+ *
  * Sts with web identity credentials provider sources a set of temporary security credentials for users who have been
  * authenticated in a mobile or web application with a web identity provider.
  * Example providers include Amazon Cognito, Login with Amazon, Facebook, Google, or any OpenID Connect-compatible
@@ -211,19 +311,51 @@ struct aws_credentials_provider_x509_options {
  */
 struct aws_credentials_provider_sts_web_identity_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
     struct aws_client_bootstrap *bootstrap;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };
 
+/**
+ * Configuration options for the STS credentials provider
+ */
 struct aws_credentials_provider_sts_options {
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
     struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Tls context to use when querying STS.  If not provided, the STS credentials provider will construct
+     * a new one.
+     */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * Credentials provider to be used to sign the requests made to STS to fetch credentials.
+     */
     struct aws_credentials_provider *creds_provider;
+
+    /*
+     * Arn of the role to assume by fetching credentials for
+     */
     struct aws_byte_cursor role_arn;
+
+    /*
+     * Assumed role session identifier to be associated with the sourced credentials
+     */
     struct aws_byte_cursor session_name;
+
+    /*
+     * How long sourced credentials should remain valid for, in seconds.  900 is the minimum allowed value.
+     */
     uint16_t duration_seconds;
+
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /* For mocking, leave NULL otherwise */
@@ -232,6 +364,9 @@ struct aws_credentials_provider_sts_options {
 };
 
 /**
+ *
+ * Configuration options for the process credentials provider
+ *
  * The process credentials provider sources credentials from running a command or process.
  * The command to run is sourced from a profile in the AWS config file, using the standard
  * profile selection rules. The profile key the command is read from is "credential_process."
@@ -259,8 +394,15 @@ struct aws_credentials_provider_process_options {
     struct aws_byte_cursor profile_to_use;
 };
 
+/**
+ * Configuration options for the default credentials provider chain.
+ */
 struct aws_credentials_provider_chain_default_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
     struct aws_client_bootstrap *bootstrap;
 };
 
@@ -268,9 +410,6 @@ AWS_EXTERN_C_BEGIN
 
 /*
  * Credentials APIs
- *
- * expiration_timepoint_seconds is the timepoint, in seconds since epoch, that the credentials will no longer
- * be valid.  For credentials that do not expire, use UINT64_MAX.
  */
 
 /**
@@ -293,6 +432,18 @@ struct aws_credentials *aws_credentials_new(
     struct aws_byte_cursor session_token_cursor,
     uint64_t expiration_timepoint_seconds);
 
+/**
+ * Creates a new set of AWS credentials
+ *
+ * @param allocator memory allocator to use
+ * @param access_key_id  value for the aws access key id field
+ * @param secret_access_key value for the secret access key field
+ * @param session_token (optional) security token associated with the credentials
+ * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
+ * be valid past.  For credentials that do not expire, use UINT64_MAX
+ *
+ * @return a valid credentials object, or NULL
+ */
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_from_string(
     struct aws_allocator *allocator,
@@ -301,21 +452,56 @@ struct aws_credentials *aws_credentials_new_from_string(
     const struct aws_string *session_token,
     uint64_t expiration_timepoint_seconds);
 
+/**
+ * Add a reference to some credentials
+ *
+ * @param credentials credentials to increment the ref count on
+ */
 AWS_AUTH_API
 void aws_credentials_acquire(struct aws_credentials *credentials);
 
+/**
+ * Remove a reference to some credentials
+ *
+ * @param credentials credentials to decrement the ref count on
+ */
 AWS_AUTH_API
 void aws_credentials_release(struct aws_credentials *credentials);
 
+/**
+ * Get the AWS access key id from a set of credentials
+ *
+ * @param credentials credentials to get the access key id from
+ * @return a byte cursor to the access key id
+ */
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials);
 
+/**
+ * Get the AWS secret access key from a set of credentials
+ *
+ * @param credentials credentials to get the secret access key from
+ * @return a byte cursor to the secret access key
+ */
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials);
 
+/**
+ * Get the AWS session token from a set of credentials
+ *
+ * @param credentials credentials to get the session token from
+ * @return a byte cursor to the session token or an empty byte cursor if there is no session token
+ */
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials);
 
+/**
+ * Get the expiration timepoint (in seconds since epoch) associated with a set of credentials
+ *
+ * @param credentials redentials to get the expiration timepoint for
+ * @return the time, in seconds since epoch, the credentials will expire; UINT64_MAX for credentials
+ * without a specific expiration time
+ */
 AWS_AUTH_API
 uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_credentials *credentials);
 
@@ -323,20 +509,32 @@ uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_crede
  * Credentials provider APIs
  */
 
-/*
+/**
  * Release a reference to a credentials provider
+ *
+ * @param provider provider to increment the ref count on
  */
 AWS_AUTH_API
 void aws_credentials_provider_release(struct aws_credentials_provider *provider);
 
 /*
  * Add a reference to a credentials provider
+ *
+ * @param provider provider to decrement the ref count on
  */
 AWS_AUTH_API
 void aws_credentials_provider_acquire(struct aws_credentials_provider *provider);
 
 /*
  * Async function for retrieving credentials from a provider
+ *
+ * @param provider credentials provider to source from
+ * @param callback completion callback to invoke when the fetch has completed or failed
+ * @param user_data user data to pass to the completion callback
+ *
+ * @return AWS_OP_SUCCESS if the fetch was successfully started, AWS_OP_ERR otherwise.  The completion
+ * callback will only be invoked if-and-only-if the return value was AWS_OP_SUCCESS.
+ *
  */
 AWS_AUTH_API
 int aws_credentials_provider_get_credentials(
@@ -348,97 +546,146 @@ int aws_credentials_provider_get_credentials(
  * Credentials provider variant creation
  */
 
-/*
- * A simple provider that just returns a fixed set of credentials
+/**
+ * Creates a simple provider that just returns a fixed set of credentials
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_static_options *options);
 
-/*
- * A provider that returns credentials sourced from the environment variables:
+/**
+ * Creates a provider that returns credentials sourced from the environment variables:
  *
  * AWS_ACCESS_KEY_ID
  * AWS_SECRET_ACCESS_KEY
  * AWS_SESSION_TOKEN
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_environment(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_environment_options *options);
 
-/*
- * A provider that functions as a caching decorating of another provider.
+/**
+ * Creates a provider that functions as a caching decorating of another provider.
  *
  * For example, the default chain is implemented as:
  *
  * CachedProvider -> ProviderChain(EnvironmentProvider -> ProfileProvider -> ECS/EC2IMD etc...)
  *
  * A reference is taken on the target provider
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_cached_options *options);
 
-/*
- * A provider that sources credentials from key-value profiles loaded from the aws credentials
+/**
+ * Creates a provider that sources credentials from key-value profiles loaded from the aws credentials
  * file ("~/.aws/credentials" by default) and the aws config file ("~/.aws/config" by
  * default)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_profile_options *options);
 
-/*
- * A provider assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
- * upon each call to aws_credentials_provider_get_credentials(). If you very likely don't want this behavior,
- * prefer aws_credentials_provider_new_sts_cached() instead.
+/**
+ * Creates a provider that assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
+ * upon each call to aws_credentials_provider_get_credentials().
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_sts_options *options);
 
-/*
- * A provider that sources credentials from an ordered sequence of providers, with the overall result
+/**
+ * Creates a provider that sources credentials from an ordered sequence of providers, with the overall result
  * being from the first provider to return a valid set of credentials
  *
  * References are taken on all supplied providers
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_chain_options *options);
 
-/*
- * A provider that sources credentials from the ec2 instance metadata service
+/**
+ * Creates a provider that sources credentials from the ec2 instance metadata service
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_imds_options *options);
 
-/*
- * A provider that sources credentials from the ecs role credentials service
+/**
+ * Creates a provider that sources credentials from the ecs role credentials service
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
 
-/*
- * A provider that sources credentials from IoT Core
+/**
+ * Creates a provider that sources credentials from IoT Core
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_x509(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_x509_options *options);
 
-/*
- * A provider that sources credentials from STS using AssumeRoleWithWebIdentity
+/**
+ * Creates a provider that sources credentials from STS using AssumeRoleWithWebIdentity
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
@@ -446,14 +693,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     const struct aws_credentials_provider_sts_web_identity_options *options);
 
 /*
- * A provider that sources credentials from running an external command or process
+ * Creates a provider that sources credentials from running an external command or process
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_process(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_process_options *options);
 
-/*
+/**
  * Creates the default provider chain used by most AWS SDKs.
  *
  * Generally:
@@ -465,6 +717,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
  *
  * Support for environmental control of the default provider chain is not yet
  * implemented.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(

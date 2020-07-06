@@ -71,6 +71,8 @@ AWS_EXTERN_C_BEGIN
 
 /**
  * Cleans up and frees all resources associated with a signable instance
+ *
+ * @param signable signable object to destroy
  */
 AWS_AUTH_API
 void aws_signable_destroy(struct aws_signable *signable);
@@ -78,6 +80,12 @@ void aws_signable_destroy(struct aws_signable *signable);
 /**
  * Retrieves a property (key-value pair) from a signable.  Global property name constants are
  * included below.
+ *
+ * @param signable signable object to retrieve a property from
+ * @param name name of the property to query
+ * @param out_value output parameter for the property's value
+ *
+ * @return AWS_OP_SUCCESS if the property was successfully fetched, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signable_get_property(
@@ -88,6 +96,12 @@ int aws_signable_get_property(
 /**
  * Retrieves a named property list (list of key-value pairs) from a signable.  Global property list name
  * constants are included below.
+ *
+ * @param signable signable object to retrieve a property list from
+ * @param name name of the property list to fetch
+ * @param out_property_list output parameter for the fetched property list
+ *
+ * @return AWS_OP_SUCCESS if the property list was successfully fetched, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signable_get_property_list(
@@ -99,12 +113,12 @@ int aws_signable_get_property_list(
  * Retrieves the signable's message payload as a stream.
  *
  * @param signable signable to get the payload of
- * @param input_stream output parameter for the payload stream
+ * @param out_input_stream output parameter for the payload stream
  *
  * @return AWS_OP_SUCCESS if successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
-int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream);
+int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **out_input_stream);
 
 /*
  * Some global property and property-list name constants

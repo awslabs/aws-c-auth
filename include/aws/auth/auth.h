@@ -12,6 +12,9 @@
 
 #define AWS_C_AUTH_PACKAGE_ID 6
 
+/**
+ * Auth-specific error codes
+ */
 enum aws_auth_errors {
     AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR = AWS_ERROR_ENUM_BEGIN_RANGE(AWS_C_AUTH_PACKAGE_ID),
     AWS_AUTH_PROFILE_PARSE_FATAL_ERROR,
@@ -37,6 +40,9 @@ enum aws_auth_errors {
     AWS_AUTH_ERROR_END_RANGE = AWS_ERROR_ENUM_END_RANGE(AWS_C_AUTH_PACKAGE_ID)
 };
 
+/**
+ * Auth-specific logging subjects
+ */
 enum aws_auth_log_subject {
     AWS_LS_AUTH_GENERAL = AWS_LOG_SUBJECT_BEGIN_RANGE(AWS_C_AUTH_PACKAGE_ID),
     AWS_LS_AUTH_PROFILE,

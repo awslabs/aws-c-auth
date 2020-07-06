@@ -37,11 +37,11 @@ int aws_signable_get_property_list(
     return signable->vtable->get_property_list(signable, name, out_property_list);
 }
 
-int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream) {
+int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **out_input_stream) {
 
     AWS_ASSERT(signable && signable->vtable && signable->vtable->get_payload_stream);
 
-    return signable->vtable->get_payload_stream(signable, input_stream);
+    return signable->vtable->get_payload_stream(signable, out_input_stream);
 }
 
 AWS_STRING_FROM_LITERAL(g_aws_http_headers_property_list_name, "headers");
