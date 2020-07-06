@@ -104,7 +104,7 @@ on_error:
 }
 
 int aws_signing_result_get_property(
-    struct aws_signing_result *result,
+    const struct aws_signing_result *result,
     const struct aws_string *property_name,
     struct aws_string **out_property_value) {
 
@@ -199,7 +199,7 @@ on_error:
 }
 
 int aws_signing_result_get_property_list(
-    struct aws_signing_result *result,
+    const struct aws_signing_result *result,
     const struct aws_string *list_name,
     struct aws_array_list **out_list) {
 
