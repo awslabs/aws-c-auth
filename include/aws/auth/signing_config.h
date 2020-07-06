@@ -229,9 +229,23 @@ struct aws_signing_config_aws {
 
 AWS_EXTERN_C_BEGIN
 
+/**
+ * Returns a c-string that describes the supplied signing algorithm
+ *
+ * @param algorithm signing algorithm to get a friendly string name for
+ *
+ * @return friendly string name of the supplied algorithm, or "Unknown" if the algorithm is not recognized
+ */
 AWS_AUTH_API
 const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm);
 
+/**
+ * Checks a signing configuration for invalid settings combinations.
+ *
+ * @param config signing configuration to validate
+ *
+ * @return - AWS_OP_SUCCESS if the configuration is valid, AWS_OP_ERR otherwise
+ */
 AWS_AUTH_API
 int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *config);
 

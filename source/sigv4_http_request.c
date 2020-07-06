@@ -28,7 +28,7 @@
 static int s_build_request_uri(
     struct aws_allocator *allocator,
     struct aws_http_message *request,
-    struct aws_signing_result *signing_result) {
+    const struct aws_signing_result *signing_result) {
 
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
@@ -130,7 +130,7 @@ done:
 int aws_apply_signing_result_to_http_request(
     struct aws_http_message *request,
     struct aws_allocator *allocator,
-    struct aws_signing_result *result) {
+    const struct aws_signing_result *result) {
 
     /* uri/query params */
     if (s_build_request_uri(allocator, request, result)) {
