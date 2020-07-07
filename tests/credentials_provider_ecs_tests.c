@@ -432,28 +432,10 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
 
-static int s_credentials_provider_ecs_basic_success(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    s_aws_ecs_tester_init(allocator);
-
-    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
-
-    struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
-        .function_table = &s_mock_function_table,
-        .shutdown_options =
-            {
-                .shutdown_callback = s_on_shutdown_complete,
-                .shutdown_user_data = NULL,
-            },
-        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
-        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
-        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
-    };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+static int s_do_ecs_success_test(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_ecs_options *options) {
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, options);
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
@@ -485,12 +467,67 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
 
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_ecs_basic_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+    };
+
+    ASSERT_SUCCESS(s_do_ecs_success_test(allocator, &options));
+
     s_aws_ecs_tester_cleanup();
 
     return 0;
 }
 
 AWS_TEST_CASE(credentials_provider_ecs_basic_success, s_credentials_provider_ecs_basic_success);
+
+static int s_credentials_provider_ecs_no_auth_token_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+    };
+
+    ASSERT_SUCCESS(s_do_ecs_success_test(allocator, &options));
+
+    s_aws_ecs_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_ecs_no_auth_token_success, s_credentials_provider_ecs_no_auth_token_success);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_first_part, "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"Secret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_second_part, "AccessKey\":\"SuccessfulSecret\", \n  \"Token\":\"Token");

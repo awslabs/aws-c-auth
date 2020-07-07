@@ -321,12 +321,14 @@ static int s_make_ecs_http_query(
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
 
-    struct aws_http_header auth_header = {
-        .name = aws_byte_cursor_from_string(s_ecs_authorization_header),
-        .value = aws_byte_cursor_from_string(impl->auth_token),
-    };
-    if (aws_http_message_add_header(request, auth_header)) {
-        goto on_error;
+    if (impl->auth_token != NULL) {
+        struct aws_http_header auth_header = {
+            .name = aws_byte_cursor_from_string(s_ecs_authorization_header),
+            .value = aws_byte_cursor_from_string(impl->auth_token),
+        };
+        if (aws_http_message_add_header(request, auth_header)) {
+            goto on_error;
+        }
     }
 
     struct aws_http_header accept_header = {
