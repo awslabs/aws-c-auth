@@ -199,7 +199,7 @@ static void s_on_sub_provider_shutdown_completed(void *user_data) {
     struct aws_credentials_provider *provider = user_data;
     struct aws_credentials_provider_default_chain_impl *impl = provider->impl;
 
-    int remaining = aws_atomic_fetch_sub(&impl->shutdowns_remaining, 1);
+    size_t remaining = aws_atomic_fetch_sub(&impl->shutdowns_remaining, 1);
     if (remaining != 1) {
         return;
     }
