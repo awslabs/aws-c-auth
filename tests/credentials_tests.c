@@ -962,7 +962,7 @@ AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_
 static int s_credentials_provider_default_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_http_library_init(allocator);
+    aws_auth_library_init(allocator);
 
     s_aws_credentials_shutdown_checker_init();
     /*
@@ -1022,11 +1022,12 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
 
     aws_credentials_provider_release(provider);
 
+    s_aws_wait_for_provider_shutdown_callback();
     s_aws_credentials_shutdown_checker_clean_up();
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_clean_up(&resolver);
     aws_event_loop_group_clean_up(&el_group);
-    aws_http_library_clean_up();
+    aws_auth_library_clean_up();
 
     return 0;
 }
