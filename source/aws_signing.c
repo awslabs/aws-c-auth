@@ -396,6 +396,22 @@ static int s_append_canonical_method(struct aws_signing_state_aws *state) {
     return AWS_OP_SUCCESS;
 }
 
+static int s_append_with_lookup(
+    struct aws_byte_buf *dst,
+    const struct aws_byte_cursor *src,
+    const uint8_t *lookup_table) {
+
+    if (aws_byte_buf_reserve_relative(dst, src->len)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_with_lookup(dst, src, lookup_table)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * A function that builds a normalized path (removes redundant '/' characters, '.' components, and properly pops off
  * components in response '..' components)
@@ -1002,12 +1018,12 @@ static int s_append_canonical_header(
         }
 
         /* add it to the signed headers buffer */
-        if (aws_byte_buf_append_with_lookup(signed_headers_buffer, &header->name, to_lower_table)) {
+        if (s_append_with_lookup(signed_headers_buffer, &header->name, to_lower_table)) {
             return AWS_OP_ERR;
         }
 
         /* add it to the canonical header buffer */
-        if (aws_byte_buf_append_with_lookup(canonical_header_buffer, &header->name, to_lower_table)) {
+        if (s_append_with_lookup(canonical_header_buffer, &header->name, to_lower_table)) {
             return AWS_OP_ERR;
         }
 
