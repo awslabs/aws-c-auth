@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/private/aws_signing.h>
@@ -51,7 +41,7 @@
 #define PAYLOAD_HASH_STARTING_SIZE (AWS_SHA256_LEN * 2)
 #define CREDENTIAL_SCOPE_STARTING_SIZE 128
 #define ACCESS_CREDENTIAL_SCOPE_STARTING_SIZE 149
-#define ENCODED_SIGNING_QUERY_PARAM_STARTING_SIZE 256
+#define SCRATCH_BUF_STARTING_SIZE 256
 #define INITIAL_QUERY_FRAGMENT_COUNT 5
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
@@ -307,6 +297,7 @@ struct aws_signing_state_aws *aws_signing_state_new(
 
     /* Make our own copy of the signing config */
     state->config = *config;
+
     if (state->config.credentials_provider != NULL) {
         aws_credentials_provider_acquire(state->config.credentials_provider);
     }
@@ -344,7 +335,8 @@ struct aws_signing_state_aws *aws_signing_state_new(
         aws_byte_buf_init(&state->access_credential_scope, allocator, ACCESS_CREDENTIAL_SCOPE_STARTING_SIZE) ||
         aws_byte_buf_init(&state->date, allocator, AWS_DATE_TIME_STR_MAX_LEN) ||
         aws_byte_buf_init(&state->signature, allocator, PAYLOAD_HASH_STARTING_SIZE) ||
-        aws_byte_buf_init(&state->string_to_sign_payload, allocator, PAYLOAD_HASH_STARTING_SIZE)) {
+        aws_byte_buf_init(&state->string_to_sign_payload, allocator, PAYLOAD_HASH_STARTING_SIZE) ||
+        aws_byte_buf_init(&state->scratch_buf, allocator, SCRATCH_BUF_STARTING_SIZE)) {
 
         goto on_error;
     }
@@ -376,6 +368,7 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
     aws_byte_buf_clean_up(&state->date);
     aws_byte_buf_clean_up(&state->signature);
     aws_byte_buf_clean_up(&state->string_to_sign_payload);
+    aws_byte_buf_clean_up(&state->scratch_buf);
 
     aws_mem_release(state->allocator, state);
 }
@@ -399,6 +392,22 @@ static int s_append_canonical_method(struct aws_signing_state_aws *state) {
     }
 
     if (aws_byte_buf_append_byte_dynamic(buffer, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_append_with_lookup(
+    struct aws_byte_buf *dst,
+    const struct aws_byte_cursor *src,
+    const uint8_t *lookup_table) {
+
+    if (aws_byte_buf_reserve_relative(dst, src->len)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_with_lookup(dst, src, lookup_table)) {
         return AWS_OP_ERR;
     }
 
@@ -595,6 +604,9 @@ int s_canonical_query_param_comparator(const void *lhs, const void *rhs) {
     const struct aws_uri_param *left_param = lhs;
     const struct aws_uri_param *right_param = rhs;
 
+    /* Lexical comparison works because:
+     * 1) Query params are NOT URI-encoded at this point.
+     * 2) Lexical sort "just works" with UTF-8 */
     int key_compare = aws_byte_cursor_compare_lexical(&left_param->key, &right_param->key);
     if (key_compare != 0) {
         return key_compare;
@@ -637,8 +649,11 @@ int s_canonical_header_comparator(const void *lhs, const void *rhs) {
     return 1;
 }
 
-static int s_append_canonical_query_param(struct aws_uri_param *param, struct aws_byte_buf *buffer) {
-    if (aws_byte_buf_append_encoding_uri_param(buffer, &param->key)) {
+/**
+ * Given unencoded query param, write it (URI-encoded) to canonical buffer.
+ */
+static int s_append_canonical_query_param(struct aws_uri_param *unencoded_param, struct aws_byte_buf *buffer) {
+    if (aws_byte_buf_append_encoding_uri_param(buffer, &unencoded_param->key)) {
         return AWS_OP_ERR;
     }
 
@@ -646,28 +661,42 @@ static int s_append_canonical_query_param(struct aws_uri_param *param, struct aw
         return AWS_OP_ERR;
     }
 
-    if (aws_byte_buf_append_encoding_uri_param(buffer, &param->value)) {
+    if (aws_byte_buf_append_encoding_uri_param(buffer, &unencoded_param->value)) {
         return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static int s_add_authorization_query_param_with_encoding(
+/**
+ * Given unencoded authorization query param:
+ * 1) Add it to list of all unencoded query params (to be canonicalized later).
+ * 2) Add it, URI-encoded to final signing result (to be added to signable later).
+ */
+static int s_add_authorization_query_param(
     struct aws_signing_state_aws *state,
-    struct aws_array_list *query_params,
-    struct aws_uri_param *uri_param,
-    struct aws_byte_buf *uri_encoded_buffer) {
-    uri_encoded_buffer->len = 0;
+    struct aws_array_list *unencoded_query_params,
+    const struct aws_uri_param *unencoded_auth_param) {
 
-    if (aws_byte_buf_append_encoding_uri_param(uri_encoded_buffer, &uri_param->value)) {
+    /* Add to unencoded list */
+    if (aws_array_list_push_back(unencoded_query_params, unencoded_auth_param)) {
         return AWS_OP_ERR;
     }
 
-    struct aws_byte_cursor encoded_algorithm_value = aws_byte_cursor_from_buf(uri_encoded_buffer);
+    /* URI-Encode, and add to final signing result */
+    state->scratch_buf.len = 0;
+    if (aws_byte_buf_append_encoding_uri_param(&state->scratch_buf, &unencoded_auth_param->key)) {
+        return AWS_OP_ERR;
+    }
+    size_t key_len = state->scratch_buf.len;
+    if (aws_byte_buf_append_encoding_uri_param(&state->scratch_buf, &unencoded_auth_param->value)) {
+        return AWS_OP_ERR;
+    }
+    struct aws_byte_cursor encoded_val = aws_byte_cursor_from_buf(&state->scratch_buf);
+    struct aws_byte_cursor encoded_key = aws_byte_cursor_advance(&encoded_val, key_len);
+
     if (aws_signing_result_append_property_list(
-            &state->result, g_aws_http_query_params_property_list_name, &uri_param->key, &encoded_algorithm_value) ||
-        aws_array_list_push_back(query_params, uri_param)) {
+            &state->result, g_aws_http_query_params_property_list_name, &encoded_key, &encoded_val)) {
         return AWS_OP_ERR;
     }
 
@@ -698,18 +727,15 @@ static bool s_should_sign_header(struct aws_signing_state_aws *state, struct aws
  * exception of X-Amz-Signature (because we're still computing its value)  Parameters are added to both the
  * canonical request and the final signing result.
  */
-static int s_add_authorization_query_params(struct aws_signing_state_aws *state, struct aws_array_list *query_params) {
+static int s_add_authorization_query_params(
+    struct aws_signing_state_aws *state,
+    struct aws_array_list *unencoded_query_params) {
+
     if (state->config.signature_type != AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
         return AWS_OP_SUCCESS;
     }
 
     int result = AWS_OP_ERR;
-
-    struct aws_byte_buf uri_encoded_value;
-    AWS_ZERO_STRUCT(uri_encoded_value);
-    if (aws_byte_buf_init(&uri_encoded_value, state->allocator, ENCODED_SIGNING_QUERY_PARAM_STARTING_SIZE)) {
-        goto done;
-    }
 
     /* X-Amz-Algorithm */
     struct aws_uri_param algorithm_param = {
@@ -720,7 +746,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         goto done;
     }
 
-    if (s_add_authorization_query_param_with_encoding(state, query_params, &algorithm_param, &uri_encoded_value)) {
+    if (s_add_authorization_query_param(state, unencoded_query_params, &algorithm_param)) {
         goto done;
     }
 
@@ -730,7 +756,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         .value = aws_byte_cursor_from_buf(&state->access_credential_scope),
     };
 
-    if (s_add_authorization_query_param_with_encoding(state, query_params, &credential_param, &uri_encoded_value)) {
+    if (s_add_authorization_query_param(state, unencoded_query_params, &credential_param)) {
         goto done;
     }
 
@@ -740,7 +766,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         .value = aws_byte_cursor_from_buf(&state->date),
     };
 
-    if (s_add_authorization_query_param_with_encoding(state, query_params, &date_param, &uri_encoded_value)) {
+    if (s_add_authorization_query_param(state, unencoded_query_params, &date_param)) {
         goto done;
     }
 
@@ -750,7 +776,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
         .value = aws_byte_cursor_from_buf(&state->signed_headers),
     };
 
-    if (s_add_authorization_query_param_with_encoding(state, query_params, &signed_headers_param, &uri_encoded_value)) {
+    if (s_add_authorization_query_param(state, unencoded_query_params, &signed_headers_param)) {
         goto done;
     }
 
@@ -762,7 +788,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
             .value = aws_byte_cursor_from_c_str(state->expiration_array),
         };
 
-        if (s_add_authorization_query_param_with_encoding(state, query_params, &expires_param, &uri_encoded_value)) {
+        if (s_add_authorization_query_param(state, unencoded_query_params, &expires_param)) {
             goto done;
         }
     }
@@ -776,8 +802,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
             .value = session_token_cursor,
         };
 
-        if (s_add_authorization_query_param_with_encoding(
-                state, query_params, &security_token_param, &uri_encoded_value)) {
+        if (s_add_authorization_query_param(state, unencoded_query_params, &security_token_param)) {
             goto done;
         }
     }
@@ -789,7 +814,7 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
             .value = state->config.region,
         };
 
-        if (s_add_authorization_query_param_with_encoding(state, query_params, &region_set_param, &uri_encoded_value)) {
+        if (s_add_authorization_query_param(state, unencoded_query_params, &region_set_param)) {
             goto done;
         }
     }
@@ -797,18 +822,15 @@ static int s_add_authorization_query_params(struct aws_signing_state_aws *state,
     result = AWS_OP_SUCCESS;
 
 done:
-
-    aws_byte_buf_clean_up(&uri_encoded_value);
-
     return result;
 }
 
-static int s_validate_query_params(struct aws_array_list *params) {
-    const size_t param_count = aws_array_list_length(params);
+static int s_validate_query_params(struct aws_array_list *unencoded_query_params) {
+    const size_t param_count = aws_array_list_length(unencoded_query_params);
     for (size_t i = 0; i < param_count; ++i) {
         struct aws_uri_param param;
         AWS_ZERO_STRUCT(param);
-        aws_array_list_get_at(params, &param, i);
+        aws_array_list_get_at(unencoded_query_params, &param, i);
 
         struct aws_hash_element *forbidden_element = NULL;
         aws_hash_table_find(&s_forbidden_params, &param.key, &forbidden_element);
@@ -825,6 +847,62 @@ static int s_validate_query_params(struct aws_array_list *params) {
     return AWS_OP_SUCCESS;
 }
 
+/**
+ * Iterate over query params in URI (which are encoded),
+ * decode strings (use string list for storage),
+ * and add the decoded params to list.
+ */
+static int s_get_decoded_query_params(
+    struct aws_signing_state_aws *state,
+    struct aws_array_list *out_decoded_params,
+    struct aws_array_list *temp_strings,
+    const struct aws_uri *uri) {
+
+    struct aws_uri_param encoded_param;
+    AWS_ZERO_STRUCT(encoded_param);
+    while (aws_uri_query_string_next_param(uri, &encoded_param)) {
+
+        /* decode key and save string */
+        state->scratch_buf.len = 0;
+        if (aws_byte_buf_append_decoding_uri(&state->scratch_buf, &encoded_param.key)) {
+            return AWS_OP_ERR;
+        }
+        struct aws_string *key_str = aws_string_new_from_buf(state->allocator, &state->scratch_buf);
+        if (!key_str) {
+            return AWS_OP_ERR;
+        }
+        if (aws_array_list_push_back(temp_strings, &key_str)) {
+            aws_string_destroy(key_str);
+            return AWS_OP_ERR;
+        }
+
+        /* decode value and save string */
+        state->scratch_buf.len = 0;
+        if (aws_byte_buf_append_decoding_uri(&state->scratch_buf, &encoded_param.value)) {
+            return AWS_OP_ERR;
+        }
+        struct aws_string *value_str = aws_string_new_from_buf(state->allocator, &state->scratch_buf);
+        if (!value_str) {
+            return AWS_OP_ERR;
+        }
+        if (aws_array_list_push_back(temp_strings, &value_str)) {
+            aws_string_destroy(value_str);
+            return AWS_OP_ERR;
+        }
+
+        /* save decoded param */
+        struct aws_uri_param decoded_param = {
+            .key = aws_byte_cursor_from_string(key_str),
+            .value = aws_byte_cursor_from_string(value_str),
+        };
+        if (aws_array_list_push_back(out_decoded_params, &decoded_param)) {
+            return AWS_OP_ERR;
+        }
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Adds the full canonical query string to the canonical request:
  */
@@ -834,31 +912,42 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
 
     int result = AWS_OP_ERR;
 
-    struct aws_array_list query_params;
+    /* Sigv4 wants query params sorted by codepoint before they are percent-encoded.
+     * However, aws-c-auth takes the query params from the URI, so they're already encoded.
+     * Therefore we decode the params, sort them, then re-encode them for the canonical request. */
+    struct aws_array_list unencoded_query_params;
     if (aws_array_list_init_dynamic(
-            &query_params, allocator, INITIAL_QUERY_FRAGMENT_COUNT, sizeof(struct aws_uri_param))) {
+            &unencoded_query_params, allocator, INITIAL_QUERY_FRAGMENT_COUNT, sizeof(struct aws_uri_param))) {
         return result;
     }
 
-    if (aws_uri_query_string_params(uri, &query_params)) {
+    /* Storage for decoded param strings */
+    struct aws_array_list temp_strings;
+    AWS_ZERO_STRUCT(temp_strings);
+    if (aws_array_list_init_dynamic(
+            &temp_strings, state->allocator, INITIAL_QUERY_FRAGMENT_COUNT, sizeof(struct aws_string *))) {
         goto cleanup;
     }
 
-    if (s_validate_query_params(&query_params)) {
+    if (s_get_decoded_query_params(state, &unencoded_query_params, &temp_strings, uri)) {
         goto cleanup;
     }
 
-    if (s_add_authorization_query_params(state, &query_params)) {
+    if (s_validate_query_params(&unencoded_query_params)) {
         goto cleanup;
     }
 
-    const size_t param_count = aws_array_list_length(&query_params);
+    if (s_add_authorization_query_params(state, &unencoded_query_params)) {
+        goto cleanup;
+    }
+
+    const size_t param_count = aws_array_list_length(&unencoded_query_params);
 
     /* lexical sort and append */
-    qsort(query_params.data, param_count, sizeof(struct aws_uri_param), s_canonical_query_param_comparator);
+    qsort(unencoded_query_params.data, param_count, sizeof(struct aws_uri_param), s_canonical_query_param_comparator);
     for (size_t i = 0; i < param_count; ++i) {
         struct aws_uri_param param;
-        if (aws_array_list_get_at(&query_params, &param, i)) {
+        if (aws_array_list_get_at(&unencoded_query_params, &param, i)) {
             goto cleanup;
         }
 
@@ -881,7 +970,15 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
 
 cleanup:
 
-    aws_array_list_clean_up(&query_params);
+    aws_array_list_clean_up(&unencoded_query_params);
+
+    size_t string_count = aws_array_list_length(&temp_strings);
+    for (size_t i = 0; i < string_count; ++i) {
+        struct aws_string *string;
+        aws_array_list_get_at(&temp_strings, &string, i);
+        aws_string_destroy(string);
+    }
+    aws_array_list_clean_up(&temp_strings);
 
     return result;
 }
@@ -943,12 +1040,12 @@ static int s_append_canonical_header(
         }
 
         /* add it to the signed headers buffer */
-        if (aws_byte_buf_append_with_lookup(signed_headers_buffer, &header->name, to_lower_table)) {
+        if (s_append_with_lookup(signed_headers_buffer, &header->name, to_lower_table)) {
             return AWS_OP_ERR;
         }
 
         /* add it to the canonical header buffer */
-        if (aws_byte_buf_append_with_lookup(canonical_header_buffer, &header->name, to_lower_table)) {
+        if (s_append_with_lookup(canonical_header_buffer, &header->name, to_lower_table)) {
             return AWS_OP_ERR;
         }
 
@@ -2037,6 +2134,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
         if (session_token_cursor.len > 0) {
             struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+
             const struct aws_string *property_list_name = g_aws_http_headers_property_list_name;
 
             /* if we're doing query signing, the session token goes in the query string (uri encoded), not the headers
@@ -2062,17 +2160,17 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
                 goto cleanup;
             }
         }
-    }
 
-    /* add x-amz-region-set header to the result if sigv4a */
-    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        struct aws_byte_cursor region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
-        if (aws_signing_result_append_property_list(
-                &state->result,
-                g_aws_http_headers_property_list_name,
-                &region_set_header_name,
-                &state->config.region)) {
-            return AWS_OP_ERR;
+        /* add x-amz-region-set header to the result if sigv4a */
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            struct aws_byte_cursor region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
+            if (aws_signing_result_append_property_list(
+                    &state->result,
+                    g_aws_http_headers_property_list_name,
+                    &region_set_header_name,
+                    &state->config.region)) {
+                goto cleanup;
+            }
         }
     }
 

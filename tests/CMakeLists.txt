@@ -42,6 +42,7 @@ add_test_case(credentials_provider_ecs_connect_failure)
 add_test_case(credentials_provider_ecs_request_failure)
 add_test_case(credentials_provider_ecs_bad_document_failure)
 add_test_case(credentials_provider_ecs_basic_success)
+add_test_case(credentials_provider_ecs_no_auth_token_success)
 add_test_case(credentials_provider_ecs_success_multi_part_doc)
 add_test_case(credentials_provider_ecs_real_new_destroy)
 if(AWS_BUILDING_ON_ECS)
@@ -274,7 +275,7 @@ generate_test_driver(${TEST_BINARY_NAME})
 
 add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/aws-signing-test-suite ${CMAKE_CURRENT_BINARY_DIR})
+        ${CMAKE_CURRENT_SOURCE_DIR}/aws-signing-test-suite $<TARGET_FILE_DIR:${TEST_BINARY_NAME}>)
 
 file(GLOB FUZZ_TESTS "fuzz/*.c")
 aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")

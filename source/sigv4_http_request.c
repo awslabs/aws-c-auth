@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/private/sigv4_http_request.h>
@@ -38,7 +28,7 @@
 static int s_build_request_uri(
     struct aws_allocator *allocator,
     struct aws_http_message *request,
-    struct aws_signing_result *signing_result) {
+    const struct aws_signing_result *signing_result) {
 
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
@@ -140,7 +130,7 @@ done:
 int aws_apply_signing_result_to_http_request(
     struct aws_http_message *request,
     struct aws_allocator *allocator,
-    struct aws_signing_result *result) {
+    const struct aws_signing_result *result) {
 
     /* uri/query params */
     if (s_build_request_uri(allocator, request, result)) {

@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/credentials.h>
@@ -34,7 +24,6 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
-    struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_credentials *cached_credentials;
     struct aws_mutex lock;
     uint64_t refresh_interval_in_ns;
@@ -233,25 +222,6 @@ static void s_cached_credentials_provider_destroy(struct aws_credentials_provide
 
     aws_credentials_provider_release(impl->source);
 
-    /* Clean up memory, mutex, credentials, etc... in the shutdown callback below */
-}
-
-static void s_on_credentials_provider_shutdown(void *user_data) {
-    struct aws_credentials_provider *provider = user_data;
-    if (provider == NULL) {
-        return;
-    }
-
-    struct aws_credentials_provider_cached *impl = provider->impl;
-    if (impl == NULL) {
-        return;
-    }
-
-    /* The wrapped provider has shut down, invoke its shutdown callback if there was one */
-    if (impl->source_shutdown_options.shutdown_callback != NULL) {
-        impl->source_shutdown_options.shutdown_callback(impl->source_shutdown_options.shutdown_user_data);
-    }
-
     /* Invoke our own shutdown callback */
     aws_credentials_provider_invoke_shutdown_callback(provider);
 
@@ -329,13 +299,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     } else {
         impl->system_clock_fn = &aws_sys_clock_get_ticks;
     }
-
-    /*
-     * Save the wrapped provider's shutdown callback and then swap it with our own.
-     */
-    impl->source_shutdown_options = impl->source->shutdown_options;
-    impl->source->shutdown_options.shutdown_callback = s_on_credentials_provider_shutdown;
-    impl->source->shutdown_options.shutdown_user_data = provider;
 
     provider->shutdown_options = options->shutdown_options;
 

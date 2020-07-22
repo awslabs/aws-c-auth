@@ -1,19 +1,9 @@
 #ifndef AWS_AUTH_SIGNER_H
 #define AWS_AUTH_SIGNER_H
 
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/auth.h>
@@ -58,29 +48,31 @@ AWS_EXTERN_C_BEGIN
  *      X-Amz-Algorithm,
  *      X-Amz-SignedHeaders
  *
- * The signing result will tell exactly what header and/or query params to add to the request
- * to become a fully-signed AWS http request.
+ *   The signing result will tell exactly what header and/or query params to add to the request
+ *   to become a fully-signed AWS http request.
  *
  *
  * When using this signing function to sign chunks:
  *
- *   (1) The signable should be a wrapper around the chunk's input stream
- *   (2) The most-recently-computed signature value (original request or most recent chunk) must be the
- *       "previous-signature" property on the signable.
+ *   (1) Use aws_signable_new_chunk() to create the signable object representing the chunk
  *
- * The signing result will include the chunk's signature as the "signature" property.
+ *   The signing result will include the chunk's signature as the "signature" property.
  *
  *
- * When using this function to sign events:
+ */
+
+/**
+ * (Asynchronous) entry point to sign something (a request, a chunk, an event) with an AWS signing process.
+ * Depending on the configuration, the signing process may or may not complete synchronously.
  *
- *   (1) The signable should be a wrapper around the event's payloads and headers.  TBD: forbid :date and calculate
- *       it based on the config's date value?
- *   (2) The most-recently-computed signature value (original request or most recent chunk) must be the
- *       "previous-signature" property on the signable.
+ * @param allocator memory allocator to use throughout the singing process
+ * @param signable the thing to be signed.  See signable.h for common constructors for signables that
+ * wrap different types.
+ * @param base_config pointer to a signing configuration, currently this must be of type aws_signing_config_aws
+ * @param on_complete completion callback to be invoked when signing has finished
+ * @param user_data opaque user data that will be passed to the completion callback
  *
- * The signing result will include the chunk's signature as the "signature" property, where it should be added
- * to the event as the value of the ":chunk-signature" header.
- *
+ * @return AWS_OP_SUCCESS if the signing attempt was *initiated* successfully, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_sign_request_aws(
