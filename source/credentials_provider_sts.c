@@ -4,11 +4,11 @@
  */
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/auth/private/xml_parser.h>
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
 #include <aws/auth/signing_result.h>
+#include <aws/common/xml_parser.h>
 
 #include <aws/common/clock.h>
 #include <aws/common/string.h>

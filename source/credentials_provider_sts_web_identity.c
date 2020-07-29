@@ -8,12 +8,12 @@
 #include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/auth/private/xml_parser.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
+#include <aws/common/xml_parser.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
