@@ -294,6 +294,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     int http_response_code = 0;
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
+    struct aws_xml_parser *xml_parser = NULL;
 
     provider_user_data->error_code = error_code;
 
@@ -360,10 +361,13 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
             goto finish;
         }
 
-        struct aws_xml_parser xml_parser;
-        struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
+        struct aws_xml_parser_options options;
+        AWS_ZERO_STRUCT(options);
+        options.doc = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
 
-        if (aws_xml_parser_init(&xml_parser, provider_user_data->provider->allocator, &payload_cur, 0)) {
+        xml_parser = aws_xml_parser_new(provider_user_data->provider->allocator, &options);
+
+        if (xml_parser == NULL) {
             goto finish;
         }
 
@@ -374,7 +378,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
         uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
 
-        if (aws_xml_parser_parse(&xml_parser, s_on_node_encountered_fn, provider_user_data)) {
+        if (aws_xml_parser_parse(xml_parser, s_on_node_encountered_fn, provider_user_data)) {
             provider_user_data->error_code = aws_last_error();
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -383,8 +387,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 aws_error_debug_str(provider_user_data->error_code));
             goto finish;
         }
-
-        aws_xml_parser_clean_up(&xml_parser);
 
         if (provider_user_data->access_key_id && provider_user_data->secret_access_key &&
             provider_user_data->session_token) {
@@ -404,6 +406,12 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     }
 
 finish:
+
+    if (xml_parser != NULL) {
+        aws_xml_parser_destroy(xml_parser);
+        xml_parser = NULL;
+    }
+
     s_clean_up_user_data(provider_user_data);
 }
 
