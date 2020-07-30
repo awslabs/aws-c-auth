@@ -202,7 +202,17 @@ Error Response looks like:
 
 static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Error")) {
+    struct aws_byte_cursor node_name;
+
+    if (aws_xml_node_get_name(node, &node_name)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Could not get xml node name for s_on_error_node_encountered_fn",
+            user_data);
+        return false;
+    }
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Error")) {
         return aws_xml_node_traverse(parser, node, s_on_error_node_encountered_fn, user_data);
     }
 
@@ -210,7 +220,7 @@ static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct
     struct aws_byte_cursor data_cursor;
     AWS_ZERO_STRUCT(data_cursor);
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Code")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Code")) {
         aws_xml_node_as_body(parser, node, &data_cursor);
         if (aws_byte_cursor_eq_c_str_ignore_case(&data_cursor, "IDPCommunicationError") ||
             aws_byte_cursor_eq_c_str_ignore_case(&data_cursor, "InvalidIdentityToken")) {
@@ -250,28 +260,39 @@ static bool s_parse_retryable_error_from_response(struct aws_allocator *allocato
 }
 
 static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AssumeRoleWithWebIdentityResponse") ||
-        aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AssumeRoleWithWebIdentityResult") ||
-        aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Credentials")) {
+
+    struct aws_byte_cursor node_name;
+
+    if (aws_xml_node_get_name(node, &node_name)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Could not get xml node name for s_on_creds_node_encountered_fn",
+            user_data);
+        return false;
+    }
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleWithWebIdentityResponse") ||
+        aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleWithWebIdentityResult") ||
+        aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
         return aws_xml_node_traverse(parser, node, s_on_creds_node_encountered_fn, user_data);
     }
 
     struct sts_web_identity_user_data *query_user_data = user_data;
     struct aws_byte_cursor credential_data;
     AWS_ZERO_STRUCT(credential_data);
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AccessKeyId")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AccessKeyId")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         query_user_data->access_key_id =
             aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "SecretAccessKey")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "SecretAccessKey")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         query_user_data->secret_access_key =
             aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "SessionToken")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "SessionToken")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         query_user_data->session_token =
             aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
@@ -280,7 +301,7 @@ static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct
     /* As long as we parsed an usable expiration, use it, otherwise use
      * the existing one: now + 900s, initialized before parsing.
      */
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Expiration")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Expiration")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         if (credential_data.len != 0) {
             struct aws_date_time expiration;

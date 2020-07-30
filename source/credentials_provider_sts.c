@@ -221,16 +221,27 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 </AssumeRoleResponse>
  */
 static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
-    if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_root_name) ||
-        aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_result_name) ||
-        aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_credentials_name)) {
+
+    struct aws_byte_cursor node_name;
+
+    if (aws_xml_node_get_name(node, &node_name)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Could not get xml node name for s_on_node_encountered_fn",
+            user_data);
+        return false;
+    }
+
+    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_root_name) ||
+        aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_result_name) ||
+        aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_credentials_name)) {
         return aws_xml_node_traverse(parser, node, s_on_node_encountered_fn, user_data);
     }
 
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_byte_cursor credential_data;
     AWS_ZERO_STRUCT(credential_data);
-    if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_access_key_id_name)) {
+    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_access_key_id_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
         provider_user_data->access_key_id =
             aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
@@ -244,13 +255,13 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
         }
     }
 
-    if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_secret_key_name)) {
+    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_secret_key_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
         provider_user_data->secret_access_key =
             aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
-    if (aws_byte_cursor_eq_ignore_case(&node->name, &s_assume_role_session_token_name)) {
+    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_session_token_name)) {
         aws_xml_node_as_body(parser, node, &credential_data);
         provider_user_data->session_token =
             aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
