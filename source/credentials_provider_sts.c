@@ -223,11 +223,13 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
 
     struct aws_byte_cursor node_name;
+    AWS_ZERO_STRUCT(node_name);
 
     if (aws_xml_node_get_name(node, &node_name)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Could not get xml node name for s_on_node_encountered_fn",
+            "(id=%p): While parsing credentials xml response for sts credentials provider, could not get xml node name "
+            "for function s_on_node_encountered_fn.",
             user_data);
         return false;
     }

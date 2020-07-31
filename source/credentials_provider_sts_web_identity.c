@@ -203,11 +203,13 @@ Error Response looks like:
 static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
 
     struct aws_byte_cursor node_name;
+    AWS_ZERO_STRUCT(node_name);
 
     if (aws_xml_node_get_name(node, &node_name)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Could not get xml node name for s_on_error_node_encountered_fn",
+            "(id=%p): While parsing xml error response for sts web identity credentials provider, could not get xml "
+            "node name for function s_on_error_node_encountered_fn.",
             user_data);
         return false;
     }
@@ -262,11 +264,13 @@ static bool s_parse_retryable_error_from_response(struct aws_allocator *allocato
 static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
 
     struct aws_byte_cursor node_name;
+    AWS_ZERO_STRUCT(node_name);
 
     if (aws_xml_node_get_name(node, &node_name)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Could not get xml node name for s_on_creds_node_encountered_fn",
+            "(id=%p): While parsing credentials xml response for sts web identity credentials provider, could not get "
+            "xml node name for function s_on_creds_node_encountered_fn.",
             user_data);
         return false;
     }
