@@ -670,52 +670,6 @@ static int s_write_test_file(
     return AWS_OP_SUCCESS;
 }
 
-static int s_validate_v4a_authorization_value(
-    struct v4_test_context *test_context,
-    struct aws_byte_cursor string_to_sign_cursor,
-    struct aws_byte_cursor signature_value_cursor) {
-
-    size_t binary_length = 0;
-    if (aws_hex_compute_decoded_len(signature_value_cursor.len, &binary_length)) {
-        return AWS_OP_ERR;
-    }
-
-    int result = AWS_OP_ERR;
-
-    struct aws_byte_buf binary_signature;
-    AWS_ZERO_STRUCT(binary_signature);
-
-    struct aws_byte_buf sha256_digest;
-    AWS_ZERO_STRUCT(sha256_digest);
-
-    if (aws_byte_buf_init(&binary_signature, test_context->allocator, binary_length) ||
-        aws_byte_buf_init(&sha256_digest, test_context->allocator, AWS_SHA256_LEN)) {
-        goto done;
-    }
-
-    if (aws_hex_decode(&signature_value_cursor, &binary_signature)) {
-        goto done;
-    }
-
-    if (aws_sha256_compute(test_context->allocator, &string_to_sign_cursor, &sha256_digest, 0)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor binary_signature_cursor =
-        aws_byte_cursor_from_array(binary_signature.buffer, binary_signature.len);
-    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
-    ASSERT_SUCCESS(aws_ecc_key_pair_verify_signature(test_context->ecc_key, &digest_cursor, &binary_signature_cursor));
-
-    result = AWS_OP_SUCCESS;
-
-done:
-
-    aws_byte_buf_clean_up(&binary_signature);
-    aws_byte_buf_clean_up(&sha256_digest);
-
-    return result;
-}
-
 static int s_generate_test_case(
     struct v4_test_context *test_context,
     const char *parent_folder,
@@ -901,8 +855,9 @@ static int s_check_query_authorization(
 
         if (aws_byte_cursor_eq_ignore_case(&signed_param.key, &signature_cursor) &&
             test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-            ASSERT_SUCCESS(s_validate_v4a_authorization_value(
-                test_context,
+            ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+                test_context->allocator,
+                test_context->ecc_key,
                 aws_byte_cursor_from_buf(&test_context->test_case_data.expected_string_to_sign),
                 signed_param.value));
         } else {
@@ -1031,16 +986,22 @@ static int s_check_header_authorization(
     ASSERT_SUCCESS(
         aws_byte_cursor_find_exact(&signed_authorization_value, &signature_key_cursor, &signed_signature_value));
     aws_byte_cursor_advance(&signed_signature_value, signature_key_cursor.len);
-    ASSERT_SUCCESS(s_validate_v4a_authorization_value(
-        test_context, aws_byte_cursor_from_buf(string_to_sign), signed_signature_value));
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        test_context->allocator,
+        test_context->ecc_key,
+        aws_byte_cursor_from_buf(string_to_sign),
+        signed_signature_value));
 
     struct aws_byte_cursor expected_signature_value;
     AWS_ZERO_STRUCT(expected_signature_value);
     ASSERT_SUCCESS(
         aws_byte_cursor_find_exact(&expected_authorization_value, &signature_key_cursor, &expected_signature_value));
     aws_byte_cursor_advance(&expected_signature_value, signature_key_cursor.len);
-    ASSERT_SUCCESS(s_validate_v4a_authorization_value(
-        test_context, aws_byte_cursor_from_buf(string_to_sign), expected_signature_value));
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        test_context->allocator,
+        test_context->ecc_key,
+        aws_byte_cursor_from_buf(string_to_sign),
+        expected_signature_value));
 
     return AWS_OP_SUCCESS;
 }

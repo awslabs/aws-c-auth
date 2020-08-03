@@ -13,6 +13,7 @@
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
 
+struct aws_ecc_key_pair;
 struct aws_signable;
 struct aws_signing_config_aws;
 struct aws_signing_result;
@@ -120,6 +121,16 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator);
  */
 AWS_AUTH_API
 void aws_signing_clean_up_signing_tables(void);
+
+/**
+ * Helper function to check a computed sigv4a signature.
+ */
+AWS_AUTH_API
+int aws_validate_v4a_authorization_value(
+    struct aws_allocator *allocator,
+    struct aws_ecc_key_pair *ecc_key,
+    struct aws_byte_cursor string_to_sign_cursor,
+    struct aws_byte_cursor signature_value_cursor);
 
 AWS_EXTERN_C_END
 

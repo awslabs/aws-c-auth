@@ -2190,3 +2190,129 @@ cleanup:
 
     return result;
 }
+
+int aws_validate_v4a_authorization_value(
+    struct aws_allocator *allocator,
+    struct aws_ecc_key_pair *ecc_key,
+    struct aws_byte_cursor string_to_sign_cursor,
+    struct aws_byte_cursor signature_value_cursor) {
+
+    size_t binary_length = 0;
+    if (aws_hex_compute_decoded_len(signature_value_cursor.len, &binary_length)) {
+        return AWS_OP_ERR;
+    }
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf binary_signature;
+    AWS_ZERO_STRUCT(binary_signature);
+
+    struct aws_byte_buf sha256_digest;
+    AWS_ZERO_STRUCT(sha256_digest);
+
+    if (aws_byte_buf_init(&binary_signature, allocator, binary_length) ||
+        aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN)) {
+        goto done;
+    }
+
+    if (aws_hex_decode(&signature_value_cursor, &binary_signature)) {
+        goto done;
+    }
+
+    if (aws_sha256_compute(allocator, &string_to_sign_cursor, &sha256_digest, 0)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor binary_signature_cursor =
+        aws_byte_cursor_from_array(binary_signature.buffer, binary_signature.len);
+    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
+    if (aws_ecc_key_pair_verify_signature(ecc_key, &digest_cursor, &binary_signature_cursor)) {
+        goto done;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_byte_buf_clean_up(&binary_signature);
+    aws_byte_buf_clean_up(&sha256_digest);
+
+    return result;
+}
+
+int aws_verify_sigv4a_signing(
+    struct aws_allocator *allocator,
+    const struct aws_signable *signable,
+    const struct aws_signing_config_base *base_config,
+    struct aws_byte_cursor expected_canonical_request_cursor,
+    struct aws_byte_cursor signature_cursor) {
+
+    (void)allocator;
+    (void)signable;
+    (void)base_config;
+    (void)expected_canonical_request_cursor;
+    (void)signature_cursor;
+
+    int result = AWS_OP_ERR;
+
+    if (base_config->config_type != AWS_SIGNING_CONFIG_AWS) {
+        return aws_raise_error(AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION);
+    }
+
+    const struct aws_signing_config_aws *config = (void *)base_config;
+    if (config->algorithm != AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+
+    if (config->credentials == NULL) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, config, signable, NULL, NULL);
+    if (!signing_state) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_credentials_get_ecc_key_pair(signing_state->config.credentials) == NULL) {
+        struct aws_credentials *ecc_credentials =
+            aws_credentials_new_ecc_from_aws_credentials(allocator, signing_state->config.credentials);
+        aws_credentials_release(signing_state->config.credentials);
+        signing_state->config.credentials = ecc_credentials;
+        if (signing_state->config.credentials == NULL) {
+            goto done;
+        }
+
+        if (aws_ecc_key_pair_derive_public_key(aws_credentials_get_ecc_key_pair(signing_state->config.credentials))) {
+            goto done;
+        }
+    }
+
+    if (aws_signing_build_canonical_request(signing_state)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor canonical_request_cursor = aws_byte_cursor_from_buf(&signing_state->canonical_request);
+    if (aws_byte_cursor_compare_lexical(&expected_canonical_request_cursor, &canonical_request_cursor) != 0) {
+        aws_raise_error(AWS_AUTH_CANONICAL_REQUEST_MISMATCH);
+        goto done;
+    }
+
+    if (aws_signing_build_string_to_sign(signing_state)) {
+        goto done;
+    }
+
+    if (aws_validate_v4a_authorization_value(
+            allocator,
+            aws_credentials_get_ecc_key_pair(signing_state->config.credentials),
+            aws_byte_cursor_from_buf(&signing_state->string_to_sign),
+            signature_cursor)) {
+        aws_raise_error(AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE);
+        goto done;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    return result;
+}
