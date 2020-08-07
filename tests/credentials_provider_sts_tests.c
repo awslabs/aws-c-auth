@@ -46,9 +46,9 @@ struct aws_mock_sts_tester {
 
     bool fail_connection;
 
-    struct aws_event_loop_group el_group;
+    struct aws_event_loop_group *el_group;
 
-    struct aws_host_resolver resolver;
+    struct aws_host_resolver *resolver;
 
     struct aws_client_bootstrap *bootstrap;
 };
@@ -231,13 +231,12 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    aws_event_loop_group_default_init(&s_tester.el_group, allocator, 0);
-
-    aws_host_resolver_init_default(&s_tester.resolver, allocator, 10, &s_tester.el_group);
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 0, NULL);
+    s_tester.resolver = aws_host_resolver_new_default(allocator, 10, s_tester.el_group);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &s_tester.el_group,
-        .host_resolver = &s_tester.resolver,
+        .event_loop_group = s_tester.el_group,
+        .host_resolver = s_tester.resolver,
     };
     s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -271,8 +270,8 @@ static void s_aws_sts_tester_cleanup(void) {
     aws_byte_buf_clean_up(&s_tester.mock_body);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
-    aws_host_resolver_clean_up(&s_tester.resolver);
-    aws_event_loop_group_clean_up(&s_tester.el_group);
+    aws_host_resolver_release(s_tester.resolver);
+    aws_event_loop_group_release(s_tester.el_group);
 
     aws_auth_library_clean_up();
 }

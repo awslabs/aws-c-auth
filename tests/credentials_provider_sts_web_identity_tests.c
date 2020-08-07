@@ -36,6 +36,7 @@ struct aws_mock_sts_web_identity_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+    bool has_received_elg_shutdown_callback;
 
     int attempts;
     int response_code;
@@ -1114,6 +1115,29 @@ AWS_TEST_CASE(
     credentials_provider_sts_web_identity_success_multi_part_doc,
     s_credentials_provider_sts_web_identity_success_multi_part_doc);
 
+static void s_on_elg_shutdown_complete(void *user_data) {
+    (void)user_data;
+
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.has_received_elg_shutdown_callback = true;
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_condition_variable_notify_one(&s_tester.signal);
+}
+
+static bool s_has_tester_received_elg_shutdown_callback(void *user_data) {
+    (void)user_data;
+
+    return s_tester.has_received_elg_shutdown_callback;
+}
+
+static void s_aws_wait_for_elg_shutdown(void) {
+    aws_mutex_lock(&s_tester.lock);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_elg_shutdown_callback, NULL);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
 static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -1133,26 +1157,19 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
         aws_string_c_str(token_file_path_str));
     aws_string_destroy(token_file_path_str);
 
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
-
     s_aws_sts_web_identity_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
+    struct aws_event_loop_group_shutdown_options shutdown_options;
+    AWS_ZERO_STRUCT(shutdown_options);
+    shutdown_options.asynchronous_shutdown = true;
+    shutdown_options.shutdown_complete = s_on_elg_shutdown_complete;
 
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, &shutdown_options);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -1176,15 +1193,14 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+
+    s_aws_wait_for_elg_shutdown();
 
     s_aws_sts_web_identity_tester_cleanup();
 
     aws_auth_library_clean_up();
-
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
 
     return 0;
 }

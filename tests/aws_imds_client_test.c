@@ -38,7 +38,7 @@ struct aws_mock_imds_client_tester {
     struct aws_mutex lock;
     struct aws_condition_variable signal;
 
-    struct aws_event_loop_group el_group;
+    struct aws_event_loop_group *el_group;
     struct aws_client_bootstrap *bootstrap;
     bool has_received_resource_callback;
     bool has_received_shutdown_callback;
@@ -260,12 +260,12 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
 
-    ASSERT_SUCCESS(aws_event_loop_group_default_init(&s_tester.el_group, allocator, 1));
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &s_tester.el_group,
+        .event_loop_group = s_tester.el_group,
         .user_data = NULL,
         .host_resolution_config = NULL,
-        .host_resolver = (void *)1,
+        .host_resolver = NULL,
         .on_shutdown_complete = NULL,
     };
     s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
@@ -287,7 +287,7 @@ static void s_aws_imds_tester_cleanup(void) {
     aws_mutex_clean_up(&s_tester.lock);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
-    aws_event_loop_group_clean_up(&s_tester.el_group);
+    aws_event_loop_group_release(s_tester.el_group);
     aws_byte_buf_clean_up(&s_tester.resource);
 }
 
@@ -899,15 +899,12 @@ static int s_imds_client_real_success(struct aws_allocator *allocator, void *ctx
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -930,8 +927,8 @@ static int s_imds_client_real_success(struct aws_allocator *allocator, void *ctx
     s_aws_wait_for_imds_client_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
 
     s_aws_imds_tester_cleanup();
 

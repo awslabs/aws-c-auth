@@ -600,15 +600,12 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
 
     s_aws_x509_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -636,8 +633,8 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
 
     s_aws_x509_tester_cleanup();
 
