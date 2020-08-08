@@ -36,7 +36,6 @@ struct aws_credentials_provider_ecs_impl {
     struct aws_string *auth_token;
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
-    bool owns_ctx;
 };
 
 static struct aws_auth_http_system_vtable s_default_function_table = {
@@ -482,9 +481,7 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     struct aws_credentials_provider_ecs_impl *impl = provider->impl;
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
-    if (impl->owns_ctx) {
-        aws_tls_ctx_destroy(impl->ctx);
-    }
+    aws_tls_ctx_release(impl->ctx);
     aws_mem_release(provider->allocator, provider);
 }
 
@@ -531,7 +528,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
             goto on_error;
         }
 
-        impl->owns_ctx = true;
         aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
         struct aws_byte_cursor host = options->host;
         if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &host)) {
@@ -557,11 +553,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     manager_options.initial_window_size = ECS_RESPONSE_SIZE_LIMIT;
     manager_options.socket_options = &socket_options;
     manager_options.host = options->host;
-    manager_options.port = impl->owns_ctx ? 443 : 80;
+    manager_options.port = options->use_tls ? 443 : 80;
     manager_options.max_connections = 2;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
-    manager_options.tls_connection_options = impl->owns_ctx ? &(impl->connection_options) : NULL;
+    manager_options.tls_connection_options = options->use_tls ? &(impl->connection_options) : NULL;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

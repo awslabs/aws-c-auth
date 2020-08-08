@@ -229,10 +229,9 @@ static void s_aws_x509_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
-    if (s_tester.ctx) {
-        aws_tls_ctx_destroy(s_tester.ctx);
-        s_tester.ctx = NULL;
-    }
+    aws_tls_ctx_release(s_tester.ctx);
+    s_tester.ctx = NULL;
+
     aws_tls_connection_options_clean_up(&s_tester.tls_connection_options);
     aws_io_library_clean_up();
 }
