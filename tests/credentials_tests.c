@@ -50,14 +50,15 @@ struct aws_credentials_shutdown_checker {
     struct aws_mutex lock;
     struct aws_condition_variable signal;
     bool is_shutdown_complete;
+    bool is_elg_shutdown_complete;
 };
 
 static struct aws_credentials_shutdown_checker s_shutdown_checker;
 
 static void s_aws_credentials_shutdown_checker_init(void) {
+    AWS_ZERO_STRUCT(s_shutdown_checker);
     aws_mutex_init(&s_shutdown_checker.lock);
     aws_condition_variable_init(&s_shutdown_checker.signal);
-    s_shutdown_checker.is_shutdown_complete = false;
 }
 
 static void s_aws_credentials_shutdown_checker_clean_up(void) {
@@ -85,6 +86,29 @@ static void s_aws_wait_for_provider_shutdown_callback(void) {
     aws_mutex_lock(&s_shutdown_checker.lock);
     aws_condition_variable_wait_pred(
         &s_shutdown_checker.signal, &s_shutdown_checker.lock, s_has_tester_received_shutdown_callback, NULL);
+    aws_mutex_unlock(&s_shutdown_checker.lock);
+}
+
+static void s_on_elg_shutdown_complete(void *user_data) {
+    (void)user_data;
+
+    aws_mutex_lock(&s_shutdown_checker.lock);
+    s_shutdown_checker.is_elg_shutdown_complete = true;
+    aws_mutex_unlock(&s_shutdown_checker.lock);
+
+    aws_condition_variable_notify_one(&s_shutdown_checker.signal);
+}
+
+static bool s_has_tester_received_elg_shutdown_callback(void *user_data) {
+    (void)user_data;
+
+    return s_shutdown_checker.is_elg_shutdown_complete;
+}
+
+static void s_aws_wait_for_elg_shutdown_callback(void) {
+    aws_mutex_lock(&s_shutdown_checker.lock);
+    aws_condition_variable_wait_pred(
+        &s_shutdown_checker.signal, &s_shutdown_checker.lock, s_has_tester_received_elg_shutdown_callback, NULL);
     aws_mutex_unlock(&s_shutdown_checker.lock);
 }
 
@@ -973,7 +997,12 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
     aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
 
-    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_event_loop_group_shutdown_options shutdown_options = {
+        .asynchronous_shutdown = true,
+        .shutdown_complete = s_on_elg_shutdown_complete,
+    };
+
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, &shutdown_options);
     struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 4, el_group);
 
     struct aws_client_bootstrap_options bootstrap_options = {
@@ -1022,6 +1051,8 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_release(resolver);
     aws_event_loop_group_release(el_group);
+    s_aws_wait_for_elg_shutdown_callback();
+
     aws_auth_library_clean_up();
 
     return 0;
