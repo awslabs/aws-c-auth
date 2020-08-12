@@ -56,10 +56,6 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires")
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
 
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_sha256_empty_string,
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
 static struct aws_hash_table s_forbidden_params;
@@ -1587,8 +1583,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     }
 
     /* empty hash + \n */
-    struct aws_byte_cursor empty_sha256_cursor = aws_byte_cursor_from_string(s_sha256_empty_string);
-    if (aws_byte_buf_append_dynamic(dest, &empty_sha256_cursor)) {
+    if (aws_byte_buf_append_dynamic(dest, &g_aws_signed_body_value_empty_sha256)) {
         return AWS_OP_ERR;
     }
 

@@ -71,6 +71,33 @@ enum aws_signature_type {
 };
 
 /**
+ * The SHA-256 of an empty string:
+ * 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_empty_sha256;
+
+/**
+ * 'UNSIGNED-PAYLOAD'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_unsigned_payload;
+
+/**
+ * 'STREAMING-AWS4-HMAC-SHA256-PAYLOAD'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload;
+
+/**
+ * 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ *
+ * Event signing is not yet supported
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events;
+
+/**
  * Controls if signing adds a header containing the canonical request's body value
  */
 enum aws_signed_body_header_type {
