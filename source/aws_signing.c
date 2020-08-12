@@ -841,7 +841,7 @@ static int s_transform_query_params(
     int (*byte_buf_append_param_fn)(struct aws_byte_buf *, const struct aws_byte_cursor *)) {
 
     const size_t param_count = aws_array_list_length(param_list);
-    struct aws_uri_param *param;
+    struct aws_uri_param *param = NULL;
     for (size_t i = 0; i < param_count; ++i) {
         aws_array_list_get_at_ptr(param_list, (void **)&param, i);
 
@@ -934,6 +934,7 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
     qsort(query_params.data, param_count, sizeof(struct aws_uri_param), s_canonical_query_param_comparator);
     for (size_t i = 0; i < param_count; ++i) {
         struct aws_uri_param param;
+        AWS_ZERO_STRUCT(param);
         if (aws_array_list_get_at(&query_params, &param, i)) {
             goto cleanup;
         }
@@ -961,7 +962,7 @@ cleanup:
 
     const size_t string_count = aws_array_list_length(&temp_strings);
     for (size_t i = 0; i < string_count; ++i) {
-        struct aws_string *string;
+        struct aws_string *string = NULL;
         aws_array_list_get_at(&temp_strings, &string, i);
         aws_string_destroy(string);
     }
