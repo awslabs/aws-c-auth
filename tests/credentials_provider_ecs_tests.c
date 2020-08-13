@@ -622,15 +622,6 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
 
     aws_auth_library_init(allocator);
 
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
-
     s_aws_ecs_tester_init(allocator);
 
     struct aws_event_loop_group_shutdown_options shutdown_options = {
@@ -678,9 +669,6 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
 
     aws_auth_library_clean_up();
 
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
-
     return 0;
 }
 
@@ -690,15 +678,6 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
     (void)ctx;
 
     aws_auth_library_init(allocator);
-
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
 
     s_aws_ecs_tester_init(allocator);
 
@@ -748,9 +727,6 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
     s_wait_on_elg_shutdown_complete();
 
     aws_auth_library_clean_up();
-
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
 
     return 0;
 }
