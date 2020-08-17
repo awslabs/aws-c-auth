@@ -84,7 +84,7 @@ static int s_initialize_request_signing_config(
 
     config->flags.use_double_uri_encode = false;
     config->flags.should_normalize_uri_path = true;
-    config->signed_body_value = g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload;
+    config->signed_body_value = &g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload;
     config->signed_body_header = AWS_SBHT_X_AMZ_CONTENT_SHA256;
     config->credentials = credentials;
 

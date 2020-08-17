@@ -184,13 +184,13 @@ struct aws_signing_config_aws {
     } flags;
 
     /**
-     * Controls what should be used as "the body" when creating the canonical request.
+     * Optional string to use as the body "hash" when creating the canonical request.
+     * If NULL, a value will be calculated from the payload during signing.
      * Typically, this is the SHA-256 of the (request/chunk/event) payload, written as lowercase hex.
      * If this has been precalculated, it can be set here. Special values used by certain services can also be set
      * (e.g. "UNSIGNED-PAYLOAD" "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" "STREAMING-AWS4-HMAC-SHA256-EVENTS").
-     * If this value is left empty, the typical value will be calculated from the payload during signing.
      */
-    struct aws_byte_cursor signed_body_value;
+    const struct aws_byte_cursor *signed_body_value;
 
     /**
      * Controls what body "hash" header, if any, should be added to the canonical request and the signed request:

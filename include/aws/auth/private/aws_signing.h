@@ -37,6 +37,7 @@ struct aws_signing_state_aws {
 
     struct aws_signing_config_aws config;
     struct aws_byte_buf config_string_buffer;
+    struct aws_byte_cursor signed_body_value_cursor;
 
     struct aws_signing_result result;
     int error_code;

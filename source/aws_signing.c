@@ -279,20 +279,18 @@ struct aws_signing_state_aws *aws_signing_state_new(
         aws_credentials_acquire(state->config.credentials);
     }
 
-    const size_t config_string_sum = config->region.len + config->service.len + config->signed_body_value.len;
-    if (aws_byte_buf_init(&state->config_string_buffer, allocator, config_string_sum)) {
-        goto on_error;
+    if (state->config.signed_body_value != NULL) {
+        state->signed_body_value_cursor = *state->config.signed_body_value;
+        state->config.signed_body_value = &state->signed_body_value_cursor;
     }
 
-    if (aws_byte_buf_append_and_update(&state->config_string_buffer, &state->config.region)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_and_update(&state->config_string_buffer, &state->config.service)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_and_update(&state->config_string_buffer, &state->config.signed_body_value)) {
+    if (aws_byte_buf_init_cache_and_update_cursors(
+            &state->config_string_buffer,
+            allocator,
+            &state->config.region,
+            &state->config.service,
+            &state->signed_body_value_cursor,
+            NULL /*end*/)) {
         goto on_error;
     }
 
@@ -1363,7 +1361,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_value.len == 0) {
+    if (state->config.signed_body_value == NULL) {
         /* No value provided by user, so we must calculate it */
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
@@ -1418,7 +1416,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
         }
     } else {
         /* Use value provided in config */
-        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &state->config.signed_body_value)) {
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, state->config.signed_body_value)) {
             goto on_cleanup;
         }
     }
