@@ -40,7 +40,7 @@
 #define CREDENTIAL_SCOPE_STARTING_SIZE 128
 #define ACCESS_CREDENTIAL_SCOPE_STARTING_SIZE 149
 #define SCRATCH_BUF_STARTING_SIZE 256
-#define INITIAL_QUERY_FRAGMENT_COUNT 5
+#define MAX_AUTHORIZATION_QUERY_PARAM_COUNT 6
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
@@ -802,6 +802,8 @@ static int s_add_authorization_query_params(
         }
     }
 
+    /* NOTE: Update MAX_AUTHORIZATION_QUERY_PARAM_COUNT if more params added */
+
     result = AWS_OP_SUCCESS;
 
 done:
@@ -833,12 +835,13 @@ static int s_validate_query_params(struct aws_array_list *unencoded_query_params
 /**
  * Apply or remove URI-encoding to each aws_uri_param in a list.
  * (new strings are added to temp_strings)
+ * Append function must grow buffer if necessary.
  */
 static int s_transform_query_params(
     struct aws_signing_state_aws *state,
     struct aws_array_list *param_list,
     struct aws_array_list *temp_strings,
-    int (*byte_buf_append_param_fn)(struct aws_byte_buf *, const struct aws_byte_cursor *)) {
+    int (*byte_buf_append_dynamic_param_fn)(struct aws_byte_buf *, const struct aws_byte_cursor *)) {
 
     const size_t param_count = aws_array_list_length(param_list);
     struct aws_uri_param *param = NULL;
@@ -847,7 +850,7 @@ static int s_transform_query_params(
 
         /* encode/decode key and save string */
         state->scratch_buf.len = 0;
-        if (byte_buf_append_param_fn(&state->scratch_buf, &param->key)) {
+        if (byte_buf_append_dynamic_param_fn(&state->scratch_buf, &param->key)) {
             return AWS_OP_ERR;
         }
         struct aws_string *key_str = aws_string_new_from_buf(state->allocator, &state->scratch_buf);
@@ -861,7 +864,7 @@ static int s_transform_query_params(
 
         /* encode/decode value and save string */
         state->scratch_buf.len = 0;
-        if (byte_buf_append_param_fn(&state->scratch_buf, &param->value)) {
+        if (byte_buf_append_dynamic_param_fn(&state->scratch_buf, &param->value)) {
             return AWS_OP_ERR;
         }
         struct aws_string *value_str = aws_string_new_from_buf(state->allocator, &state->scratch_buf);
@@ -882,33 +885,52 @@ static int s_transform_query_params(
 }
 
 /*
- * Adds the full canonical query string to the canonical request:
+ * Adds the full canonical query string to the canonical request.
+ * Note that aws-c-auth takes query params from the URI, so they should already be URI-encoded.
+ * To ensure that the signature uses "canonical" URI-encoding, we decode and then re-encode the params.
  */
 static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signing_state_aws *state) {
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *canonical_request_buffer = &state->canonical_request;
 
     int result = AWS_OP_ERR;
-
-    /* aws-c-auth takes query params from the URI, so they should already be URI-encoded.
-     * To ensure that the signature uses "canonical" URI-encoding, we decode and then re-encode the params. */
+    struct aws_array_list query_params;
+    AWS_ZERO_STRUCT(query_params);
     struct aws_array_list temp_strings;
-    if (aws_array_list_init_dynamic(
-            &temp_strings, state->allocator, INITIAL_QUERY_FRAGMENT_COUNT * 4, sizeof(struct aws_string *))) {
-        return result;
+    AWS_ZERO_STRUCT(temp_strings);
+
+    /* Determine max number of query parameters.
+     * If none, skip to end of function */
+    size_t max_param_count = 0;
+    struct aws_uri_param param_i;
+    AWS_ZERO_STRUCT(param_i);
+    while (aws_uri_query_string_next_param(uri, &param_i)) {
+        ++max_param_count;
+    }
+    if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+        max_param_count += MAX_AUTHORIZATION_QUERY_PARAM_COUNT;
+    }
+    if (max_param_count == 0) {
+        goto finish;
     }
 
-    struct aws_array_list query_params;
-    if (aws_array_list_init_dynamic(
-            &query_params, allocator, INITIAL_QUERY_FRAGMENT_COUNT, sizeof(struct aws_uri_param))) {
+    /* Allocate storage for mutable list of query params */
+    if (aws_array_list_init_dynamic(&query_params, allocator, max_param_count, sizeof(struct aws_uri_param))) {
         goto cleanup;
     }
 
-    /* Get existing query params and remove URI-encoding */
+    /* Allocate storage for both the decoded, and re-encoded, key and value strings */
+    if (aws_array_list_init_dynamic(
+            &temp_strings, state->allocator, max_param_count * 4, sizeof(struct aws_string *))) {
+        goto cleanup;
+    }
+
+    /* Get existing query params */
     if (aws_uri_query_string_params(uri, &query_params)) {
         goto cleanup;
     }
 
+    /* Remove URI-encoding */
     if (s_transform_query_params(state, &query_params, &temp_strings, aws_byte_buf_append_decoding_uri)) {
         goto cleanup;
     }
@@ -950,6 +972,7 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
         }
     }
 
+finish:
     if (s_append_character_to_byte_buf(canonical_request_buffer, '\n')) {
         goto cleanup;
     }
@@ -960,13 +983,15 @@ cleanup:
 
     aws_array_list_clean_up(&query_params);
 
-    const size_t string_count = aws_array_list_length(&temp_strings);
-    for (size_t i = 0; i < string_count; ++i) {
-        struct aws_string *string = NULL;
-        aws_array_list_get_at(&temp_strings, &string, i);
-        aws_string_destroy(string);
+    if (aws_array_list_is_valid(&temp_strings)) {
+        const size_t string_count = aws_array_list_length(&temp_strings);
+        for (size_t i = 0; i < string_count; ++i) {
+            struct aws_string *string = NULL;
+            aws_array_list_get_at(&temp_strings, &string, i);
+            aws_string_destroy(string);
+        }
+        aws_array_list_clean_up(&temp_strings);
     }
-    aws_array_list_clean_up(&temp_strings);
 
     return result;
 }
