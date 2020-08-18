@@ -279,17 +279,12 @@ struct aws_signing_state_aws *aws_signing_state_new(
         aws_credentials_acquire(state->config.credentials);
     }
 
-    if (state->config.signed_body_value != NULL) {
-        state->signed_body_value_cursor = *state->config.signed_body_value;
-        state->config.signed_body_value = &state->signed_body_value_cursor;
-    }
-
     if (aws_byte_buf_init_cache_and_update_cursors(
             &state->config_string_buffer,
             allocator,
             &state->config.region,
             &state->config.service,
-            &state->signed_body_value_cursor,
+            &state->config.signed_body_value,
             NULL /*end*/)) {
         goto on_error;
     }
@@ -1361,7 +1356,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_value == NULL) {
+    if (state->config.signed_body_value.len == 0) {
         /* No value provided by user, so we must calculate it */
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
@@ -1416,7 +1411,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
         }
     } else {
         /* Use value provided in config */
-        if (aws_byte_buf_append_dynamic(payload_hash_buffer, state->config.signed_body_value)) {
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &state->config.signed_body_value)) {
             goto on_cleanup;
         }
     }
