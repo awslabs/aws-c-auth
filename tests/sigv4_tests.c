@@ -232,7 +232,6 @@ static int s_initialize_test_from_contents(
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->flags.use_double_uri_encode = true;
     config->flags.should_normalize_uri_path = true;
-    config->signed_body_value = AWS_SBVT_EMPTY;
     config->signed_body_header = AWS_SBHT_NONE;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
@@ -615,6 +614,7 @@ DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(get_vanilla_with_session_token,
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_empty_query_key, "get-vanilla-empty-query-key");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query, "get-vanilla-query");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query_order_key_case, "get-vanilla-query-order-key-case");
+DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query_order_encoded, "get-vanilla-query-order-encoded");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_unreserved, "get-vanilla-query-unreserved");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_utf8_query, "get-vanilla-utf8-query");
 
