@@ -232,7 +232,6 @@ static int s_initialize_test_from_contents(
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->flags.use_double_uri_encode = true;
     config->flags.should_normalize_uri_path = true;
-    config->signed_body_value = AWS_SBVT_EMPTY;
     config->signed_body_header = AWS_SBHT_NONE;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);

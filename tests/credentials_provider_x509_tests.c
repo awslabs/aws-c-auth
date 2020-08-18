@@ -32,6 +32,7 @@ struct aws_mock_x509_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+    bool has_received_bootstrap_shutdown_callback;
     int error_code;
 
     struct aws_tls_ctx *ctx;
@@ -584,6 +585,29 @@ static int s_credentials_provider_x509_success_multi_part_doc(struct aws_allocat
 
 AWS_TEST_CASE(credentials_provider_x509_success_multi_part_doc, s_credentials_provider_x509_success_multi_part_doc);
 
+static void s_on_bootstrap_shutdown_complete(void *user_data) {
+    (void)user_data;
+
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.has_received_bootstrap_shutdown_callback = true;
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_condition_variable_notify_one(&s_tester.signal);
+}
+
+static bool s_has_tester_received_bootstrap_shutdown_callback(void *user_data) {
+    (void)user_data;
+
+    return s_tester.has_received_bootstrap_shutdown_callback;
+}
+
+static void s_aws_wait_for_bootstrap_shutdown_callback(void) {
+    aws_mutex_lock(&s_tester.lock);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_bootstrap_shutdown_callback, NULL);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
 static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -609,6 +633,7 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = &el_group,
         .host_resolver = &resolver,
+        .on_shutdown_complete = s_on_bootstrap_shutdown_complete,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -636,6 +661,8 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
+    s_aws_wait_for_bootstrap_shutdown_callback();
+
     aws_host_resolver_clean_up(&resolver);
     aws_event_loop_group_clean_up(&el_group);
 

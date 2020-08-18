@@ -56,14 +56,6 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires")
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
 
-AWS_STATIC_STRING_FROM_LITERAL(s_body_unsigned_payload, "UNSIGNED-PAYLOAD");
-AWS_STATIC_STRING_FROM_LITERAL(s_body_streaming_aws4_hmac_sha256_payload, "STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
-AWS_STATIC_STRING_FROM_LITERAL(s_body_streaming_aws4_hmac_sha256_events, "STREAMING-AWS4-HMAC-SHA256-EVENTS");
-
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_sha256_empty_string,
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
 static struct aws_hash_table s_forbidden_params;
@@ -287,15 +279,13 @@ struct aws_signing_state_aws *aws_signing_state_new(
         aws_credentials_acquire(state->config.credentials);
     }
 
-    if (aws_byte_buf_init(&state->region_service_buffer, allocator, config->region.len + config->service.len)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.region)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_and_update(&state->region_service_buffer, &state->config.service)) {
+    if (aws_byte_buf_init_cache_and_update_cursors(
+            &state->config_string_buffer,
+            allocator,
+            &state->config.region,
+            &state->config.service,
+            &state->config.signed_body_value,
+            NULL /*end*/)) {
         goto on_error;
     }
 
@@ -338,7 +328,7 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
     aws_credentials_provider_release(state->config.credentials_provider);
     aws_credentials_release(state->config.credentials);
 
-    aws_byte_buf_clean_up(&state->region_service_buffer);
+    aws_byte_buf_clean_up(&state->config_string_buffer);
     aws_byte_buf_clean_up(&state->canonical_request);
     aws_byte_buf_clean_up(&state->string_to_sign);
     aws_byte_buf_clean_up(&state->signed_headers);
@@ -1348,27 +1338,6 @@ on_cleanup:
     return result;
 }
 
-struct aws_byte_cursor s_get_canonical_body_for_signed_body_type(enum aws_signed_body_value_type body_signing_type) {
-    switch (body_signing_type) {
-        case AWS_SBVT_EMPTY:
-            return aws_byte_cursor_from_string(s_sha256_empty_string);
-        case AWS_SBVT_UNSIGNED_PAYLOAD:
-            return aws_byte_cursor_from_string(s_body_unsigned_payload);
-        case AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_PAYLOAD:
-            return aws_byte_cursor_from_string(s_body_streaming_aws4_hmac_sha256_payload);
-        case AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_EVENTS:
-            return aws_byte_cursor_from_string(s_body_streaming_aws4_hmac_sha256_events);
-
-        default:
-            break;
-    }
-
-    struct aws_byte_cursor empty_cursor;
-    AWS_ZERO_STRUCT(empty_cursor);
-
-    return empty_cursor;
-}
-
 /*
  * Computes the canonical request payload value.
  */
@@ -1387,7 +1356,8 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_value == AWS_SBVT_PAYLOAD) {
+    if (state->config.signed_body_value.len == 0) {
+        /* No value provided by user, so we must calculate it */
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
             return AWS_OP_ERR;
@@ -1440,8 +1410,8 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             goto on_cleanup;
         }
     } else {
-        struct aws_byte_cursor body_cursor = s_get_canonical_body_for_signed_body_type(state->config.signed_body_value);
-        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &body_cursor)) {
+        /* Use value provided in config */
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &state->config.signed_body_value)) {
             goto on_cleanup;
         }
     }
@@ -1631,8 +1601,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     }
 
     /* empty hash + \n */
-    struct aws_byte_cursor empty_sha256_cursor = aws_byte_cursor_from_string(s_sha256_empty_string);
-    if (aws_byte_buf_append_dynamic(dest, &empty_sha256_cursor)) {
+    if (aws_byte_buf_append_dynamic(dest, &g_aws_signed_body_value_empty_sha256)) {
         return AWS_OP_ERR;
     }
 

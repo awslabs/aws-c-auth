@@ -71,36 +71,31 @@ enum aws_signature_type {
 };
 
 /**
- * When creating the canonical request, what should go in the body value part?
+ * The SHA-256 of an empty string:
+ * 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+ * For use with `aws_signing_config_aws.signed_body_value`.
  */
-enum aws_signed_body_value_type {
-    /**
-     * Use the SHA-256 of the empty string.
-     */
-    AWS_SBVT_EMPTY,
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_empty_sha256;
 
-    /**
-     * Use the SHA-256 of the actual (request/chunk/event) payload.
-     */
-    AWS_SBVT_PAYLOAD,
+/**
+ * 'UNSIGNED-PAYLOAD'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_unsigned_payload;
 
-    /**
-     * Use the literal string 'UNSIGNED-PAYLOAD'
-     */
-    AWS_SBVT_UNSIGNED_PAYLOAD,
+/**
+ * 'STREAMING-AWS4-HMAC-SHA256-PAYLOAD'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload;
 
-    /**
-     * Use the literal string 'STREAMING-AWS4-HMAC-SHA256-PAYLOAD'
-     */
-    AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_PAYLOAD,
-
-    /**
-     * Use the literal string 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
-     *
-     * Event signing is not yet supported
-     */
-    AWS_SBVT_STREAMING_AWS4_HMAC_SHA256_EVENTS,
-};
+/**
+ * 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ *
+ * Event signing is not yet supported
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events;
 
 /**
  * Controls if signing adds a header containing the canonical request's body value
@@ -189,9 +184,13 @@ struct aws_signing_config_aws {
     } flags;
 
     /**
-     * Controls what should be used as "the body" when creating the canonical request.
+     * Optional string to use as the canonical request's body value.
+     * If string is empty, a value will be calculated from the payload during signing.
+     * Typically, this is the SHA-256 of the (request/chunk/event) payload, written as lowercase hex.
+     * If this has been precalculated, it can be set here. Special values used by certain services can also be set
+     * (e.g. "UNSIGNED-PAYLOAD" "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" "STREAMING-AWS4-HMAC-SHA256-EVENTS").
      */
-    enum aws_signed_body_value_type signed_body_value;
+    struct aws_byte_cursor signed_body_value;
 
     /**
      * Controls what body "hash" header, if any, should be added to the canonical request and the signed request:
