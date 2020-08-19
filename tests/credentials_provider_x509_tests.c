@@ -32,7 +32,6 @@ struct aws_mock_x509_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
-    bool is_elg_shutdown_complete;
     int error_code;
 
     struct aws_tls_ctx *ctx;
@@ -584,29 +583,6 @@ static int s_credentials_provider_x509_success_multi_part_doc(struct aws_allocat
 
 AWS_TEST_CASE(credentials_provider_x509_success_multi_part_doc, s_credentials_provider_x509_success_multi_part_doc);
 
-static void s_on_elg_shutdown_complete(void *user_data) {
-    (void)user_data;
-
-    aws_mutex_lock(&s_tester.lock);
-    s_tester.is_elg_shutdown_complete = true;
-    aws_mutex_unlock(&s_tester.lock);
-
-    aws_condition_variable_notify_one(&s_tester.signal);
-}
-
-static bool s_has_tester_received_elg_shutdown_callback(void *user_data) {
-    (void)user_data;
-
-    return s_tester.is_elg_shutdown_complete;
-}
-
-static void s_wait_for_elg_shutdown_callback(void) {
-    aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(
-        &s_tester.signal, &s_tester.lock, s_has_tester_received_elg_shutdown_callback, NULL);
-    aws_mutex_unlock(&s_tester.lock);
-}
-
 static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -623,13 +599,8 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
 
     s_aws_x509_tester_init(allocator);
 
-    struct aws_event_loop_group_shutdown_options shutdown_options = {
-        .asynchronous_shutdown = true,
-        .shutdown_complete = s_on_elg_shutdown_complete,
-        .shutdown_complete_user_data = NULL,
-    };
-    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, &shutdown_options);
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = el_group,
@@ -664,7 +635,7 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
     aws_host_resolver_release(resolver);
     aws_event_loop_group_release(el_group);
 
-    s_wait_for_elg_shutdown_callback();
+    aws_global_thread_shutdown_wait();
 
     s_aws_x509_tester_cleanup();
 

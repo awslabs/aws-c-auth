@@ -53,7 +53,6 @@ struct aws_mock_imds_tester {
     struct aws_client_bootstrap *bootstrap;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
-    bool elg_shutdown_complete;
 
     int error_code;
 
@@ -234,25 +233,6 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
-static void s_on_elg_shutdown_complete(void *user_data) {
-    (void)user_data;
-    aws_mutex_lock(&s_tester.lock);
-    s_tester.elg_shutdown_complete = true;
-    aws_mutex_unlock(&s_tester.lock);
-    aws_condition_variable_notify_one(&s_tester.signal);
-}
-
-static bool s_elg_shutdown_complete_pred(void *user_data) {
-    (void)user_data;
-    return s_tester.elg_shutdown_complete;
-}
-
-static void s_wait_on_elg_shutdown_complete(void) {
-    aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_elg_shutdown_complete_pred, NULL);
-    aws_mutex_unlock(&s_tester.lock);
-}
-
 static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
@@ -293,11 +273,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     s_tester.is_connection_acquire_successful = true;
     s_tester.error_code = AWS_ERROR_SUCCESS;
 
-    struct aws_event_loop_group_shutdown_options shutdown_options = {
-        .asynchronous_shutdown = true,
-        .shutdown_complete = s_on_elg_shutdown_complete,
-    };
-    s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, &shutdown_options);
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = s_tester.el_group,
         .user_data = NULL,
@@ -325,7 +301,7 @@ static void s_aws_imds_tester_cleanup(void) {
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_release(s_tester.el_group);
 
-    s_wait_on_elg_shutdown_complete();
+    aws_global_thread_shutdown_wait();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -1100,7 +1076,7 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = s_tester.el_group,
@@ -1158,7 +1134,7 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = s_tester.el_group,
