@@ -1051,14 +1051,9 @@ on_finish:
   "InstanceProfileId" : "AIPAQOHATHEGTGNQ5THQB"
 }
  */
-static int s_parse_iam_profile(const char *document, struct aws_imds_iam_profile *dest) {
+static int s_parse_iam_profile(cJSON *document_root, struct aws_imds_iam_profile *dest) {
 
     bool success = false;
-    cJSON *document_root = cJSON_Parse(document);
-    if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for iam profile.");
-        goto done;
-    }
 
     cJSON *last_updated = cJSON_GetObjectItemCaseSensitive(document_root, "LastUpdated");
     if (!cJSON_IsString(last_updated) || (last_updated->valuestring == NULL)) {
@@ -1104,6 +1099,7 @@ done:
 
 static void s_process_iam_profile(const struct aws_byte_buf *resource, int error_code, void *user_data) {
     struct imds_get_iam_user_data *wrapped_user_data = user_data;
+    cJSON *document_root = NULL;
     struct aws_imds_iam_profile iam;
     AWS_ZERO_STRUCT(iam);
 
@@ -1122,7 +1118,13 @@ static void s_process_iam_profile(const struct aws_byte_buf *resource, int error
         goto on_finish;
     }
 
-    if (s_parse_iam_profile((const char *)json_data.buffer, &iam)) {
+    document_root = cJSON_Parse((const char *)json_data.buffer);
+    if (document_root == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for iam profile.");
+        goto on_finish;
+    }
+
+    if (s_parse_iam_profile(document_root, &iam)) {
         goto on_finish;
     }
 
@@ -1130,6 +1132,7 @@ on_finish:
     wrapped_user_data->callback(&iam, error_code, wrapped_user_data->user_data);
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+    cJSON_Delete(document_root);
 }
 
 /**
@@ -1151,15 +1154,9 @@ on_finish:
   "version" : "2017-09-30"
   }
  */
-static int s_parse_instance_info(const char *document, struct aws_imds_instance_info *dest) {
+static int s_parse_instance_info(cJSON *document_root, struct aws_imds_instance_info *dest) {
 
     bool success = false;
-    cJSON *document_root = cJSON_Parse(document);
-    if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for ec2 instance info.");
-        goto done;
-    }
-
     cJSON *account_id = cJSON_GetObjectItemCaseSensitive(document_root, "accountId");
     if (!cJSON_IsString(account_id) || (account_id->valuestring == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse accountId from Json document for ec2 instance info.");
@@ -1278,6 +1275,8 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
     struct aws_byte_buf json_data;
     AWS_ZERO_STRUCT(json_data);
 
+    cJSON *document_root = NULL;
+
     if (aws_array_list_init_dynamic(
             &instance_info.billing_products, wrapped_user_data->allocator, 10, sizeof(struct aws_byte_cursor))) {
         goto on_finish;
@@ -1303,7 +1302,13 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
         goto on_finish;
     }
 
-    if (s_parse_instance_info((const char *)json_data.buffer, &instance_info)) {
+    document_root = cJSON_Parse((const char *)json_data.buffer);
+    if (document_root == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for ec2 instance info.");
+        goto on_finish;
+    }
+
+    if (s_parse_instance_info(document_root, &instance_info)) {
         goto on_finish;
     }
 
@@ -1313,6 +1318,9 @@ on_finish:
     aws_array_list_clean_up_secure(&instance_info.marketplace_product_codes);
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
+    if (document_root != NULL) {
+        cJSON_Delete(document_root);
+    }
 }
 
 static int s_aws_imds_get_resource(
