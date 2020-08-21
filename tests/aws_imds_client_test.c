@@ -233,6 +233,8 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
+    aws_auth_library_init(allocator);
+
     s_tester.allocator = allocator;
     for (int i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
@@ -289,6 +291,8 @@ static void s_aws_imds_tester_cleanup(void) {
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_clean_up(&s_tester.el_group);
     aws_byte_buf_clean_up(&s_tester.resource);
+
+    aws_auth_library_clean_up();
 }
 
 static bool s_has_tester_received_resource_callback(void *user_data) {
