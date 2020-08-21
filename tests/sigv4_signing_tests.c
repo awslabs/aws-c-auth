@@ -34,6 +34,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_query_canonical_request_filename, "query-canoni
 AWS_STATIC_STRING_FROM_LITERAL(s_query_string_to_sign_filename, "query-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_query_signed_request_filename, "query-signed-request.txt");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_public_key_filename, "public-key.json");
+
+
 static const struct aws_string *s_get_canonical_request_filename(enum aws_signature_type signature_type) {
     switch (signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
@@ -74,7 +77,7 @@ struct v4_test_case_contents {
     struct aws_allocator *allocator;
     struct aws_byte_buf context;
     struct aws_byte_buf request;
-    struct aws_byte_buf key;
+    struct aws_byte_buf public_key;
     struct aws_byte_buf expected_canonical_request;
     struct aws_byte_buf expected_string_to_sign;
     struct aws_byte_buf sample_signed_request;
@@ -108,6 +111,8 @@ static int s_v4_test_case_context_init_from_file_set(
         return AWS_OP_ERR;
     }
 
+    s_load_test_case_file(allocator, parent_folder, test_name, (const char *)s_public_key_filename->bytes, &contents->public_key);
+
     s_load_test_case_file(
         allocator,
         parent_folder,
@@ -136,7 +141,7 @@ static void s_v4_test_case_contents_clean_up(struct v4_test_case_contents *conte
     if (contents->allocator) {
         aws_byte_buf_clean_up(&contents->request);
         aws_byte_buf_clean_up(&contents->context);
-        aws_byte_buf_clean_up(&contents->key);
+        aws_byte_buf_clean_up(&contents->public_key);
         aws_byte_buf_clean_up(&contents->expected_canonical_request);
         aws_byte_buf_clean_up(&contents->expected_string_to_sign);
         aws_byte_buf_clean_up(&contents->sample_signed_request);
@@ -158,7 +163,8 @@ struct v4_test_context {
     bool should_sign_body;
     uint64_t expiration_in_seconds;
     struct aws_input_stream *payload_stream;
-    struct aws_ecc_key_pair *ecc_key;
+    struct aws_ecc_key_pair *signing_key;
+    struct aws_ecc_key_pair *verification_key;
 
     struct aws_signable *signable;
     struct aws_signing_config_aws *config;
@@ -179,7 +185,8 @@ static void s_v4_test_context_clean_up(struct v4_test_context *context) {
 
     aws_http_message_release(context->request);
     aws_input_stream_destroy(context->payload_stream);
-    aws_ecc_key_pair_release(context->ecc_key);
+    aws_ecc_key_pair_release(context->signing_key);
+    aws_ecc_key_pair_release(context->verification_key);
 
     aws_string_destroy(context->region_config);
     aws_string_destroy(context->service);
@@ -249,19 +256,17 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
     }
 
-    if (context->ecc_key == NULL) {
+    if (context->signing_key == NULL) {
         context->credentials = aws_credentials_new(
             context->allocator, access_key_id_cursor, secret_access_key_cursor, session_token_cursor, UINT64_MAX);
-        context->ecc_key =
+        context->signing_key =
             aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(context->allocator, context->credentials);
     } else {
         context->credentials = aws_credentials_new_ecc(
-            context->allocator, access_key_id_cursor, context->ecc_key, session_token_cursor, UINT64_MAX);
-        context->ecc_key = aws_credentials_get_ecc_key_pair(context->credentials);
-        aws_ecc_key_pair_acquire(context->ecc_key);
+            context->allocator, access_key_id_cursor, context->signing_key, session_token_cursor, UINT64_MAX);
+        context->signing_key = aws_credentials_get_ecc_key_pair(context->credentials);
+        aws_ecc_key_pair_acquire(context->signing_key);
     }
-
-    aws_ecc_key_pair_derive_public_key(context->ecc_key);
 
     AWS_FATAL_ASSERT(context->credentials != NULL);
 
@@ -518,48 +523,85 @@ static int s_v4_test_context_init_signing_config(
     return AWS_OP_SUCCESS;
 }
 
-static int s_v4_test_context_parse_key(struct v4_test_context *context) {
-    if (context->test_case_data.key.len == 0) {
+static int s_v4_test_context_parse_verification_key(struct v4_test_context *context) {
+    AWS_FATAL_ASSERT(context->signing_key != NULL);
+
+    if (context->test_case_data.public_key.len == 0) {
+        context->verification_key = context->signing_key;
+        aws_ecc_key_pair_acquire(context->signing_key);
+        aws_ecc_key_pair_derive_public_key(context->verification_key);
         return AWS_OP_SUCCESS;
     }
 
-    size_t section_count = 0;
-    struct aws_array_list key_sections;
-    AWS_ZERO_STRUCT(key_sections);
-    if (aws_array_list_init_dynamic(&key_sections, context->allocator, 1, sizeof(struct aws_byte_buf))) {
-        return AWS_OP_ERR;
-    }
+    struct aws_byte_buf pub_x_buffer;
+    AWS_ZERO_STRUCT(pub_x_buffer);
+    struct aws_byte_buf pub_y_buffer;
+    AWS_ZERO_STRUCT(pub_y_buffer);
 
+    struct aws_byte_buf *document = &context->test_case_data.public_key;
+    cJSON *document_root = NULL;
     int result = AWS_OP_ERR;
-    struct aws_byte_cursor pem_cursor =
-        aws_byte_cursor_from_array(context->test_case_data.key.buffer, context->test_case_data.key.len);
-    if (aws_decode_pem_to_buffer_list(context->allocator, &pem_cursor, &key_sections)) {
+
+    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
+    if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
         goto done;
     }
 
-    ASSERT_TRUE(aws_array_list_length(&key_sections) == 1);
-    struct aws_byte_buf *key_buffer = NULL;
-    aws_array_list_get_at_ptr(&key_sections, (void **)&key_buffer, 0);
-
-    struct aws_byte_cursor key_cursor = aws_byte_cursor_from_array(key_buffer->buffer, key_buffer->len);
-    context->ecc_key = aws_ecc_key_pair_new_from_asn1(context->allocator, &key_cursor);
-    if (context->ecc_key == NULL) {
+    document_root = cJSON_Parse((const char *)document->buffer);
+    if (document_root == NULL) {
         goto done;
     }
+
+    /*
+     * Pull out the three credentials components
+     */
+    cJSON *pub_x = cJSON_GetObjectItemCaseSensitive(document_root, "X");
+    cJSON *pub_y = cJSON_GetObjectItemCaseSensitive(document_root, "Y");
+    if (!cJSON_IsString(pub_x) || !cJSON_IsString(pub_y)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor pub_x_hex_cursor = aws_byte_cursor_from_c_str(pub_x->valuestring);
+    struct aws_byte_cursor pub_y_hex_cursor = aws_byte_cursor_from_c_str(pub_y->valuestring);
+
+    size_t pub_x_length = 0;
+    size_t pub_y_length = 0;
+    if (aws_hex_compute_decoded_len(pub_x_hex_cursor.len, &pub_x_length) ||
+        aws_hex_compute_decoded_len(pub_y_hex_cursor.len, &pub_y_length)) {
+        goto done;
+    }
+
+    if (aws_byte_buf_init(&pub_x_buffer, context->allocator, pub_x_length) ||
+        aws_byte_buf_init(&pub_y_buffer, context->allocator, pub_y_length)) {
+        goto done;
+    }
+
+    if (aws_hex_decode(&pub_x_hex_cursor, &pub_x_buffer) ||
+        aws_hex_decode(&pub_y_hex_cursor, &pub_y_buffer)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor pub_x_cursor = aws_byte_cursor_from_buf(&pub_x_buffer);
+    struct aws_byte_cursor pub_y_cursor = aws_byte_cursor_from_buf(&pub_y_buffer);
+
+    context->verification_key = aws_ecc_key_pair_new_from_public_key(
+        context->allocator,
+        AWS_CAL_ECDSA_P256,
+        &pub_x_cursor,
+        &pub_y_cursor);
+
+    AWS_FATAL_ASSERT(context->verification_key != NULL);
 
     result = AWS_OP_SUCCESS;
 
 done:
 
-    section_count = aws_array_list_length(&key_sections);
-    for (size_t i = 0; i < section_count; ++i) {
-        struct aws_byte_buf *buffer = NULL;
-        aws_array_list_get_at_ptr(&key_sections, (void **)&buffer, 0);
-
-        aws_byte_buf_clean_up(buffer);
+    if (document_root) {
+        cJSON_Delete(document_root);
     }
 
-    aws_array_list_clean_up(&key_sections);
+    aws_byte_buf_clean_up(&pub_x_buffer);
+    aws_byte_buf_clean_up(&pub_y_buffer);
 
     return result;
 }
@@ -589,10 +631,6 @@ static int s_v4_test_context_init(
         return AWS_OP_ERR;
     }
 
-    if (s_v4_test_context_parse_key(context)) {
-        return AWS_OP_ERR;
-    }
-
     if (s_v4_test_context_parse_context_file(context)) {
         return AWS_OP_ERR;
     }
@@ -606,6 +644,10 @@ static int s_v4_test_context_init(
     }
 
     if (s_v4_test_context_init_signing_config(context, signature_type)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_v4_test_context_parse_verification_key(context)) {
         return AWS_OP_ERR;
     }
 
@@ -671,12 +713,66 @@ static int s_write_test_file(
     return AWS_OP_SUCCESS;
 }
 
+AWS_STATIC_STRING_FROM_LITERAL(s_public_key_prefix_json, "{\n");
+AWS_STATIC_STRING_FROM_LITERAL(s_public_key_x_json, "  \"X\":\"");
+AWS_STATIC_STRING_FROM_LITERAL(s_public_key_y_json, "\",\n  \"Y\":\"");
+AWS_STATIC_STRING_FROM_LITERAL(s_public_key_suffix_json, "\"\n}\n");
+
+int s_write_public_key_file(struct v4_test_context *context, const char *parent_folder, const char *test_name) {
+    AWS_FATAL_ASSERT(context->verification_key != NULL);
+    int result = AWS_OP_ERR;
+    struct aws_byte_buf key_buffer;
+    AWS_ZERO_STRUCT(key_buffer);
+
+    if (aws_byte_buf_init(&key_buffer, context->allocator, 256)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor pub_x_cursor;
+    AWS_ZERO_STRUCT(pub_x_cursor);
+    struct aws_byte_cursor pub_y_cursor;
+    AWS_ZERO_STRUCT(pub_y_cursor);
+
+    aws_ecc_key_pair_derive_public_key(context->verification_key);
+    aws_ecc_key_pair_get_public_key(context->verification_key, &pub_x_cursor, &pub_y_cursor);
+
+    struct aws_byte_cursor prefix_cursor = aws_byte_cursor_from_string(s_public_key_prefix_json);
+    aws_byte_buf_append_dynamic(&key_buffer, &prefix_cursor);
+
+    struct aws_byte_cursor x_cursor = aws_byte_cursor_from_string(s_public_key_x_json);
+    aws_byte_buf_append_dynamic(&key_buffer, &x_cursor);
+
+    aws_hex_encode_append_dynamic(&pub_x_cursor, &key_buffer);
+
+    struct aws_byte_cursor y_cursor = aws_byte_cursor_from_string(s_public_key_y_json);
+    aws_byte_buf_append_dynamic(&key_buffer, &y_cursor);
+
+    aws_hex_encode_append_dynamic(&pub_y_cursor, &key_buffer);
+
+    struct aws_byte_cursor suffix_cursor = aws_byte_cursor_from_string(s_public_key_suffix_json);
+    aws_byte_buf_append_dynamic(&key_buffer, &suffix_cursor);
+
+    result = s_write_test_file(parent_folder, test_name, s_public_key_filename, &key_buffer);
+
+done:
+
+    aws_byte_buf_clean_up(&key_buffer);
+
+    return result;
+}
+
 static int s_generate_test_case(
     struct v4_test_context *test_context,
     const char *parent_folder,
     const char *test_name) {
     {
         struct aws_signing_state_aws *signing_state = test_context->signing_state;
+
+        /* Generate public key file */
+        if (test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
+            test_context->config->signature_type == AWS_ST_HTTP_REQUEST_HEADERS) {
+            ASSERT_SUCCESS(s_write_public_key_file(test_context, parent_folder, test_name));
+        }
 
         /* 1a - generate canonical request */
         ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
@@ -858,7 +954,7 @@ static int s_check_query_authorization(
             test_context->algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
             ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
                 test_context->allocator,
-                test_context->ecc_key,
+                test_context->verification_key,
                 aws_byte_cursor_from_buf(&test_context->test_case_data.expected_string_to_sign),
                 signed_param.value));
         } else {
@@ -989,7 +1085,7 @@ static int s_check_header_authorization(
     aws_byte_cursor_advance(&signed_signature_value, signature_key_cursor.len);
     ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
         test_context->allocator,
-        test_context->ecc_key,
+        test_context->verification_key,
         aws_byte_cursor_from_buf(string_to_sign),
         signed_signature_value));
 
@@ -1000,7 +1096,7 @@ static int s_check_header_authorization(
     aws_byte_cursor_advance(&expected_signature_value, signature_key_cursor.len);
     ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
         test_context->allocator,
-        test_context->ecc_key,
+        test_context->verification_key,
         aws_byte_cursor_from_buf(string_to_sign),
         expected_signature_value));
 
