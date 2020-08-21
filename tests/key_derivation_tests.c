@@ -195,6 +195,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_pub_y,
     "0515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expected_fixed_private_key,
+    "7fd3bd010c0d9c292141c2b77bfbde1042c92e6836fff749d1269ec890fca1bd");
 
 static int s_verify_fixed_ecc_key(struct aws_ecc_key_pair *key, struct aws_allocator *allocator) {
     aws_ecc_key_pair_derive_public_key(key);
@@ -224,6 +227,21 @@ static int s_verify_fixed_ecc_key(struct aws_ecc_key_pair *key, struct aws_alloc
 
     aws_byte_buf_clean_up(&pub_coord_x);
     aws_byte_buf_clean_up(&pub_coord_y);
+
+    struct aws_byte_cursor private_key_cursor;
+    AWS_ZERO_STRUCT(private_key_cursor);
+
+    aws_ecc_key_pair_get_private_key(key, &private_key_cursor);
+
+    struct aws_byte_buf private_buf;
+    ASSERT_SUCCESS(aws_byte_buf_init(&private_buf, allocator, 128));
+
+    ASSERT_SUCCESS(aws_hex_encode(&private_key_cursor, &private_buf));
+    private_buf.len -= 1;
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_fixed_private_key->bytes, s_expected_fixed_private_key->len, private_buf.buffer, private_buf.len);
+
+    aws_byte_buf_clean_up(&private_buf);
 
     return AWS_OP_SUCCESS;
 }
