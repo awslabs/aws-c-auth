@@ -7,6 +7,18 @@
 
 #include <aws/auth/credentials.h>
 
+const struct aws_byte_cursor g_aws_signed_body_value_empty_sha256 =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+const struct aws_byte_cursor g_aws_signed_body_value_unsigned_payload =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("UNSIGNED-PAYLOAD");
+
+const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
+
+const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-EVENTS");
+
 const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm) {
     switch (algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:

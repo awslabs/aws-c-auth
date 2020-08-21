@@ -8,12 +8,12 @@
 #include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/auth/private/xml_parser.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
+#include <aws/common/xml_parser.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
@@ -202,7 +202,19 @@ Error Response looks like:
 
 static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Error")) {
+    struct aws_byte_cursor node_name;
+    AWS_ZERO_STRUCT(node_name);
+
+    if (aws_xml_node_get_name(node, &node_name)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): While parsing xml error response for sts web identity credentials provider, could not get xml "
+            "node name for function s_on_error_node_encountered_fn.",
+            user_data);
+        return false;
+    }
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Error")) {
         return aws_xml_node_traverse(parser, node, s_on_error_node_encountered_fn, user_data);
     }
 
@@ -210,7 +222,7 @@ static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct
     struct aws_byte_cursor data_cursor;
     AWS_ZERO_STRUCT(data_cursor);
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Code")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Code")) {
         aws_xml_node_as_body(parser, node, &data_cursor);
         if (aws_byte_cursor_eq_c_str_ignore_case(&data_cursor, "IDPCommunicationError") ||
             aws_byte_cursor_eq_c_str_ignore_case(&data_cursor, "InvalidIdentityToken")) {
@@ -223,51 +235,68 @@ static bool s_on_error_node_encountered_fn(struct aws_xml_parser *parser, struct
 
 static bool s_parse_retryable_error_from_response(struct aws_allocator *allocator, struct aws_byte_buf *response) {
 
-    struct aws_xml_parser xml_parser;
-    struct aws_byte_cursor response_cursor = aws_byte_cursor_from_buf(response);
-    if (aws_xml_parser_init(&xml_parser, allocator, &response_cursor, 0)) {
+    struct aws_xml_parser_options options;
+    AWS_ZERO_STRUCT(options);
+    options.doc = aws_byte_cursor_from_buf(response);
+
+    struct aws_xml_parser *xml_parser = aws_xml_parser_new(allocator, &options);
+
+    if (xml_parser == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to init xml parser for sts web identity credentials provider to parse error information.")
         return false;
     }
     bool get_retryable_error = false;
-    if (aws_xml_parser_parse(&xml_parser, s_on_error_node_encountered_fn, &get_retryable_error)) {
+    if (aws_xml_parser_parse(xml_parser, s_on_error_node_encountered_fn, &get_retryable_error)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to parse xml error response for sts web identity with error %s",
             aws_error_str(aws_last_error()));
-        aws_xml_parser_clean_up(&xml_parser);
+        aws_xml_parser_destroy(xml_parser);
         return false;
     }
 
-    aws_xml_parser_clean_up(&xml_parser);
+    aws_xml_parser_destroy(xml_parser);
     return get_retryable_error;
 }
 
 static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AssumeRoleWithWebIdentityResponse") ||
-        aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AssumeRoleWithWebIdentityResult") ||
-        aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Credentials")) {
+
+    struct aws_byte_cursor node_name;
+    AWS_ZERO_STRUCT(node_name);
+
+    if (aws_xml_node_get_name(node, &node_name)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): While parsing credentials xml response for sts web identity credentials provider, could not get "
+            "xml node name for function s_on_creds_node_encountered_fn.",
+            user_data);
+        return false;
+    }
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleWithWebIdentityResponse") ||
+        aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleWithWebIdentityResult") ||
+        aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
         return aws_xml_node_traverse(parser, node, s_on_creds_node_encountered_fn, user_data);
     }
 
     struct sts_web_identity_user_data *query_user_data = user_data;
     struct aws_byte_cursor credential_data;
     AWS_ZERO_STRUCT(credential_data);
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "AccessKeyId")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AccessKeyId")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         query_user_data->access_key_id =
             aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "SecretAccessKey")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "SecretAccessKey")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         query_user_data->secret_access_key =
             aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
     }
 
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "SessionToken")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "SessionToken")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         query_user_data->session_token =
             aws_string_new_from_array(query_user_data->allocator, credential_data.ptr, credential_data.len);
@@ -276,7 +305,7 @@ static bool s_on_creds_node_encountered_fn(struct aws_xml_parser *parser, struct
     /* As long as we parsed an usable expiration, use it, otherwise use
      * the existing one: now + 900s, initialized before parsing.
      */
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node->name, "Expiration")) {
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Expiration")) {
         aws_xml_node_as_body(parser, node, &credential_data);
         if (credential_data.len != 0) {
             struct aws_date_time expiration;
@@ -303,10 +332,15 @@ static struct aws_credentials *s_parse_credentials_from_response(
         return NULL;
     }
 
-    struct aws_xml_parser xml_parser;
     struct aws_credentials *credentials = NULL;
-    struct aws_byte_cursor response_cursor = aws_byte_cursor_from_buf(response);
-    if (aws_xml_parser_init(&xml_parser, query_user_data->allocator, &response_cursor, 0)) {
+
+    struct aws_xml_parser_options options;
+    AWS_ZERO_STRUCT(options);
+    options.doc = aws_byte_cursor_from_buf(response);
+
+    struct aws_xml_parser *xml_parser = aws_xml_parser_new(query_user_data->allocator, &options);
+
+    if (xml_parser == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to init xml parser for sts web identity credentials provider to parse error information.")
@@ -322,7 +356,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
     query_user_data->expiration_timepoint_in_seconds = now_seconds + STS_WEB_IDENTITY_CREDS_DEFAULT_DURATION_SECONDS;
 
-    if (aws_xml_parser_parse(&xml_parser, s_on_creds_node_encountered_fn, query_user_data)) {
+    if (aws_xml_parser_parse(xml_parser, s_on_creds_node_encountered_fn, query_user_data)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to parse xml response for sts web identity with error: %s",
@@ -347,7 +381,10 @@ on_finish:
         query_user_data->error_code = aws_last_error();
     }
 
-    aws_xml_parser_clean_up(&xml_parser);
+    if (xml_parser != NULL) {
+        aws_xml_parser_destroy(xml_parser);
+        xml_parser = NULL;
+    }
 
     return credentials;
 }
