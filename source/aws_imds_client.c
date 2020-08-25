@@ -1132,7 +1132,9 @@ on_finish:
     wrapped_user_data->callback(&iam, error_code, wrapped_user_data->user_data);
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
-    cJSON_Delete(document_root);
+    if (document_root != NULL) {
+        cJSON_Delete(document_root);
+    }
 }
 
 /**
