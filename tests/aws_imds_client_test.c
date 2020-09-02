@@ -279,7 +279,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_imds_tester_cleanup(void) {
+static int s_aws_imds_tester_cleanup(void) {
     for (int i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
         aws_array_list_clean_up(&s_tester.response_data_callbacks[i]);
         aws_byte_buf_clean_up(&s_tester.request_uris[i]);
@@ -290,10 +290,12 @@ static void s_aws_imds_tester_cleanup(void) {
 
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_release(s_tester.el_group);
-    aws_global_thread_creator_shutdown_wait_for(10);
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
     aws_byte_buf_clean_up(&s_tester.resource);
 
     aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
 }
 
 static bool s_has_tester_received_resource_callback(void *user_data) {
@@ -345,7 +347,7 @@ static int s_imds_client_new_release(struct aws_allocator *allocator, void *ctx)
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -390,7 +392,7 @@ static int s_imds_client_connect_failure(struct aws_allocator *allocator, void *
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -549,7 +551,7 @@ static int s_imds_client_token_request_failure(struct aws_allocator *allocator, 
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -596,7 +598,7 @@ static int s_imds_client_resource_request_failure(struct aws_allocator *allocato
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
     return 0;
 }
 
@@ -657,7 +659,7 @@ static int s_imds_client_resource_request_success(struct aws_allocator *allocato
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -703,7 +705,7 @@ static int s_imds_client_insecure_resource_request_success(struct aws_allocator 
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -762,7 +764,7 @@ static int s_imds_client_insecure_then_secure_resource_request_success(struct aw
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -880,7 +882,7 @@ static int s_imds_client_multiple_resource_requests_random_responses_finally_all
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -933,7 +935,7 @@ static int s_imds_client_real_success(struct aws_allocator *allocator, void *ctx
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_release(resolver);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     aws_auth_library_clean_up();
 
@@ -993,7 +995,7 @@ static int s_imds_client_get_ami_id_success(struct aws_allocator *allocator, voi
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1081,7 +1083,7 @@ static int s_imds_client_get_ancestor_ami_ids_success(struct aws_allocator *allo
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1167,7 +1169,7 @@ static int s_imds_client_get_iam_profile_success(struct aws_allocator *allocator
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1294,7 +1296,7 @@ static int s_imds_client_get_instance_info_success(struct aws_allocator *allocat
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1374,7 +1376,7 @@ static int s_imds_client_get_credentials_success(struct aws_allocator *allocator
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(allocator, client);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }

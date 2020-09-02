@@ -290,7 +290,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_imds_tester_cleanup(void) {
+static int s_aws_imds_tester_cleanup(void) {
     for (int i = 0; i < IMDS_MAX_REQUESTS; i++) {
         aws_array_list_clean_up(&s_tester.response_data_callbacks[i]);
         aws_byte_buf_clean_up(&s_tester.request_uris[i]);
@@ -304,9 +304,11 @@ static void s_aws_imds_tester_cleanup(void) {
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_release(s_tester.el_group);
 
-    aws_global_thread_creator_shutdown_wait_for(10);
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
 
     aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -359,7 +361,7 @@ static int s_credentials_provider_imds_new_destroy(struct aws_allocator *allocat
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -400,7 +402,7 @@ static int s_credentials_provider_imds_connect_failure(struct aws_allocator *all
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -522,7 +524,7 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -571,7 +573,7 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -629,7 +631,7 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -679,7 +681,7 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -758,7 +760,7 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -811,7 +813,7 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -871,7 +873,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -939,7 +941,7 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -996,7 +998,7 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1058,7 +1060,7 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
     aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1111,7 +1113,7 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_release(resolver);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     aws_auth_library_clean_up();
 
@@ -1171,7 +1173,7 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_release(resolver);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     aws_auth_library_clean_up();
 
