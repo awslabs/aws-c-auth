@@ -88,7 +88,6 @@ struct aws_credentials_provider_sts_impl {
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_auth_http_system_vtable *function_table;
     struct aws_retry_strategy *retry_strategy;
-    bool owns_ctx;
     aws_io_clock_fn *system_clock_fn;
 };
 
@@ -693,9 +692,7 @@ static void s_on_credentials_provider_shutdown(void *user_data) {
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->assume_role_profile);
 
-    if (impl->owns_ctx) {
-        aws_tls_ctx_destroy(impl->ctx);
-    }
+    aws_tls_ctx_release(impl->ctx);
 
     aws_tls_connection_options_clean_up(&impl->connection_options);
     aws_mem_release(provider->allocator, provider);
@@ -754,7 +751,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): tls context provided, using pre-built tls context.",
             (void *)provider);
-        impl->ctx = options->tls_ctx;
+        impl->ctx = aws_tls_ctx_acquire(options->tls_ctx);
     } else {
         AWS_LOGF_TRACE(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -773,8 +770,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
             aws_tls_ctx_options_clean_up(&tls_options);
             goto cleanup_provider;
         }
-
-        impl->owns_ctx = true;
     }
 
     if (!options->creds_provider) {

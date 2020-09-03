@@ -46,9 +46,9 @@ struct aws_mock_sts_tester {
 
     bool fail_connection;
 
-    struct aws_event_loop_group el_group;
+    struct aws_event_loop_group *el_group;
 
-    struct aws_host_resolver resolver;
+    struct aws_host_resolver *resolver;
 
     struct aws_client_bootstrap *bootstrap;
 };
@@ -231,13 +231,12 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    aws_event_loop_group_default_init(&s_tester.el_group, allocator, 0);
-
-    aws_host_resolver_init_default(&s_tester.resolver, allocator, 10, &s_tester.el_group);
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 0, NULL);
+    s_tester.resolver = aws_host_resolver_new_default(allocator, 10, s_tester.el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &s_tester.el_group,
-        .host_resolver = &s_tester.resolver,
+        .event_loop_group = s_tester.el_group,
+        .host_resolver = s_tester.resolver,
     };
     s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -261,7 +260,7 @@ static void s_cleanup_creds_callback_data(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_aws_sts_tester_cleanup(void) {
+static int s_aws_sts_tester_cleanup(void) {
 
     s_cleanup_creds_callback_data();
 
@@ -271,10 +270,14 @@ static void s_aws_sts_tester_cleanup(void) {
     aws_byte_buf_clean_up(&s_tester.mock_body);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
-    aws_host_resolver_clean_up(&s_tester.resolver);
-    aws_event_loop_group_clean_up(&s_tester.el_group);
+    aws_host_resolver_release(s_tester.resolver);
+    aws_event_loop_group_release(s_tester.el_group);
+
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
 
     aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -395,7 +398,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
 
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(static_provider);
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -459,7 +462,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
 
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(static_provider);
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -527,7 +530,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
 
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(static_provider);
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -572,7 +575,7 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
 
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(static_provider);
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -616,7 +619,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
 
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(static_provider);
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -692,7 +695,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
 
     aws_credentials_provider_release(provider);
 
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -776,7 +779,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
 
     aws_credentials_provider_release(provider);
 
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
@@ -882,7 +885,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(static_provider);
 
-    s_aws_sts_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
 }
