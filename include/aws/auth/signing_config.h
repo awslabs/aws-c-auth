@@ -222,7 +222,7 @@ struct aws_signing_config_aws {
      * AWS Credentials to sign with.  If Sigv4a is the algorithm and the credentials supplied are not ecc-based,
      * a temporary ecc-based credentials object will be built and used instead.
      */
-    struct aws_credentials *credentials;
+    const struct aws_credentials *credentials;
 
     /*
      * AWS credentials provider to fetch credentials from.  If the signing algorithm is asymmetric sigv4, then the

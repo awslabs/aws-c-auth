@@ -351,6 +351,13 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, int 
     aws_mutex_unlock(&s_tester.lock);
 }
 
+static void s_cleanup_mock_impl(struct aws_credentials_provider *provider) {
+    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
+    aws_tls_ctx_release(impl->ctx);
+    aws_tls_connection_options_clean_up(&impl->connection_options);
+    aws_mem_release(provider->allocator, provider);
+}
+
 static int s_credentials_provider_sts_web_identity_new_destroy_from_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -386,10 +393,7 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_env(struct a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -455,10 +459,7 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_config(struc
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
 
     s_aws_sts_web_identity_tester_cleanup();
 
@@ -617,10 +618,7 @@ static int s_credentials_provider_sts_web_identity_connect_failure(struct aws_al
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -673,10 +671,7 @@ static int s_credentials_provider_sts_web_identity_request_failure(struct aws_al
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -735,10 +730,7 @@ static int s_credentials_provider_sts_web_identity_bad_document_failure(struct a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -811,10 +803,7 @@ static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -869,10 +858,7 @@ static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -933,10 +919,7 @@ static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -1007,10 +990,7 @@ static int s_credentials_provider_sts_web_identity_basic_success_config(struct a
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -1102,10 +1082,7 @@ static int s_credentials_provider_sts_web_identity_success_multi_part_doc(struct
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
-    aws_tls_ctx_destroy(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
-    aws_mem_release(provider->allocator, provider);
+    s_cleanup_mock_impl(provider);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;
@@ -1133,26 +1110,14 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
         aws_string_c_str(token_file_path_str));
     aws_string_destroy(token_file_path_str);
 
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
-
     s_aws_sts_web_identity_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -1176,15 +1141,14 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
 
     s_aws_sts_web_identity_tester_cleanup();
 
     aws_auth_library_clean_up();
-
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
 
     return 0;
 }

@@ -32,7 +32,6 @@ struct aws_mock_x509_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
-    bool has_received_bootstrap_shutdown_callback;
     int error_code;
 
     struct aws_tls_ctx *ctx;
@@ -230,10 +229,9 @@ static void s_aws_x509_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
-    if (s_tester.ctx) {
-        aws_tls_ctx_destroy(s_tester.ctx);
-        s_tester.ctx = NULL;
-    }
+    aws_tls_ctx_release(s_tester.ctx);
+    s_tester.ctx = NULL;
+
     aws_tls_connection_options_clean_up(&s_tester.tls_connection_options);
     aws_io_library_clean_up();
 }
@@ -585,29 +583,6 @@ static int s_credentials_provider_x509_success_multi_part_doc(struct aws_allocat
 
 AWS_TEST_CASE(credentials_provider_x509_success_multi_part_doc, s_credentials_provider_x509_success_multi_part_doc);
 
-static void s_on_bootstrap_shutdown_complete(void *user_data) {
-    (void)user_data;
-
-    aws_mutex_lock(&s_tester.lock);
-    s_tester.has_received_bootstrap_shutdown_callback = true;
-    aws_mutex_unlock(&s_tester.lock);
-
-    aws_condition_variable_notify_one(&s_tester.signal);
-}
-
-static bool s_has_tester_received_bootstrap_shutdown_callback(void *user_data) {
-    (void)user_data;
-
-    return s_tester.has_received_bootstrap_shutdown_callback;
-}
-
-static void s_aws_wait_for_bootstrap_shutdown_callback(void) {
-    aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(
-        &s_tester.signal, &s_tester.lock, s_has_tester_received_bootstrap_shutdown_callback, NULL);
-    aws_mutex_unlock(&s_tester.lock);
-}
-
 static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -624,16 +599,12 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
 
     s_aws_x509_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
-        .on_shutdown_complete = s_on_bootstrap_shutdown_complete,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -661,10 +632,10 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    s_aws_wait_for_bootstrap_shutdown_callback();
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
 
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
 
     s_aws_x509_tester_cleanup();
 

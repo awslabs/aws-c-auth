@@ -795,7 +795,7 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
-    aws_tls_ctx_destroy(impl->ctx);
+    aws_tls_ctx_release(impl->ctx);
     aws_tls_connection_options_clean_up(&impl->connection_options);
     aws_mem_release(provider->allocator, provider);
 }

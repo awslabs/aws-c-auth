@@ -137,22 +137,22 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     aws_mem_release(credentials->allocator, credentials);
 }
 
-void aws_credentials_acquire(struct aws_credentials *credentials) {
+void aws_credentials_acquire(const struct aws_credentials *credentials) {
     if (credentials == NULL) {
         return;
     }
 
-    aws_atomic_fetch_add(&credentials->ref_count, 1);
+    aws_atomic_fetch_add((struct aws_atomic_var *)&credentials->ref_count, 1);
 }
 
-void aws_credentials_release(struct aws_credentials *credentials) {
+void aws_credentials_release(const struct aws_credentials *credentials) {
     if (credentials == NULL) {
         return;
     }
 
-    size_t old_value = aws_atomic_fetch_sub(&credentials->ref_count, 1);
+    size_t old_value = aws_atomic_fetch_sub((struct aws_atomic_var *)&credentials->ref_count, 1);
     if (old_value == 1) {
-        s_aws_credentials_destroy(credentials);
+        s_aws_credentials_destroy((struct aws_credentials *)credentials);
     }
 }
 
