@@ -245,8 +245,10 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     }
 
     struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-    struct aws_byte_cursor secret_access_key_cursor = {};
-    struct aws_byte_cursor session_token_cursor = {};
+    struct aws_byte_cursor secret_access_key_cursor;
+    AWS_ZERO_STRUCT(secret_access_key_cursor);
+    struct aws_byte_cursor session_token_cursor;
+    AWS_ZERO_STRUCT(session_token_cursor);
 
     if (cJSON_IsString(session_token) && session_token->valuestring != NULL) {
         session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
