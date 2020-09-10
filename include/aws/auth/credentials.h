@@ -458,7 +458,7 @@ struct aws_credentials *aws_credentials_new_from_string(
  * @param credentials credentials to increment the ref count on
  */
 AWS_AUTH_API
-void aws_credentials_acquire(struct aws_credentials *credentials);
+void aws_credentials_acquire(const struct aws_credentials *credentials);
 
 /**
  * Remove a reference to some credentials
@@ -466,7 +466,7 @@ void aws_credentials_acquire(struct aws_credentials *credentials);
  * @param credentials credentials to decrement the ref count on
  */
 AWS_AUTH_API
-void aws_credentials_release(struct aws_credentials *credentials);
+void aws_credentials_release(const struct aws_credentials *credentials);
 
 /**
  * Get the AWS access key id from a set of credentials
