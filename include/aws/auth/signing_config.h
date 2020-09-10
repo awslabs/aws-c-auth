@@ -211,7 +211,7 @@ struct aws_signing_config_aws {
     /**
      * AWS Credentials to sign with.
      */
-    struct aws_credentials *credentials;
+    const struct aws_credentials *credentials;
 
     /**
      * AWS credentials provider to fetch credentials from.
