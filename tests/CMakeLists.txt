@@ -174,6 +174,7 @@ add_test_case(sigv4_get_vanilla_with_session_token_test)
 add_test_case(sigv4_get_vanilla_empty_query_key_test)
 add_test_case(sigv4_get_vanilla_query_test)
 add_test_case(sigv4_get_vanilla_query_order_key_case_test)
+add_test_case(sigv4_get_vanilla_query_order_encoded_test)
 add_test_case(sigv4_get_vanilla_unreserved_test)
 add_test_case(sigv4_get_vanilla_utf8_query_test)
 add_test_case(sigv4_post_header_key_case_test)
@@ -202,15 +203,6 @@ add_test_case(sigv4_skip_xray_header_test)
 add_test_case(sigv4_skip_user_agent_header_test)
 add_test_case(sigv4_skip_custom_header_test)
 
-add_test_case(xml_parser_root_with_text)
-add_test_case(xml_parser_child_with_text)
-add_test_case(xml_parser_siblings_with_text)
-add_test_case(xml_parser_preamble_and_attributes)
-add_test_case(xml_parser_nested_node_same_name_test)
-add_test_case(xml_parser_nested_node_deep_recursion_test)
-add_test_case(xml_parser_too_many_attributes_test)
-add_test_case(xml_parser_name_too_long_test)
-
 add_test_case(sigv4_fail_date_header_test)
 add_test_case(sigv4_fail_content_header_test)
 add_test_case(sigv4_fail_authorization_header_test)
@@ -228,7 +220,7 @@ generate_test_driver(${TEST_BINARY_NAME})
 # sigv4 test suite files
 add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/aws-sig-v4-test-suite ${CMAKE_CURRENT_BINARY_DIR})
+        ${CMAKE_CURRENT_SOURCE_DIR}/aws-sig-v4-test-suite $<TARGET_FILE_DIR:${TEST_BINARY_NAME}>)
 
 file(GLOB FUZZ_TESTS "fuzz/*.c")
 aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")

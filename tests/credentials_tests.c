@@ -55,9 +55,9 @@ struct aws_credentials_shutdown_checker {
 static struct aws_credentials_shutdown_checker s_shutdown_checker;
 
 static void s_aws_credentials_shutdown_checker_init(void) {
+    AWS_ZERO_STRUCT(s_shutdown_checker);
     aws_mutex_init(&s_shutdown_checker.lock);
     aws_condition_variable_init(&s_shutdown_checker.signal);
-    s_shutdown_checker.is_shutdown_complete = false;
 }
 
 static void s_aws_credentials_shutdown_checker_clean_up(void) {
@@ -962,7 +962,7 @@ AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_
 static int s_credentials_provider_default_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    aws_http_library_init(allocator);
+    aws_auth_library_init(allocator);
 
     s_aws_credentials_shutdown_checker_init();
     /*
@@ -973,20 +973,15 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
     aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
 
-    struct aws_event_loop_group el_group;
-    AWS_ZERO_STRUCT(el_group);
-    ASSERT_SUCCESS(aws_event_loop_group_default_init(&el_group, allocator, 1));
-
-    struct aws_host_resolver resolver;
-    AWS_ZERO_STRUCT(resolver);
-    ASSERT_SUCCESS(aws_host_resolver_init_default(&resolver, allocator, 4, &el_group));
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 4, el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .host_resolver = &resolver,
+        .host_resolver = resolver,
         .on_shutdown_complete = NULL,
         .host_resolution_config = NULL,
         .user_data = NULL,
-        .event_loop_group = &el_group,
+        .event_loop_group = el_group,
     };
 
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
@@ -1022,11 +1017,14 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
 
     aws_credentials_provider_release(provider);
 
+    s_aws_wait_for_provider_shutdown_callback();
     s_aws_credentials_shutdown_checker_clean_up();
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
-    aws_http_library_clean_up();
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
+
+    aws_auth_library_clean_up();
 
     return 0;
 }
