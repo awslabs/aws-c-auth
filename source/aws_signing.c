@@ -1418,7 +1418,10 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             while (!payload_status.is_end_of_stream) {
                 /* reset the temporary body buffer; we can calculate the hash in window chunks */
                 body_buffer.len = 0;
-                aws_input_stream_read(payload_stream, &body_buffer);
+                if (aws_input_stream_read(payload_stream, &body_buffer)) {
+                    goto on_cleanup;
+                }
+
                 if (body_buffer.len > 0) {
                     struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
                     aws_hash_update(hash, &body_cursor);

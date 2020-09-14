@@ -36,7 +36,6 @@ AWS_STATIC_STRING_FROM_LITERAL(s_query_signed_request_filename, "query-signed-re
 
 AWS_STATIC_STRING_FROM_LITERAL(s_public_key_filename, "public-key.json");
 
-
 static const struct aws_string *s_get_canonical_request_filename(enum aws_signature_type signature_type) {
     switch (signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
@@ -111,7 +110,8 @@ static int s_v4_test_case_context_init_from_file_set(
         return AWS_OP_ERR;
     }
 
-    s_load_test_case_file(allocator, parent_folder, test_name, (const char *)s_public_key_filename->bytes, &contents->public_key);
+    s_load_test_case_file(
+        allocator, parent_folder, test_name, (const char *)s_public_key_filename->bytes, &contents->public_key);
 
     s_load_test_case_file(
         allocator,
@@ -578,19 +578,15 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
         goto done;
     }
 
-    if (aws_hex_decode(&pub_x_hex_cursor, &pub_x_buffer) ||
-        aws_hex_decode(&pub_y_hex_cursor, &pub_y_buffer)) {
+    if (aws_hex_decode(&pub_x_hex_cursor, &pub_x_buffer) || aws_hex_decode(&pub_y_hex_cursor, &pub_y_buffer)) {
         goto done;
     }
 
     struct aws_byte_cursor pub_x_cursor = aws_byte_cursor_from_buf(&pub_x_buffer);
     struct aws_byte_cursor pub_y_cursor = aws_byte_cursor_from_buf(&pub_y_buffer);
 
-    context->verification_key = aws_ecc_key_pair_new_from_public_key(
-        context->allocator,
-        AWS_CAL_ECDSA_P256,
-        &pub_x_cursor,
-        &pub_y_cursor);
+    context->verification_key =
+        aws_ecc_key_pair_new_from_public_key(context->allocator, AWS_CAL_ECDSA_P256, &pub_x_cursor, &pub_y_cursor);
 
     AWS_FATAL_ASSERT(context->verification_key != NULL);
 
