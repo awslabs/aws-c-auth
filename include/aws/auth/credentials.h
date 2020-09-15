@@ -498,7 +498,7 @@ struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_creden
 /**
  * Get the expiration timepoint (in seconds since epoch) associated with a set of credentials
  *
- * @param credentials redentials to get the expiration timepoint for
+ * @param credentials credentials to get the expiration timepoint for
  * @return the time, in seconds since epoch, the credentials will expire; UINT64_MAX for credentials
  * without a specific expiration time
  */

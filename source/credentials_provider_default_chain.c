@@ -262,13 +262,16 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sub_provider_shutdown_options.shutdown_callback = s_on_sub_provider_shutdown_completed;
     sub_provider_shutdown_options.shutdown_user_data = provider;
 
+    // providers' order in default chain Env->STS Web Identity->Profile->Process->ECSorIMDS
     struct aws_credentials_provider *environment_provider = NULL;
+    struct aws_credentials_provider *sts_web_identity_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *process_provider = NULL;
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
 
-    enum { providers_size = 3 };
+    enum { providers_size = 5 };
     struct aws_credentials_provider *providers[providers_size];
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
@@ -279,17 +282,33 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     if (environment_provider == NULL) {
         goto on_error;
     }
-
     providers[index++] = environment_provider;
 
-    struct aws_credentials_provider_profile_options profile_options;
-    AWS_ZERO_STRUCT(profile_options);
-    profile_options.bootstrap = options->bootstrap;
-    profile_options.shutdown_options = sub_provider_shutdown_options;
+    struct aws_credentials_provider_sts_web_identity_options sts_web_identity_options = {
+        .shutdown_options = sub_provider_shutdown_options, .bootstrap = options->bootstrap};
+
+    sts_web_identity_provider = aws_credentials_provider_new_sts_web_identity(allocator, &sts_web_identity_options);
+    if (sts_web_identity_provider != NULL) {
+        providers[index++] = sts_web_identity_provider;
+        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+    }
+
+    struct aws_credentials_provider_profile_options profile_options = {
+        .shutdown_options = sub_provider_shutdown_options, .bootstrap = options->bootstrap};
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
     if (profile_provider != NULL) {
         providers[index++] = profile_provider;
         /* 1 shutdown call from the profile provider's shutdown */
+        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+    }
+
+    struct aws_credentials_provider_process_options process_options = {.shutdown_options =
+                                                                           sub_provider_shutdown_options};
+
+    process_provider = aws_credentials_provider_new_process(allocator, &process_options);
+    if (process_provider != NULL) {
+        providers[index++] = process_provider;
+        /* 1 shutdown call from the process provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
@@ -317,7 +336,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      * Transfer ownership
      */
     aws_credentials_provider_release(environment_provider);
+    aws_credentials_provider_release(sts_web_identity_provider);
     aws_credentials_provider_release(profile_provider);
+    aws_credentials_provider_release(process_provider);
     aws_credentials_provider_release(ecs_or_imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options = {
