@@ -1005,7 +1005,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
         }
 
         if (!profile) {
-            AWS_LOGF_ERROR(
+            AWS_LOGF_WARN(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "Failed to resolve either region, role arn or token file path during sts web identity provider "
                 "initialization.")
@@ -1021,7 +1021,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
 
     /* determin endpoint */
     if (s_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
-        AWS_LOGF_ERROR(
+        AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sts endpoint with, probably region is missing.");
         goto on_finish;
     }
@@ -1029,7 +1029,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
     /* determine role_arn */
     if (!role_arn || !role_arn->len ||
         aws_byte_buf_init_copy_from_cursor(&parameters->role_arn, allocator, aws_byte_cursor_from_string(role_arn))) {
-        AWS_LOGF_ERROR(
+        AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to resolve role arn during sts web identity provider initialization.")
         goto on_finish;
@@ -1039,7 +1039,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
     if (!token_file_path || !token_file_path->len ||
         aws_byte_buf_init_copy_from_cursor(
             &parameters->token_file_path, allocator, aws_byte_cursor_from_string(token_file_path))) {
-        AWS_LOGF_ERROR(
+        AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to resolve token file path during sts web identity provider initialization.")
         goto on_finish;
