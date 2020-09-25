@@ -230,6 +230,7 @@ static void s_async_mock_credentials_provider_fire_callbacks_task(
     void *arg,
     enum aws_task_status status) {
 
+    (void)status;
     struct aws_credentials_provider *provider = arg;
     struct aws_credentials_provider_mock_async_impl *impl = provider->impl;
 
