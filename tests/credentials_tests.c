@@ -206,6 +206,10 @@ AWS_TEST_CASE(environment_credentials_provider_basic_test, s_environment_credent
 static int s_do_environment_credentials_provider_failure(struct aws_allocator *allocator) {
     s_aws_credentials_shutdown_checker_init();
 
+    aws_unset_environment_value(s_access_key_id_env_var);
+    aws_unset_environment_value(s_secret_access_key_env_var);
+    aws_unset_environment_value(s_session_token_env_var);
+
     struct aws_credentials_provider_environment_options options = {
         .shutdown_options =
             {
