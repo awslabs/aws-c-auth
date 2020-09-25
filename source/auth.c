@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 #include <aws/auth/auth.h>
 
@@ -49,6 +39,43 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_INVALID_CONFIGURATION,
         "Attempt to sign an http request with an invalid signing configuration"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT,
+        "Valid credentials could not be sourced from process environment"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by a profile provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the IMDS provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the STS provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE,
+        "Unsuccessful status code returned from credentials-fetching http request"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE,
+        "Invalid response document encountered while querying credentials via http"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_ECS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the ECS provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_X509_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the X509 provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_PROCESS_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the process provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the sts web identity provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_UNSUPPORTED_SIGNATURE_TYPE,
+        "Attempt to sign using an unusupported signature type"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE,
+        "Attempt to sign a streaming item without supplying a previous signature"),
+
 };
 /* clang-format on */
 

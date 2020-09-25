@@ -1,19 +1,9 @@
 #ifndef AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H
 #define AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H
 
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/private/aws_profile.h>
@@ -47,6 +37,7 @@ struct aws_get_credentials_test_callback_result {
     struct aws_credentials *credentials;
     int count;
     int required_count;
+    int last_error;
 };
 
 void aws_get_credentials_test_callback_result_init(
@@ -56,7 +47,7 @@ void aws_get_credentials_test_callback_result_clean_up(struct aws_get_credential
 
 void aws_wait_on_credentials_callback(struct aws_get_credentials_test_callback_result *result);
 
-void aws_test_get_credentials_async_callback(struct aws_credentials *credentials, void *user_data);
+void aws_test_get_credentials_async_callback(struct aws_credentials *credentials, int error_code, void *user_data);
 
 struct get_credentials_mock_result {
     int error_code;

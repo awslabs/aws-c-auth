@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/testing/aws_test_harness.h>
@@ -42,6 +32,8 @@ struct aws_mock_ecs_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+
+    int error_code;
 };
 
 static struct aws_mock_ecs_tester s_tester;
@@ -187,7 +179,7 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
-static struct aws_credentials_provider_system_vtable s_mock_function_table = {
+static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,
@@ -227,7 +219,7 @@ static void s_aws_ecs_tester_cleanup(void) {
     aws_byte_buf_clean_up(&s_tester.request_uri);
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
-    aws_credentials_destroy(s_tester.credentials);
+    aws_credentials_release(s_tester.credentials);
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -243,14 +235,14 @@ static void s_aws_wait_for_credentials_result(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
+static void s_get_credentials_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)user_data;
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
-    if (credentials != NULL) {
-        s_tester.credentials = aws_credentials_new_copy(credentials->allocator, credentials);
-    }
+    s_tester.error_code = error_code;
+    s_tester.credentials = credentials;
+    aws_credentials_acquire(credentials);
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
 }
@@ -440,6 +432,44 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
 
+static int s_do_ecs_success_test(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_ecs_options *options) {
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.request_uri.buffer,
+        s_tester.request_uri.len,
+        s_expected_ecs_relative_uri->bytes,
+        s_expected_ecs_relative_uri->len);
+
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+
+    struct aws_date_time expiration;
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
+    aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
+    ASSERT_TRUE(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
+
+    return AWS_OP_SUCCESS;
+}
+
 static int s_credentials_provider_ecs_basic_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -461,47 +491,7 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
     };
 
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
-
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    s_aws_wait_for_credentials_result();
-
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.request_uri.buffer,
-        s_tester.request_uri.len,
-        s_expected_ecs_relative_uri->bytes,
-        s_expected_ecs_relative_uri->len);
-
-    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_TRUE(s_tester.credentials != NULL);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
-
-    struct aws_date_time expiration;
-    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
-    aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == (uint64_t)expiration.timestamp);
-
-    aws_credentials_provider_release(provider);
-
-    s_aws_wait_for_provider_shutdown_callback();
-
-    /* Because we mock the http connection manager, we never get a callback back from it */
-    aws_mem_release(provider->allocator, provider);
+    ASSERT_SUCCESS(s_do_ecs_success_test(allocator, &options));
 
     s_aws_ecs_tester_cleanup();
 
@@ -509,6 +499,35 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
 }
 
 AWS_TEST_CASE(credentials_provider_ecs_basic_success, s_credentials_provider_ecs_basic_success);
+
+static int s_credentials_provider_ecs_no_auth_token_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+    };
+
+    ASSERT_SUCCESS(s_do_ecs_success_test(allocator, &options));
+
+    s_aws_ecs_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_ecs_no_auth_token_success, s_credentials_provider_ecs_no_auth_token_success);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_first_part, "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"Secret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_second_part, "AccessKey\":\"SuccessfulSecret\", \n  \"Token\":\"Token");
@@ -553,26 +572,16 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
 
     struct aws_date_time expiration;
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-    ASSERT_TRUE(s_tester.credentials->expiration_timepoint_seconds == (uint64_t)expiration.timestamp);
+    ASSERT_TRUE(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
 
     aws_credentials_provider_release(provider);
 
@@ -593,26 +602,14 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
 
     aws_auth_library_init(allocator);
 
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
-
     s_aws_ecs_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -639,15 +636,13 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
 
     s_aws_ecs_tester_cleanup();
 
     aws_auth_library_clean_up();
-
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
 
     return 0;
 }
@@ -659,26 +654,14 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
 
     aws_auth_library_init(allocator);
 
-    struct aws_logger_standard_options logger_options = {
-        .level = AWS_LOG_LEVEL_TRACE,
-        .file = stderr,
-    };
-
-    struct aws_logger logger;
-    ASSERT_SUCCESS(aws_logger_init_standard(&logger, allocator, &logger_options));
-    aws_logger_set(&logger);
-
     s_aws_ecs_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -709,13 +692,11 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
     s_aws_ecs_tester_cleanup();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
 
     aws_auth_library_clean_up();
-
-    aws_logger_set(NULL);
-    aws_logger_clean_up(&logger);
 
     return 0;
 }

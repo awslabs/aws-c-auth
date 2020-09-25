@@ -1,25 +1,14 @@
 #ifndef AWS_AUTH_CREDENTIALS_PRIVATE_H
 #define AWS_AUTH_CREDENTIALS_PRIVATE_H
 
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/auth.h>
-
 #include <aws/auth/credentials.h>
-
+#include <aws/auth/external/cJSON.h>
 #include <aws/http/connection_manager.h>
 
 struct aws_http_connection;
@@ -64,7 +53,7 @@ typedef void(aws_http_connection_close_fn)(struct aws_http_connection *connectio
  * Table of all downstream http functions used by the credentials providers that make http calls. Allows for simple
  * mocking.
  */
-struct aws_credentials_provider_system_vtable {
+struct aws_auth_http_system_vtable {
     aws_http_connection_manager_new_fn *aws_http_connection_manager_new;
     aws_http_connection_manager_release_fn *aws_http_connection_manager_release;
 
@@ -108,6 +97,58 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
 
 AWS_AUTH_API
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
+
+struct aws_parse_credentials_from_json_doc_options {
+    const char *access_key_id_name;
+    const char *secrete_access_key_name;
+    const char *token_name;
+    const char *expiration_name;
+    bool token_required;
+    bool expiration_required;
+};
+
+/**
+ * This API is used internally to parse credentials from json document.
+ * It _ONLY_ parses the first level of json structure. json document like
+ * this will produce a valid credentials:
+ {
+    "accessKeyId" : "...",
+    "secretAccessKey" : "...",
+    "Token" : "...",
+    "expiration" : "2019-05-29T00:21:43Z"
+ }
+ * but json document like this won't:
+ {
+    "credentials": {
+        "accessKeyId" : "...",
+        "secretAccessKey" : "...",
+        "sessionToken" : "...",
+        "expiration" : "2019-05-29T00:21:43Z"
+    }
+ }
+ * In general, the keys' names of credentials in json document are:
+ * "AccessKeyId", "SecretAccessKey", "Token" and "Expiration",
+ * but there are cases services use different keys like "sessionToken".
+ * A valid credentials must have "access key" and "secrete access key".
+ * For some services, token and expiration are not required.
+ * So in this API, the keys are provided by callers and this API will
+ * performe a case insensitive search.
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_parse_credentials_from_cjson_object(
+    struct aws_allocator *allocator,
+    struct cJSON *document_root,
+    const struct aws_parse_credentials_from_json_doc_options *options);
+
+/**
+ * This API is similar to aws_parse_credentials_from_cjson_object,
+ * except it accpets a char buffer json document as it's input.
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_parse_credentials_from_json_document(
+    struct aws_allocator *allocator,
+    const char *json_document,
+    const struct aws_parse_credentials_from_json_doc_options *options);
 
 AWS_EXTERN_C_END
 

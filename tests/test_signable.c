@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include "test_signable.h"
@@ -73,7 +63,7 @@ static int s_aws_signable_test_get_payload_stream(
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_signable_test_clean_up(struct aws_signable *signable) {
+static void s_aws_signable_test_destroy(struct aws_signable *signable) {
     if (signable == NULL) {
         return;
     }
@@ -81,15 +71,16 @@ static void s_aws_signable_test_clean_up(struct aws_signable *signable) {
     struct aws_signable_test_impl *impl = signable->impl;
     if (impl != NULL) {
         aws_array_list_clean_up(&impl->headers);
-        aws_mem_release(signable->allocator, impl);
     }
+
+    aws_mem_release(signable->allocator, signable);
 }
 
 static struct aws_signable_vtable s_signable_test_vtable = {
     .get_property = s_aws_signable_test_get_property,
     .get_property_list = s_aws_signable_test_get_property_list,
     .get_payload_stream = s_aws_signable_test_get_payload_stream,
-    .clean_up = s_aws_signable_test_clean_up,
+    .destroy = s_aws_signable_test_destroy,
 };
 
 struct aws_signable *aws_signable_new_test(
@@ -100,21 +91,16 @@ struct aws_signable *aws_signable_new_test(
     size_t header_count,
     struct aws_input_stream *body_stream) {
 
-    struct aws_signable *signable = aws_mem_acquire(allocator, sizeof(struct aws_signable));
-    if (signable == NULL) {
-        return NULL;
-    }
+    struct aws_signable *signable = NULL;
+    struct aws_signable_test_impl *impl = NULL;
+    aws_mem_acquire_many(
+        allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_test_impl));
 
     AWS_ZERO_STRUCT(*signable);
+    AWS_ZERO_STRUCT(*impl);
+
     signable->allocator = allocator;
     signable->vtable = &s_signable_test_vtable;
-
-    struct aws_signable_test_impl *impl = aws_mem_acquire(allocator, sizeof(struct aws_signable_test_impl));
-    if (impl == NULL) {
-        goto on_error;
-    }
-
-    AWS_ZERO_STRUCT(*impl);
     signable->impl = impl;
 
     if (aws_array_list_init_dynamic(

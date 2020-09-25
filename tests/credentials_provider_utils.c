@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include "credentials_provider_utils.h"
@@ -38,28 +28,29 @@ void aws_get_credentials_test_callback_result_init(
 void aws_get_credentials_test_callback_result_clean_up(struct aws_get_credentials_test_callback_result *result) {
 
     if (result->credentials) {
-        aws_credentials_destroy(result->credentials);
+        aws_credentials_release(result->credentials);
     }
 
     aws_condition_variable_clean_up(&result->signal);
     aws_mutex_clean_up(&result->sync);
 }
 
-void aws_test_get_credentials_async_callback(struct aws_credentials *credentials, void *user_data) {
+void aws_test_get_credentials_async_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     struct aws_get_credentials_test_callback_result *result =
         (struct aws_get_credentials_test_callback_result *)user_data;
 
     aws_mutex_lock(&result->sync);
 
     result->count++;
+    result->last_error = error_code;
 
     if (result->credentials != NULL) {
-        aws_credentials_destroy(result->credentials);
-        result->credentials = NULL;
+        aws_credentials_release(result->credentials);
     }
 
+    result->credentials = credentials;
     if (credentials != NULL) {
-        result->credentials = aws_credentials_new_copy(credentials->allocator, credentials);
+        aws_credentials_acquire(credentials);
     }
 
     aws_condition_variable_notify_one(&result->signal);
@@ -105,7 +96,7 @@ static int s_mock_credentials_provider_get_credentials_async(
         if (aws_array_list_get_at(&impl->results, &result, impl->next_result)) {
             AWS_FATAL_ASSERT(false);
         } else {
-            callback(result.credentials, user_data);
+            callback(result.credentials, result.error_code, user_data);
         }
         impl->next_result++;
     } else {
@@ -313,7 +304,7 @@ static void mock_async_background_thread_function(void *arg) {
                 }
 
                 AWS_FATAL_ASSERT(query.callback != NULL);
-                query.callback(result.credentials, query.user_data);
+                query.callback(result.credentials, result.error_code, query.user_data);
 
                 aws_credentials_query_clean_up(&query);
             }
@@ -468,7 +459,7 @@ static int s_credentials_provider_null_get_credentials_async(
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
     (void)provider;
-    callback(NULL, user_data);
+    callback(NULL, AWS_ERROR_UNKNOWN, user_data);
 
     return AWS_OP_SUCCESS;
 }

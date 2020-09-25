@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/credentials.h>
@@ -31,6 +21,7 @@
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
+#    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
 /* ecs task role credentials body response is currently ~ 1300 characters + name length */
@@ -40,15 +31,14 @@
 
 struct aws_credentials_provider_ecs_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_credentials_provider_system_vtable *function_table;
+    struct aws_auth_http_system_vtable *function_table;
     struct aws_string *path_and_query;
     struct aws_string *auth_token;
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options connection_options;
-    bool owns_ctx;
 };
 
-static struct aws_credentials_provider_system_vtable s_default_function_table = {
+static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
     .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
@@ -74,6 +64,7 @@ struct aws_credentials_provider_ecs_user_data {
     struct aws_http_message *request;
     struct aws_byte_buf current_result;
     int status_code;
+    int error_code;
 };
 
 static void s_aws_credentials_provider_ecs_user_data_destroy(struct aws_credentials_provider_ecs_user_data *user_data) {
@@ -138,15 +129,9 @@ static void s_aws_credentials_provider_ecs_user_data_reset_response(
     }
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_empty_string, "\0");
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_name, "AccessKeyId");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_name, "SecretAccessKey");
-AWS_STATIC_STRING_FROM_LITERAL(s_session_token_name, "Token");
-AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "Expiration");
 /*
  * In general, the ECS document looks something like:
-
-{
+ {
   "Code" : "Success",
   "LastUpdated" : "2019-05-28T18:03:09Z",
   "Type" : "AWS-HMAC",
@@ -154,119 +139,30 @@ AWS_STATIC_STRING_FROM_LITERAL(s_creds_expiration_name, "Expiration");
   "SecretAccessKey" : "...",
   "Token" : "...",
   "Expiration" : "2019-05-29T00:21:43Z"
-}
-
- */
-static struct aws_credentials *s_parse_credentials_from_ecs_document(
-    struct aws_allocator *allocator,
-    struct aws_byte_buf *document) {
-
-    struct aws_credentials *credentials = NULL;
-    cJSON *document_root = NULL;
-    bool success = false;
-    bool parse_error = true;
-    struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_string);
-    if (aws_byte_buf_append_dynamic(document, &null_terminator_cursor)) {
-        parse_error = false;
-        goto done;
-    }
-
-    document_root = cJSON_Parse((const char *)document->buffer);
-    if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse ECS response as Json document.");
-        goto done;
-    }
-
-    /*
-     * Pull out the three credentials components
-     */
-    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_access_key_id_name));
-    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from ECS response Json document.");
-        goto done;
-    }
-
-    cJSON *secret_access_key =
-        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_secret_access_key_name));
-    if (!cJSON_IsString(secret_access_key) || (secret_access_key->valuestring == NULL)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from ECS response Json document.");
-        goto done;
-    }
-
-    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_session_token_name));
-    if (!cJSON_IsString(session_token) || (session_token->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from ECS response Json document.");
-        goto done;
-    }
-
-    cJSON *creds_expiration =
-        cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_creds_expiration_name));
-    if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from ECS response Json document.");
-        goto done;
-    }
-
-    /*
-     * Build the credentials
-     */
-    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
-    struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
-    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
-
-    if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0 || session_token_cursor.len == 0) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "ECS credentials provider received unexpected credentials response,"
-            " either access key, secret key or token is empty.")
-        goto done;
-    }
-
-    credentials = aws_credentials_new_from_cursors(
-        allocator, &access_key_id_cursor, &secret_access_key_cursor, &session_token_cursor);
-
-    if (credentials == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS credentials provider failed to allocate memory for credentials.");
-        parse_error = false;
-        goto done;
-    }
-
-    if (creds_expiration_cursor.len != 0) {
-        struct aws_date_time expiration;
-        if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
-            AWS_OP_ERR) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Expiration in ECS response Json document is not a valid ISO_8601 date string.");
-            aws_credentials_destroy(credentials);
-            credentials = NULL;
-            goto done;
-        }
-        credentials->expiration_timepoint_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
-    }
-    success = true;
-done:
-    if (!success && parse_error) {
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-    }
-
-    if (document_root != NULL) {
-        cJSON_Delete(document_root);
-    }
-
-    return credentials;
-}
-
-/*
+ }
+ *
  * No matter the result, this always gets called assuming that esc_user_data is successfully allocated
  */
 static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider_ecs_user_data *ecs_user_data) {
     /* Try to build credentials from whatever, if anything, was in the result */
-    struct aws_credentials *credentials =
-        s_parse_credentials_from_ecs_document(ecs_user_data->allocator, &ecs_user_data->current_result);
+    struct aws_credentials *credentials = NULL;
+    struct aws_parse_credentials_from_json_doc_options parse_options = {
+        .access_key_id_name = "AccessKeyId",
+        .secrete_access_key_name = "SecretAccessKey",
+        .token_name = "Token",
+        .expiration_name = "Expiration",
+        .token_required = true,
+        .expiration_required = true,
+    };
+    if (aws_byte_buf_append_null_terminator(&ecs_user_data->current_result) == AWS_OP_SUCCESS) {
+        credentials = aws_parse_credentials_from_json_document(
+            ecs_user_data->allocator, (const char *)ecs_user_data->current_result.buffer, &parse_options);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) ECS credentials provider failed to add null terminating char to resulting buffer.",
+            (void *)ecs_user_data->ecs_provider);
+    }
 
     if (credentials != NULL) {
         AWS_LOGF_INFO(
@@ -274,18 +170,27 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
             "(id=%p) ECS credentials provider successfully queried instance role credentials",
             (void *)ecs_user_data->ecs_provider);
     } else {
+        /* no credentials, make sure we have a valid error to report */
+        if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
+            ecs_user_data->error_code = aws_last_error();
+            if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
+                ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_SOURCE_FAILURE;
+            }
+        }
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) ECS credentials provider failed to query instance role credentials",
-            (void *)ecs_user_data->ecs_provider);
+            "(id=%p) ECS credentials provider failed to query instance role credentials with error %d(%s)",
+            (void *)ecs_user_data->ecs_provider,
+            ecs_user_data->error_code,
+            aws_error_str(ecs_user_data->error_code));
     }
 
     /* pass the credentials back */
-    ecs_user_data->original_callback(credentials, ecs_user_data->original_user_data);
+    ecs_user_data->original_callback(credentials, ecs_user_data->error_code, ecs_user_data->original_user_data);
 
     /* clean up */
     s_aws_credentials_provider_ecs_user_data_destroy(ecs_user_data);
-    aws_credentials_destroy(credentials);
+    aws_credentials_release(credentials);
 }
 
 static int s_ecs_on_incoming_body_fn(
@@ -383,6 +288,12 @@ static void s_ecs_on_stream_complete_fn(struct aws_http_stream *stream, int erro
      */
     if (ecs_user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
         ecs_user_data->current_result.len = 0;
+
+        if (error_code != AWS_OP_SUCCESS) {
+            ecs_user_data->error_code = error_code;
+        } else {
+            ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
+        }
     }
 
     s_ecs_finalize_get_credentials_query(ecs_user_data);
@@ -409,12 +320,14 @@ static int s_make_ecs_http_query(
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
 
-    struct aws_http_header auth_header = {
-        .name = aws_byte_cursor_from_string(s_ecs_authorization_header),
-        .value = aws_byte_cursor_from_string(impl->auth_token),
-    };
-    if (aws_http_message_add_header(request, auth_header)) {
-        goto on_error;
+    if (impl->auth_token != NULL) {
+        struct aws_http_header auth_header = {
+            .name = aws_byte_cursor_from_string(s_ecs_authorization_header),
+            .value = aws_byte_cursor_from_string(impl->auth_token),
+        };
+        if (aws_http_message_add_header(request, auth_header)) {
+            goto on_error;
+        }
     }
 
     struct aws_http_header accept_header = {
@@ -476,7 +389,7 @@ static int s_make_ecs_http_query(
 on_error:
     impl->function_table->aws_http_stream_release(stream);
     aws_http_message_destroy(request);
-
+    ecs_user_data->request = NULL;
     return AWS_OP_ERR;
 }
 
@@ -505,6 +418,7 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
             error_code,
             aws_error_str(error_code));
 
+        ecs_user_data->error_code = error_code;
         s_ecs_finalize_get_credentials_query(ecs_user_data);
         return;
     }
@@ -545,11 +459,14 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
         return;
     }
 
-    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
-
     aws_string_destroy(impl->path_and_query);
     aws_string_destroy(impl->auth_token);
     aws_tls_connection_options_clean_up(&impl->connection_options);
+    /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
+     * which will do memory release for provider and impl. So We should be freeing impl
+     * related memory first, then call aws_http_connection_manager_release.
+     */
+    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
 
     /* freeing the provider takes place in the shutdown callback below */
 }
@@ -564,9 +481,7 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     struct aws_credentials_provider_ecs_impl *impl = provider->impl;
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
-    if (impl->owns_ctx) {
-        aws_tls_ctx_destroy(impl->ctx);
-    }
+    aws_tls_ctx_release(impl->ctx);
     aws_mem_release(provider->allocator, provider);
 }
 
@@ -613,7 +528,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
             goto on_error;
         }
 
-        impl->owns_ctx = true;
         aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
         struct aws_byte_cursor host = options->host;
         if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &host)) {
@@ -639,11 +553,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     manager_options.initial_window_size = ECS_RESPONSE_SIZE_LIMIT;
     manager_options.socket_options = &socket_options;
     manager_options.host = options->host;
-    manager_options.port = impl->owns_ctx ? 443 : 80;
+    manager_options.port = options->use_tls ? 443 : 80;
     manager_options.max_connections = 2;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
-    manager_options.tls_connection_options = impl->owns_ctx ? &(impl->connection_options) : NULL;
+    manager_options.tls_connection_options = options->use_tls ? &(impl->connection_options) : NULL;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

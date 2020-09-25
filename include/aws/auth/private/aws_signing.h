@@ -1,23 +1,14 @@
 #ifndef AWS_AUTH_SIGNING_SIGV4_H
 #define AWS_AUTH_SIGNING_SIGV4_H
 
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/auth.h>
 #include <aws/auth/signing.h>
+#include <aws/auth/signing_result.h>
 
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
@@ -45,10 +36,10 @@ struct aws_signing_state_aws {
     void *userdata;
 
     struct aws_signing_config_aws config;
-    struct aws_byte_buf region_service_buffer;
+    struct aws_byte_buf config_string_buffer;
 
     struct aws_signing_result result;
-    struct aws_credentials *credentials;
+    int error_code;
 
     /* persistent, constructed values that are either/or
      *  (1) consumed by later stages of the signing process,
@@ -62,6 +53,13 @@ struct aws_signing_state_aws {
     struct aws_byte_buf credential_scope;
     struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
+    struct aws_byte_buf signature;
+    struct aws_byte_buf string_to_sign_payload;
+
+    /* temp buf for writing out strings */
+    struct aws_byte_buf scratch_buf;
+
+    char expiration_array[32]; /* serialization of the pre-signing expiration duration value */
 };
 
 AWS_EXTERN_C_BEGIN
@@ -79,7 +77,7 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state);
 
 /*
  * A set of functions that together performs the AWS signing process based
- * on the algorithm requested in the shared config.
+ * on the algorithm and signature type requested in the shared config.
  *
  * These must be called (presumably by the signer) in sequential order:
  *

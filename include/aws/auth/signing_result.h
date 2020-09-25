@@ -1,19 +1,9 @@
 #ifndef AWS_AUTH_SIGNING_RESULT_H
 #define AWS_AUTH_SIGNING_RESULT_H
 
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/auth.h>
@@ -30,7 +20,7 @@ struct aws_signing_result_property {
     struct aws_string *value;
 };
 
-/*
+/**
  * A structure for tracking all the signer-requested changes to a signable.  Interpreting
  * these changes is signing-algorithm specific.
  *
@@ -57,18 +47,31 @@ AWS_EXTERN_C_BEGIN
 
 /**
  * Initialize a signing result to its starting state
+ *
+ * @param result signing result to initialize
+ * @param allocator allocator to use for all memory allocation
+ *
+ * @return AWS_OP_SUCCESS if initialization was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signing_result_init(struct aws_signing_result *result, struct aws_allocator *allocator);
 
 /**
  * Clean up all resources held by the signing result
+ *
+ * @param result signing result to clean up resources for
  */
 AWS_AUTH_API
 void aws_signing_result_clean_up(struct aws_signing_result *result);
 
 /**
  * Sets the value of a property on a signing result
+ *
+ * @param result signing result to modify
+ * @param property_name name of the property to set
+ * @param property_value value that the property should assume
+ *
+ * @return AWS_OP_SUCCESS if the set was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signing_result_set_property(
@@ -78,16 +81,29 @@ int aws_signing_result_set_property(
 
 /**
  * Gets the value of a property on a signing result
+ *
+ * @param result signing result to query from
+ * @param property_name name of the property to query the value of
+ * @param out_property_value output parameter for the property value
+ *
+ * @return AWS_OP_SUCCESS if the get was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signing_result_get_property(
-    struct aws_signing_result *result,
+    const struct aws_signing_result *result,
     const struct aws_string *property_name,
     struct aws_string **out_property_value);
 
 /**
  * Adds a key-value pair to a named property list.  If the named list does not yet exist, it will be created as
  * an empty list before the pair is added.  No uniqueness checks are made against existing pairs.
+ *
+ * @param result signing result to modify
+ * @param list_name name of the list to add the property key-value pair to
+ * @param property_name key value of the key-value pair to append
+ * @param property_value property value of the key-value pair to append
+ *
+ * @return AWS_OP_SUCCESS if the operation was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signing_result_append_property_list(
@@ -98,21 +114,33 @@ int aws_signing_result_append_property_list(
 
 /**
  * Gets a named property list on the signing result.  If the list does not exist, *out_list will be set to null
+ *
+ * @param result signing result to query
+ * @param list_name name of the list of key-value pairs to get
+ * @param out_list output parameter for the list of key-value pairs
+ *
+ * @return AWS_OP_SUCCESS if the operation was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signing_result_get_property_list(
-    struct aws_signing_result *result,
+    const struct aws_signing_result *result,
     const struct aws_string *list_name,
     struct aws_array_list **out_list);
 
 /*
  * Specific implementation that applies a signing result to a mutable http request
+ *
+ * @param request http request to apply the signing result to
+ * @param allocator memory allocator to use for all memory allocation
+ * @param result signing result to apply to the request
+ *
+ * @return AWS_OP_SUCCESS if the application operation was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_apply_signing_result_to_http_request(
     struct aws_http_message *request,
     struct aws_allocator *allocator,
-    struct aws_signing_result *result);
+    const struct aws_signing_result *result);
 
 AWS_EXTERN_C_END
 

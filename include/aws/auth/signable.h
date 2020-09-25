@@ -30,13 +30,13 @@ typedef int(aws_signable_get_payload_stream_fn)(
     const struct aws_signable *signable,
     struct aws_input_stream **out_input_stream);
 
-typedef void(aws_signable_clean_up_fn)(struct aws_signable *signable);
+typedef void(aws_signable_destroy_fn)(struct aws_signable *signable);
 
 struct aws_signable_vtable {
     aws_signable_get_property_fn *get_property;
     aws_signable_get_property_list_fn *get_property_list;
     aws_signable_get_payload_stream_fn *get_payload_stream;
-    aws_signable_clean_up_fn *clean_up;
+    aws_signable_destroy_fn *destroy;
 };
 
 /**
@@ -71,6 +71,8 @@ AWS_EXTERN_C_BEGIN
 
 /**
  * Cleans up and frees all resources associated with a signable instance
+ *
+ * @param signable signable object to destroy
  */
 AWS_AUTH_API
 void aws_signable_destroy(struct aws_signable *signable);
@@ -78,6 +80,12 @@ void aws_signable_destroy(struct aws_signable *signable);
 /**
  * Retrieves a property (key-value pair) from a signable.  Global property name constants are
  * included below.
+ *
+ * @param signable signable object to retrieve a property from
+ * @param name name of the property to query
+ * @param out_value output parameter for the property's value
+ *
+ * @return AWS_OP_SUCCESS if the property was successfully fetched, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signable_get_property(
@@ -88,6 +96,12 @@ int aws_signable_get_property(
 /**
  * Retrieves a named property list (list of key-value pairs) from a signable.  Global property list name
  * constants are included below.
+ *
+ * @param signable signable object to retrieve a property list from
+ * @param name name of the property list to fetch
+ * @param out_property_list output parameter for the fetched property list
+ *
+ * @return AWS_OP_SUCCESS if the property list was successfully fetched, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
 int aws_signable_get_property_list(
@@ -97,9 +111,14 @@ int aws_signable_get_property_list(
 
 /**
  * Retrieves the signable's message payload as a stream.
+ *
+ * @param signable signable to get the payload of
+ * @param out_input_stream output parameter for the payload stream
+ *
+ * @return AWS_OP_SUCCESS if successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
-int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **input_stream);
+int aws_signable_get_payload_stream(const struct aws_signable *signable, struct aws_input_stream **out_input_stream);
 
 /*
  * Some global property and property-list name constants
@@ -126,12 +145,47 @@ AWS_AUTH_API extern const struct aws_string *g_aws_http_method_property_name;
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_http_uri_property_name;
 
+/**
+ * Name of the property that holds the (hex-encoded) signature value.  This is always added to signing results.
+ */
+AWS_AUTH_API extern const struct aws_string *g_aws_signature_property_name;
+
+/**
+ * Name of the property that holds the (hex-encoded) signature value of the signing event that preceded this one.
+ * This property must appear on signables that represent chunks or events.
+ */
+AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_name;
+
 /*
- * Common signable implementations
+ * Common signable constructors
  */
 
+/**
+ * Creates a signable wrapper around an http request.
+ *
+ * @param allocator memory allocator to use to create the signable
+ * @param request http request to create a signable for
+ *
+ * @return the new signable object, or NULL if failure
+ */
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request);
+
+/**
+ * Creates a signable that represents a unit of chunked encoding within an http request.
+ *
+ * @param allocator memory allocator use to create the signable
+ * @param chunk_data stream representing the data in the chunk; it should be in its final, encoded form
+ * @param previous_signature the signature computed in the most recent signing that preceded this one.  It can be
+ * found by copying the "signature" property from the signing_result of that most recent signing.
+ *
+ * @return the new signable object, or NULL if failure
+ */
+AWS_AUTH_API
+struct aws_signable *aws_signable_new_chunk(
+    struct aws_allocator *allocator,
+    struct aws_input_stream *chunk_data,
+    struct aws_byte_cursor previous_signature);
 
 AWS_EXTERN_C_END
 

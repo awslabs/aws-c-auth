@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/private/aws_profile.h>
@@ -1281,8 +1271,9 @@ struct aws_credentials *aws_credentials_new_from_profile(
         return NULL;
     }
 
-    return aws_credentials_new(
-        allocator, access_key, secret_key, s_profile_get_property_value(profile, s_session_token_profile_var));
+    const struct aws_string *session_token = s_profile_get_property_value(profile, s_session_token_profile_var);
+
+    return aws_credentials_new_from_string(allocator, access_key, secret_key, session_token, UINT64_MAX);
 }
 
 static struct aws_string *s_process_profile_file_path(struct aws_allocator *allocator, const struct aws_string *path) {

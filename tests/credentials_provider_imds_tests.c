@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/testing/aws_test_harness.h>
@@ -45,6 +35,7 @@
  */
 #define IMDS_MAX_REQUESTS (8)
 struct aws_mock_imds_tester {
+    struct aws_allocator *allocator;
     struct aws_byte_buf request_uris[IMDS_MAX_REQUESTS];
     struct aws_array_list response_data_callbacks[IMDS_MAX_REQUESTS];
 
@@ -58,8 +49,13 @@ struct aws_mock_imds_tester {
     struct aws_condition_variable signal;
 
     struct aws_credentials *credentials;
+    struct aws_event_loop_group *el_group;
+    struct aws_client_bootstrap *bootstrap;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+
+    int error_code;
+
     bool token_ttl_header_exist[IMDS_MAX_REQUESTS];
     bool token_ttl_header_expected[IMDS_MAX_REQUESTS];
     bool token_header_exist[IMDS_MAX_REQUESTS];
@@ -68,6 +64,10 @@ struct aws_mock_imds_tester {
 };
 
 static struct aws_mock_imds_tester s_tester;
+
+struct aws_credentials_provider_imds_impl {
+    struct aws_imds_client *client;
+};
 
 static void s_on_shutdown_complete(void *user_data) {
     (void)user_data;
@@ -233,7 +233,7 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
-static struct aws_credentials_provider_system_vtable s_mock_function_table = {
+static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
     .aws_http_connection_manager_acquire_connection = s_aws_http_connection_manager_acquire_connection_mock,
@@ -246,6 +246,9 @@ static struct aws_credentials_provider_system_vtable s_mock_function_table = {
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
+
+    aws_auth_library_init(allocator);
+
     for (int i = 0; i < IMDS_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
                 &s_tester.response_data_callbacks[i], allocator, 10, sizeof(struct aws_byte_cursor))) {
@@ -255,7 +258,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
             return AWS_OP_ERR;
         }
     }
-
+    s_tester.allocator = allocator;
     s_tester.token_response_code = 0;
     s_tester.token_request_idx = 0;
     s_tester.insecure_then_secure_attempt = false;
@@ -271,11 +274,23 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
+    s_tester.error_code = AWS_ERROR_SUCCESS;
+
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = s_tester.el_group,
+        .user_data = NULL,
+        .host_resolution_config = NULL,
+        .host_resolver = NULL,
+        .on_shutdown_complete = NULL,
+    };
+    s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+    ASSERT_NOT_NULL(s_tester.bootstrap);
 
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_imds_tester_cleanup(void) {
+static int s_aws_imds_tester_cleanup(void) {
     for (int i = 0; i < IMDS_MAX_REQUESTS; i++) {
         aws_array_list_clean_up(&s_tester.response_data_callbacks[i]);
         aws_byte_buf_clean_up(&s_tester.request_uris[i]);
@@ -283,7 +298,17 @@ static void s_aws_imds_tester_cleanup(void) {
 
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
-    aws_credentials_destroy(s_tester.credentials);
+
+    aws_credentials_release(s_tester.credentials);
+
+    aws_client_bootstrap_release(s_tester.bootstrap);
+    aws_event_loop_group_release(s_tester.el_group);
+
+    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
@@ -299,14 +324,14 @@ static void s_aws_wait_for_credentials_result(void) {
     aws_mutex_unlock(&s_tester.lock);
 }
 
-static void s_get_credentials_callback(struct aws_credentials *credentials, void *user_data) {
+static void s_get_credentials_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)user_data;
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_credentials_callback = true;
-    if (credentials != NULL) {
-        s_tester.credentials = aws_credentials_new_copy(credentials->allocator, credentials);
-    }
+    s_tester.error_code = error_code;
+    s_tester.credentials = credentials;
+    aws_credentials_acquire(credentials);
     aws_condition_variable_notify_one(&s_tester.signal);
     aws_mutex_unlock(&s_tester.lock);
 }
@@ -317,7 +342,7 @@ static int s_credentials_provider_imds_new_destroy(struct aws_allocator *allocat
     s_aws_imds_tester_init(allocator);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -332,9 +357,11 @@ static int s_credentials_provider_imds_new_destroy(struct aws_allocator *allocat
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -348,7 +375,7 @@ static int s_credentials_provider_imds_connect_failure(struct aws_allocator *all
     s_tester.is_connection_acquire_successful = false;
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -371,9 +398,11 @@ static int s_credentials_provider_imds_connect_failure(struct aws_allocator *all
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -466,7 +495,7 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     s_aws_imds_tester_init(allocator);
     s_tester.token_response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -491,9 +520,11 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -509,7 +540,7 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -538,9 +569,11 @@ static int s_credentials_provider_imds_role_name_request_failure(struct aws_allo
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -561,7 +594,7 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -594,9 +627,11 @@ static int s_credentials_provider_imds_role_request_failure(struct aws_allocator
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -620,7 +655,7 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &bad_document_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -642,9 +677,11 @@ static int s_credentials_provider_imds_bad_document_failure(struct aws_allocator
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -658,6 +695,14 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
+
+static int s_verify_credentials(struct aws_credentials *credentials) {
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(credentials), s_good_secret_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_good_session_token);
+
+    return AWS_OP_SUCCESS;
+}
 
 static int s_credentials_provider_imds_secure_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -674,7 +719,7 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -703,30 +748,19 @@ static int s_credentials_provider_imds_secure_success(struct aws_allocator *allo
     ASSERT_TRUE(s_tester.token_header_exist[2]);
     ASSERT_TRUE(s_tester.token_header_expected[2]);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -753,7 +787,7 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
     aws_array_list_push_back(&s_tester.response_data_callbacks[4], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -768,30 +802,18 @@ static int s_credentials_provider_imds_connection_closed_success(struct aws_allo
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -813,7 +835,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -840,30 +862,18 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
     ASSERT_FALSE(s_tester.token_header_exist[2]);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -888,14 +898,14 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     aws_array_list_push_back(&s_tester.response_data_callbacks[3], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .imds_version = IMDS_V1,
+        .imds_version = IMDS_PROTOCOL_V1,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
@@ -920,30 +930,18 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     ASSERT_TRUE(s_tester.token_header_exist[3]);
     ASSERT_TRUE(s_tester.token_header_expected[3]);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -972,7 +970,7 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -989,30 +987,18 @@ static int s_credentials_provider_imds_success_multi_part_role_name(struct aws_a
 
     s_validate_uri_path_and_creds(3, true);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1046,7 +1032,7 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
     aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor3);
 
     struct aws_credentials_provider_imds_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -1063,30 +1049,18 @@ static int s_credentials_provider_imds_success_multi_part_doc(struct aws_allocat
 
     s_validate_uri_path_and_creds(3, true);
 
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->access_key_id->bytes,
-        s_tester.credentials->access_key_id->len,
-        s_good_access_key_id->bytes,
-        s_good_access_key_id->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->secret_access_key->bytes,
-        s_tester.credentials->secret_access_key->len,
-        s_good_secret_access_key->bytes,
-        s_good_secret_access_key->len);
-    ASSERT_BIN_ARRAYS_EQUALS(
-        s_tester.credentials->session_token->bytes,
-        s_tester.credentials->session_token->len,
-        s_good_session_token->bytes,
-        s_good_session_token->len);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
     /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
     aws_mem_release(provider->allocator, provider);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     return 0;
 }
@@ -1109,15 +1083,11 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = s_tester.el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -1141,10 +1111,9 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
     s_aws_wait_for_provider_shutdown_callback();
 
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
 
-    s_aws_imds_tester_cleanup();
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     aws_auth_library_clean_up();
 
@@ -1172,15 +1141,11 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_event_loop_group el_group;
-    aws_event_loop_group_default_init(&el_group, allocator, 1);
-
-    struct aws_host_resolver resolver;
-    aws_host_resolver_init_default(&resolver, allocator, 8, &el_group);
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group, NULL);
 
     struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = &el_group,
-        .host_resolver = &resolver,
+        .event_loop_group = s_tester.el_group,
+        .host_resolver = resolver,
     };
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
@@ -1205,11 +1170,10 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
 
     s_aws_wait_for_provider_shutdown_callback();
 
-    s_aws_imds_tester_cleanup();
-
     aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_clean_up(&resolver);
-    aws_event_loop_group_clean_up(&el_group);
+    aws_host_resolver_release(resolver);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
     aws_auth_library_clean_up();
 

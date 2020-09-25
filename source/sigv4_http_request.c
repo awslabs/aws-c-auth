@@ -1,16 +1,6 @@
-/*
- * Copyright 2010-2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  */
 
 #include <aws/auth/private/sigv4_http_request.h>
@@ -38,7 +28,7 @@
 static int s_build_request_uri(
     struct aws_allocator *allocator,
     struct aws_http_message *request,
-    struct aws_signing_result *signing_result) {
+    const struct aws_signing_result *signing_result) {
 
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
@@ -140,7 +130,7 @@ done:
 int aws_apply_signing_result_to_http_request(
     struct aws_http_message *request,
     struct aws_allocator *allocator,
-    struct aws_signing_result *result) {
+    const struct aws_signing_result *result) {
 
     /* uri/query params */
     if (s_build_request_uri(allocator, request, result)) {
@@ -237,7 +227,7 @@ static int s_aws_signable_http_request_get_payload_stream(
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_signable_http_request_clean_up(struct aws_signable *signable) {
+static void s_aws_signable_http_request_destroy(struct aws_signable *signable) {
     if (signable == NULL) {
         return;
     }
@@ -248,33 +238,32 @@ static void s_aws_signable_http_request_clean_up(struct aws_signable *signable) 
     }
 
     aws_array_list_clean_up(&impl->headers);
-    aws_mem_release(signable->allocator, impl);
+    aws_mem_release(signable->allocator, signable);
 }
 
 static struct aws_signable_vtable s_signable_http_request_vtable = {
     .get_property = s_aws_signable_http_request_get_property,
     .get_property_list = s_aws_signable_http_request_get_property_list,
     .get_payload_stream = s_aws_signable_http_request_get_payload_stream,
-    .clean_up = s_aws_signable_http_request_clean_up};
+    .destroy = s_aws_signable_http_request_destroy,
+};
 
 struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocator, struct aws_http_message *request) {
 
-    struct aws_signable *signable = aws_mem_acquire(allocator, sizeof(struct aws_signable));
-    if (signable == NULL) {
+    struct aws_signable *signable = NULL;
+    struct aws_signable_http_request_impl *impl = NULL;
+    aws_mem_acquire_many(
+        allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_http_request_impl));
+
+    if (signable == NULL || impl == NULL) {
         return NULL;
     }
 
     AWS_ZERO_STRUCT(*signable);
+    AWS_ZERO_STRUCT(*impl);
+
     signable->allocator = allocator;
     signable->vtable = &s_signable_http_request_vtable;
-
-    struct aws_signable_http_request_impl *impl =
-        aws_mem_acquire(allocator, sizeof(struct aws_signable_http_request_impl));
-    if (impl == NULL) {
-        goto on_error;
-    }
-
-    AWS_ZERO_STRUCT(*impl);
     signable->impl = impl;
 
     /*
@@ -306,174 +295,109 @@ on_error:
 }
 
 /*
- * Utility struct/API to let us wait on credentials resolution
+ * This is a simple aws_signable wrapper implementation for an s3 chunk
  */
-struct aws_signing_waiter {
-    struct aws_mutex lock;
-    struct aws_condition_variable signal;
-    bool done;
-
-    struct aws_allocator *allocator;
-    struct aws_http_message *request;
-    int error_code;
+struct aws_signable_chunk_impl {
+    struct aws_input_stream *chunk_data;
+    struct aws_string *previous_signature;
 };
 
-static int s_aws_signing_waiter_init(
-    struct aws_signing_waiter *waiter,
-    struct aws_allocator *allocator,
-    struct aws_http_message *request) {
+static int s_aws_signable_chunk_get_property(
+    const struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_byte_cursor *out_value) {
 
-    waiter->allocator = allocator;
-    waiter->request = request;
-    waiter->error_code = AWS_ERROR_SUCCESS;
+    struct aws_signable_chunk_impl *impl = signable->impl;
 
-    if (aws_mutex_init(&waiter->lock)) {
-        return AWS_OP_ERR;
-    }
+    AWS_ZERO_STRUCT(*out_value);
 
-    if (aws_condition_variable_init(&waiter->signal)) {
-        aws_mutex_clean_up(&waiter->lock);
+    /*
+     * uri and method can be queried directly from the wrapper request
+     */
+    if (aws_string_eq(name, g_aws_previous_signature_property_name)) {
+        *out_value = aws_byte_cursor_from_string(impl->previous_signature);
+    } else {
         return AWS_OP_ERR;
     }
 
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_signing_waiter_clean_up(struct aws_signing_waiter *waiter) {
-    aws_mutex_clean_up(&waiter->lock);
-    aws_condition_variable_clean_up(&waiter->signal);
+static int s_aws_signable_chunk_get_property_list(
+    const struct aws_signable *signable,
+    const struct aws_string *name,
+    struct aws_array_list **out_list) {
+    (void)signable;
+    (void)name;
+    (void)out_list;
+
+    return AWS_OP_ERR;
 }
 
-void s_sign_callback(struct aws_signing_result *result, int error_code, void *user_data) {
-    struct aws_signing_waiter *waiter = user_data;
-    aws_mutex_lock(&waiter->lock);
+static int s_aws_signable_chunk_get_payload_stream(
+    const struct aws_signable *signable,
+    struct aws_input_stream **out_input_stream) {
 
-    waiter->error_code = error_code;
+    struct aws_signable_chunk_impl *impl = signable->impl;
+    *out_input_stream = impl->chunk_data;
 
-    if (result) {
-        aws_apply_signing_result_to_http_request(waiter->request, waiter->allocator, result);
+    return AWS_OP_SUCCESS;
+}
+
+static void s_aws_signable_chunk_destroy(struct aws_signable *signable) {
+    if (signable == NULL) {
+        return;
     }
 
-    waiter->done = true;
-    aws_condition_variable_notify_one(&waiter->signal);
-    aws_mutex_unlock(&waiter->lock);
-}
-
-bool s_wait_predicate(void *user_data) {
-    struct aws_signing_waiter *waiter = user_data;
-
-    return waiter->done;
-}
-
-void s_aws_signing_waiter_wait_on_credentials(struct aws_signing_waiter *waiter) {
-    aws_mutex_lock(&waiter->lock);
-    if (!waiter->done) {
-        aws_condition_variable_wait_pred(&waiter->signal, &waiter->lock, s_wait_predicate, waiter);
+    struct aws_signable_chunk_impl *impl = signable->impl;
+    if (impl == NULL) {
+        return;
     }
-    aws_mutex_unlock(&waiter->lock);
+
+    aws_string_destroy(impl->previous_signature);
+
+    aws_mem_release(signable->allocator, signable);
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_region_key, "region");
-AWS_STATIC_STRING_FROM_LITERAL(s_service_key, "service");
+static struct aws_signable_vtable s_signable_chunk_vtable = {
+    .get_property = s_aws_signable_chunk_get_property,
+    .get_property_list = s_aws_signable_chunk_get_property_list,
+    .get_payload_stream = s_aws_signable_chunk_get_payload_stream,
+    .destroy = s_aws_signable_chunk_destroy,
+};
 
-int aws_sign_http_request_sigv4(struct aws_http_message *request, struct aws_allocator *allocator, void *user_data) {
-    int result = AWS_OP_ERR;
-    const struct aws_hash_table *context = user_data;
-
-    struct aws_signing_result signing_result;
-    AWS_ZERO_STRUCT(signing_result);
-
-    struct aws_signing_config_aws config;
-    AWS_ZERO_STRUCT(config);
-
-    struct aws_signing_waiter signing_waiter;
-    AWS_ZERO_STRUCT(signing_waiter);
-
-    struct aws_credentials_provider_profile_options provider_options;
-    AWS_ZERO_STRUCT(provider_options);
+struct aws_signable *aws_signable_new_chunk(
+    struct aws_allocator *allocator,
+    struct aws_input_stream *chunk_data,
+    struct aws_byte_cursor previous_signature) {
 
     struct aws_signable *signable = NULL;
-    struct aws_credentials_provider *provider = NULL;
+    struct aws_signable_chunk_impl *impl = NULL;
+    aws_mem_acquire_many(
+        allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_chunk_impl));
 
-    aws_auth_library_init(allocator);
-
-    /*
-     * Initialize signable wrapper, signer, credentials provider
-     */
-    signable = aws_signable_new_http_request(allocator, request);
-    if (signable == NULL) {
-        goto done;
+    if (signable == NULL || impl == NULL) {
+        return NULL;
     }
 
-    if (aws_signing_result_init(&signing_result, allocator)) {
-        goto done;
+    AWS_ZERO_STRUCT(*signable);
+    AWS_ZERO_STRUCT(*impl);
+
+    signable->allocator = allocator;
+    signable->vtable = &s_signable_chunk_vtable;
+    signable->impl = impl;
+
+    impl->chunk_data = chunk_data;
+    impl->previous_signature = aws_string_new_from_array(allocator, previous_signature.ptr, previous_signature.len);
+    if (impl->previous_signature == NULL) {
+        goto on_error;
     }
 
-    provider = aws_credentials_provider_new_profile(allocator, &provider_options);
-    if (provider == NULL) {
-        goto done;
-    }
+    return signable;
 
-    /*
-     * Initialize credentials waiter and wait for credentials resolution
-     */
-    if (s_aws_signing_waiter_init(&signing_waiter, allocator, request)) {
-        goto done;
-    }
+on_error:
 
-    /*
-     * Pull out required context key-value pairs: region and service
-     * We may add more context keys for signing algorithm and uri flags later
-     */
-    struct aws_hash_element *region_element = NULL;
-    if (aws_hash_table_find(context, s_region_key, &region_element)) {
-        goto done;
-    }
-    struct aws_string *region = region_element->value;
-
-    struct aws_hash_element *service_element = NULL;
-    if (aws_hash_table_find(context, s_service_key, &service_element)) {
-        goto done;
-    }
-    struct aws_string *service = service_element->value;
-
-    /*
-     * configure the signing request
-     */
-    config.credentials_provider = provider;
-    config.config_type = AWS_SIGNING_CONFIG_AWS;
-    config.algorithm = AWS_SIGNING_ALGORITHM_SIG_V4_HEADER;
-    config.region = aws_byte_cursor_from_string(region);
-    config.service = aws_byte_cursor_from_string(service);
-    config.use_double_uri_encode = true;
-    config.should_normalize_uri_path = true;
-    config.body_signing_type = AWS_BODY_SIGNING_OFF;
-
-    aws_date_time_init_now(&config.date);
-
-    /*
-     * Perform the signing process and apply the result to the request
-     */
-    if (aws_sign_request_aws(
-            allocator, signable, (struct aws_signing_config_base *)&config, s_sign_callback, &config)) {
-        goto done;
-    }
-
-    s_aws_signing_waiter_wait_on_credentials(&signing_waiter);
-
-    if (signing_waiter.error_code) {
-        result = aws_raise_error(signing_waiter.error_code);
-    } else {
-        result = AWS_OP_SUCCESS;
-    }
-
-done:
-
-    s_aws_signing_waiter_clean_up(&signing_waiter);
-    aws_credentials_provider_release(provider);
     aws_signable_destroy(signable);
 
-    aws_signing_result_clean_up(&signing_result);
-
-    return result;
+    return NULL;
 }
