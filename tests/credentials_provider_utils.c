@@ -8,7 +8,8 @@
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/string.h>
-#include <aws/common/thread.h>
+#include <aws/common/task_scheduler.h>
+#include <aws/io/event_loop.h>
 #include <aws/io/file_utils.h>
 
 #include <errno.h>
@@ -171,25 +172,12 @@ on_init_result_list_failure:
 }
 
 /*
-Mock async controller
-*/
-
-void aws_credentials_provider_mock_async_controller_init(
-    struct aws_credentials_provider_mock_async_controller *controller) {
-    AWS_ZERO_STRUCT(*controller);
-    aws_mutex_init(&controller->sync);
-    aws_condition_variable_init(&controller->signal);
-}
-
-void aws_credentials_provider_mock_async_controller_clean_up(
-    struct aws_credentials_provider_mock_async_controller *controller) {
-    aws_condition_variable_clean_up(&controller->signal);
-    aws_mutex_clean_up(&controller->sync);
-}
+ * Mock async provider
+ */
 
 struct aws_credentials_provider_mock_async_impl {
-    struct aws_credentials_provider_mock_async_controller *controller;
-    struct aws_thread background_thread;
+    struct aws_event_loop_group *event_loop_group;
+    struct aws_mutex sync;
     struct aws_array_list queries;
     struct aws_array_list mock_results;
     size_t next_result;
@@ -202,7 +190,7 @@ static int s_async_mock_credentials_provider_get_credentials_async(
     struct aws_credentials_provider_mock_async_impl *impl =
         (struct aws_credentials_provider_mock_async_impl *)provider->impl;
 
-    aws_mutex_lock(&impl->controller->sync);
+    aws_mutex_lock(&impl->sync);
 
     struct aws_credentials_query query;
     AWS_ZERO_STRUCT(query);
@@ -211,7 +199,7 @@ static int s_async_mock_credentials_provider_get_credentials_async(
 
     aws_array_list_push_back(&impl->queries, &query);
 
-    aws_mutex_unlock(&impl->controller->sync);
+    aws_mutex_unlock(&impl->sync);
 
     return AWS_OP_SUCCESS;
 }
@@ -220,16 +208,12 @@ static void s_async_mock_credentials_provider_destroy(struct aws_credentials_pro
     struct aws_credentials_provider_mock_async_impl *impl =
         (struct aws_credentials_provider_mock_async_impl *)provider->impl;
 
-    aws_mutex_lock(&impl->controller->sync);
-    impl->controller->should_quit = true;
-    aws_condition_variable_notify_one(&impl->controller->signal);
-    aws_mutex_unlock(&impl->controller->sync);
-
-    aws_thread_join(&impl->background_thread);
-    aws_thread_clean_up(&impl->background_thread);
-
     aws_array_list_clean_up(&impl->queries);
     aws_array_list_clean_up(&impl->mock_results);
+
+    aws_event_loop_group_release(impl->event_loop_group);
+
+    aws_mutex_clean_up(&impl->sync);
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
 
@@ -241,18 +225,17 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_mock_as
     .destroy = s_async_mock_credentials_provider_destroy,
 };
 
-bool invoke_credential_callback_predicate(void *arg) {
-    struct aws_credentials_provider_mock_async_controller *controller =
-        (struct aws_credentials_provider_mock_async_controller *)arg;
+static void s_async_mock_credentials_provider_fire_callbacks_task(
+    struct aws_task *task,
+    void *arg,
+    enum aws_task_status status) {
 
-    return controller->should_fire_callback || controller->should_quit;
-}
+    struct aws_credentials_provider *provider = arg;
+    struct aws_credentials_provider_mock_async_impl *impl = provider->impl;
 
-static void mock_async_background_thread_function(void *arg) {
-    struct aws_credentials_provider_mock_async_impl *impl = (struct aws_credentials_provider_mock_async_impl *)arg;
+    aws_mem_release(provider->allocator, task);
 
-    bool done = false;
-    aws_mutex_lock(&impl->controller->sync);
+    aws_mutex_lock(&impl->sync);
 
     /*
      * We need to make all of our callbacks outside the lock, in order to avoid deadlock
@@ -263,72 +246,67 @@ static void mock_async_background_thread_function(void *arg) {
         aws_array_list_init_dynamic(&temp_queries, impl->queries.alloc, 10, sizeof(struct aws_credentials_query)) ==
         AWS_OP_SUCCESS);
 
-    while (!done) {
+    struct get_credentials_mock_result result;
+    AWS_ZERO_STRUCT(result);
 
-        aws_condition_variable_wait_pred(
-            &impl->controller->signal, &impl->controller->sync, invoke_credential_callback_predicate, impl->controller);
-
-        done = impl->controller->should_quit;
-        bool do_callback = impl->controller->should_fire_callback;
-        impl->controller->should_fire_callback = false;
-
-        if (do_callback) {
-            size_t callback_count = aws_array_list_length(&impl->queries);
-            if (callback_count == 0) {
-                continue;
-            }
-
-            size_t result_count = aws_array_list_length(&impl->mock_results);
-            struct get_credentials_mock_result result;
-            AWS_ZERO_STRUCT(result);
-            if (impl->next_result >= result_count ||
-                aws_array_list_get_at(&impl->mock_results, &result, impl->next_result)) {
-                AWS_FATAL_ASSERT(false);
-            }
-
-            /*
-             * move the callbacks we need to complete into the temporary list so that we can
-             * safely use them outside the lock (we cannot safely use impl->queries outside the lock)
-             */
-            aws_array_list_swap_contents(&temp_queries, &impl->queries);
-            aws_array_list_clear(&impl->queries);
-
-            aws_mutex_unlock(&impl->controller->sync);
-
-            /* make the callbacks, not holding the lock */
-            for (size_t i = 0; i < callback_count; ++i) {
-                struct aws_credentials_query query;
-                AWS_ZERO_STRUCT(query);
-                if (aws_array_list_get_at(&temp_queries, &query, i)) {
-                    continue;
-                }
-
-                AWS_FATAL_ASSERT(query.callback != NULL);
-                query.callback(result.credentials, result.error_code, query.user_data);
-
-                aws_credentials_query_clean_up(&query);
-            }
-
-            /* relock and re-enter the loop (with immediate wait) or exit and clean up */
-            aws_mutex_lock(&impl->controller->sync);
-
-            impl->next_result++;
-
-            aws_array_list_clear(&temp_queries);
+    size_t callback_count = aws_array_list_length(&impl->queries);
+    if (callback_count != 0) {
+        size_t result_count = aws_array_list_length(&impl->mock_results);
+        if (impl->next_result >= result_count ||
+            aws_array_list_get_at(&impl->mock_results, &result, impl->next_result)) {
+            AWS_FATAL_ASSERT(false);
         }
+        impl->next_result++;
+
+        /*
+         * move the callbacks we need to complete into the temporary list so that we can
+         * safely use them outside the lock (we cannot safely use impl->queries outside the lock)
+         */
+        aws_array_list_swap_contents(&impl->queries, &temp_queries);
+    }
+    aws_mutex_unlock(&impl->sync);
+
+    /* make the callbacks, not holding the lock */
+    for (size_t i = 0; i < callback_count; ++i) {
+        struct aws_credentials_query query;
+        AWS_ZERO_STRUCT(query);
+        if (aws_array_list_get_at(&temp_queries, &query, i)) {
+            continue;
+        }
+
+        AWS_FATAL_ASSERT(query.callback != NULL);
+        query.callback(result.credentials, result.error_code, query.user_data);
+
+        aws_credentials_query_clean_up(&query);
     }
 
-    aws_array_list_clear(&impl->queries);
     aws_array_list_clean_up(&temp_queries);
+    aws_credentials_provider_release(provider);
+}
 
-    aws_mutex_unlock(&impl->controller->sync);
+void aws_credentials_provider_mock_async_fire_callbacks(struct aws_credentials_provider *provider) {
+    struct aws_credentials_provider_mock_async_impl *impl = provider->impl;
+
+    struct aws_task *task = aws_mem_calloc(provider->allocator, 1, sizeof(struct aws_task));
+    AWS_FATAL_ASSERT(task);
+    aws_task_init(
+        task,
+        s_async_mock_credentials_provider_fire_callbacks_task,
+        provider,
+        "async_mock_credentials_provider_fire_callbacks_task");
+
+    /* keep provider alive until task runs */
+    aws_credentials_provider_acquire(provider);
+
+    struct aws_event_loop *loop = aws_event_loop_group_get_next_loop(impl->event_loop_group);
+    aws_event_loop_schedule_task_now(loop, task);
 }
 
 struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
     size_t result_count,
-    struct aws_credentials_provider_mock_async_controller *controller,
+    struct aws_event_loop_group *elg,
     struct aws_credentials_provider_shutdown_options *shutdown_options) {
 
     struct aws_credentials_provider *provider = NULL;
@@ -349,6 +327,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
+    if (aws_mutex_init(&impl->sync)) {
+        goto on_lock_init_failure;
+    }
+
     if (aws_array_list_init_dynamic(&impl->queries, allocator, 10, sizeof(struct aws_credentials_query))) {
         goto on_query_list_init_failure;
     }
@@ -362,18 +344,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
         aws_array_list_push_back(&impl->mock_results, results + i);
     }
 
-    if (aws_thread_init(&impl->background_thread, allocator)) {
-        goto on_init_thread_failure;
-    }
-
-    impl->controller = controller;
-
-    struct aws_thread_options thread_options;
-    AWS_ZERO_STRUCT(thread_options);
-
-    if (aws_thread_launch(&impl->background_thread, mock_async_background_thread_function, impl, &thread_options)) {
-        goto on_thread_launch_failure;
-    }
+    impl->event_loop_group = aws_event_loop_group_acquire(elg);
 
     provider->allocator = allocator;
     provider->vtable = &s_aws_credentials_provider_mock_async_vtable;
@@ -385,16 +356,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
 
     return provider;
 
-on_thread_launch_failure:
-    aws_thread_clean_up(&impl->background_thread);
-
-on_init_thread_failure:
-    aws_array_list_clean_up(&impl->mock_results);
-
 on_mock_result_list_init_failure:
     aws_array_list_clean_up(&impl->queries);
 
 on_query_list_init_failure:
+    aws_mutex_clean_up(&impl->sync);
+
+on_lock_init_failure:
     aws_mem_release(allocator, provider);
 
     return NULL;
