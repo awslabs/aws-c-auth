@@ -89,8 +89,8 @@ aws_check_headers(${PROJECT_NAME} ${AUTH_HEADERS})
 
 aws_add_sanitizers(${PROJECT_NAME})
 
-# We are not ABI stable yet
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION 1.0.0)
+set_target_properties(${PROJECT_NAME} PROPERTIES SOVERSION 1)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE -DCJSON_HIDE_SYMBOLS)
 
