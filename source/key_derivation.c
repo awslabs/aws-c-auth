@@ -336,7 +336,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     }
     struct aws_byte_cursor secret_cursor = aws_byte_cursor_from_buf(&secret_buf);
 
-    uint32_t counter = 1;
+    uint8_t counter = 1;
     enum aws_key_derivation_result result = AKDR_NEXT_COUNTER;
     while ((result == AKDR_NEXT_COUNTER) && (counter <= MAX_KEY_DERIVATION_COUNTER_VALUE)) {
         if (s_aws_build_fixed_input_buffer(&fixed_input, credentials, counter++)) {
