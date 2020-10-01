@@ -292,10 +292,12 @@ int s_wait_for_get_credentials_with_mock_async_provider(
     struct aws_get_credentials_test_callback_result *callback_results,
     struct aws_credentials_provider *mock_async_provider) {
 
-    aws_thread_current_sleep(ASYNC_TEST_DELAY_NS);
-
+    /* Mock provider already has credentials, but won't invoke any
+     * get-credentials callbacks until this function is called.
+     * The callbacks will fire on another thread. */
     aws_credentials_provider_mock_async_fire_callbacks(mock_async_provider);
 
+    /* Wait for all queued get-credentials callbacks to fire */
     aws_wait_on_credentials_callback(callback_results);
 
     return 0;
