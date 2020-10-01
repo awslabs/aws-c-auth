@@ -56,6 +56,7 @@ static struct aws_be_add_one_test s_be_add_one_test_cases[] = {
 
 static int s_be_sequence_add_one(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
+    (void)allocator;
 
     for (size_t i = 0; i < AWS_ARRAY_SIZE(s_be_add_one_test_cases); ++i) {
         struct aws_be_add_one_test *test_case = &s_be_add_one_test_cases[i];
