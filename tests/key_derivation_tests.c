@@ -190,12 +190,15 @@ AWS_STATIC_STRING_FROM_LITERAL(
 /*
  * Values derived in synchronicity with Golang and IAM implementations
  */
+#ifndef __APPLE__
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_pub_x,
     "15d242ceebf8d8169fd6a8b5a746c41140414c3b07579038da06af89190fffcb");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_pub_y,
     "0515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
+#endif /* __APPLE__ */
+
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_private_key,
     "7fd3bd010c0d9c292141c2b77bfbde1042c92e6836fff749d1269ec890fca1bd");
