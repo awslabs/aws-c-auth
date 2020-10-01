@@ -1691,7 +1691,8 @@ AWS_STATIC_STRING_FROM_LITERAL(
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_auth_failure_expected_signature_value,
-    "3044021f7cfd51af2b722f8d1fa1afb65b4d5486ed59a67bcf9f3acc62aad6ddd37db10221009d4c9f9a37104fc01a8daffc9a6bd1056b7b43c1196edde0b52878b759628f8c");
+    "3044021f7cfd51af2b722f8d1fa1afb65b4d5486ed59a67bcf9f3acc62aad6ddd37db10221009d4c9f9a37104fc01a8daffc9a6bd1056b7b43"
+    "c1196edde0b52878b759628f8c");
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_auth_failure_pub_x,
@@ -1701,7 +1702,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_auth_failure_pub_y,
     "865ed22a7eadc9c5cb9d2cbaca1b3699139fedc5043dc6661864218330c8e518");
 
-static struct aws_ecc_key_pair* s_build_failure_ecc_key(struct aws_allocator *allocator) {
+static struct aws_ecc_key_pair *s_build_failure_ecc_key(struct aws_allocator *allocator) {
     struct aws_byte_buf pub_x_buffer;
     AWS_ZERO_STRUCT(pub_x_buffer);
     struct aws_byte_buf pub_y_buffer;
@@ -1752,7 +1753,8 @@ static int s_sigv4a_authorization_failure_test(struct aws_allocator *allocator, 
         aws_byte_cursor_from_string(s_auth_failure_string_to_sign),
         aws_byte_cursor_from_string(s_auth_failure_expected_signature_value)));
 
+    aws_ecc_key_pair_release(key);
+
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(sigv4a_authorization_failure_test, s_sigv4a_authorization_failure_test);
-
