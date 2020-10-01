@@ -86,6 +86,18 @@ struct v4_test_case_contents {
     struct aws_byte_buf sample_signed_request;
 };
 
+static void s_strip_windows_line_endings(struct aws_byte_buf *buffer) {
+    size_t write_index = 0;
+    for (size_t read_index = 0; read_index < buffer->len; ++read_index) {
+        char current = buffer->buffer[read_index];
+        if (current != '\r') {
+            buffer->buffer[write_index++] = current;
+        }
+    }
+
+    buffer->len = write_index;
+}
+
 static int s_load_test_case_file(
     struct aws_allocator *allocator,
     const char *parent_folder,
@@ -113,6 +125,8 @@ static int s_v4_test_case_context_init_from_file_set(
         return AWS_OP_ERR;
     }
 
+    s_strip_windows_line_endings(&contents->request);
+
     s_load_test_case_file(
         allocator, parent_folder, test_name, (const char *)s_public_key_filename->bytes, &contents->public_key);
 
@@ -123,6 +137,8 @@ static int s_v4_test_case_context_init_from_file_set(
         aws_string_c_str(s_get_canonical_request_filename(signature_type)),
         &contents->expected_canonical_request);
 
+    s_strip_windows_line_endings(&contents->expected_canonical_request);
+
     s_load_test_case_file(
         allocator,
         parent_folder,
@@ -130,12 +146,16 @@ static int s_v4_test_case_context_init_from_file_set(
         aws_string_c_str(s_get_string_to_sign_filename(signature_type)),
         &contents->expected_string_to_sign);
 
+    s_strip_windows_line_endings(&contents->expected_string_to_sign);
+
     s_load_test_case_file(
         allocator,
         parent_folder,
         test_name,
         aws_string_c_str(s_get_signed_request_filename(signature_type)),
         &contents->sample_signed_request);
+
+    s_strip_windows_line_endings(&contents->sample_signed_request);
 
     return AWS_OP_SUCCESS;
 }
@@ -1661,3 +1681,78 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_auth_failure_string_to_sign,
+    "AWS4-ECDSA-P256-SHA256\n"
+    "20150830T123600Z\n"
+    "20150830/service/aws4_request\n"
+    "79893373104239a0547df489af395ec3c1b8873a8601f07f11ffd3f1ac557e7d");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_auth_failure_expected_signature_value,
+    "3044021f7cfd51af2b722f8d1fa1afb65b4d5486ed59a67bcf9f3acc62aad6ddd37db10221009d4c9f9a37104fc01a8daffc9a6bd1056b7b43c1196edde0b52878b759628f8c");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_auth_failure_pub_x,
+    "b6618f6a65740a99e650b33b6b4b5bd0d43b176d721a3edfea7e7d2d56d936b1");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_auth_failure_pub_y,
+    "865ed22a7eadc9c5cb9d2cbaca1b3699139fedc5043dc6661864218330c8e518");
+
+static struct aws_ecc_key_pair* s_build_failure_ecc_key(struct aws_allocator *allocator) {
+    struct aws_byte_buf pub_x_buffer;
+    AWS_ZERO_STRUCT(pub_x_buffer);
+    struct aws_byte_buf pub_y_buffer;
+    AWS_ZERO_STRUCT(pub_y_buffer);
+
+    struct aws_ecc_key_pair *key = NULL;
+
+    struct aws_byte_cursor pub_x_hex_cursor = aws_byte_cursor_from_string(s_auth_failure_pub_x);
+    struct aws_byte_cursor pub_y_hex_cursor = aws_byte_cursor_from_string(s_auth_failure_pub_y);
+
+    size_t pub_x_length = 0;
+    size_t pub_y_length = 0;
+    if (aws_hex_compute_decoded_len(pub_x_hex_cursor.len, &pub_x_length) ||
+        aws_hex_compute_decoded_len(pub_y_hex_cursor.len, &pub_y_length)) {
+        goto done;
+    }
+
+    if (aws_byte_buf_init(&pub_x_buffer, allocator, pub_x_length) ||
+        aws_byte_buf_init(&pub_y_buffer, allocator, pub_y_length)) {
+        goto done;
+    }
+
+    if (aws_hex_decode(&pub_x_hex_cursor, &pub_x_buffer) || aws_hex_decode(&pub_y_hex_cursor, &pub_y_buffer)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor pub_x_cursor = aws_byte_cursor_from_buf(&pub_x_buffer);
+    struct aws_byte_cursor pub_y_cursor = aws_byte_cursor_from_buf(&pub_y_buffer);
+
+    key = aws_ecc_key_pair_new_from_public_key(allocator, AWS_CAL_ECDSA_P256, &pub_x_cursor, &pub_y_cursor);
+
+done:
+
+    aws_byte_buf_clean_up(&pub_x_buffer);
+    aws_byte_buf_clean_up(&pub_y_buffer);
+
+    return key;
+}
+
+static int s_sigv4a_authorization_failure_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_ecc_key_pair *key = s_build_failure_ecc_key(allocator);
+
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator,
+        key,
+        aws_byte_cursor_from_string(s_auth_failure_string_to_sign),
+        aws_byte_cursor_from_string(s_auth_failure_expected_signature_value)));
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(sigv4a_authorization_failure_test, s_sigv4a_authorization_failure_test);
+
