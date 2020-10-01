@@ -14,6 +14,7 @@
 struct aws_credentials;
 struct aws_credentials_provider;
 struct aws_credentials_provider_shutdown_options;
+struct aws_event_loop_group;
 struct aws_string;
 
 /*
@@ -63,28 +64,16 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
     size_t result_count,
     struct aws_credentials_provider_shutdown_options *shutdown_options);
 
-/*
- * Credentials provider that puts a mock provider in a background thread and uses signalling to control callback
- * invocation.  Useful to properly test query queuing during expiration
- */
-struct aws_credentials_provider_mock_async_controller {
-    struct aws_mutex sync;
-    struct aws_condition_variable signal;
-    bool should_fire_callback;
-    bool should_quit;
-};
-
-void aws_credentials_provider_mock_async_controller_init(
-    struct aws_credentials_provider_mock_async_controller *controller);
-void aws_credentials_provider_mock_async_controller_clean_up(
-    struct aws_credentials_provider_mock_async_controller *controller);
-
 struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
     size_t result_count,
-    struct aws_credentials_provider_mock_async_controller *controller,
+    struct aws_event_loop_group *elg,
     struct aws_credentials_provider_shutdown_options *shutdown_options);
+
+/* If any pending queries, deliver the next mock-result to all of them from another thread.
+ * If no pending queries, nothing happens. */
+void aws_credentials_provider_mock_async_fire_callbacks(struct aws_credentials_provider *provider);
 
 /*
  * Simple global clock mocks
