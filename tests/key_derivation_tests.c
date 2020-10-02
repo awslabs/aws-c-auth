@@ -56,6 +56,7 @@ static struct aws_be_add_one_test s_be_add_one_test_cases[] = {
 
 static int s_be_sequence_add_one(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
+    (void)allocator;
 
     for (size_t i = 0; i < AWS_ARRAY_SIZE(s_be_add_one_test_cases); ++i) {
         struct aws_be_add_one_test *test_case = &s_be_add_one_test_cases[i];
@@ -189,17 +190,24 @@ AWS_STATIC_STRING_FROM_LITERAL(
 /*
  * Values derived in synchronicity with Golang and IAM implementations
  */
+#ifndef __APPLE__
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_pub_x,
     "15d242ceebf8d8169fd6a8b5a746c41140414c3b07579038da06af89190fffcb");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_pub_y,
     "0515242cedd82e94799482e4c0514b505afccf2c0c98d6a553bf539f424c5ec0");
+#endif /* __APPLE__ */
+
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_fixed_private_key,
     "7fd3bd010c0d9c292141c2b77bfbde1042c92e6836fff749d1269ec890fca1bd");
 
-static int s_verify_fixed_ecc_key(struct aws_ecc_key_pair *key, struct aws_allocator *allocator) {
+static int s_verify_fixed_ecc_key_public(struct aws_ecc_key_pair *key, struct aws_allocator *allocator) {
+#ifdef __APPLE__
+    (void)key;
+    (void)allocator;
+#else
     aws_ecc_key_pair_derive_public_key(key);
 
     struct aws_byte_cursor pub_x_cursor;
@@ -227,7 +235,12 @@ static int s_verify_fixed_ecc_key(struct aws_ecc_key_pair *key, struct aws_alloc
 
     aws_byte_buf_clean_up(&pub_coord_x);
     aws_byte_buf_clean_up(&pub_coord_y);
+#endif /* __APPLE__ */
 
+    return AWS_OP_SUCCESS;
+}
+
+static int s_verify_fixed_ecc_key_private(struct aws_ecc_key_pair *key, struct aws_allocator *allocator) {
     struct aws_byte_cursor private_key_cursor;
     AWS_ZERO_STRUCT(private_key_cursor);
 
@@ -259,7 +272,8 @@ static int s_credentials_derive_ecc_key_fixed(struct aws_allocator *allocator, v
     struct aws_ecc_key_pair *derived_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, creds);
     ASSERT_TRUE(derived_key != NULL);
 
-    ASSERT_SUCCESS(s_verify_fixed_ecc_key(derived_key, allocator));
+    ASSERT_SUCCESS(s_verify_fixed_ecc_key_public(derived_key, allocator));
+    ASSERT_SUCCESS(s_verify_fixed_ecc_key_private(derived_key, allocator));
 
     aws_ecc_key_pair_release(derived_key);
     aws_credentials_release(creds);
@@ -283,7 +297,9 @@ static int s_credentials_new_ecc_fixed(struct aws_allocator *allocator, void *ct
     ASSERT_TRUE(derived_credentials != NULL);
 
     struct aws_ecc_key_pair *derived_key = aws_credentials_get_ecc_key_pair(derived_credentials);
-    ASSERT_SUCCESS(s_verify_fixed_ecc_key(derived_key, allocator));
+
+    ASSERT_SUCCESS(s_verify_fixed_ecc_key_public(derived_key, allocator));
+    ASSERT_SUCCESS(s_verify_fixed_ecc_key_private(derived_key, allocator));
 
     aws_credentials_release(derived_credentials);
     aws_credentials_release(creds);

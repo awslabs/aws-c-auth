@@ -27,6 +27,10 @@
 #include "credentials_provider_utils.h"
 #include "test_signable.h"
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4996) /* deprecation */
+#endif
+
 AWS_STATIC_STRING_FROM_LITERAL(s_header_canonical_request_filename, "header-canonical-request.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_string_to_sign_filename, "header-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_signed_request_filename, "header-signed-request.txt");
@@ -82,6 +86,18 @@ struct v4_test_case_contents {
     struct aws_byte_buf sample_signed_request;
 };
 
+static void s_strip_windows_line_endings(struct aws_byte_buf *buffer) {
+    size_t write_index = 0;
+    for (size_t read_index = 0; read_index < buffer->len; ++read_index) {
+        char current = buffer->buffer[read_index];
+        if (current != '\r') {
+            buffer->buffer[write_index++] = current;
+        }
+    }
+
+    buffer->len = write_index;
+}
+
 static int s_load_test_case_file(
     struct aws_allocator *allocator,
     const char *parent_folder,
@@ -98,7 +114,6 @@ static int s_v4_test_case_context_init_from_file_set(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
-    enum aws_signing_algorithm algorithm,
     enum aws_signature_type signature_type) {
 
     AWS_ZERO_STRUCT(*contents);
@@ -110,6 +125,8 @@ static int s_v4_test_case_context_init_from_file_set(
         return AWS_OP_ERR;
     }
 
+    s_strip_windows_line_endings(&contents->request);
+
     s_load_test_case_file(
         allocator, parent_folder, test_name, (const char *)s_public_key_filename->bytes, &contents->public_key);
 
@@ -120,6 +137,8 @@ static int s_v4_test_case_context_init_from_file_set(
         aws_string_c_str(s_get_canonical_request_filename(signature_type)),
         &contents->expected_canonical_request);
 
+    s_strip_windows_line_endings(&contents->expected_canonical_request);
+
     s_load_test_case_file(
         allocator,
         parent_folder,
@@ -127,12 +146,16 @@ static int s_v4_test_case_context_init_from_file_set(
         aws_string_c_str(s_get_string_to_sign_filename(signature_type)),
         &contents->expected_string_to_sign);
 
+    s_strip_windows_line_endings(&contents->expected_string_to_sign);
+
     s_load_test_case_file(
         allocator,
         parent_folder,
         test_name,
         aws_string_c_str(s_get_signed_request_filename(signature_type)),
         &contents->sample_signed_request);
+
+    s_strip_windows_line_endings(&contents->sample_signed_request);
 
     return AWS_OP_SUCCESS;
 }
@@ -625,7 +648,7 @@ static int s_v4_test_context_init(
     aws_string_destroy(should_generate);
 
     if (s_v4_test_case_context_init_from_file_set(
-            &context->test_case_data, allocator, parent_folder, test_name, algorithm, signature_type)) {
+            &context->test_case_data, allocator, parent_folder, test_name, signature_type)) {
         return AWS_OP_ERR;
     }
 
@@ -792,31 +815,26 @@ static int s_generate_test_case(
     return AWS_OP_SUCCESS;
 }
 
-static int s_check_piecewise_test_case(
-    struct v4_test_context *test_context,
-    const char *parent_folder,
-    const char *test_name) {
-    {
-        struct aws_signing_state_aws *signing_state = test_context->signing_state;
+static int s_check_piecewise_test_case(struct v4_test_context *test_context) {
+    struct aws_signing_state_aws *signing_state = test_context->signing_state;
 
-        /* 1a -  validate canonical request */
-        ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
-        ASSERT_BIN_ARRAYS_EQUALS(
-            test_context->test_case_data.expected_canonical_request.buffer,
-            test_context->test_case_data.expected_canonical_request.len,
-            signing_state->canonical_request.buffer,
-            signing_state->canonical_request.len);
+    /* 1a -  validate canonical request */
+    ASSERT_TRUE(aws_signing_build_canonical_request(signing_state) == AWS_OP_SUCCESS);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        test_context->test_case_data.expected_canonical_request.buffer,
+        test_context->test_case_data.expected_canonical_request.len,
+        signing_state->canonical_request.buffer,
+        signing_state->canonical_request.len);
 
-        /* 1b- validate string to sign */
-        ASSERT_TRUE(aws_signing_build_string_to_sign(signing_state) == AWS_OP_SUCCESS);
-        ASSERT_BIN_ARRAYS_EQUALS(
-            test_context->test_case_data.expected_string_to_sign.buffer,
-            test_context->test_case_data.expected_string_to_sign.len,
-            signing_state->string_to_sign.buffer,
-            signing_state->string_to_sign.len);
+    /* 1b- validate string to sign */
+    ASSERT_TRUE(aws_signing_build_string_to_sign(signing_state) == AWS_OP_SUCCESS);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        test_context->test_case_data.expected_string_to_sign.buffer,
+        test_context->test_case_data.expected_string_to_sign.len,
+        signing_state->string_to_sign.buffer,
+        signing_state->string_to_sign.len);
 
-        /* authorization values checked in the end-to-end tests */
-    }
+    /* authorization values checked in the end-to-end tests */
 
     return AWS_OP_SUCCESS;
 }
@@ -837,7 +855,7 @@ static int s_do_sigv4_test_piecewise(
     if (test_context.should_generate_test_case) {
         ASSERT_SUCCESS(s_generate_test_case(&test_context, parent_folder, test_name));
     } else {
-        ASSERT_SUCCESS(s_check_piecewise_test_case(&test_context, parent_folder, test_name));
+        ASSERT_SUCCESS(s_check_piecewise_test_case(&test_context));
     }
 
     s_v4_test_context_clean_up(&test_context);
