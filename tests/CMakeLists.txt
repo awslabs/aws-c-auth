@@ -261,8 +261,6 @@ add_test_case(sigv4_get_slashes_unnormalized_test)
 add_test_case(sigv4_get_space_normalized_test)
 add_test_case(sigv4_get_space_unnormalized_test)
 
-add_test_case(sigv4a_authorization_failure_test)
-
 set(TEST_BINARY_NAME ${PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
