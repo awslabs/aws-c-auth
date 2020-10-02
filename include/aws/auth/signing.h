@@ -96,6 +96,8 @@ int aws_sign_request_aws(
  *  @param base_config pointer to a signing configuration, currently this must be of type aws_signing_config_aws
  *  @param expected_canonical_request_cursor expected result when building the canonical request
  *  @param signature_cursor the actual signature computed from a previous signing of the signable
+ *  @param ecc_key_pub_x the x coordinate of the public part of the ecc key to verify the signature
+ *  @param ecc_key_pub_y the y coordinate of the public part of the ecc key to verify the signature
  *
  *  @return AWS_OP_SUCCESS if the signing attempt was *initiated* successfully, AWS_OP_ERR otherwise
  */
@@ -105,7 +107,9 @@ int aws_verify_sigv4a_signing(
     const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_byte_cursor expected_canonical_request_cursor,
-    struct aws_byte_cursor signature_cursor);
+    struct aws_byte_cursor signature_cursor,
+    struct aws_byte_cursor ecc_key_pub_x,
+    struct aws_byte_cursor ecc_key_pub_y);
 
 AWS_EXTERN_C_END
 
