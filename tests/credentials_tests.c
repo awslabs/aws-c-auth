@@ -206,6 +206,10 @@ AWS_TEST_CASE(environment_credentials_provider_basic_test, s_environment_credent
 static int s_do_environment_credentials_provider_failure(struct aws_allocator *allocator) {
     s_aws_credentials_shutdown_checker_init();
 
+    aws_unset_environment_value(s_access_key_id_env_var);
+    aws_unset_environment_value(s_secret_access_key_env_var);
+    aws_unset_environment_value(s_session_token_env_var);
+
     struct aws_credentials_provider_environment_options options = {
         .shutdown_options =
             {
@@ -284,17 +288,16 @@ int s_invoke_get_credentials(
 
 #define ASYNC_TEST_DELAY_NS 1000000
 
-int s_wait_for_get_credentials_with_async_controller(
+int s_wait_for_get_credentials_with_mock_async_provider(
     struct aws_get_credentials_test_callback_result *callback_results,
-    struct aws_credentials_provider_mock_async_controller *controller) {
+    struct aws_credentials_provider *mock_async_provider) {
 
-    aws_thread_current_sleep(ASYNC_TEST_DELAY_NS);
+    /* Mock provider already has credentials, but won't invoke any
+     * get-credentials callbacks until this function is called.
+     * The callbacks will fire on another thread. */
+    aws_credentials_provider_mock_async_fire_callbacks(mock_async_provider);
 
-    aws_mutex_lock(&controller->sync);
-    controller->should_fire_callback = true;
-    aws_condition_variable_notify_one(&controller->signal);
-    aws_mutex_unlock(&controller->sync);
-
+    /* Wait for all queued get-credentials callbacks to fire */
     aws_wait_on_credentials_callback(callback_results);
 
     return 0;
@@ -347,8 +350,10 @@ static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allo
     struct aws_credentials *second_creds = aws_credentials_new_from_string(
         allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2, UINT64_MAX);
 
-    struct get_credentials_mock_result mock_results[] = {{.error_code = 0, .credentials = first_creds},
-                                                         {.error_code = 0, .credentials = second_creds}};
+    struct get_credentials_mock_result mock_results[] = {
+        {.error_code = 0, .credentials = first_creds},
+        {.error_code = 0, .credentials = second_creds},
+    };
 
     struct aws_credentials_provider_shutdown_options shutdown_options = {
         .shutdown_callback = NULL,
@@ -450,17 +455,18 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     struct aws_credentials *second_creds = aws_credentials_new_from_string(
         allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2, UINT64_MAX);
 
-    struct get_credentials_mock_result mock_results[] = {{.error_code = 0, .credentials = first_creds},
-                                                         {.error_code = 0, .credentials = second_creds}};
+    struct aws_event_loop_group *event_loop_group = aws_event_loop_group_new_default(allocator, 1, NULL);
 
-    struct aws_credentials_provider_mock_async_controller controller;
-    aws_credentials_provider_mock_async_controller_init(&controller);
+    struct get_credentials_mock_result mock_results[] = {
+        {.error_code = 0, .credentials = first_creds},
+        {.error_code = 0, .credentials = second_creds},
+    };
 
     struct aws_credentials_provider_shutdown_options shutdown_options;
     AWS_ZERO_STRUCT(shutdown_options);
 
     struct aws_credentials_provider *mock_provider =
-        aws_credentials_provider_new_mock_async(allocator, mock_results, 2, &controller, &shutdown_options);
+        aws_credentials_provider_new_mock_async(allocator, mock_results, 2, event_loop_group, &shutdown_options);
 
     struct aws_credentials_provider_cached_options options;
     AWS_ZERO_STRUCT(options);
@@ -477,7 +483,7 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     struct aws_get_credentials_test_callback_result callback_results;
 
     ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
-    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_mock_async_provider(&callback_results, mock_provider) == 0);
     ASSERT_TRUE(
         s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
         0);
@@ -487,14 +493,14 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
      */
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
-    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_mock_async_provider(&callback_results, mock_provider) == 0);
     ASSERT_TRUE(
         s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
         0);
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
-    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_mock_async_provider(&callback_results, mock_provider) == 0);
     ASSERT_TRUE(
         s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
         0);
@@ -510,7 +516,7 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
-    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_mock_async_provider(&callback_results, mock_provider) == 0);
     ASSERT_TRUE(
         s_verify_callback_status(&callback_results, 2, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
         0);
@@ -522,7 +528,7 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 2) == 0);
-    ASSERT_TRUE(s_wait_for_get_credentials_with_async_controller(&callback_results, &controller) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials_with_mock_async_provider(&callback_results, mock_provider) == 0);
     ASSERT_TRUE(
         s_verify_callback_status(&callback_results, 2, s_access_key_id_2, s_secret_access_key_2, s_session_token_2) ==
         0);
@@ -533,11 +539,13 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
 
     s_aws_credentials_shutdown_checker_clean_up();
 
-    aws_credentials_provider_mock_async_controller_clean_up(&controller);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
     aws_credentials_release(second_creds);
     aws_credentials_release(first_creds);
+
+    aws_event_loop_group_release(event_loop_group);
+    aws_global_thread_creator_shutdown_wait_for(10);
 
     return 0;
 }
