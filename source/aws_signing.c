@@ -1028,10 +1028,10 @@ static int s_append_canonical_header(
     struct aws_signing_state_aws *state,
     struct aws_signable_property_list_pair *header,
     const struct aws_byte_cursor *last_seen_header_name) {
+
     struct aws_byte_buf *canonical_header_buffer = &state->canonical_header_block;
     struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
     const uint8_t *to_lower_table = aws_lookup_table_to_lower_get();
-    bool prepend_comma = false;
 
     /*
      * Write to the signed_headers shared state for later use, copy
@@ -1070,52 +1070,40 @@ static int s_append_canonical_header(
             return AWS_OP_ERR;
         }
     } else {
-        prepend_comma = true;
-        /* we've seen this header before, add a comma before appending the first value */
+        /* we've seen this header before, add a comma before appending the value */
+        if (aws_byte_buf_append_byte_dynamic(canonical_header_buffer, ',')) {
+            return AWS_OP_ERR;
+        }
     }
 
     /*
-     * Handle multi-line headers by iterating a split against '\n' of the header's value
+     * This is the unsafe, non-append write of the header value where consecutive whitespace
+     * is squashed into a single space.  Since this can only shrink the value length and we've
+     * already reserved enough to hold the value, we can do raw buffer writes safely without
+     * worrying about capacity.
      */
-    struct aws_byte_cursor line_split;
-    AWS_ZERO_STRUCT(line_split);
-    while (aws_byte_cursor_next_split(&header->value, '\n', &line_split)) {
-        /*
-         * This is the unsafe, non-append write of the header value where consecutive spaces
-         * are squashed into a single one.  Since this can only shrink the value length and we've
-         * already reserved enough to hold the value, we can do raw buffer writes safely without
-         * worrying about capacity.
-         */
-        struct aws_byte_cursor trimmed_value = aws_byte_cursor_trim_pred(&line_split, s_is_space);
-        if (trimmed_value.len == 0) {
-            continue;
+    struct aws_byte_cursor trimmed_value = aws_byte_cursor_trim_pred(&header->value, s_is_space);
+
+    /* raw, unsafe write loop */
+    bool in_space = false;
+    uint8_t *start_ptr = trimmed_value.ptr;
+    uint8_t *end_ptr = trimmed_value.ptr + trimmed_value.len;
+    uint8_t *dest_ptr = canonical_header_buffer->buffer + canonical_header_buffer->len;
+    while (start_ptr < end_ptr) {
+        uint8_t value = *start_ptr;
+        bool is_space = s_is_space(value);
+        if (is_space) {
+            value = ' ';
         }
 
-        if (prepend_comma && aws_byte_buf_append_byte_dynamic(canonical_header_buffer, ',')) {
-            return AWS_OP_ERR;
+        if (!is_space || !in_space) {
+            *dest_ptr++ = value;
+            ++canonical_header_buffer->len;
         }
 
-        /* raw, unsafe write loop */
-        bool in_space = false;
-        uint8_t *start_ptr = trimmed_value.ptr;
-        uint8_t *end_ptr = trimmed_value.ptr + trimmed_value.len;
-        uint8_t *dest_ptr = canonical_header_buffer->buffer + canonical_header_buffer->len;
-        while (start_ptr < end_ptr) {
-            uint8_t value = *start_ptr;
-            bool is_space = value == ' ';
+        in_space = is_space;
 
-            if (!is_space || !in_space) {
-                *dest_ptr++ = value;
-                ++canonical_header_buffer->len;
-            }
-
-            in_space = is_space;
-
-            ++start_ptr;
-        }
-
-        /* We wrote an actual value, so all subsequent values in this call must be pre-pended with a comma */
-        prepend_comma = true;
+        ++start_ptr;
     }
 
     return AWS_OP_SUCCESS;
@@ -1195,9 +1183,14 @@ static int s_build_canonical_stable_header_list(
         /*
          * X-Amz-Date
          */
-        struct stable_header date_header = {.original_index = additional_header_index++,
-                                            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_date_name),
-                                                       .value = aws_byte_cursor_from_buf(&state->date)}};
+        struct stable_header date_header = {
+            .original_index = additional_header_index++,
+            .header =
+                {
+                    .name = aws_byte_cursor_from_string(g_aws_signing_date_name),
+                    .value = aws_byte_cursor_from_buf(&state->date),
+                },
+        };
 
         if (aws_array_list_push_back(stable_header_list, &date_header)) {
             return AWS_OP_ERR;
@@ -1228,8 +1221,12 @@ static int s_build_canonical_stable_header_list(
     if (state->config.signed_body_header == AWS_SBHT_X_AMZ_CONTENT_SHA256) {
         struct stable_header content_hash_header = {
             .original_index = additional_header_index++,
-            .header = {.name = aws_byte_cursor_from_string(g_aws_signing_content_header_name),
-                       .value = aws_byte_cursor_from_buf(&state->payload_hash)}};
+            .header =
+                {
+                    .name = aws_byte_cursor_from_string(g_aws_signing_content_header_name),
+                    .value = aws_byte_cursor_from_buf(&state->payload_hash),
+                },
+        };
 
         if (aws_array_list_push_back(stable_header_list, &content_hash_header)) {
             return AWS_OP_ERR;
