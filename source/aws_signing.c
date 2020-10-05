@@ -2241,7 +2241,9 @@ int aws_verify_sigv4a_signing(
     const struct aws_signable *signable,
     const struct aws_signing_config_base *base_config,
     struct aws_byte_cursor expected_canonical_request_cursor,
-    struct aws_byte_cursor signature_cursor) {
+    struct aws_byte_cursor signature_cursor,
+    struct aws_byte_cursor ecc_key_pub_x,
+    struct aws_byte_cursor ecc_key_pub_y) {
 
     (void)allocator;
     (void)signable;
@@ -2269,16 +2271,18 @@ int aws_verify_sigv4a_signing(
         return AWS_OP_ERR;
     }
 
+    struct aws_ecc_key_pair *verification_key =
+        aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
+    if (verification_key == NULL) {
+        goto done;
+    }
+
     if (aws_credentials_get_ecc_key_pair(signing_state->config.credentials) == NULL) {
         struct aws_credentials *ecc_credentials =
             aws_credentials_new_ecc_from_aws_credentials(allocator, signing_state->config.credentials);
         aws_credentials_release(signing_state->config.credentials);
         signing_state->config.credentials = ecc_credentials;
         if (signing_state->config.credentials == NULL) {
-            goto done;
-        }
-
-        if (aws_ecc_key_pair_derive_public_key(aws_credentials_get_ecc_key_pair(signing_state->config.credentials))) {
             goto done;
         }
     }
@@ -2298,10 +2302,7 @@ int aws_verify_sigv4a_signing(
     }
 
     if (aws_validate_v4a_authorization_value(
-            allocator,
-            aws_credentials_get_ecc_key_pair(signing_state->config.credentials),
-            aws_byte_cursor_from_buf(&signing_state->string_to_sign),
-            signature_cursor)) {
+            allocator, verification_key, aws_byte_cursor_from_buf(&signing_state->string_to_sign), signature_cursor)) {
         aws_raise_error(AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE);
         goto done;
     }
@@ -2309,6 +2310,9 @@ int aws_verify_sigv4a_signing(
     result = AWS_OP_SUCCESS;
 
 done:
+
+    aws_ecc_key_pair_release(verification_key);
+    aws_signing_state_destroy(signing_state);
 
     return result;
 }
