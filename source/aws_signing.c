@@ -1370,7 +1370,12 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             goto on_cleanup;
         }
 
+        int64_t payload_stream_length = 0;
         if (payload_stream != NULL) {
+            aws_input_stream_get_length(payload_stream, &payload_stream_length);
+        }
+
+        if (payload_stream_length) {
             if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
                 goto on_cleanup;
             }
