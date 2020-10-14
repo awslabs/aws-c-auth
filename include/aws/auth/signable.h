@@ -158,7 +158,7 @@ AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_n
 
 /**
  * Name of the property that holds the canonical request associated with this signable.
- * This property must appear on signables the represent an http request's canonical request.
+ * This property must appear on signables that represent an http request's canonical request.
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_canonical_request_property_name;
 
