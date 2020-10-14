@@ -68,6 +68,16 @@ enum aws_signature_type {
      * This option is not yet supported.
      */
     AWS_ST_HTTP_REQUEST_EVENT,
+
+    /**
+     *
+     */
+    AWS_ST_CANONICAL_REQUEST_HEADERS,
+
+    /**
+     *
+     */
+    AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS,
 };
 
 /**

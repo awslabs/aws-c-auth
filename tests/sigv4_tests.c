@@ -557,6 +557,34 @@ static int s_do_sigv4_test_suite_test(
         aws_signing_state_destroy(signing_state);
     }
 
+    /* 4 - sign via pre-computed canonical request */
+    {
+        struct sigv4_signer_waiter waiter;
+        ASSERT_SUCCESS(s_sigv4_signer_waiter_init(&waiter));
+
+        struct aws_signable *cr_signable = aws_signable_new_canonical_request(
+            allocator, aws_byte_cursor_from_buf(&test_contents.expected_canonical_request));
+
+        config.signature_type = AWS_ST_CANONICAL_REQUEST_HEADERS;
+        ASSERT_SUCCESS(
+            aws_sign_request_aws(allocator, cr_signable, (void *)&config, s_sigv4_signing_complete, &waiter));
+
+        s_sigv4_signer_wait(&waiter);
+
+        struct aws_array_list *headers = NULL;
+        ASSERT_SUCCESS(
+            aws_signing_result_get_property_list(&waiter.result, g_aws_http_headers_property_list_name, &headers));
+        ASSERT_NOT_NULL(headers);
+
+        struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(headers, &auth_header_name);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
+
+        s_sigv4_signer_waiter_clean_up(&waiter);
+
+        aws_signable_destroy(cr_signable);
+    }
+
     aws_credentials_provider_release(config.credentials_provider);
     s_sigv4_test_suite_contents_clean_up(&test_contents);
     aws_signable_destroy(signable);

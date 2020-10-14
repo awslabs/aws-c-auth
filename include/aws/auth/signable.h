@@ -156,6 +156,12 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signature_property_name;
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_previous_signature_property_name;
 
+/**
+ * Name of the property that holds the canonical request associated with this signable.
+ * This property must appear on signables the represent an http request's canonical request.
+ */
+AWS_AUTH_API extern const struct aws_string *g_aws_canonical_request_property_name;
+
 /*
  * Common signable constructors
  */
@@ -186,6 +192,17 @@ struct aws_signable *aws_signable_new_chunk(
     struct aws_allocator *allocator,
     struct aws_input_stream *chunk_data,
     struct aws_byte_cursor previous_signature);
+
+/**
+ * Creates a signable that represents a pre-computed canonical request from an http request
+ * @param allocator memory allocator use to create the signable
+ * @param canonical_request text of the canonical request
+ * @return the new signable object, or NULL if failure
+ */
+AWS_AUTH_API
+struct aws_signable *aws_signable_new_canonical_request(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor canonical_request);
 
 AWS_EXTERN_C_END
 

@@ -42,6 +42,7 @@
 #define SCRATCH_BUF_STARTING_SIZE 256
 #define MAX_AUTHORIZATION_QUERY_PARAM_COUNT 6
 #define DEFAULT_PATH_COMPONENT_COUNT 10
+#define CANONICAL_REQUEST_SPLIT_OVER_ESTIMATE 20
 
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
@@ -209,6 +210,28 @@ void aws_signing_clean_up_signing_tables(void) {
     aws_hash_table_clean_up(&s_forbidden_params);
 }
 
+static bool s_is_header_based_signature_value(enum aws_signature_type signature_type) {
+    switch (signature_type) {
+        case AWS_ST_HTTP_REQUEST_HEADERS:
+        case AWS_ST_CANONICAL_REQUEST_HEADERS:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+static bool s_is_query_param_based_signature_value(enum aws_signature_type signature_type) {
+    switch (signature_type) {
+        case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
+        case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 static bool s_is_signature_type_http_request(enum aws_signature_type signature_type) {
     switch (signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
@@ -224,6 +247,8 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
     switch (state->config.signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
+        case AWS_ST_CANONICAL_REQUEST_HEADERS:
+        case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
             *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
             break;
 
@@ -1677,6 +1702,63 @@ cleanup:
     return result;
 }
 
+static struct aws_byte_cursor s_get_signed_headers_from_canonical_request(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor canonical_request) {
+
+    struct aws_byte_cursor header_cursor;
+    AWS_ZERO_STRUCT(header_cursor);
+
+    struct aws_array_list splits;
+    AWS_ZERO_STRUCT(splits);
+
+    if (aws_array_list_init_dynamic(
+            &splits, allocator, CANONICAL_REQUEST_SPLIT_OVER_ESTIMATE, sizeof(struct aws_byte_cursor))) {
+        return header_cursor;
+    }
+
+    if (aws_byte_cursor_split_on_char(&canonical_request, '\n', &splits)) {
+        goto done;
+    }
+
+    size_t split_count = aws_array_list_length(&splits);
+
+    if (split_count > 1) {
+        aws_array_list_get_at(&splits, &header_cursor, split_count - 2);
+    }
+
+done:
+
+    aws_array_list_clean_up(&splits);
+
+    return header_cursor;
+}
+
+static int s_apply_existing_canonical_request(struct aws_signing_state_aws *state) {
+
+    struct aws_byte_cursor canonical_request_cursor;
+    AWS_ZERO_STRUCT(canonical_request_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_canonical_request_property_name, &canonical_request_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_dynamic(&state->canonical_request, &canonical_request_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor signed_headers_cursor =
+        s_get_signed_headers_from_canonical_request(state->allocator, canonical_request_cursor);
+    if (aws_byte_buf_append_dynamic(&state->signed_headers, &signed_headers_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (s_build_canonical_request_hash(state)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Top-level canonical request construction function.
  * For signature types not associated directly with an http request (chunks, events), this calculates the
@@ -1703,6 +1785,10 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             return s_build_canonical_request_body_chunk(state);
+
+        case AWS_ST_CANONICAL_REQUEST_HEADERS:
+        case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
+            return s_apply_existing_canonical_request(state);
 
         default:
             return AWS_OP_ERR;
@@ -1910,7 +1996,7 @@ static int s_add_authorization_to_result(
     struct aws_byte_cursor name;
     struct aws_byte_cursor value = aws_byte_cursor_from_buf(authorization_value);
 
-    if (state->config.signature_type == AWS_ST_HTTP_REQUEST_HEADERS) {
+    if (s_is_header_based_signature_value(state->config.signature_type)) {
         name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
         if (aws_signing_result_append_property_list(
                 &state->result, g_aws_http_headers_property_list_name, &name, &value)) {
@@ -1918,7 +2004,7 @@ static int s_add_authorization_to_result(
         }
     }
 
-    if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+    if (s_is_query_param_based_signature_value(state->config.signature_type)) {
         name = aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
         if (aws_signing_result_append_property_list(
                 &state->result, g_aws_http_query_params_property_list_name, &name, &value)) {
@@ -2007,7 +2093,7 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
         goto cleanup;
     }
 
-    if ((state->config.signature_type == AWS_ST_HTTP_REQUEST_HEADERS) &&
+    if (s_is_header_based_signature_value(state->config.signature_type) &&
         s_append_authorization_header_preamble(state, &authorization_value)) {
         goto cleanup;
     }
