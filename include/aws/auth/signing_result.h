@@ -158,6 +158,9 @@ int aws_apply_signing_result_to_http_request(
     struct aws_allocator *allocator,
     const struct aws_signing_result *result);
 
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_header_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_SIGNING_RESULT_H */
