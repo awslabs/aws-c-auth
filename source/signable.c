@@ -53,7 +53,7 @@ AWS_STRING_FROM_LITERAL(g_aws_previous_signature_property_name, "previous-signat
 AWS_STRING_FROM_LITERAL(g_aws_canonical_request_property_name, "canonical-request");
 
 /*
- * This is a simple aws_signable wrapper implementation for an s3 chunk
+ * This is a simple aws_signable wrapper implementation for AWS's canonical representation of an http request
  */
 struct aws_signable_canonical_request_impl {
     struct aws_string *canonical_request;
