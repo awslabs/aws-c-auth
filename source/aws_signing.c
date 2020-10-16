@@ -1728,6 +1728,10 @@ cleanup:
     return result;
 }
 
+/*
+ * The canonical header list is the next-to-the-last line on the canonical request, so split by lines and take
+ * the penultimate value.
+ */
 static struct aws_byte_cursor s_get_signed_headers_from_canonical_request(
     struct aws_allocator *allocator,
     struct aws_byte_cursor canonical_request) {
@@ -1760,6 +1764,9 @@ done:
     return header_cursor;
 }
 
+/*
+ * Fill in the signing state values needed by later stages that computing the canonical request would have done.
+ */
 static int s_apply_existing_canonical_request(struct aws_signing_state_aws *state) {
 
     struct aws_byte_cursor canonical_request_cursor;
