@@ -177,7 +177,8 @@ struct aws_signing_config_aws {
 
         /**
          * Controls whether "X-Amz-Security-Token" is omitted from the canonical request.
-         * "X-Amz-Security-Token" is added (as a header or query param) when credentials have a session token.
+         * "X-Amz-Security-Token" is added during signing, as a header or
+         * query param, when credentials have a session token.
          * If false (the default), this parameter is included in the canonical request.
          * If true, this parameter is still added, but omitted from the canonical request.
          */
