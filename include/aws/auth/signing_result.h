@@ -119,13 +119,29 @@ int aws_signing_result_append_property_list(
  * @param list_name name of the list of key-value pairs to get
  * @param out_list output parameter for the list of key-value pairs
  *
- * @return AWS_OP_SUCCESS if the operation was successful, AWS_OP_ERR otherwise
  */
 AWS_AUTH_API
-int aws_signing_result_get_property_list(
+void aws_signing_result_get_property_list(
     const struct aws_signing_result *result,
     const struct aws_string *list_name,
     struct aws_array_list **out_list);
+
+/**
+ * Looks for a property within a named property list on the signing result.  If the list does not exist, or the property
+ * does not exist within the list, *out_value will be set to NULL.
+ *
+ * @param result signing result to query
+ * @param list_name name of the list of key-value pairs to search through for the property
+ * @param property_name name of the property to search for within the list
+ * @param out_value output parameter for the property value, if found
+ *
+ */
+AWS_AUTH_API
+void aws_signing_result_get_property_value_in_property_list(
+    const struct aws_signing_result *result,
+    const struct aws_string *list_name,
+    const struct aws_string *property_name,
+    struct aws_string **out_value);
 
 /*
  * Specific implementation that applies a signing result to a mutable http request
@@ -141,6 +157,9 @@ int aws_apply_signing_result_to_http_request(
     struct aws_http_message *request,
     struct aws_allocator *allocator,
     const struct aws_signing_result *result);
+
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_header_name;
+AWS_AUTH_API extern const struct aws_string *g_aws_signing_authorization_query_param_name;
 
 AWS_EXTERN_C_END
 
