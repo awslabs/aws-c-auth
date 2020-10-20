@@ -68,6 +68,18 @@ enum aws_signature_type {
      * This option is not yet supported.
      */
     AWS_ST_HTTP_REQUEST_EVENT,
+
+    /**
+     * Compute a signature for an http request via it's already-computed canonical request.  Only the authorization
+     * signature header is added to the signing result.
+     */
+    AWS_ST_CANONICAL_REQUEST_HEADERS,
+
+    /**
+     * Compute a signature for an http request via it's already-computed canonical request.  Only the authorization
+     * signature query param is added to the signing result.
+     */
+    AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS,
 };
 
 /**
