@@ -74,7 +74,7 @@ static int s_aws_signable_canonical_request_get_property(
     if (aws_string_eq(name, g_aws_canonical_request_property_name)) {
         *out_value = aws_byte_cursor_from_string(impl->canonical_request);
     } else {
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
 
     return AWS_OP_SUCCESS;
@@ -88,7 +88,9 @@ static int s_aws_signable_canonical_request_get_property_list(
     (void)name;
     (void)out_list;
 
-    return AWS_OP_ERR;
+    *out_list = NULL;
+
+    return aws_raise_error(AWS_ERROR_UNSUPPORTED_OPERATION);
 }
 
 static int s_aws_signable_canonical_request_get_payload_stream(

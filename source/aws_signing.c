@@ -1282,7 +1282,12 @@ static int s_build_canonical_stable_header_list(
          * x-amz-region-set
          */
         if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-            if (s_add_authorization_header(state, stable_header_list, out_required_capacity, aws_byte_cursor_from_string(g_aws_signing_region_set_name), state->config.region)) {
+            if (s_add_authorization_header(
+                    state,
+                    stable_header_list,
+                    out_required_capacity,
+                    aws_byte_cursor_from_string(g_aws_signing_region_set_name),
+                    state->config.region)) {
                 return AWS_OP_ERR;
             }
         }
