@@ -198,7 +198,7 @@ on_error:
     return AWS_OP_ERR;
 }
 
-int aws_signing_result_get_property_list(
+void aws_signing_result_get_property_list(
     const struct aws_signing_result *result,
     const struct aws_string *list_name,
     struct aws_array_list **out_list) {
@@ -211,6 +211,37 @@ int aws_signing_result_get_property_list(
     if (element != NULL) {
         *out_list = element->value;
     }
+}
 
-    return AWS_OP_SUCCESS;
+void aws_signing_result_get_property_value_in_property_list(
+    const struct aws_signing_result *result,
+    const struct aws_string *list_name,
+    const struct aws_string *property_name,
+    struct aws_string **out_value) {
+
+    *out_value = NULL;
+
+    struct aws_array_list *property_list = NULL;
+    aws_signing_result_get_property_list(result, list_name, &property_list);
+    if (property_list == NULL) {
+        return;
+    }
+
+    size_t pair_count = aws_array_list_length(property_list);
+    for (size_t i = 0; i < pair_count; ++i) {
+        struct aws_signing_result_property pair;
+        AWS_ZERO_STRUCT(pair);
+        if (aws_array_list_get_at(property_list, &pair, i)) {
+            continue;
+        }
+
+        if (pair.name == NULL) {
+            continue;
+        }
+
+        if (aws_string_eq_ignore_case(property_name, pair.name)) {
+            *out_value = pair.value;
+            break;
+        }
+    }
 }

@@ -295,34 +295,6 @@ static int s_initialize_test_from_cursor(
     return s_initialize_test_from_contents(signable, config, allocator, contents, skip_date_header, false);
 }
 
-struct aws_byte_cursor s_get_value_from_result(
-    const struct aws_array_list *pair_list,
-    const struct aws_byte_cursor *name) {
-    struct aws_byte_cursor result;
-    AWS_ZERO_STRUCT(result);
-
-    size_t pair_count = aws_array_list_length(pair_list);
-    for (size_t i = 0; i < pair_count; ++i) {
-        struct aws_signing_result_property pair;
-        AWS_ZERO_STRUCT(pair);
-        if (aws_array_list_get_at(pair_list, &pair, i)) {
-            continue;
-        }
-
-        if (pair.name == NULL) {
-            continue;
-        }
-
-        struct aws_byte_cursor pair_name_cursor = aws_byte_cursor_from_string(pair.name);
-        if (aws_byte_cursor_eq_ignore_case(&pair_name_cursor, name)) {
-            result = aws_byte_cursor_from_string(pair.value);
-            break;
-        }
-    }
-
-    return result;
-}
-
 struct sigv4_signer_waiter {
     struct aws_mutex lock;
     struct aws_condition_variable cv;
@@ -425,7 +397,6 @@ static int s_do_sigv4_test_suite_test(
     config.credentials = credentials;
 
     /* Get constants and expected values */
-    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
     struct aws_byte_cursor expected_auth_header = aws_byte_cursor_from_buf(&test_contents.expected_auth_header);
 
     {
@@ -453,33 +424,28 @@ static int s_do_sigv4_test_suite_test(
         /* 1c - validate authorization value */
         ASSERT_TRUE(aws_signing_build_authorization_value(signing_state) == AWS_OP_SUCCESS);
 
-        struct aws_array_list *headers = NULL;
-        ASSERT_TRUE(
-            aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &headers) ==
-            AWS_OP_SUCCESS);
+        struct aws_string *auth_header_value = NULL;
+        aws_signing_result_get_property_value_in_property_list(
+            result, g_aws_http_headers_property_list_name, g_aws_signing_authorization_header_name, &auth_header_value);
 
-        struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_auth_header.ptr, expected_auth_header.len, auth_header_value.ptr, auth_header_value.len);
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value->bytes, auth_header_value->len);
 
         struct aws_byte_cursor session_token = aws_credentials_get_session_token(credentials);
         if (session_token.len > 0) {
-            struct aws_byte_cursor session_token_header_name =
-                aws_byte_cursor_from_string(g_aws_signing_security_token_name);
-
-            headers = NULL;
-            ASSERT_TRUE(
-                aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &headers) ==
-                AWS_OP_SUCCESS);
-
-            struct aws_byte_cursor session_header_value = s_get_value_from_result(headers, &session_token_header_name);
+            struct aws_string *session_header_value = NULL;
+            aws_signing_result_get_property_value_in_property_list(
+                result,
+                g_aws_http_headers_property_list_name,
+                g_aws_signing_security_token_name,
+                &session_header_value);
             struct aws_byte_cursor expected_session_header = session_token;
 
             ASSERT_BIN_ARRAYS_EQUALS(
                 expected_session_header.ptr,
                 expected_session_header.len,
-                session_header_value.ptr,
-                session_header_value.len);
+                session_header_value->bytes,
+                session_header_value->len);
         }
 
         aws_signing_state_destroy(signing_state);
@@ -494,14 +460,15 @@ static int s_do_sigv4_test_suite_test(
 
         s_sigv4_signer_wait(&waiter);
 
-        struct aws_array_list *headers = NULL;
-        ASSERT_SUCCESS(
-            aws_signing_result_get_property_list(&waiter.result, g_aws_http_headers_property_list_name, &headers));
-        ASSERT_NOT_NULL(headers);
+        struct aws_string *auth_header_value = NULL;
+        aws_signing_result_get_property_value_in_property_list(
+            &waiter.result,
+            g_aws_http_headers_property_list_name,
+            g_aws_signing_authorization_header_name,
+            &auth_header_value);
 
-        struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(headers, &auth_header_name);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value->bytes, auth_header_value->len);
 
         s_sigv4_signer_waiter_clean_up(&waiter);
     }
@@ -521,22 +488,7 @@ static int s_do_sigv4_test_suite_test(
         ASSERT_SUCCESS(aws_signing_build_string_to_sign(signing_state));
         ASSERT_SUCCESS(aws_signing_build_authorization_value(signing_state));
 
-        struct aws_array_list *params = NULL;
-        ASSERT_SUCCESS(
-            aws_signing_result_get_property_list(result, g_aws_http_query_params_property_list_name, &params));
-        ASSERT_NOT_NULL(params);
-
-        struct aws_byte_cursor algorithm_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name);
-        struct aws_byte_cursor credential_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name);
-        struct aws_byte_cursor signed_headers_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name);
-        struct aws_byte_cursor auth_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
-
-        struct aws_byte_cursor param_value;
-
+        struct aws_string *param_value = NULL;
         struct aws_byte_buf expected_value_uri_encoded;
         aws_byte_buf_init(&expected_value_uri_encoded, allocator, 256);
 
@@ -544,13 +496,18 @@ static int s_do_sigv4_test_suite_test(
          * state.  I'm not sure a redundant recalculation of the expected value for credential scope and signed headers
          * would have much value though.
          */
-        param_value = s_get_value_from_result(params, &algorithm_query_param_name);
+        aws_signing_result_get_property_value_in_property_list(
+            result, g_aws_http_query_params_property_list_name, g_aws_signing_algorithm_query_param_name, &param_value);
         struct aws_byte_cursor unencoded_algorithm_param_cursor = aws_byte_cursor_from_c_str("AWS4-HMAC-SHA256");
         aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_algorithm_param_cursor);
         struct aws_byte_cursor expected_algorithm = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
-        ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value.ptr, param_value.len);
+        ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value->bytes, param_value->len);
 
-        param_value = s_get_value_from_result(params, &credential_query_param_name);
+        aws_signing_result_get_property_value_in_property_list(
+            result,
+            g_aws_http_query_params_property_list_name,
+            g_aws_signing_credential_query_param_name,
+            &param_value);
         struct aws_byte_cursor unencoded_credential_param_cursor =
             aws_byte_cursor_from_buf(&signing_state->access_credential_scope);
         expected_value_uri_encoded.len = 0;
@@ -558,23 +515,62 @@ static int s_do_sigv4_test_suite_test(
 
         struct aws_byte_cursor expected_credential_param_value = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_credential_param_value.ptr, expected_credential_param_value.len, param_value.ptr, param_value.len);
+            expected_credential_param_value.ptr,
+            expected_credential_param_value.len,
+            param_value->bytes,
+            param_value->len);
 
-        param_value = s_get_value_from_result(params, &signed_headers_query_param_name);
+        aws_signing_result_get_property_value_in_property_list(
+            result,
+            g_aws_http_query_params_property_list_name,
+            g_aws_signing_signed_headers_query_param_name,
+            &param_value);
         struct aws_byte_cursor unencoded_signed_headers_param_cursor =
             aws_byte_cursor_from_buf(&signing_state->signed_headers);
         expected_value_uri_encoded.len = 0;
         aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_signed_headers_param_cursor);
         struct aws_byte_cursor expected_signed_headers = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_signed_headers.ptr, expected_signed_headers.len, param_value.ptr, param_value.len);
+            expected_signed_headers.ptr, expected_signed_headers.len, param_value->bytes, param_value->len);
 
-        param_value = s_get_value_from_result(params, &auth_query_param_name);
-        ASSERT_TRUE(param_value.len > 0); /* Is there are least something? */
+        aws_signing_result_get_property_value_in_property_list(
+            result,
+            g_aws_http_query_params_property_list_name,
+            g_aws_signing_authorization_query_param_name,
+            &param_value);
+        ASSERT_TRUE(param_value->len > 0); /* Is there at least something? */
 
         aws_byte_buf_clean_up(&expected_value_uri_encoded);
 
         aws_signing_state_destroy(signing_state);
+    }
+
+    /* 4 - sign via pre-computed canonical request */
+    {
+        struct sigv4_signer_waiter waiter;
+        ASSERT_SUCCESS(s_sigv4_signer_waiter_init(&waiter));
+
+        struct aws_signable *cr_signable = aws_signable_new_canonical_request(
+            allocator, aws_byte_cursor_from_buf(&test_contents.expected_canonical_request));
+
+        config.signature_type = AWS_ST_CANONICAL_REQUEST_HEADERS;
+        ASSERT_SUCCESS(
+            aws_sign_request_aws(allocator, cr_signable, (void *)&config, s_sigv4_signing_complete, &waiter));
+
+        s_sigv4_signer_wait(&waiter);
+
+        struct aws_string *auth_header_value = NULL;
+        aws_signing_result_get_property_value_in_property_list(
+            &waiter.result,
+            g_aws_http_headers_property_list_name,
+            g_aws_signing_authorization_header_name,
+            &auth_header_value);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value->bytes, auth_header_value->len);
+
+        s_sigv4_signer_waiter_clean_up(&waiter);
+
+        aws_signable_destroy(cr_signable);
     }
 
     aws_credentials_provider_release(config.credentials_provider);

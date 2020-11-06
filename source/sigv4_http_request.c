@@ -32,9 +32,9 @@ static int s_build_request_uri(
 
     /* first let's see if we need to do anything at all */
     struct aws_array_list *result_param_list = NULL;
-    if (aws_signing_result_get_property_list(
-            signing_result, g_aws_http_query_params_property_list_name, &result_param_list) ||
-        result_param_list == NULL) {
+    aws_signing_result_get_property_list(
+        signing_result, g_aws_http_query_params_property_list_name, &result_param_list);
+    if (result_param_list == NULL) {
         return AWS_OP_SUCCESS;
     }
 
@@ -138,12 +138,9 @@ int aws_apply_signing_result_to_http_request(
     }
 
     /* headers */
-    struct aws_array_list *result_header_list = NULL;
-    if (aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &result_header_list)) {
-        return AWS_OP_ERR;
-    }
-
     size_t signing_header_count = 0;
+    struct aws_array_list *result_header_list = NULL;
+    aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &result_header_list);
     if (result_header_list != NULL) {
         signing_header_count = aws_array_list_length(result_header_list);
     }
