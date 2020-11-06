@@ -22,6 +22,7 @@
 #include <aws/io/stream.h>
 #include <aws/io/uri.h>
 
+#include <aws/auth/signing_config.h>
 #include <ctype.h>
 
 #include "credentials_provider_utils.h"
@@ -34,9 +35,11 @@
 AWS_STATIC_STRING_FROM_LITERAL(s_header_canonical_request_filename, "header-canonical-request.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_string_to_sign_filename, "header-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_header_signed_request_filename, "header-signed-request.txt");
+AWS_STATIC_STRING_FROM_LITERAL(s_header_signature_filename, "header-signature.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_query_canonical_request_filename, "query-canonical-request.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_query_string_to_sign_filename, "query-string-to-sign.txt");
 AWS_STATIC_STRING_FROM_LITERAL(s_query_signed_request_filename, "query-signed-request.txt");
+AWS_STATIC_STRING_FROM_LITERAL(s_query_signature_filename, "query-signature.txt");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_public_key_filename, "public-key.json");
 
@@ -76,6 +79,18 @@ static const struct aws_string *s_get_signed_request_filename(enum aws_signature
     }
 }
 
+static const struct aws_string *s_get_signature_filename(enum aws_signature_type signature_type) {
+    switch (signature_type) {
+        case AWS_ST_HTTP_REQUEST_HEADERS:
+            return s_header_signature_filename;
+        case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
+            return s_query_signature_filename;
+
+        default:
+            return NULL;
+    }
+}
+
 struct v4_test_case_contents {
     struct aws_allocator *allocator;
     struct aws_byte_buf context;
@@ -84,6 +99,7 @@ struct v4_test_case_contents {
     struct aws_byte_buf expected_canonical_request;
     struct aws_byte_buf expected_string_to_sign;
     struct aws_byte_buf sample_signed_request;
+    struct aws_byte_buf sample_signature;
 };
 
 static void s_strip_windows_line_endings(struct aws_byte_buf *buffer) {
@@ -157,6 +173,15 @@ static int s_v4_test_case_context_init_from_file_set(
 
     s_strip_windows_line_endings(&contents->sample_signed_request);
 
+    s_load_test_case_file(
+        allocator,
+        parent_folder,
+        test_name,
+        aws_string_c_str(s_get_signature_filename(signature_type)),
+        &contents->sample_signature);
+
+    s_strip_windows_line_endings(&contents->sample_signature);
+
     return AWS_OP_SUCCESS;
 }
 
@@ -168,6 +193,7 @@ static void s_v4_test_case_contents_clean_up(struct v4_test_case_contents *conte
         aws_byte_buf_clean_up(&contents->expected_canonical_request);
         aws_byte_buf_clean_up(&contents->expected_string_to_sign);
         aws_byte_buf_clean_up(&contents->sample_signed_request);
+        aws_byte_buf_clean_up(&contents->sample_signature);
 
         contents->allocator = NULL;
     }
@@ -201,6 +227,9 @@ struct v4_test_context {
     struct aws_http_message *request;
 
     bool should_generate_test_case;
+
+    struct aws_string *canonical_signing_auth_value;
+    bool omit_session_token;
 };
 
 static void s_v4_test_context_clean_up(struct v4_test_context *context) {
@@ -223,6 +252,8 @@ static void s_v4_test_context_clean_up(struct v4_test_context *context) {
 
     aws_mem_release(context->allocator, context->config);
     aws_signable_destroy(context->signable);
+
+    aws_string_destroy(context->canonical_signing_auth_value);
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_empty_empty_string, "\0");
@@ -236,6 +267,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_timestamp_name, "timestamp");
 AWS_STATIC_STRING_FROM_LITERAL(s_normalize_name, "normalize");
 AWS_STATIC_STRING_FROM_LITERAL(s_body_name, "sign_body");
 AWS_STATIC_STRING_FROM_LITERAL(s_expiration_name, "expiration_in_seconds");
+AWS_STATIC_STRING_FROM_LITERAL(s_omit_token_name, "omit_session_token");
 
 static int s_v4_test_context_parse_context_file(struct v4_test_context *context) {
     struct aws_byte_buf *document = &context->test_case_data.context;
@@ -345,6 +377,11 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     }
 
     context->expiration_in_seconds = expiration_node->valueint;
+
+    cJSON *omit_token_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_omit_token_name));
+    if (omit_token_node != NULL && cJSON_IsBool(omit_token_node)) {
+        context->omit_session_token = cJSON_IsTrue(omit_token_node);
+    }
 
     result = AWS_OP_SUCCESS;
 
@@ -524,6 +561,7 @@ static int s_v4_test_context_init_signing_config(
     context->config->service = aws_byte_cursor_from_string(context->service);
     context->config->flags.use_double_uri_encode = true;
     context->config->flags.should_normalize_uri_path = context->should_normalize;
+    context->config->flags.omit_session_token = context->omit_session_token;
 
     /* ToDo: make the tests more fine-grained now that we have updated payload signing controls */
     if (context->should_sign_body) {
@@ -705,6 +743,10 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
     struct v4_test_context *context = userdata;
 
     aws_apply_signing_result_to_http_request(context->request, context->allocator, result);
+
+    struct aws_string *auth_value = NULL;
+    aws_signing_result_get_property(result, g_aws_signature_property_name, &auth_value);
+    context->canonical_signing_auth_value = aws_string_new_from_string(context->allocator, auth_value);
 
     /* Mark results complete */
     aws_mutex_lock(&context->lock);
@@ -1182,14 +1224,12 @@ static int s_check_signed_request(struct v4_test_context *test_context, struct a
     return AWS_OP_SUCCESS;
 }
 
-static int s_do_sigv4_test_signing(
+static int s_do_sigv4_test_end_to_end(
     struct aws_allocator *allocator,
     const char *parent_folder,
     const char *test_name,
     enum aws_signing_algorithm algorithm,
     enum aws_signature_type signature_type) {
-
-    ASSERT_SUCCESS(s_do_sigv4_test_piecewise(allocator, parent_folder, test_name, algorithm, signature_type));
 
     struct v4_test_context test_context;
     AWS_ZERO_STRUCT(test_context);
@@ -1210,6 +1250,95 @@ static int s_do_sigv4_test_signing(
     }
 
     s_v4_test_context_clean_up(&test_context);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_write_signature_to_file(
+    struct v4_test_context *test_context,
+    const char *parent_folder,
+    const char *test_name,
+    const struct aws_string *filename) {
+    char path[1024];
+    snprintf(path, AWS_ARRAY_SIZE(path), "./%s/%s/%s", parent_folder, test_name, aws_string_c_str(filename));
+
+    FILE *fp = fopen(path, "w");
+    if (fp == NULL) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor signature_cursor = aws_byte_cursor_from_string(test_context->canonical_signing_auth_value);
+    fprintf(fp, PRInSTR, AWS_BYTE_CURSOR_PRI(signature_cursor));
+
+    fclose(fp);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_do_sigv4_test_canonical_only(
+    struct aws_allocator *allocator,
+    const char *parent_folder,
+    const char *test_name,
+    enum aws_signing_algorithm algorithm,
+    enum aws_signature_type signature_type) {
+
+    struct v4_test_context test_context;
+    AWS_ZERO_STRUCT(test_context);
+
+    ASSERT_SUCCESS(
+        s_v4_test_context_init(&test_context, allocator, parent_folder, test_name, algorithm, signature_type));
+
+    /* replace the http request signable with a canonical request signable */
+    aws_signable_destroy(test_context.signable);
+    test_context.signable = aws_signable_new_canonical_request(
+        allocator, aws_byte_cursor_from_buf(&test_context.test_case_data.expected_canonical_request));
+    if (signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+        test_context.config->signature_type = AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS;
+    } else {
+        test_context.config->signature_type = AWS_ST_CANONICAL_REQUEST_HEADERS;
+    }
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, test_context.signable, (void *)test_context.config, s_on_signing_complete, &test_context));
+
+    s_wait_on_signing_complete(&test_context);
+
+    if (test_context.should_generate_test_case) {
+        ASSERT_SUCCESS(s_write_signature_to_file(
+            &test_context, parent_folder, test_name, s_get_signature_filename(signature_type)));
+    } else {
+        if (algorithm == AWS_SIGNING_ALGORITHM_V4) {
+            ASSERT_BIN_ARRAYS_EQUALS(
+                test_context.test_case_data.sample_signature.buffer,
+                test_context.test_case_data.sample_signature.len,
+                test_context.canonical_signing_auth_value->bytes,
+                test_context.canonical_signing_auth_value->len);
+        } else {
+            ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+                test_context.allocator,
+                test_context.verification_key,
+                aws_byte_cursor_from_buf(&test_context.test_case_data.expected_string_to_sign),
+                aws_byte_cursor_from_string(test_context.canonical_signing_auth_value)));
+        }
+    }
+
+    s_v4_test_context_clean_up(&test_context);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_do_sigv4_test_signing(
+    struct aws_allocator *allocator,
+    const char *parent_folder,
+    const char *test_name,
+    enum aws_signing_algorithm algorithm,
+    enum aws_signature_type signature_type) {
+
+    ASSERT_SUCCESS(s_do_sigv4_test_piecewise(allocator, parent_folder, test_name, algorithm, signature_type));
+
+    ASSERT_SUCCESS(s_do_sigv4_test_end_to_end(allocator, parent_folder, test_name, algorithm, signature_type));
+
+    ASSERT_SUCCESS(s_do_sigv4_test_canonical_only(allocator, parent_folder, test_name, algorithm, signature_type));
 
     return AWS_OP_SUCCESS;
 }
