@@ -191,9 +191,11 @@ struct aws_signing_config_aws {
         uint32_t should_normalize_uri_path : 1;
 
         /**
-         * Should the "X-Amz-Security-Token" query param be omitted?
-         * Normally, this parameter is added during signing if the credentials have a session token.
-         * The only known case where this should be true is when signing a websocket handshake to IoT Core.
+         * Controls whether "X-Amz-Security-Token" is omitted from the canonical request.
+         * "X-Amz-Security-Token" is added during signing, as a header or
+         * query param, when credentials have a session token.
+         * If false (the default), this parameter is included in the canonical request.
+         * If true, this parameter is still added, but omitted from the canonical request.
          */
         uint32_t omit_session_token : 1;
     } flags;
