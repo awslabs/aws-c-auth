@@ -262,6 +262,8 @@ static int s_verify_fixed_ecc_key_private(struct aws_ecc_key_pair *key, struct a
 static int s_credentials_derive_ecc_key_fixed(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
+    aws_auth_library_init(allocator);
+
     struct aws_credentials *creds = aws_credentials_new_from_string(
         allocator,
         s_ecc_derive_fixed_access_key_id_test_value,
@@ -278,6 +280,8 @@ static int s_credentials_derive_ecc_key_fixed(struct aws_allocator *allocator, v
     aws_ecc_key_pair_release(derived_key);
     aws_credentials_release(creds);
 
+    aws_auth_library_clean_up();
+
     return 0;
 }
 
@@ -285,6 +289,8 @@ AWS_TEST_CASE(credentials_derive_ecc_key_fixed, s_credentials_derive_ecc_key_fix
 
 static int s_credentials_new_ecc_fixed(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
+
+    aws_auth_library_init(allocator);
 
     struct aws_credentials *creds = aws_credentials_new_from_string(
         allocator,
@@ -304,6 +310,8 @@ static int s_credentials_new_ecc_fixed(struct aws_allocator *allocator, void *ct
     aws_credentials_release(derived_credentials);
     aws_credentials_release(creds);
 
+    aws_auth_library_clean_up();
+    
     return 0;
 }
 
