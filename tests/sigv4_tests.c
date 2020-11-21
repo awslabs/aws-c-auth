@@ -114,8 +114,15 @@ AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_region, "us-east-1");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_access_key_id, "AKIDEXAMPLE");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_secret_access_key, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
 AWS_STATIC_STRING_FROM_LITERAL(
-    s_test_suite_session_token,
+    s_test_suite_session_token_1,
     "6e86291e8372ff2a2260956d9b8aae1d763fbf315fa00fa31553b73ebf194267");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_suite_session_token_2,
+    "AQoDYXdzEPT//////////wEXAMPLEtc764bNrC9SAPBSM22wDOk4x4HIZ8j4FZTwdQWLWsKWHG"
+    "BuFqwAeMicRXmxfpSPfIeoIYRqTflfKD8YUuwthAx7mSEI/qkPpKPi/kMcGdQrmGdeehM4IC1N"
+    "tBmUpp2wUE8phUZampKsburEDy0KPkyQDYwT7WZ0wq5VSXDvp75YU9HFvlRd8Tx6q6fE8YQcHN"
+    "VXAkiY9q6d+xo0rKwT38xVqr7ZD0u0iPPkUL64lIZbqBAz+scqKmlzm8FDrypNC9Yjc8fPOLn9"
+    "FX9KSYvKTr4rvx3iSIlTJabIQwj2ICCR/oLxBA==");
 AWS_STATIC_STRING_FROM_LITERAL(s_empty_token, "");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_test_suite_date, "2015-08-30T12:36:00Z");
@@ -125,7 +132,8 @@ static int s_initialize_test_from_contents(
     struct aws_signing_config_aws *config,
     struct aws_allocator *allocator,
     struct sigv4_test_suite_contents *contents,
-    bool ignore_date_header) {
+    bool ignore_date_header,
+    bool omit_session_token) {
 
     struct aws_array_list request_lines;
     if (aws_array_list_init_dynamic(&request_lines, allocator, 10, sizeof(struct aws_byte_cursor))) {
@@ -196,10 +204,19 @@ static int s_initialize_test_from_contents(
             aws_byte_cursor_advance(&current_line, current_header.name.len + 1);
             current_header.value = current_line;
 
+            /* usually we ignore X-Amz-Date header from .req file, and pass value in manually */
             struct aws_byte_cursor date_name_cursor = aws_byte_cursor_from_string(g_aws_signing_date_name);
-            if (!ignore_date_header || !aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor)) {
-                aws_array_list_push_back(&contents->header_set, &current_header);
+            if (aws_byte_cursor_eq_ignore_case(&current_header.name, &date_name_cursor) && ignore_date_header) {
+                continue;
             }
+
+            /* ignore X-Amz-Security-Token header from .req file, we pass value in manually */
+            struct aws_byte_cursor session_token_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+            if (aws_byte_cursor_eq_ignore_case(&current_header.name, &session_token_name)) {
+                continue;
+            }
+
+            aws_array_list_push_back(&contents->header_set, &current_header);
         }
     }
 
@@ -232,6 +249,7 @@ static int s_initialize_test_from_contents(
     config->service = aws_byte_cursor_from_string(s_test_suite_service);
     config->flags.use_double_uri_encode = true;
     config->flags.should_normalize_uri_path = true;
+    config->flags.omit_session_token = omit_session_token;
     config->signed_body_header = AWS_SBHT_NONE;
 
     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_test_suite_date);
@@ -250,13 +268,14 @@ static int s_initialize_test_from_file(
     struct aws_allocator *allocator,
     struct sigv4_test_suite_contents *contents,
     const char *test_name,
-    const char *parent_folder) {
+    const char *parent_folder,
+    bool omit_session_token) {
 
     if (s_sigv4_test_suite_contents_init_from_file_set(contents, allocator, parent_folder, test_name)) {
         return AWS_OP_ERR;
     }
 
-    return s_initialize_test_from_contents(signable, config, allocator, contents, true);
+    return s_initialize_test_from_contents(signable, config, allocator, contents, true, omit_session_token);
 }
 
 static int s_initialize_test_from_cursor(
@@ -273,35 +292,7 @@ static int s_initialize_test_from_cursor(
         return AWS_OP_ERR;
     }
 
-    return s_initialize_test_from_contents(signable, config, allocator, contents, skip_date_header);
-}
-
-struct aws_byte_cursor s_get_value_from_result(
-    const struct aws_array_list *pair_list,
-    const struct aws_byte_cursor *name) {
-    struct aws_byte_cursor result;
-    AWS_ZERO_STRUCT(result);
-
-    size_t pair_count = aws_array_list_length(pair_list);
-    for (size_t i = 0; i < pair_count; ++i) {
-        struct aws_signing_result_property pair;
-        AWS_ZERO_STRUCT(pair);
-        if (aws_array_list_get_at(pair_list, &pair, i)) {
-            continue;
-        }
-
-        if (pair.name == NULL) {
-            continue;
-        }
-
-        struct aws_byte_cursor pair_name_cursor = aws_byte_cursor_from_string(pair.name);
-        if (aws_byte_cursor_eq_ignore_case(&pair_name_cursor, name)) {
-            result = aws_byte_cursor_from_string(pair.value);
-            break;
-        }
-    }
-
-    return result;
+    return s_initialize_test_from_contents(signable, config, allocator, contents, skip_date_header, false);
 }
 
 struct sigv4_signer_waiter {
@@ -385,7 +376,8 @@ static int s_do_sigv4_test_suite_test(
     struct aws_allocator *allocator,
     const char *test_name,
     const char *parent_folder,
-    struct aws_credentials *credentials) {
+    struct aws_credentials *credentials,
+    bool omit_session_token) {
 
     /* Set up everything */
     aws_auth_library_init(allocator);
@@ -398,14 +390,13 @@ static int s_do_sigv4_test_suite_test(
     struct aws_signing_config_aws config;
     AWS_ZERO_STRUCT(config);
 
-    ASSERT_SUCCESS(
-        s_initialize_test_from_file(&signable, &config, allocator, &test_contents, test_name, parent_folder));
+    ASSERT_SUCCESS(s_initialize_test_from_file(
+        &signable, &config, allocator, &test_contents, test_name, parent_folder, omit_session_token));
 
     ASSERT_NOT_NULL(credentials);
     config.credentials = credentials;
 
     /* Get constants and expected values */
-    struct aws_byte_cursor auth_header_name = aws_byte_cursor_from_string(g_aws_signing_authorization_header_name);
     struct aws_byte_cursor expected_auth_header = aws_byte_cursor_from_buf(&test_contents.expected_auth_header);
 
     {
@@ -433,33 +424,28 @@ static int s_do_sigv4_test_suite_test(
         /* 1c - validate authorization value */
         ASSERT_TRUE(aws_signing_build_authorization_value(signing_state) == AWS_OP_SUCCESS);
 
-        struct aws_array_list *headers = NULL;
-        ASSERT_TRUE(
-            aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &headers) ==
-            AWS_OP_SUCCESS);
+        struct aws_string *auth_header_value = NULL;
+        aws_signing_result_get_property_value_in_property_list(
+            result, g_aws_http_headers_property_list_name, g_aws_signing_authorization_header_name, &auth_header_value);
 
-        struct aws_byte_cursor auth_header_value = s_get_value_from_result(headers, &auth_header_name);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_auth_header.ptr, expected_auth_header.len, auth_header_value.ptr, auth_header_value.len);
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value->bytes, auth_header_value->len);
 
         struct aws_byte_cursor session_token = aws_credentials_get_session_token(credentials);
         if (session_token.len > 0) {
-            struct aws_byte_cursor session_token_header_name =
-                aws_byte_cursor_from_string(g_aws_signing_security_token_name);
-
-            headers = NULL;
-            ASSERT_TRUE(
-                aws_signing_result_get_property_list(result, g_aws_http_headers_property_list_name, &headers) ==
-                AWS_OP_SUCCESS);
-
-            struct aws_byte_cursor session_header_value = s_get_value_from_result(headers, &session_token_header_name);
+            struct aws_string *session_header_value = NULL;
+            aws_signing_result_get_property_value_in_property_list(
+                result,
+                g_aws_http_headers_property_list_name,
+                g_aws_signing_security_token_name,
+                &session_header_value);
             struct aws_byte_cursor expected_session_header = session_token;
 
             ASSERT_BIN_ARRAYS_EQUALS(
                 expected_session_header.ptr,
                 expected_session_header.len,
-                session_header_value.ptr,
-                session_header_value.len);
+                session_header_value->bytes,
+                session_header_value->len);
         }
 
         aws_signing_state_destroy(signing_state);
@@ -474,14 +460,15 @@ static int s_do_sigv4_test_suite_test(
 
         s_sigv4_signer_wait(&waiter);
 
-        struct aws_array_list *headers = NULL;
-        ASSERT_SUCCESS(
-            aws_signing_result_get_property_list(&waiter.result, g_aws_http_headers_property_list_name, &headers));
-        ASSERT_NOT_NULL(headers);
+        struct aws_string *auth_header_value = NULL;
+        aws_signing_result_get_property_value_in_property_list(
+            &waiter.result,
+            g_aws_http_headers_property_list_name,
+            g_aws_signing_authorization_header_name,
+            &auth_header_value);
 
-        struct aws_byte_cursor auth_header_value2 = s_get_value_from_result(headers, &auth_header_name);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_auth_header.ptr, expected_auth_header.len, auth_header_value2.ptr, auth_header_value2.len);
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value->bytes, auth_header_value->len);
 
         s_sigv4_signer_waiter_clean_up(&waiter);
     }
@@ -501,22 +488,7 @@ static int s_do_sigv4_test_suite_test(
         ASSERT_SUCCESS(aws_signing_build_string_to_sign(signing_state));
         ASSERT_SUCCESS(aws_signing_build_authorization_value(signing_state));
 
-        struct aws_array_list *params = NULL;
-        ASSERT_SUCCESS(
-            aws_signing_result_get_property_list(result, g_aws_http_query_params_property_list_name, &params));
-        ASSERT_NOT_NULL(params);
-
-        struct aws_byte_cursor algorithm_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_algorithm_query_param_name);
-        struct aws_byte_cursor credential_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_credential_query_param_name);
-        struct aws_byte_cursor signed_headers_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_signed_headers_query_param_name);
-        struct aws_byte_cursor auth_query_param_name =
-            aws_byte_cursor_from_string(g_aws_signing_authorization_query_param_name);
-
-        struct aws_byte_cursor param_value;
-
+        struct aws_string *param_value = NULL;
         struct aws_byte_buf expected_value_uri_encoded;
         aws_byte_buf_init(&expected_value_uri_encoded, allocator, 256);
 
@@ -524,13 +496,18 @@ static int s_do_sigv4_test_suite_test(
          * state.  I'm not sure a redundant recalculation of the expected value for credential scope and signed headers
          * would have much value though.
          */
-        param_value = s_get_value_from_result(params, &algorithm_query_param_name);
+        aws_signing_result_get_property_value_in_property_list(
+            result, g_aws_http_query_params_property_list_name, g_aws_signing_algorithm_query_param_name, &param_value);
         struct aws_byte_cursor unencoded_algorithm_param_cursor = aws_byte_cursor_from_c_str("AWS4-HMAC-SHA256");
         aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_algorithm_param_cursor);
         struct aws_byte_cursor expected_algorithm = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
-        ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value.ptr, param_value.len);
+        ASSERT_BIN_ARRAYS_EQUALS(expected_algorithm.ptr, expected_algorithm.len, param_value->bytes, param_value->len);
 
-        param_value = s_get_value_from_result(params, &credential_query_param_name);
+        aws_signing_result_get_property_value_in_property_list(
+            result,
+            g_aws_http_query_params_property_list_name,
+            g_aws_signing_credential_query_param_name,
+            &param_value);
         struct aws_byte_cursor unencoded_credential_param_cursor =
             aws_byte_cursor_from_buf(&signing_state->access_credential_scope);
         expected_value_uri_encoded.len = 0;
@@ -538,23 +515,62 @@ static int s_do_sigv4_test_suite_test(
 
         struct aws_byte_cursor expected_credential_param_value = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_credential_param_value.ptr, expected_credential_param_value.len, param_value.ptr, param_value.len);
+            expected_credential_param_value.ptr,
+            expected_credential_param_value.len,
+            param_value->bytes,
+            param_value->len);
 
-        param_value = s_get_value_from_result(params, &signed_headers_query_param_name);
+        aws_signing_result_get_property_value_in_property_list(
+            result,
+            g_aws_http_query_params_property_list_name,
+            g_aws_signing_signed_headers_query_param_name,
+            &param_value);
         struct aws_byte_cursor unencoded_signed_headers_param_cursor =
             aws_byte_cursor_from_buf(&signing_state->signed_headers);
         expected_value_uri_encoded.len = 0;
         aws_byte_buf_append_encoding_uri_param(&expected_value_uri_encoded, &unencoded_signed_headers_param_cursor);
         struct aws_byte_cursor expected_signed_headers = aws_byte_cursor_from_buf(&expected_value_uri_encoded);
         ASSERT_BIN_ARRAYS_EQUALS(
-            expected_signed_headers.ptr, expected_signed_headers.len, param_value.ptr, param_value.len);
+            expected_signed_headers.ptr, expected_signed_headers.len, param_value->bytes, param_value->len);
 
-        param_value = s_get_value_from_result(params, &auth_query_param_name);
-        ASSERT_TRUE(param_value.len > 0); /* Is there are least something? */
+        aws_signing_result_get_property_value_in_property_list(
+            result,
+            g_aws_http_query_params_property_list_name,
+            g_aws_signing_authorization_query_param_name,
+            &param_value);
+        ASSERT_TRUE(param_value->len > 0); /* Is there at least something? */
 
         aws_byte_buf_clean_up(&expected_value_uri_encoded);
 
         aws_signing_state_destroy(signing_state);
+    }
+
+    /* 4 - sign via pre-computed canonical request */
+    {
+        struct sigv4_signer_waiter waiter;
+        ASSERT_SUCCESS(s_sigv4_signer_waiter_init(&waiter));
+
+        struct aws_signable *cr_signable = aws_signable_new_canonical_request(
+            allocator, aws_byte_cursor_from_buf(&test_contents.expected_canonical_request));
+
+        config.signature_type = AWS_ST_CANONICAL_REQUEST_HEADERS;
+        ASSERT_SUCCESS(
+            aws_sign_request_aws(allocator, cr_signable, (void *)&config, s_sigv4_signing_complete, &waiter));
+
+        s_sigv4_signer_wait(&waiter);
+
+        struct aws_string *auth_header_value = NULL;
+        aws_signing_result_get_property_value_in_property_list(
+            &waiter.result,
+            g_aws_http_headers_property_list_name,
+            g_aws_signing_authorization_header_name,
+            &auth_header_value);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_auth_header.ptr, expected_auth_header.len, auth_header_value->bytes, auth_header_value->len);
+
+        s_sigv4_signer_waiter_clean_up(&waiter);
+
+        aws_signable_destroy(cr_signable);
     }
 
     aws_credentials_provider_release(config.credentials_provider);
@@ -571,22 +587,19 @@ static int s_do_sigv4_test_suite_test(
         (void)ctx;                                                                                                     \
         struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
             allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);         \
-        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
+        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials, false);                \
         aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
     }                                                                                                                  \
     AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
 
-#define DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(test_name, test_name_string)                                  \
+#define DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(                                                              \
+    test_name, test_name_string, session_token, omit_session_token)                                                    \
     static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
         (void)ctx;                                                                                                     \
         struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
-            allocator,                                                                                                 \
-            s_test_suite_access_key_id,                                                                                \
-            s_test_suite_secret_access_key,                                                                            \
-            s_test_suite_session_token,                                                                                \
-            UINT64_MAX);                                                                                               \
-        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials);                       \
+            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, session_token, UINT64_MAX);         \
+        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, ".", credentials, omit_session_token);   \
         aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
     }                                                                                                                  \
@@ -597,7 +610,20 @@ static int s_do_sigv4_test_suite_test(
         (void)ctx;                                                                                                     \
         struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
             allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, s_empty_token, UINT64_MAX);         \
-        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder, credentials);             \
+        int ret_val = s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder, credentials, false);      \
+        aws_credentials_release(credentials);                                                                          \
+        return ret_val;                                                                                                \
+    }                                                                                                                  \
+    AWS_TEST_CASE(sigv4_##test_name##_test, s_sigv4_##test_name##_test);
+
+#define DECLARE_NESTED_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(                                                       \
+    test_name, test_name_string, parent_folder, session_token, omit_session_token)                                     \
+    static int s_sigv4_##test_name##_test(struct aws_allocator *allocator, void *ctx) {                                \
+        (void)ctx;                                                                                                     \
+        struct aws_credentials *credentials = aws_credentials_new_from_string(                                         \
+            allocator, s_test_suite_access_key_id, s_test_suite_secret_access_key, session_token, UINT64_MAX);         \
+        int ret_val =                                                                                                  \
+            s_do_sigv4_test_suite_test(allocator, test_name_string, parent_folder, credentials, omit_session_token);   \
         aws_credentials_release(credentials);                                                                          \
         return ret_val;                                                                                                \
     }                                                                                                                  \
@@ -610,7 +636,11 @@ DECLARE_SIGV4_TEST_SUITE_CASE(get_header_value_trim, "get-header-value-trim");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_unreserved, "get-unreserved");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_utf8, "get-utf8");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla, "get-vanilla");
-DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(get_vanilla_with_session_token, "get-vanilla-with-session-token");
+DECLARE_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(
+    get_vanilla_with_session_token,
+    "get-vanilla-with-session-token",
+    s_test_suite_session_token_1,
+    false);
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_empty_query_key, "get-vanilla-empty-query-key");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query, "get-vanilla-query");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_query_order_key_case, "get-vanilla-query-order-key-case");
@@ -626,8 +656,18 @@ DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(get_slash_pointless_dot, "get-slash-pointle
 DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(get_slashes, "get-slashes", "normalize-path");
 DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(get_space, "get-space", "normalize-path");
 
-DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(post_sts_header_after, "post-sts-header-after", "post-sts-token");
-DECLARE_NESTED_SIGV4_TEST_SUITE_CASE(post_sts_header_before, "post-sts-header-before", "post-sts-token");
+DECLARE_NESTED_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(
+    post_sts_header_after,
+    "post-sts-header-after",
+    "post-sts-token",
+    s_test_suite_session_token_2,
+    true);
+DECLARE_NESTED_SIGV4_TEST_SUITE_CASE_WITH_SESSION_TOKEN(
+    post_sts_header_before,
+    "post-sts-header-before",
+    "post-sts-token",
+    s_test_suite_session_token_2,
+    false);
 
 DECLARE_SIGV4_TEST_SUITE_CASE(post_header_key_case, "post-header-key-case");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_header_key_sort, "post-header-key-sort");
