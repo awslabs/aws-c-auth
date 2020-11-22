@@ -46,6 +46,10 @@
 #define MAX_AUTHORIZATION_QUERY_PARAM_COUNT 6
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 #define CANONICAL_REQUEST_SPLIT_OVER_ESTIMATE 20
+#define HEX_ENCODED_SIGNATURE_OVER_ESTIMATE 256
+#define MAX_ECDSA_P256_SIGNATURE_AS_BINARY_LENGTH 72
+#define MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH (MAX_ECDSA_P256_SIGNATURE_AS_BINARY_LENGTH * 2)
+#define AWS_SIGV4A_SIGNATURE_PADDING_BYTE (0)
 
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
@@ -60,6 +64,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_name, "X-Amz-Region-Set");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
+AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_s3_chunked_payload, "AWS4-ECDSA-P256-SHA256-PAYLOAD");
 
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
@@ -274,7 +279,11 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
             break;
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
-            *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_s3_chunked_payload);
+            }
             break;
 
         default:
@@ -1677,6 +1686,9 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
         return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
     }
 
+    /* strip any 0 padding from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
     if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
         return AWS_OP_ERR;
     }
@@ -2105,6 +2117,50 @@ int s_calculate_signature_value(struct aws_signing_state_aws *state) {
     }
 }
 
+static int s_add_signature_property_to_result_set(struct aws_signing_state_aws *state) {
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf final_signature_buffer;
+    AWS_ZERO_STRUCT(final_signature_buffer);
+
+    if (aws_byte_buf_init(&final_signature_buffer, state->allocator, HEX_ENCODED_SIGNATURE_OVER_ESTIMATE)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor signature_value = aws_byte_cursor_from_buf(&state->signature);
+    if (aws_byte_buf_append_dynamic(&final_signature_buffer, &signature_value)) {
+        goto cleanup;
+    }
+
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        if (aws_byte_buf_reserve(&final_signature_buffer, MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH)) {
+            goto cleanup;
+        }
+
+        if (signature_value.len < MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH) {
+            size_t padding_byte_count = MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH - signature_value.len;
+            if (!aws_byte_buf_write_u8_n(
+                    &final_signature_buffer, AWS_SIGV4A_SIGNATURE_PADDING_BYTE, padding_byte_count)) {
+                goto cleanup;
+            }
+        }
+    }
+
+    signature_value = aws_byte_cursor_from_buf(&final_signature_buffer);
+    if (aws_signing_result_set_property(&state->result, g_aws_signature_property_name, &signature_value)) {
+        return AWS_OP_ERR;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+
+    aws_byte_buf_clean_up(&final_signature_buffer);
+
+    return result;
+}
+
 /*
  * Adds the appropriate authorization header or query param to the signing result
  */
@@ -2131,11 +2187,13 @@ static int s_add_authorization_to_result(
     }
 
     /*
-     * Unconditionally add the signature value as a top-level property.  This is how chunk and event signing
-     * get their signature value.
+     * Unconditionally add the signature value as a top-level property.
      */
-    struct aws_byte_cursor signature_value = aws_byte_cursor_from_buf(&state->signature);
-    return aws_signing_result_set_property(&state->result, g_aws_signature_property_name, &signature_value);
+    if (s_add_signature_property_to_result_set(state)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_credential_prefix, " Credential=");
@@ -2371,4 +2429,12 @@ done:
     aws_signing_state_destroy(signing_state);
 
     return result;
+}
+
+static bool s_is_padding_byte(uint8_t byte) {
+    return byte == AWS_SIGV4A_SIGNATURE_PADDING_BYTE;
+}
+
+struct aws_byte_cursor aws_trim_padded_sigv4a_signature(struct aws_byte_cursor signature) {
+    return aws_byte_cursor_trim_pred(&signature, s_is_padding_byte);
 }
