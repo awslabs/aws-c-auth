@@ -1673,10 +1673,6 @@ cleanup:
     return result;
 }
 
-static bool s_is_zero_octet(uint8_t octet) {
-    return octet == 0;
-}
-
 static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
@@ -1691,7 +1687,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     }
 
     /* strip any 0 padding from the previous signature */
-    prev_signature_cursor = aws_byte_cursor_trim_pred(&prev_signature_cursor, s_is_zero_octet);
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
 
     if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
         return AWS_OP_ERR;
