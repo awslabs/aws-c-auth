@@ -49,6 +49,7 @@
 #define HEX_ENCODED_SIGNATURE_OVER_ESTIMATE 256
 #define MAX_ECDSA_P256_SIGNATURE_AS_BINARY_LENGTH 72
 #define MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH (MAX_ECDSA_P256_SIGNATURE_AS_BINARY_LENGTH * 2)
+#define AWS_SIGV4A_SIGNATURE_PADDING_BYTE (0)
 
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
@@ -2143,7 +2144,8 @@ static int s_add_signature_property_to_result_set(struct aws_signing_state_aws *
 
         if (signature_value.len < MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH) {
             size_t padding_byte_count = MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH - signature_value.len;
-            if (aws_byte_buf_append_n(&final_signature_buffer, 0, padding_byte_count)) {
+            if (!aws_byte_buf_write_u8_n(
+                    &final_signature_buffer, AWS_SIGV4A_SIGNATURE_PADDING_BYTE, padding_byte_count)) {
                 goto cleanup;
             }
         }
@@ -2431,4 +2433,12 @@ done:
     aws_signing_state_destroy(signing_state);
 
     return result;
+}
+
+static bool s_is_padding_byte(uint8_t byte) {
+    return byte == AWS_SIGV4A_SIGNATURE_PADDING_BYTE;
+}
+
+struct aws_byte_cursor aws_trim_padded_sigv4a_signature(struct aws_byte_cursor signature) {
+    return aws_byte_cursor_trim_pred(&signature, s_is_padding_byte);
 }

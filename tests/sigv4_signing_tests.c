@@ -746,7 +746,9 @@ static void s_on_signing_complete(struct aws_signing_result *result, int error_c
 
     struct aws_string *auth_value = NULL;
     aws_signing_result_get_property(result, g_aws_signature_property_name, &auth_value);
-    context->canonical_signing_auth_value = aws_string_new_from_string(context->allocator, auth_value);
+    struct aws_byte_cursor auth_value_cursor =
+        aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_string(auth_value));
+    context->canonical_signing_auth_value = aws_string_new_from_cursor(context->allocator, &auth_value_cursor);
 
     /* Mark results complete */
     aws_mutex_lock(&context->lock);

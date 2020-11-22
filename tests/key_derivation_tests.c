@@ -311,7 +311,7 @@ static int s_credentials_new_ecc_fixed(struct aws_allocator *allocator, void *ct
     aws_credentials_release(creds);
 
     aws_auth_library_clean_up();
-    
+
     return 0;
 }
 

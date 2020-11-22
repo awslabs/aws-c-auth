@@ -111,6 +111,14 @@ int aws_verify_sigv4a_signing(
     struct aws_byte_cursor ecc_key_pub_x,
     struct aws_byte_cursor ecc_key_pub_y);
 
+/**
+ * Removes any padding added to the end of a sigv4a signature.  Signature must be hex-encoded.
+ * @param signature signature to remove padding from
+ * @return cursor that ranges over only the valid hex encoding of the sigv4a signature
+ */
+AWS_AUTH_API
+struct aws_byte_cursor aws_trim_padded_sigv4a_signature(struct aws_byte_cursor signature);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_SIGNER_H */
