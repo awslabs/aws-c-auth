@@ -10,6 +10,7 @@
 
 #include <aws/auth/signing_config.h>
 
+struct aws_ecc_key_pair;
 struct aws_signable;
 struct aws_signing_result;
 
@@ -110,6 +111,16 @@ int aws_verify_sigv4a_signing(
     struct aws_byte_cursor signature_cursor,
     struct aws_byte_cursor ecc_key_pub_x,
     struct aws_byte_cursor ecc_key_pub_y);
+
+/**
+ * Another helper function to check a computed sigv4a signature.
+ */
+AWS_AUTH_API
+int aws_validate_v4a_authorization_value(
+    struct aws_allocator *allocator,
+    struct aws_ecc_key_pair *ecc_key,
+    struct aws_byte_cursor string_to_sign_cursor,
+    struct aws_byte_cursor signature_value_cursor);
 
 /**
  * Removes any padding added to the end of a sigv4a signature.  Signature must be hex-encoded.
