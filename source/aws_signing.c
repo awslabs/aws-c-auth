@@ -2308,6 +2308,13 @@ int aws_validate_v4a_authorization_value(
     struct aws_byte_cursor string_to_sign_cursor,
     struct aws_byte_cursor signature_value_cursor) {
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_SIGNING,
+        "(id=%p) Verifying v4a auth value: \n" PRInSTR "\n\nusing string-to-sign: \n" PRInSTR "\n\n",
+        (void *)ecc_key,
+        AWS_BYTE_CURSOR_PRI(signature_value_cursor),
+        AWS_BYTE_CURSOR_PRI(string_to_sign_cursor));
+
     signature_value_cursor = aws_trim_padded_sigv4a_signature(signature_value_cursor);
 
     size_t binary_length = 0;
