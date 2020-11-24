@@ -341,7 +341,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "content-encoding:aws-chunked\n"
     "content-length:66824\n"
     "host:s3.amazonaws.com\n"
-    "x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD\n"
+    "x-amz-content-sha256:STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD\n"
     "x-amz-date:20130524T000000Z\n"
     "x-amz-decoded-content-length:66560\n"
     "x-amz-region-set:us-east-1\n"
@@ -349,17 +349,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\n"
     "content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-region-"
     "set;x-amz-storage-class\n"
-    "STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
-
-/*
- * The body hash is different from the sigv4 test because of x-amz-region-set vs. region in the credential scope
- */
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_chunked_request_sigv4a_string_to_sign,
-    "AWS4-ECDSA-P256-SHA256\n"
-    "20130524T000000Z\n"
-    "20130524/s3/aws4_request\n"
-    "627c5d6dcd97af3955839044a34c9376318842a6975bcb6cdb5f94cf414b7020");
+    "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD");
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_chunk_sts_pre_signature,
@@ -391,6 +381,7 @@ static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *
     AWS_ZERO_STRUCT(tester);
     ASSERT_SUCCESS(s_chunked_signing_tester_init(allocator, &tester));
     tester.request_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+    tester.request_signing_config.signed_body_value = g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload;
     tester.chunk_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
 
     /* Sign the base request */
@@ -407,12 +398,6 @@ static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *
     /*
      * Validate the request signature
      */
-    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
-        allocator,
-        tester.verification_key,
-        aws_byte_cursor_from_string(s_chunked_request_sigv4a_string_to_sign),
-        signature_cursor));
-
     ASSERT_SUCCESS(aws_verify_sigv4a_signing(
         allocator,
         tester.request_signable,
