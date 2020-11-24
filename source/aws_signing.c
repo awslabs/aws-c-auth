@@ -2133,6 +2133,11 @@ static int s_add_signature_property_to_result_set(struct aws_signing_state_aws *
         goto cleanup;
     }
 
+    signature_value = aws_byte_cursor_from_buf(&final_signature_buffer);
+    if (aws_signing_result_set_property(&state->result, g_aws_signature_property_name, &signature_value)) {
+        return AWS_OP_ERR;
+    }
+
     if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
         if (aws_byte_buf_reserve(&final_signature_buffer, MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH)) {
             goto cleanup;
@@ -2384,6 +2389,16 @@ int aws_verify_sigv4a_signing(
     if (!signing_state) {
         return AWS_OP_ERR;
     }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_SIGNING,
+        "(id=%p) Verifying v4a signature: \n" PRInSTR "\nagainst expected canonical request: \n" PRInSTR
+        "\nusing ecc key:\n X:" PRInSTR "\n Y:" PRInSTR "\n\n",
+        (void *)signable,
+        AWS_BYTE_CURSOR_PRI(signature_cursor),
+        AWS_BYTE_CURSOR_PRI(expected_canonical_request_cursor),
+        AWS_BYTE_CURSOR_PRI(ecc_key_pub_x),
+        AWS_BYTE_CURSOR_PRI(ecc_key_pub_y));
 
     struct aws_ecc_key_pair *verification_key =
         aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
