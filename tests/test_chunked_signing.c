@@ -333,6 +333,24 @@ static int s_sigv4_chunked_signing_test(struct aws_allocator *allocator, void *c
 
 AWS_TEST_CASE(sigv4_chunked_signing_test, s_sigv4_chunked_signing_test);
 
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_chunked_expected_canonical_request_cursor,
+    "PUT\n"
+    "/examplebucket/chunkObject.txt\n"
+    "\n"
+    "content-encoding:aws-chunked\n"
+    "content-length:66824\n"
+    "host:s3.amazonaws.com\n"
+    "x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD\n"
+    "x-amz-date:20130524T000000Z\n"
+    "x-amz-decoded-content-length:66560\n"
+    "x-amz-region-set:us-east-1\n"
+    "x-amz-storage-class:REDUCED_REDUNDANCY\n"
+    "\n"
+    "content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-region-"
+    "set;x-amz-storage-class\n"
+    "STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
+
 /*
  * The body hash is different from the sigv4 test because of x-amz-region-set vs. region in the credential scope
  */
@@ -394,6 +412,15 @@ static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *
         tester.verification_key,
         aws_byte_cursor_from_string(s_chunked_request_sigv4a_string_to_sign),
         signature_cursor));
+
+    ASSERT_SUCCESS(aws_verify_sigv4a_signing(
+        allocator,
+        tester.request_signable,
+        (void *)&tester.request_signing_config,
+        aws_byte_cursor_from_string(s_chunked_expected_canonical_request_cursor),
+        signature_cursor,
+        aws_byte_cursor_from_string(s_chunked_test_ecc_pub_x),
+        aws_byte_cursor_from_string(s_chunked_test_ecc_pub_y)));
 
     /* Manually build the first chunk string-to-sign since it's based on a signature that varies per run */
     struct aws_byte_buf chunk_string_to_sign;

@@ -2133,12 +2133,8 @@ static int s_add_signature_property_to_result_set(struct aws_signing_state_aws *
         goto cleanup;
     }
 
-    signature_value = aws_byte_cursor_from_buf(&final_signature_buffer);
-    if (aws_signing_result_set_property(&state->result, g_aws_signature_property_name, &signature_value)) {
-        return AWS_OP_ERR;
-    }
-
-    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
+        state->config.signature_type == AWS_ST_HTTP_REQUEST_CHUNK) {
         if (aws_byte_buf_reserve(&final_signature_buffer, MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH)) {
             goto cleanup;
         }
