@@ -2308,6 +2308,8 @@ int aws_validate_v4a_authorization_value(
     struct aws_byte_cursor string_to_sign_cursor,
     struct aws_byte_cursor signature_value_cursor) {
 
+    signature_value_cursor = aws_trim_padded_sigv4a_signature(signature_value_cursor);
+
     size_t binary_length = 0;
     if (aws_hex_compute_decoded_len(signature_value_cursor.len, &binary_length)) {
         return AWS_OP_ERR;
@@ -2359,12 +2361,6 @@ int aws_verify_sigv4a_signing(
     struct aws_byte_cursor signature_cursor,
     struct aws_byte_cursor ecc_key_pub_x,
     struct aws_byte_cursor ecc_key_pub_y) {
-
-    (void)allocator;
-    (void)signable;
-    (void)base_config;
-    (void)expected_canonical_request_cursor;
-    (void)signature_cursor;
 
     int result = AWS_OP_ERR;
 
