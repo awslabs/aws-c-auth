@@ -2392,8 +2392,8 @@ int aws_verify_sigv4a_signing(
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_SIGNING,
-        "(id=%p) Verifying v4a signature: \n" PRInSTR "\nagainst expected canonical request: \n" PRInSTR
-        "\nusing ecc key:\n X:" PRInSTR "\n Y:" PRInSTR "\n\n",
+        "(id=%p) Verifying v4a signature: \n" PRInSTR "\n\nagainst expected canonical request: \n" PRInSTR
+        "\n\nusing ecc key:\n X:" PRInSTR "\n Y:" PRInSTR "\n\n",
         (void *)signable,
         AWS_BYTE_CURSOR_PRI(signature_cursor),
         AWS_BYTE_CURSOR_PRI(expected_canonical_request_cursor),
