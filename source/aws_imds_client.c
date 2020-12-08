@@ -180,6 +180,8 @@ struct aws_imds_client *aws_imds_client_new(
             .el_group = options->bootstrap->event_loop_group,
             .max_retries = IMDS_DEFAULT_RETRIES,
         };
+        /* exponential backoff is plenty here. We're hitting a local endpoint and do not run the risk of bringing
+         * down more than the local VM. */
         client->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
     }
     if (!client->retry_strategy) {
@@ -240,7 +242,7 @@ static void s_user_data_destroy(struct imds_user_data *user_data) {
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
     }
-    aws_retry_strategy_release_retry_token(user_data->retry_token);
+    aws_retry_token_release(user_data->retry_token);
     aws_imds_client_release(client);
     aws_mem_release(user_data->allocator, user_data);
 }
@@ -596,7 +598,7 @@ static void s_query_complete(struct imds_user_data *user_data) {
     if (user_data->status_code == AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED) {
         s_invalidate_cached_token_safely(user_data);
         s_reset_scratch_user_data(user_data);
-        aws_retry_strategy_release_retry_token(user_data->retry_token);
+        aws_retry_token_release(user_data->retry_token);
         if (s_get_resource_async_with_imds_token(user_data)) {
             s_user_data_release(user_data);
         }
@@ -687,7 +689,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
             AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "id=%p: Stream completed, retries have been exhausted.", (void *)client);
             imds_user_data->error_code = error_code;
         }
-    } else if (aws_retry_strategy_token_record_success(imds_user_data->retry_token)) {
+    } else if (aws_retry_token_record_success(imds_user_data->retry_token)) {
         AWS_LOGF_ERROR(
             AWS_LS_IMDS_CLIENT,
             "id=%p: Error while recording successful retry: %s",
