@@ -412,7 +412,7 @@ struct aws_credentials_provider_vtable_options {
     /**
      * Provide the vtable to get credentials
      */
-    struct aws_credentials_provider_vtable provider_vtable
+    struct aws_credentials_provider_vtable provider_vtable;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -744,8 +744,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_vtable(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
-    const struct aws_credentials_provider_chain_default_options *options);
+    const struct aws_credentials_provider_chain_default_options *options)
 
-AWS_EXTERN_C_END
+    AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_H */
