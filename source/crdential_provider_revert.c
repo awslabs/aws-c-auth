@@ -19,9 +19,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_vtable(
 
     AWS_ZERO_STRUCT(*provider);
 
-    aws_credentials_provider_init_base(provider, allocator, &options->provider_vtable, NULL);
+    aws_credentials_provider_init_base(provider, allocator, options->provider_vtable, NULL);
 
     provider->shutdown_options = options->shutdown_options;
+    provider->impl = options->impl;
 
     return provider;
 }

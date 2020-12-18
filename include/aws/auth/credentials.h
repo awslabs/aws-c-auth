@@ -412,7 +412,9 @@ struct aws_credentials_provider_vtable_options {
     /**
      * Provide the vtable to get credentials
      */
-    struct aws_credentials_provider_vtable provider_vtable;
+    struct aws_credentials_provider_vtable *provider_vtable;
+
+    void *impl;
 };
 
 AWS_EXTERN_C_BEGIN
