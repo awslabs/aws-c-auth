@@ -9,9 +9,9 @@
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 
-struct aws_credentials_provider *aws_credentials_provider_new_vtable(
+struct aws_credentials_provider *aws_credentials_provider_new_revert(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_vtable_options *options) {
+    struct aws_credentials_provider_revert_options *options) {
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
         return NULL;
