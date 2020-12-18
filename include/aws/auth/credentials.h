@@ -407,7 +407,7 @@ struct aws_credentials_provider_chain_default_options {
 };
 
 /**
- * Configuration options for the default credentials provider chain.
+ * Configuration options for the delegate credentials provider.
  */
 struct aws_credentials_provider_delegate_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
