@@ -11,7 +11,7 @@
 
 struct aws_credentials_provider *aws_credentials_provider_new_vtable(
     struct aws_allocator *allocator,
-    const struct aws_credentials_provider_vtable_options *options) {
+    struct aws_credentials_provider_vtable_options *options) {
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
         return NULL;

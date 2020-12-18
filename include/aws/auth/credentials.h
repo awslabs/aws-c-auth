@@ -721,7 +721,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_vtable(
     struct aws_allocator *allocator,
-    const struct aws_credentials_provider_vtable_options *options);
+    struct aws_credentials_provider_vtable_options *options);
 
 /**
  * Creates the default provider chain used by most AWS SDKs.
@@ -744,8 +744,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_vtable(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
-    const struct aws_credentials_provider_chain_default_options *options)
+    const struct aws_credentials_provider_chain_default_options *options);
 
-    AWS_EXTERN_C_END
+AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_H */
