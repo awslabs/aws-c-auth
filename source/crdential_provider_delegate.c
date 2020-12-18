@@ -9,20 +9,17 @@
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 
-struct aws_credentials_provider *aws_credentials_provider_new_revert(
+struct aws_credentials_provider *aws_credentials_provider_new_delegate(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_revert_options *options) {
-    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
+    struct aws_credentials_provider_delegate_options *options) {
+    struct aws_credentials_provider *provider = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials_provider));
     if (provider == NULL) {
         return NULL;
     }
 
-    AWS_ZERO_STRUCT(*provider);
-
-    aws_credentials_provider_init_base(provider, allocator, options->provider_vtable, NULL);
+    aws_credentials_provider_init_base(provider, allocator, options->provider_vtable, options->impl);
 
     provider->shutdown_options = options->shutdown_options;
-    provider->impl = options->impl;
 
     return provider;
 }

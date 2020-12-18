@@ -407,18 +407,18 @@ struct aws_credentials_provider_chain_default_options {
 };
 
 /**
- * For language binding to provide credentials from that language
+ * Configuration options for the default credentials provider chain.
  */
-struct aws_credentials_provider_revert_options {
+struct aws_credentials_provider_delegate_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /**
-     * Provide the vtable of functions to get credentials from language binding.
+     * Provide the vtable of functions to get credentials.
      */
     struct aws_credentials_provider_vtable *provider_vtable;
 
     /**
-     * Optional implementation form language bindings.
+     * Optional implementation.
      */
     void *impl;
 };
@@ -723,7 +723,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
     const struct aws_credentials_provider_process_options *options);
 
 /**
- * Create a credentials provider depends on other language to fetch the credentials.
+ * Create a credentials provider depends on provided vtable to fetch the credentials.
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options
@@ -731,9 +731,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_revert(
+struct aws_credentials_provider *aws_credentials_provider_new_delegate(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_revert_options *options);
+    struct aws_credentials_provider_delegate_options *options);
 
 /**
  * Creates the default provider chain used by most AWS SDKs.
