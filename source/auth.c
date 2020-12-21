@@ -45,6 +45,9 @@ static struct aws_error_info s_errors[] = {
         AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT,
         "Valid credentials could not be sourced from process environment"),
     AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_DELEGATE,
+        "Valid credentials could not be sourced from the provided vtable"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE,
         "Valid credentials could not be sourced by a profile provider"),
     AWS_DEFINE_ERROR_INFO_AUTH(
