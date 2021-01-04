@@ -316,3 +316,37 @@ static int s_credentials_new_ecc_fixed(struct aws_allocator *allocator, void *ct
 }
 
 AWS_TEST_CASE(credentials_new_ecc_fixed, s_credentials_new_ecc_fixed);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_ecc_derive_long_access_key_id_test_value,
+    "AKISORANDOMAASORANDOMFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFf");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_ecc_derive_long_secret_access_key_test_value,
+    "q+jcrXGc+0zWN6uzclKVhvMmUsIfRPa4rlRandom");
+
+static int s_credentials_derive_ecc_key_long_access_key(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_auth_library_init(allocator);
+
+    struct aws_credentials *creds = aws_credentials_new_from_string(
+        allocator,
+        s_ecc_derive_long_access_key_id_test_value,
+        s_ecc_derive_long_secret_access_key_test_value,
+        NULL,
+        UINT64_MAX);
+
+    struct aws_ecc_key_pair *derived_key = aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(allocator, creds);
+    ASSERT_TRUE(derived_key != NULL);
+
+    aws_ecc_key_pair_release(derived_key);
+    aws_credentials_release(creds);
+
+    aws_auth_library_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_derive_ecc_key_long_access_key, s_credentials_derive_ecc_key_long_access_key);

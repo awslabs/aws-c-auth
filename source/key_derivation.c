@@ -13,16 +13,6 @@
 #include <aws/common/string.h>
 
 /*
- * Overestimate against maximum length of the fixed input buffer.  This maximum is a function of fixed values
- * (the sigv4a key derivation process) and the (maximum) length of an IAM access_key_id which may be subject
- * to change in the future.
- *
- * If this overestimate becomes invalidated by future IAM changes, we'll want to increase it in order to
- * avoid needless allocations.
- */
-#define SIGV4A_FIXED_INPUT_LENGTH_OVERESTIMATE 256
-
-/*
  * The maximum number of iterations we will attempt to derive a valid ecc key for.  The probability that this counter
  * value ever gets reached is vanishingly low -- with reasonable uniformity/independence assumptions, it's
  * approximately
@@ -54,6 +44,10 @@ AWS_STATIC_STRING_FROM_LITERAL(s_secret_buffer_prefix, "AWS4A");
  * The final output looks like
  *
  * 0x00000001 || "AWS4-ECDSA-P256-SHA256" || 0x00 || AccessKeyId || CounterValue as uint8_t || 0x00000100 (Length)
+ *
+ * From this, we can determine the necessary buffer capacity when setting up the fixed input buffer:
+ *
+ * 4 + 22 + 1 + len(AccessKeyId) + 1 + 4 = 32 + len(AccessKeyId)
  */
 static int s_aws_build_fixed_input_buffer(
     struct aws_byte_buf *fixed_input,
@@ -317,7 +311,14 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
     struct aws_byte_buf secret_buf;
     AWS_ZERO_STRUCT(secret_buf);
 
-    if (aws_byte_buf_init(&fixed_input, allocator, SIGV4A_FIXED_INPUT_LENGTH_OVERESTIMATE)) {
+    size_t access_key_length = aws_credentials_get_access_key_id(credentials).len;
+
+    /*
+     * This value is calculated based on the format of the fixed input string as described above at
+     * the definition of s_aws_build_fixed_input_buffer()
+     */
+    size_t required_fixed_input_capacity = 32 + access_key_length;
+    if (aws_byte_buf_init(&fixed_input, allocator, required_fixed_input_capacity)) {
         goto done;
     }
 

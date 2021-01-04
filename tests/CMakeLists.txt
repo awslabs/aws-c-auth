@@ -181,6 +181,7 @@ add_test_case(sigv4a_chunked_signing_test)
 
 add_test_case(credentials_derive_ecc_key_fixed)
 add_test_case(credentials_new_ecc_fixed)
+add_test_case(credentials_derive_ecc_key_long_access_key)
 add_test_case(be_sequence_add_one)
 add_test_case(be_sequence_compare)
 
