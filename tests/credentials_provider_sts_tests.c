@@ -232,7 +232,12 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     }
 
     s_tester.el_group = aws_event_loop_group_new_default(allocator, 0, NULL);
-    s_tester.resolver = aws_host_resolver_new_default(allocator, 10, s_tester.el_group, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = s_tester.el_group,
+        .max_entries = 8,
+    };
+    s_tester.resolver = aws_host_resolver_new_default(allocator, &resolver_options);
 
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = s_tester.el_group,

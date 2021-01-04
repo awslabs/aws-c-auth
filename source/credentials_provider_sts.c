@@ -156,7 +156,7 @@ static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data)
     s_reset_request_specific_data(user_data);
     aws_credentials_provider_release(user_data->provider);
 
-    aws_retry_strategy_release_retry_token(user_data->retry_token);
+    aws_retry_token_release(user_data->retry_token);
     aws_mem_release(user_data->allocator, user_data);
 }
 
@@ -364,7 +364,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     if (!error_code && http_response_code == AWS_HTTP_STATUS_CODE_200_OK) {
         /* update the book keeping so we can let the retry strategy make determinations about when the service is
          * healthy after an outage. */
-        if (aws_retry_strategy_token_record_success(provider_user_data->retry_token)) {
+        if (aws_retry_token_record_success(provider_user_data->retry_token)) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): failed to register operation success: %s",
@@ -874,11 +874,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     provider->shutdown_options = options->shutdown_options;
 
-    struct aws_exponential_backoff_retry_options retry_options = {
-        .el_group = options->bootstrap->event_loop_group,
-        .max_retries = s_max_retries,
+    struct aws_standard_retry_options retry_options = {
+        .backoff_retry_options =
+            {
+                .el_group = options->bootstrap->event_loop_group,
+                .max_retries = s_max_retries,
+            },
     };
-    impl->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
+
+    impl->retry_strategy = aws_retry_strategy_new_standard(allocator, &retry_options);
 
     if (!impl->retry_strategy) {
         AWS_LOGF_ERROR(

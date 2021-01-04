@@ -1083,7 +1083,11 @@ static int s_credentials_provider_imds_real_new_destroy(struct aws_allocator *al
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group, NULL);
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = s_tester.el_group,
+        .max_entries = 8,
+    };
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
 
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = s_tester.el_group,
@@ -1141,7 +1145,11 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
 
     s_aws_imds_tester_init(allocator);
 
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, 8, s_tester.el_group, NULL);
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = s_tester.el_group,
+        .max_entries = 8,
+    };
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
 
     struct aws_client_bootstrap_options bootstrap_options = {
         .event_loop_group = s_tester.el_group,
