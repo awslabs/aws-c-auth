@@ -406,6 +406,11 @@ struct aws_credentials_provider_chain_default_options {
     struct aws_client_bootstrap *bootstrap;
 };
 
+typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
+    void *delegate_user_data,
+    aws_on_get_credentials_callback_fn callback,
+    void *callback_user_data);
+
 /**
  * Configuration options for the delegate credentials provider.
  */
@@ -413,14 +418,14 @@ struct aws_credentials_provider_delegate_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /**
-     * Provide the vtable of functions to get credentials.
+     * Delegated get_credentials() callback.
      */
-    struct aws_credentials_provider_vtable *provider_vtable;
+    aws_credentials_provider_delegate_get_credentials_fn *get_credentials;
 
     /**
-     * Optional implementation.
+     * User data for delegated callbacks.
      */
-    void *impl;
+    void *delegate_user_data;
 };
 
 AWS_EXTERN_C_BEGIN
