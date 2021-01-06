@@ -55,8 +55,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_delegate(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_credentials_provider_delegate_vtable, impl);
-
     provider->shutdown_options = options->shutdown_options;
+
+    impl->get_credentials = options->get_credentials;
+    impl->user_data = options->delegate_user_data;
 
     return provider;
 }
