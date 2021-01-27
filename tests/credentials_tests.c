@@ -445,6 +445,8 @@ AWS_TEST_CASE(cached_credentials_provider_elapsed_test, s_cached_credentials_pro
 static int s_cached_credentials_provider_queued_async_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
+    aws_auth_library_init(allocator);
+
     s_aws_credentials_shutdown_checker_init();
 
     mock_aws_set_system_time(0);
@@ -545,7 +547,9 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     aws_credentials_release(first_creds);
 
     aws_event_loop_group_release(event_loop_group);
-    aws_global_thread_creator_shutdown_wait_for(10);
+    aws_thread_join_all_managed();
+
+    aws_auth_library_clean_up();
 
     return 0;
 }
@@ -1035,7 +1039,7 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_release(resolver);
     aws_event_loop_group_release(el_group);
-    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
+    aws_thread_join_all_managed();
 
     aws_auth_library_clean_up();
 

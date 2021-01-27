@@ -1149,7 +1149,7 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
     aws_host_resolver_release(resolver);
     aws_event_loop_group_release(el_group);
 
-    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
+    aws_thread_join_all_managed();
 
     s_aws_sts_web_identity_tester_cleanup();
 
