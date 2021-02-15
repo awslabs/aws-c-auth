@@ -1149,8 +1149,6 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
     aws_host_resolver_release(resolver);
     aws_event_loop_group_release(el_group);
 
-    aws_thread_join_all_managed();
-
     s_aws_sts_web_identity_tester_cleanup();
 
     aws_auth_library_clean_up();

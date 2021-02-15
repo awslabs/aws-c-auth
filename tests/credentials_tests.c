@@ -547,7 +547,6 @@ static int s_cached_credentials_provider_queued_async_test(struct aws_allocator 
     aws_credentials_release(first_creds);
 
     aws_event_loop_group_release(event_loop_group);
-    aws_thread_join_all_managed();
 
     aws_auth_library_clean_up();
 
@@ -1039,7 +1038,6 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     aws_client_bootstrap_release(bootstrap);
     aws_host_resolver_release(resolver);
     aws_event_loop_group_release(el_group);
-    aws_thread_join_all_managed();
 
     aws_auth_library_clean_up();
 
