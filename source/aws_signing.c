@@ -1686,7 +1686,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
         return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
     }
 
-    /* strip any (*) padding from the previous signature */
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
     prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
 
     if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
