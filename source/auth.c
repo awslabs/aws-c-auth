@@ -150,7 +150,7 @@ void aws_auth_library_clean_up(void) {
     }
 
     s_library_initialized = false;
-
+    aws_thread_join_all_managed();
     aws_signing_clean_up_signing_tables();
     aws_unregister_log_subject_info_list(&s_auth_log_subject_list);
     aws_unregister_error_info(&s_error_list);
