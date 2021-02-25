@@ -278,8 +278,6 @@ static int s_aws_sts_tester_cleanup(void) {
     aws_host_resolver_release(s_tester.resolver);
     aws_event_loop_group_release(s_tester.el_group);
 
-    ASSERT_SUCCESS(aws_global_thread_creator_shutdown_wait_for(10));
-
     aws_auth_library_clean_up();
 
     return AWS_OP_SUCCESS;
