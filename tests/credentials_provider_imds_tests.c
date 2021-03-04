@@ -249,7 +249,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
     aws_auth_library_init(allocator);
 
-    for (int i = 0; i < IMDS_MAX_REQUESTS; i++) {
+    for (size_t i = 0; i < IMDS_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
                 &s_tester.response_data_callbacks[i], allocator, 10, sizeof(struct aws_byte_cursor))) {
             return AWS_OP_ERR;
@@ -291,7 +291,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 }
 
 static int s_aws_imds_tester_cleanup(void) {
-    for (int i = 0; i < IMDS_MAX_REQUESTS; i++) {
+    for (size_t i = 0; i < IMDS_MAX_REQUESTS; i++) {
         aws_array_list_clean_up(&s_tester.response_data_callbacks[i]);
         aws_byte_buf_clean_up(&s_tester.request_uris[i]);
     }

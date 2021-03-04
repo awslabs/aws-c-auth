@@ -277,7 +277,7 @@ int s_invoke_get_credentials(
     int call_count) {
     aws_get_credentials_test_callback_result_init(callback_results, call_count);
 
-    for (int i = 0; i < call_count; ++i) {
+    for (size_t i = 0; i < call_count; ++i) {
         int get_async_result = aws_credentials_provider_get_credentials(
             provider, aws_test_get_credentials_async_callback, callback_results);
         ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
