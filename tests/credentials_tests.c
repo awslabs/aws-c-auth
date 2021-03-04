@@ -274,7 +274,7 @@ int s_wait_for_get_credentials(struct aws_get_credentials_test_callback_result *
 int s_invoke_get_credentials(
     struct aws_credentials_provider *provider,
     struct aws_get_credentials_test_callback_result *callback_results,
-    int call_count) {
+    size_t call_count) {
     aws_get_credentials_test_callback_result_init(callback_results, call_count);
 
     for (size_t i = 0; i < call_count; ++i) {
