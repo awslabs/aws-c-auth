@@ -274,10 +274,10 @@ int s_wait_for_get_credentials(struct aws_get_credentials_test_callback_result *
 int s_invoke_get_credentials(
     struct aws_credentials_provider *provider,
     struct aws_get_credentials_test_callback_result *callback_results,
-    size_t call_count) {
+    int call_count) {
     aws_get_credentials_test_callback_result_init(callback_results, call_count);
 
-    for (size_t i = 0; i < call_count; ++i) {
+    for (int i = 0; i < call_count; ++i) {
         int get_async_result = aws_credentials_provider_get_credentials(
             provider, aws_test_get_credentials_async_callback, callback_results);
         ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
