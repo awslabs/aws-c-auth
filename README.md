@@ -13,7 +13,7 @@ This library is licensed under the Apache 2.0 License.
 
 CMake is required to build. Note that several dependencies need to be built first.
 
-#### Building s2n (Linux Only)
+#### Linux-Only Dependencies
 
 If you are building on Linux, you will need to build aws-lc and s2n-tls first.
 
@@ -28,7 +28,6 @@ cmake --build s2n-tls/build --target install
 ```
 
 #### Building aws-c-auth and Remaining Dependencies
-
 
 ```
 git clone git@github.com:awslabs/aws-c-common.git
