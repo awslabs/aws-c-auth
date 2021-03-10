@@ -15,7 +15,7 @@
 #include <aws/common/string.h>
 #include <aws/io/logging.h>
 
-struct aws_mock_process_tester {
+static struct aws_mock_process_tester {
     struct aws_mutex lock;
     struct aws_condition_variable signal;
     struct aws_credentials *credentials;

@@ -23,7 +23,7 @@
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
 
-struct aws_mock_sts_web_identity_tester {
+static struct aws_mock_sts_web_identity_tester {
     struct aws_byte_buf request_body;
 
     struct aws_array_list response_data_callbacks;
