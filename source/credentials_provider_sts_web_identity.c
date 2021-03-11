@@ -37,14 +37,14 @@
 #define STS_WEB_IDENTITY_CREDS_DEFAULT_DURATION_SECONDS 900
 #define STS_WEB_IDENTITY_MAX_ATTEMPTS 3
 
+static void s_on_connection_manager_shutdown(void *user_data);
+
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_auth_http_system_vtable *function_table;
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
     struct aws_string *token_file_path;
-    struct aws_tls_ctx *ctx;
-    struct aws_tls_connection_options connection_options;
 };
 
 static struct aws_auth_http_system_vtable s_default_function_table = {
@@ -780,7 +780,13 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
      * which will do memory release for provider and impl. So We should be freeing impl
      * related memory first, then call aws_http_connection_manager_release.
      */
-    impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
+    if (impl->connection_manager) {
+        impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
+    } else {
+        /* If provider setup failed halfway through, connection_manager might not exist.
+         * In this case invoke shutdown completion callback directly to finish cleanup */
+        s_on_connection_manager_shutdown(provider);
+    }
 
     /* freeing the provider takes place in the shutdown callback below */
 }
@@ -792,11 +798,8 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_web
 
 static void s_on_connection_manager_shutdown(void *user_data) {
     struct aws_credentials_provider *provider = user_data;
-    struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
-    aws_tls_ctx_release(impl->ctx);
-    aws_tls_connection_options_clean_up(&impl->connection_options);
     aws_mem_release(provider->allocator, provider);
 }
 
@@ -1083,6 +1086,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
         return NULL;
     }
 
+    struct aws_tls_connection_options tls_connection_options;
+    AWS_ZERO_STRUCT(tls_connection_options);
+
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_sts_web_identity_impl *impl = NULL;
 
@@ -1103,24 +1109,17 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_web_identity_vtable, impl);
 
-    AWS_LOGF_TRACE(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): initializing a new tlx context", (void *)provider);
-    struct aws_tls_ctx_options tls_options;
-    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
-    impl->ctx = aws_tls_client_ctx_new(allocator, &tls_options);
-
-    if (!impl->ctx) {
+    if (!options->tls_ctx) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): failed to create a tls context with error %s",
-            (void *)provider,
-            aws_error_str(aws_last_error()));
-        aws_tls_ctx_options_clean_up(&tls_options);
-        goto on_error;
+            "a TLS context must be provided to the STS web identity credentials provider");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
     }
 
-    aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
+    aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
-    if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &host)) {
+    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to create a tls connection options with error %s",
@@ -1146,7 +1145,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     manager_options.max_connections = 2;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
-    manager_options.tls_connection_options = &(impl->connection_options);
+    manager_options.tls_connection_options = &tls_connection_options;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
@@ -1177,11 +1176,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
 
     provider->shutdown_options = options->shutdown_options;
     s_parameters_destroy(parameters);
+    aws_tls_connection_options_clean_up(&tls_connection_options);
     return provider;
 
 on_error:
 
     aws_credentials_provider_destroy(provider);
     s_parameters_destroy(parameters);
+    aws_tls_connection_options_clean_up(&tls_connection_options);
     return NULL;
 }

@@ -214,6 +214,7 @@ static int s_aws_x509_tester_init(struct aws_allocator *allocator) {
     struct aws_tls_ctx_options tls_options;
     aws_tls_ctx_options_init_default_client(&tls_options, allocator);
     s_tester.ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    aws_tls_ctx_options_clean_up(&tls_options);
     aws_tls_connection_options_init_from_ctx(&s_tester.tls_connection_options, s_tester.ctx);
 
     /* default to everything successful */

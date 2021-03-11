@@ -239,10 +239,10 @@ struct aws_credentials_provider_ecs_options {
     struct aws_byte_cursor auth_token;
 
     /*
-     * Whether or not to make the query using tls.
-     * This also determines the port: 443 or 80
+     * Client TLS context to use when making query.
+     * If set, port 443 is used. If NULL, port 80 is used.
      */
-    bool use_tls;
+    struct aws_tls_ctx *tls_ctx;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -316,6 +316,12 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Connection bootstrap to use for any network connections made while sourcing credentials
      */
     struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when querying STS web identity provider.
+     * Required.
+     */
+    struct aws_tls_ctx *tls_ctx;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -404,6 +410,16 @@ struct aws_credentials_provider_chain_default_options {
      * Connection bootstrap to use for any network connections made while sourcing credentials
      */
     struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use for any secure network connections made while sourcing credentials.
+     *
+     * If not provided the default chain will construct a new one, but these
+     * are expensive objects so you are encouraged to pass in a shared one.
+     *
+     * Must be provided if using BYO_CRYPTO.
+     */
+    struct aws_tls_ctx *tls_ctx;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(

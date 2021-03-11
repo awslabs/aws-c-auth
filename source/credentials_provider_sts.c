@@ -83,8 +83,6 @@ struct aws_credentials_provider_sts_impl {
     struct aws_string *role_session_name;
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
-    struct aws_tls_ctx *ctx;
-    struct aws_tls_connection_options connection_options;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
     struct aws_auth_http_system_vtable *function_table;
     struct aws_retry_strategy *retry_strategy;
@@ -692,9 +690,6 @@ static void s_on_credentials_provider_shutdown(void *user_data) {
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->assume_role_profile);
 
-    aws_tls_ctx_release(impl->ctx);
-
-    aws_tls_connection_options_clean_up(&impl->connection_options);
     aws_mem_release(provider->allocator, provider);
 }
 
@@ -719,6 +714,14 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
     struct aws_credentials_provider_sts_options *options) {
+
+    if (!options->tls_ctx) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a TLS context must be provided to the STS credentials provider");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_sts_impl *impl = NULL;
 
@@ -746,31 +749,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         impl->function_table = options->function_table;
     }
 
-    if (options->tls_ctx) {
-        AWS_LOGF_TRACE(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): tls context provided, using pre-built tls context.",
-            (void *)provider);
-        impl->ctx = aws_tls_ctx_acquire(options->tls_ctx);
-    } else {
-        AWS_LOGF_TRACE(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): tls context not provided, initializing a new one",
-            (void *)provider);
-        struct aws_tls_ctx_options tls_options;
-        aws_tls_ctx_options_init_default_client(&tls_options, allocator);
-        impl->ctx = aws_tls_client_ctx_new(allocator, &tls_options);
-
-        if (!impl->ctx) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p): failed to create a tls context with error %s",
-                (void *)provider,
-                aws_error_debug_str(aws_last_error()));
-            aws_tls_ctx_options_clean_up(&tls_options);
-            goto cleanup_provider;
-        }
-    }
+    struct aws_tls_connection_options tls_connection_options;
+    AWS_ZERO_STRUCT(tls_connection_options);
 
     if (!options->creds_provider) {
         AWS_LOGF_ERROR(
@@ -826,9 +806,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     impl->provider = options->creds_provider;
     aws_credentials_provider_acquire(impl->provider);
 
-    aws_tls_connection_options_init_from_ctx(&impl->connection_options, impl->ctx);
+    aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
 
-    if (aws_tls_connection_options_set_server_name(&impl->connection_options, allocator, &s_host_header.value)) {
+    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &s_host_header.value)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to create a tls connection options with error %s",
@@ -850,7 +830,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         .max_connections = 2,
         .port = 443,
         .socket_options = &socket_options,
-        .tls_connection_options = &impl->connection_options,
+        .tls_connection_options = &tls_connection_options,
     };
 
     impl->connection_manager =
@@ -893,9 +873,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         goto cleanup_provider;
     }
 
+    aws_tls_connection_options_clean_up(&tls_connection_options);
     return provider;
 
 cleanup_provider:
+    aws_tls_connection_options_clean_up(&tls_connection_options);
     aws_credentials_provider_release(provider);
 
     return NULL;
