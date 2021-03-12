@@ -284,6 +284,8 @@ static int s_aws_sts_web_identity_test_init_config_profile(
 }
 
 static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
+    aws_auth_library_init(allocator);
+
     struct aws_tls_ctx_options tls_options;
     aws_tls_ctx_options_init_default_client(&tls_options, allocator);
     s_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
@@ -308,7 +310,6 @@ static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
     s_tester.is_request_successful = true;
-    aws_io_library_init(allocator);
 
     return AWS_OP_SUCCESS;
 }
@@ -320,7 +321,7 @@ static void s_aws_sts_web_identity_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
-    aws_io_library_clean_up();
+    aws_auth_library_clean_up();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
