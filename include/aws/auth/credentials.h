@@ -116,6 +116,16 @@ struct aws_credentials_provider_profile_options {
      */
     struct aws_client_bootstrap *bootstrap;
 
+    /*
+     * Client TLS context to use for any secure network connections made while sourcing credentials
+     * (for example, a profile that uses assume-role will need to hit STS).
+     *
+     * If a TLS context is needed, and you did not pass one in, it will be created automatically.
+     * However, you are encouraged to pass in a shared one since these are expensive objects.
+     * If using BYO_CRYPTO, you must provide the TLS context since it cannot be created automatically.
+     */
+    struct aws_tls_ctx *tls_ctx;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };

@@ -315,6 +315,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
     profile_options.bootstrap = options->bootstrap;
+    profile_options.tls_ctx = tls_ctx;
     profile_options.shutdown_options = sub_provider_shutdown_options;
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
     if (profile_provider != NULL) {
