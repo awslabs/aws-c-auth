@@ -716,15 +716,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_credentials_provider_sts_options *options) {
 
     if (!options->bootstrap) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for quering STS");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for quering STS");
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
 
     if (!options->tls_ctx) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a TLS context is necessary for querying STS");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a TLS context is necessary for querying STS");
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
