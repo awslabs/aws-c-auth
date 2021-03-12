@@ -24,6 +24,8 @@
 #include <aws/io/tls_channel_handler.h>
 
 static struct aws_mock_sts_web_identity_tester {
+    struct aws_tls_ctx *tls_ctx;
+
     struct aws_byte_buf request_body;
 
     struct aws_array_list response_data_callbacks;
@@ -291,6 +293,11 @@ static int s_aws_sts_web_identity_test_init_config_profile(
 }
 
 static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
+    struct aws_tls_ctx_options tls_options;
+    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+    s_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    ASSERT_NOT_NULL(s_tester.tls_ctx);
+
     if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
     }
@@ -316,6 +323,7 @@ static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
 }
 
 static void s_aws_sts_web_identity_tester_cleanup(void) {
+    aws_tls_ctx_release(s_tester.tls_ctx);
     aws_array_list_clean_up(&s_tester.response_data_callbacks);
     aws_byte_buf_clean_up(&s_tester.request_body);
     aws_condition_variable_clean_up(&s_tester.signal);
@@ -379,6 +387,7 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_env(struct a
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -445,6 +454,7 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_config(struc
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -487,6 +497,7 @@ static int s_credentials_provider_sts_web_identity_new_failed_without_env_and_co
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -596,6 +607,7 @@ static int s_credentials_provider_sts_web_identity_connect_failure(struct aws_al
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -649,6 +661,7 @@ static int s_credentials_provider_sts_web_identity_request_failure(struct aws_al
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -708,6 +721,7 @@ static int s_credentials_provider_sts_web_identity_bad_document_failure(struct a
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -781,6 +795,7 @@ static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -836,6 +851,7 @@ static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -891,6 +907,7 @@ static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -962,6 +979,7 @@ static int s_credentials_provider_sts_web_identity_basic_success_config(struct a
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -1054,6 +1072,7 @@ static int s_credentials_provider_sts_web_identity_success_multi_part_doc(struct
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -1128,6 +1147,7 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,

@@ -337,8 +337,8 @@ struct aws_credentials_provider_sts_options {
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Tls context to use when querying STS.  If not provided, the STS credentials provider will construct
-     * a new one.
+     * Client TLS context to use when querying STS.
+     * Required.
      */
     struct aws_tls_ctx *tls_ctx;
 
