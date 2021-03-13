@@ -236,7 +236,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     aws_auth_library_init(allocator);
 
     s_tester.allocator = allocator;
-    for (int i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
+    for (size_t i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
                 &s_tester.response_data_callbacks[i], allocator, 10, sizeof(struct aws_byte_cursor))) {
             return AWS_OP_ERR;
@@ -280,7 +280,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 }
 
 static int s_aws_imds_tester_cleanup(void) {
-    for (int i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
+    for (size_t i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
         aws_array_list_clean_up(&s_tester.response_data_callbacks[i]);
         aws_byte_buf_clean_up(&s_tester.request_uris[i]);
     }
@@ -863,7 +863,7 @@ static int s_imds_client_multiple_resource_requests_random_responses_finally_all
     options.function_table->aws_http_connection_make_request = s_aws_http_connection_make_multiple_requests_mock;
 
     struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
-    for (int i = 0; i < 5000; i++) {
+    for (size_t i = 0; i < 5000; i++) {
         aws_imds_client_get_resource_async(
             client,
             aws_byte_cursor_from_string(s_expected_imds_resource_uri),
@@ -1015,7 +1015,7 @@ static int s_assert_get_ancestor_ami_ids(const struct aws_array_list *array) {
     size_t len = aws_array_list_length(array);
     ASSERT_TRUE(len == 3);
     struct aws_byte_cursor cursor[3];
-    for (int i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
         aws_array_list_get_at(array, &cursor[i], i);
         aws_byte_buf_append_dynamic(&s_tester.resource, &cursor[i]);
         aws_byte_buf_append_dynamic(&s_tester.resource, &s_newline_cursor);
@@ -1227,7 +1227,7 @@ static int s_assert_get_instance_info(const struct aws_imds_instance_info *insta
     ASSERT_TRUE(aws_array_list_length(&instance->marketplace_product_codes) == 0);
 
     struct aws_byte_cursor cursor[2];
-    for (int i = 0; i < 2; i++) {
+    for (size_t i = 0; i < 2; i++) {
         aws_array_list_get_at(&instance->billing_products, &cursor[i], i);
     }
     ASSERT_CURSOR_VALUE_STRING_EQUALS(cursor[0], s_billing_product1);
