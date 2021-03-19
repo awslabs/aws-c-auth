@@ -24,6 +24,7 @@
  * This file has been modified from its original version by Amazon:
  *   (1) Address clang-tidy errors by renaming function parameters in a number of places
  *   to match their .c counterparts.
+ *   (2) Misc tweaks to unchecked writes to make security static analysis happier
  */
 
 /* clang-format off */
