@@ -21,12 +21,22 @@ static int s_credentials_provider_imds_get_credentials_async(
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
 
+static void s_on_imds_client_shutdown(void *user_data);
+
 static void s_credentials_provider_imds_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_imds_impl *impl = provider->impl;
     if (impl == NULL) {
         return;
     }
-    aws_imds_client_release(impl->client);
+
+    if (impl->client) {
+        /* release IMDS client, cleanup will finish when its shutdown callback fires */
+        aws_imds_client_release(impl->client);
+    } else {
+        /* If provider setup failed halfway through, IMDS client might not exist.
+         * In this case invoke shutdown completion callback directly to finish cleanup */
+        s_on_imds_client_shutdown(provider);
+    }
 }
 
 static void s_on_imds_client_shutdown(void *user_data) {
@@ -43,6 +53,12 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_imds_vt
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_imds_options *options) {
+
+    if (!options->bootstrap) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Client bootstrap is required for querying IMDS");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_imds_impl *impl = NULL;

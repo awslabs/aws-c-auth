@@ -11,6 +11,7 @@
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/stream.h>
+#include <aws/io/tls_channel_handler.h>
 
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
@@ -51,6 +52,8 @@ struct aws_mock_sts_tester {
     struct aws_host_resolver *resolver;
 
     struct aws_client_bootstrap *bootstrap;
+
+    struct aws_tls_ctx *tls_ctx;
 };
 
 static struct aws_mock_sts_tester s_tester;
@@ -245,6 +248,12 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     };
     s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
+    struct aws_tls_ctx_options tls_options;
+    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+    s_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    ASSERT_NOT_NULL(s_tester.tls_ctx);
+    aws_tls_ctx_options_clean_up(&tls_options);
+
     return AWS_OP_SUCCESS;
 }
 
@@ -277,6 +286,7 @@ static int s_aws_sts_tester_cleanup(void) {
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_host_resolver_release(s_tester.resolver);
     aws_event_loop_group_release(s_tester.el_group);
+    aws_tls_ctx_release(s_tester.tls_ctx);
 
     aws_auth_library_clean_up();
 
@@ -363,6 +373,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
@@ -425,6 +436,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
@@ -496,6 +508,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
@@ -557,6 +570,7 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
@@ -602,6 +616,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
@@ -640,7 +655,10 @@ static const char *s_soure_profile_config_file = "[default]\n"
                                                  "source_profile=default\n"
                                                  "role_session_name=test_session";
 
-static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_sts_from_profile_config_succeeds(
+    struct aws_allocator *allocator,
+    void *ctx,
+    bool manual_tls) {
     (void)ctx;
 
     aws_unset_environment_value(s_default_profile_env_variable_name);
@@ -662,6 +680,8 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
         .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = s_tester.bootstrap,
+        /* tls_ctx is optional, test it both ways */
+        .tls_ctx = manual_tls ? s_tester.tls_ctx : NULL,
         .function_table = &s_mock_function_table,
     };
 
@@ -703,9 +723,23 @@ static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws
     return AWS_OP_SUCCESS;
 }
 
+static int s_credentials_provider_sts_from_profile_config_succeeds_fn(struct aws_allocator *allocator, void *ctx) {
+    return s_credentials_provider_sts_from_profile_config_succeeds(allocator, ctx, false /*manual_tls*/);
+}
+
 AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_succeeds,
     s_credentials_provider_sts_from_profile_config_succeeds_fn)
+
+static int credentials_provider_sts_from_profile_config_manual_tls_succeeds_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    return s_credentials_provider_sts_from_profile_config_succeeds(allocator, ctx, true /*manual_tls*/);
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_from_profile_config_manual_tls_succeeds,
+    credentials_provider_sts_from_profile_config_manual_tls_succeeds_fn)
 
 static const char *s_env_source_config_file = "[default]\n"
                                               "aws_access_key_id=BLAHBLAH\n"
@@ -746,6 +780,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
         .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .function_table = &s_mock_function_table,
     };
 
@@ -813,6 +848,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     struct aws_credentials_provider_sts_options options = {
         .creds_provider = static_provider,
         .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
         .role_arn = s_role_arn_cur,
         .session_name = s_session_name_cur,
         .duration_seconds = 0,
@@ -830,10 +866,12 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
-    struct aws_credentials_provider_cached_options cached_options = {.system_clock_fn = mock_aws_get_system_time,
-                                                                     .high_res_clock_fn = mock_aws_get_high_res_time,
-                                                                     .refresh_time_in_milliseconds = 1200 * 1000,
-                                                                     .source = sts_provider};
+    struct aws_credentials_provider_cached_options cached_options = {
+        .system_clock_fn = mock_aws_get_system_time,
+        .high_res_clock_fn = mock_aws_get_high_res_time,
+        .refresh_time_in_milliseconds = 1200 * 1000,
+        .source = sts_provider,
+    };
     struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
 
     aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);

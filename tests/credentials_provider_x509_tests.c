@@ -193,6 +193,8 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
 static int s_aws_x509_tester_init(struct aws_allocator *allocator) {
+    aws_auth_library_init(allocator);
+
     if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
     }
@@ -210,10 +212,10 @@ static int s_aws_x509_tester_init(struct aws_allocator *allocator) {
     }
 
     AWS_ZERO_STRUCT(s_tester.tls_connection_options);
-    aws_io_library_init(allocator);
     struct aws_tls_ctx_options tls_options;
     aws_tls_ctx_options_init_default_client(&tls_options, allocator);
     s_tester.ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    aws_tls_ctx_options_clean_up(&tls_options);
     aws_tls_connection_options_init_from_ctx(&s_tester.tls_connection_options, s_tester.ctx);
 
     /* default to everything successful */
@@ -233,7 +235,7 @@ static void s_aws_x509_tester_cleanup(void) {
     s_tester.ctx = NULL;
 
     aws_tls_connection_options_clean_up(&s_tester.tls_connection_options);
-    aws_io_library_clean_up();
+    aws_auth_library_clean_up();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {

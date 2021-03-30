@@ -16,6 +16,7 @@
 
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
+#include <aws/io/tls_channel_handler.h>
 #include <credentials_provider_utils.h>
 
 #include "shared_credentials_test_definitions.h"
@@ -970,9 +971,7 @@ static int s_credentials_provider_null_chain_test(struct aws_allocator *allocato
 
 AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_chain_test);
 
-static int s_credentials_provider_default_basic_test(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
+static int s_credentials_provider_default_test(struct aws_allocator *allocator, bool manual_tls) {
     aws_auth_library_init(allocator);
 
     s_aws_credentials_shutdown_checker_init();
@@ -1003,8 +1002,18 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
     ASSERT_NOT_NULL(bootstrap);
 
+    struct aws_tls_ctx *tls_ctx = NULL;
+    if (manual_tls) {
+        struct aws_tls_ctx_options tls_options;
+        aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+        tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+        ASSERT_NOT_NULL(tls_ctx);
+        aws_tls_ctx_options_clean_up(&tls_options);
+    }
+
     struct aws_credentials_provider_chain_default_options options = {
         .bootstrap = bootstrap,
+        .tls_ctx = tls_ctx,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -1013,6 +1022,12 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_chain_default(allocator, &options);
+
+    /* release tls_ctx early to prove that provider acquired a reference */
+    if (tls_ctx) {
+        aws_tls_ctx_release(tls_ctx);
+        tls_ctx = NULL;
+    }
 
     ASSERT_TRUE(
         s_do_basic_provider_test(
@@ -1044,4 +1059,15 @@ static int s_credentials_provider_default_basic_test(struct aws_allocator *alloc
     return 0;
 }
 
+static int s_credentials_provider_default_basic_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_credentials_provider_default_test(allocator, false /*manual_tls*/);
+}
+
 AWS_TEST_CASE(credentials_provider_default_basic_test, s_credentials_provider_default_basic_test);
+
+static int s_credentials_provider_default_manual_tls_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_credentials_provider_default_test(allocator, true /*manual_tls*/);
+}
+AWS_TEST_CASE(credentials_provider_default_manual_tls_test, s_credentials_provider_default_manual_tls_test);

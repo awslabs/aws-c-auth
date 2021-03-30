@@ -9,6 +9,7 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/process.h>
 #include <aws/common/string.h>
+#include <aws/io/tls_channel_handler.h>
 
 #ifdef _MSC_VER
 /* allow non-constant declared initializers. */
@@ -235,8 +236,32 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
 
     AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: computed session_name as %s", session_name_array);
 
+    /* Automatically create a TLS context if necessary. We'd prefer that users pass one in, but can't force
+     * them to because aws_credentials_provider_profile_options didn't always have a tls_ctx member. */
+    struct aws_tls_ctx *tls_ctx = NULL;
+    if (options->tls_ctx) {
+        tls_ctx = aws_tls_ctx_acquire(options->tls_ctx);
+    } else {
+#ifdef BYO_CRYPTO
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a TLS context must be provided to query STS");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        goto done;
+#else
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "TLS context not provided, initializing a new one for querying STS");
+        struct aws_tls_ctx_options tls_options;
+        aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+        tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+        aws_tls_ctx_options_clean_up(&tls_options);
+        if (!tls_ctx) {
+            goto done;
+        }
+#endif
+    }
+
     struct aws_credentials_provider_sts_options sts_options = {
         .bootstrap = options->bootstrap,
+        .tls_ctx = tls_ctx,
         .role_arn = aws_byte_cursor_from_string(role_arn_property->value),
         .session_name = aws_byte_cursor_from_c_str(session_name_array),
         .duration_seconds = 0,
@@ -254,7 +279,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             allocator, credentials_file_path, config_file_path, source_profile_property->value);
 
         if (!sts_options.creds_provider) {
-            return NULL;
+            goto done;
         }
 
         provider = aws_credentials_provider_new_sts(allocator, &sts_options);
@@ -280,7 +305,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 aws_credentials_provider_new_imds(allocator, &imds_options);
 
             if (!imds_provider) {
-                return NULL;
+                goto done;
             }
 
             sts_options.creds_provider = imds_provider;
@@ -296,7 +321,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 aws_credentials_provider_new_environment(allocator, &env_options);
 
             if (!env_provider) {
-                return NULL;
+                goto done;
             }
 
             sts_options.creds_provider = env_provider;
@@ -308,9 +333,11 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "static: invalid credential_source property: %s",
                 aws_string_c_str(credential_source_property->value));
+            aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         }
     }
-
+done:
+    aws_tls_ctx_release(tls_ctx);
     return provider;
 }
 

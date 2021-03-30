@@ -10,6 +10,7 @@
 #include <aws/common/environment.h>
 #include <aws/common/logging.h>
 #include <aws/common/string.h>
+#include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
 
 #define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
@@ -37,7 +38,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_ec2_creds_env_disable, "AWS_EC2_METADATA_DISABL
 static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_imds(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_shutdown_options *shutdown_options,
-    const struct aws_credentials_provider_chain_default_options *options) {
+    struct aws_client_bootstrap *bootstrap,
+    struct aws_tls_ctx *tls_ctx) {
 
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_string *ecs_relative_uri = NULL;
@@ -55,10 +57,10 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     if (ecs_relative_uri && ecs_relative_uri->len) {
         struct aws_credentials_provider_ecs_options ecs_options = {
             .shutdown_options = *shutdown_options,
-            .bootstrap = options->bootstrap,
+            .bootstrap = bootstrap,
             .host = aws_byte_cursor_from_string(s_ecs_host),
             .path_and_query = aws_byte_cursor_from_string(ecs_relative_uri),
-            .use_tls = false,
+            .tls_ctx = NULL,
         };
         ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
 
@@ -82,10 +84,10 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
 
         struct aws_credentials_provider_ecs_options ecs_options = {
             .shutdown_options = *shutdown_options,
-            .bootstrap = options->bootstrap,
+            .bootstrap = bootstrap,
             .host = uri.host_name,
             .path_and_query = uri.path_and_query,
-            .use_tls = aws_byte_cursor_eq_c_str_ignore_case(&(uri.scheme), "HTTPS"),
+            .tls_ctx = aws_byte_cursor_eq_c_str_ignore_case(&(uri.scheme), "HTTPS") ? tls_ctx : NULL,
             .auth_token = (ecs_token && ecs_token->len) ? aws_byte_cursor_from_string(ecs_token) : nullify_cursor,
         };
 
@@ -95,7 +97,7 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     } else if (ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false")) {
         struct aws_credentials_provider_imds_options imds_options = {
             .shutdown_options = *shutdown_options,
-            .bootstrap = options->bootstrap,
+            .bootstrap = bootstrap,
         };
         ecs_or_imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
     }
@@ -262,11 +264,39 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sub_provider_shutdown_options.shutdown_callback = s_on_sub_provider_shutdown_completed;
     sub_provider_shutdown_options.shutdown_user_data = provider;
 
+    struct aws_tls_ctx *tls_ctx = NULL;
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
+
+    if (options->tls_ctx) {
+        tls_ctx = aws_tls_ctx_acquire(options->tls_ctx);
+    } else {
+#ifdef BYO_CRYPTO
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "TLS context must be provided to credentials provider.");
+        goto on_error;
+#else
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): TLS context not provided, initializing a new one for credentials provider.",
+            (void *)provider);
+        struct aws_tls_ctx_options tls_options;
+        aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+        tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+        aws_tls_ctx_options_clean_up(&tls_options);
+        if (!tls_ctx) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): failed to create a TLS context with error %s",
+                (void *)provider,
+                aws_error_debug_str(aws_last_error()));
+            goto on_error;
+        }
+#endif /* BYO_CRYPTO */
+    }
 
     enum { providers_size = 3 };
     struct aws_credentials_provider *providers[providers_size];
@@ -285,6 +315,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
     profile_options.bootstrap = options->bootstrap;
+    profile_options.tls_ctx = tls_ctx;
     profile_options.shutdown_options = sub_provider_shutdown_options;
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
     if (profile_provider != NULL) {
@@ -293,8 +324,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
-    ecs_or_imds_provider =
-        s_aws_credentials_provider_new_ecs_or_imds(allocator, &sub_provider_shutdown_options, options);
+    ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
+        allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx);
     if (ecs_or_imds_provider != NULL) {
         providers[index++] = ecs_or_imds_provider;
         /* 1 shutdown call from the imds or ecs provider's shutdown */
@@ -337,6 +368,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     impl->cached_provider = cached_provider;
 
+    /* Subproviders have their own reference to the tls_ctx now */
+    aws_tls_ctx_release(tls_ctx);
+
     return provider;
 
 on_error:
@@ -357,6 +391,8 @@ on_error:
         aws_credentials_provider_release(profile_provider);
         aws_credentials_provider_release(environment_provider);
     }
+
+    aws_tls_ctx_release(tls_ctx);
 
     aws_mem_release(allocator, provider);
 

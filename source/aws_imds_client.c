@@ -123,6 +123,12 @@ struct aws_imds_client *aws_imds_client_new(
     struct aws_allocator *allocator,
     const struct aws_imds_client_options *options) {
 
+    if (!options->bootstrap) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Client bootstrap is required for querying IMDS");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
     struct aws_imds_client *client = aws_mem_calloc(allocator, 1, sizeof(struct aws_imds_client));
     if (!client) {
         return NULL;
