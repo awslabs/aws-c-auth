@@ -471,6 +471,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
 
     aws_string_destroy(impl->path_and_query);
     aws_string_destroy(impl->auth_token);
+    aws_string_destory(impl->host);
 
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
      * which will do memory release for provider and impl. So We should be freeing impl
@@ -567,13 +568,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         goto on_error;
     }
     if (options->auth_token.len != 0) {
-        impl->auth_token = aws_string_new_from_array(allocator, options->auth_token.ptr, options->auth_token.len);
+        impl->auth_token = aws_string_new_from_cursor(allocator, &options->auth_token);
         if (impl->auth_token == NULL) {
             goto on_error;
         }
     }
-    impl->path_and_query =
-        aws_string_new_from_array(allocator, options->path_and_query.ptr, options->path_and_query.len);
+    impl->path_and_query = aws_string_new_from_cursor(allocator, &options->path_and_query);
     if (impl->path_and_query == NULL) {
         goto on_error;
     }

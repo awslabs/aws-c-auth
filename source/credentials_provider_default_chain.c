@@ -96,7 +96,7 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
         };
 
         ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
-
+        aws_uri_clean_up(&uri);
     } else if (ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false")) {
         struct aws_credentials_provider_imds_options imds_options = {
             .shutdown_options = *shutdown_options,
