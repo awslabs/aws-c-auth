@@ -41,19 +41,33 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     struct aws_client_bootstrap *bootstrap,
     struct aws_tls_ctx *tls_ctx) {
 
+    struct aws_byte_cursor auth_token_cursor;
+    AWS_ZERO_STRUCT(auth_token_cursor);
+
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_string *ecs_relative_uri = NULL;
     struct aws_string *ecs_full_uri = NULL;
     struct aws_string *ec2_imds_disable = NULL;
+    struct aws_string *ecs_token = NULL;
 
     if (aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &ecs_relative_uri) != AWS_OP_SUCCESS ||
         aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &ecs_full_uri) != AWS_OP_SUCCESS ||
-        aws_get_environment_value(allocator, s_ec2_creds_env_disable, &ec2_imds_disable) != AWS_OP_SUCCESS) {
+        aws_get_environment_value(allocator, s_ec2_creds_env_disable, &ec2_imds_disable) != AWS_OP_SUCCESS ||
+        aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_token) != AWS_OP_SUCCESS) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed reading envrionment variables during default credentials provider chain initialization.");
+            "Failed reading environment variables during default credentials provider chain initialization.");
         goto clean_up;
     }
+
+    if (ecs_token && ecs_token->len) {
+        auth_token_cursor = aws_byte_cursor_from_string(ecs_token);
+    }
+
+    /*
+     * ToDo: the uri choice logic should be done in the ecs provider init logic.  As it stands, it's a nightmare
+     * to try and use the ecs provider anywhere outside the default chain.
+     */
     if (ecs_relative_uri && ecs_relative_uri->len) {
         struct aws_credentials_provider_ecs_options ecs_options = {
             .shutdown_options = *shutdown_options,
@@ -61,6 +75,7 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
             .host = aws_byte_cursor_from_string(s_ecs_host),
             .path_and_query = aws_byte_cursor_from_string(ecs_relative_uri),
             .tls_ctx = NULL,
+            .auth_token = auth_token_cursor,
         };
         ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
 
@@ -71,28 +86,16 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
             goto clean_up;
         }
 
-        struct aws_string *ecs_token = NULL;
-        if (aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_token) != AWS_OP_SUCCESS) {
-            AWS_LOGF_WARN(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Failed reading ECS Token environment variable during ECS creds provider initialization.");
-            goto clean_up;
-        }
-
-        struct aws_byte_cursor nullify_cursor;
-        AWS_ZERO_STRUCT(nullify_cursor);
-
         struct aws_credentials_provider_ecs_options ecs_options = {
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
             .host = uri.host_name,
             .path_and_query = uri.path_and_query,
             .tls_ctx = aws_byte_cursor_eq_c_str_ignore_case(&(uri.scheme), "HTTPS") ? tls_ctx : NULL,
-            .auth_token = (ecs_token && ecs_token->len) ? aws_byte_cursor_from_string(ecs_token) : nullify_cursor,
+            .auth_token = auth_token_cursor,
         };
 
         ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
-        aws_string_destroy(ecs_token);
 
     } else if (ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false")) {
         struct aws_credentials_provider_imds_options imds_options = {
@@ -107,6 +110,8 @@ clean_up:
     aws_string_destroy(ecs_relative_uri);
     aws_string_destroy(ecs_full_uri);
     aws_string_destroy(ec2_imds_disable);
+    aws_string_destroy(ecs_token);
+
     return ecs_or_imds_provider;
 }
 

@@ -34,6 +34,7 @@ static void s_on_connection_manager_shutdown(void *user_data);
 struct aws_credentials_provider_ecs_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_auth_http_system_vtable *function_table;
+    struct aws_string *host;
     struct aws_string *path_and_query;
     struct aws_string *auth_token;
 };
@@ -300,12 +301,13 @@ static void s_ecs_on_stream_complete_fn(struct aws_http_stream *stream, int erro
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_accept_header, "Accept");
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_accept_header_value, "*/*");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_accept_header_value, "application/json");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_user_agent_header, "User-Agent");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_user_agent_header_value, "aws-sdk-crt/ecs-credentials-provider");
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_h1_0_keep_alive_header, "Connection");
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_h1_0_keep_alive_header_value, "keep-alive");
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_authorization_header, "authorization");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_authorization_header, "Authorization");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_accept_encoding_header, "Accept-Encoding");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_accept_encoding_header_value, "identity");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_host_header, "Host");
 
 static int s_make_ecs_http_query(
     struct aws_credentials_provider_ecs_user_data *ecs_user_data,
@@ -319,6 +321,14 @@ static int s_make_ecs_http_query(
     }
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
+
+    struct aws_http_header host_header = {
+        .name = aws_byte_cursor_from_string(s_ecs_host_header),
+        .value = aws_byte_cursor_from_string(impl->host),
+    };
+    if (aws_http_message_add_header(request, host_header)) {
+        goto on_error;
+    }
 
     if (impl->auth_token != NULL) {
         struct aws_http_header auth_header = {
@@ -338,19 +348,19 @@ static int s_make_ecs_http_query(
         goto on_error;
     }
 
+    struct aws_http_header accept_encoding_header = {
+        .name = aws_byte_cursor_from_string(s_ecs_accept_encoding_header),
+        .value = aws_byte_cursor_from_string(s_ecs_accept_encoding_header_value),
+    };
+    if (aws_http_message_add_header(request, accept_encoding_header)) {
+        goto on_error;
+    }
+
     struct aws_http_header user_agent_header = {
         .name = aws_byte_cursor_from_string(s_ecs_user_agent_header),
         .value = aws_byte_cursor_from_string(s_ecs_user_agent_header_value),
     };
     if (aws_http_message_add_header(request, user_agent_header)) {
-        goto on_error;
-    }
-
-    struct aws_http_header keep_alive_header = {
-        .name = aws_byte_cursor_from_string(s_ecs_h1_0_keep_alive_header),
-        .value = aws_byte_cursor_from_string(s_ecs_h1_0_keep_alive_header_value),
-    };
-    if (aws_http_message_add_header(request, keep_alive_header)) {
         goto on_error;
     }
 
@@ -567,6 +577,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     if (impl->path_and_query == NULL) {
         goto on_error;
     }
+
+    impl->host = aws_string_new_from_cursor(allocator, &options->host);
+    if (impl->host == NULL) {
+        goto on_error;
+    }
+
     provider->shutdown_options = options->shutdown_options;
 
     aws_tls_connection_options_clean_up(&tls_connection_options);
