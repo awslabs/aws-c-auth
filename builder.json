@@ -1,5 +1,5 @@
 {
-    "name": "aws-c-auth-staging",
+    "name": "aws-c-auth",
     "targets": {
         "android": {
             "enabled": false,
