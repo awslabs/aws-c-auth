@@ -6,8 +6,10 @@
 #include <aws/auth/private/aws_signing.h>
 
 #include <aws/auth/credentials.h>
+#include <aws/auth/private/key_derivation.h>
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
+#include <aws/cal/ecc.h>
 #include <aws/cal/hash.h>
 #include <aws/cal/hmac.h>
 #include <aws/common/date_time.h>
@@ -44,6 +46,10 @@
 #define MAX_AUTHORIZATION_QUERY_PARAM_COUNT 6
 #define DEFAULT_PATH_COMPONENT_COUNT 10
 #define CANONICAL_REQUEST_SPLIT_OVER_ESTIMATE 20
+#define HEX_ENCODED_SIGNATURE_OVER_ESTIMATE 256
+#define MAX_ECDSA_P256_SIGNATURE_AS_BINARY_LENGTH 72
+#define MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH (MAX_ECDSA_P256_SIGNATURE_AS_BINARY_LENGTH * 2)
+#define AWS_SIGV4A_SIGNATURE_PADDING_BYTE ('*')
 
 AWS_STRING_FROM_LITERAL(g_aws_signing_content_header_name, "x-amz-content-sha256");
 AWS_STRING_FROM_LITERAL(g_aws_signing_authorization_header_name, "Authorization");
@@ -54,9 +60,11 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
 AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires");
+AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_name, "X-Amz-Region-Set");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
+AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_s3_chunked_payload, "AWS4-ECDSA-P256-SHA256-PAYLOAD");
 
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
@@ -74,6 +82,7 @@ static struct aws_byte_cursor s_upgrade_header_name;
 static struct aws_byte_cursor s_amz_content_sha256_header_name;
 static struct aws_byte_cursor s_amz_date_header_name;
 static struct aws_byte_cursor s_authorization_header_name;
+static struct aws_byte_cursor s_region_set_header_name;
 static struct aws_byte_cursor s_amz_security_token_header_name;
 
 static struct aws_byte_cursor s_amz_signature_param_name;
@@ -83,6 +92,7 @@ static struct aws_byte_cursor s_amz_algorithm_param_name;
 static struct aws_byte_cursor s_amz_signed_headers_param_name;
 static struct aws_byte_cursor s_amz_security_token_param_name;
 static struct aws_byte_cursor s_amz_expires_param_name;
+static struct aws_byte_cursor s_amz_region_set_param_name;
 
 /*
  * Build a set of library-static tables for quick lookup.
@@ -163,6 +173,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_region_set_header_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_region_set_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     s_amz_security_token_header_name = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
     if (aws_hash_table_put(&s_forbidden_headers, &s_amz_security_token_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
@@ -214,6 +229,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_amz_region_set_param_name = aws_byte_cursor_from_string(g_aws_signing_region_set_name);
+    if (aws_hash_table_put(&s_forbidden_params, &s_amz_region_set_param_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     return AWS_OP_SUCCESS;
 }
 
@@ -251,11 +271,19 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
-            *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
+            } else {
+                *cursor = aws_byte_cursor_from_string(g_signature_type_sigv4a_http_request);
+            }
             break;
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
-            *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_s3_chunked_payload);
+            }
             break;
 
         default:
@@ -378,23 +406,6 @@ void aws_signing_state_destroy(struct aws_signing_state_aws *state) {
  *
  */
 
-static int s_append_character_to_byte_buf(struct aws_byte_buf *buffer, uint8_t value) {
-
-#if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4221)
-#endif /* _MSC_VER */
-
-    /* msvc isn't a fan of this pointer-to-local assignment */
-    struct aws_byte_cursor eq_cursor = {.len = 1, .ptr = &value};
-
-#if defined(_MSC_VER)
-#    pragma warning(pop)
-#endif /* _MSC_VER */
-
-    return aws_byte_buf_append_dynamic(buffer, &eq_cursor);
-}
-
 static int s_append_canonical_method(struct aws_signing_state_aws *state) {
     const struct aws_signable *signable = state->signable;
     struct aws_byte_buf *buffer = &state->canonical_request;
@@ -406,7 +417,7 @@ static int s_append_canonical_method(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(buffer, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(buffer, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -498,7 +509,7 @@ static int s_append_normalized_path(
     /*
      * Paths always start with a single '/'
      */
-    if (s_append_character_to_byte_buf(dest, '/')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '/')) {
         goto cleanup;
     }
 
@@ -519,7 +530,7 @@ static int s_append_normalized_path(
         }
 
         if (i + 1 < normalized_split_count || ends_with_slash) {
-            if (s_append_character_to_byte_buf(dest, '/')) {
+            if (aws_byte_buf_append_byte_dynamic(dest, '/')) {
                 goto cleanup;
             }
         }
@@ -599,7 +610,7 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
         }
     }
 
-    if (s_append_character_to_byte_buf(canonical_request_buffer, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(canonical_request_buffer, '\n')) {
         goto cleanup;
     }
 
@@ -669,7 +680,7 @@ static int s_append_canonical_query_param(struct aws_uri_param *encoded_param, s
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(buffer, '=')) {
+    if (aws_byte_buf_append_byte_dynamic(buffer, '=')) {
         return AWS_OP_ERR;
     }
 
@@ -838,6 +849,18 @@ static int s_add_authorization_query_params(
         }
     }
 
+    /* X-Amz-Region-Set */
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        struct aws_uri_param region_set_param = {
+            .key = aws_byte_cursor_from_string(g_aws_signing_region_set_name),
+            .value = state->config.region,
+        };
+
+        if (s_add_authorization_query_param(state, unencoded_query_params, &region_set_param)) {
+            goto done;
+        }
+    }
+
     /* NOTE: Update MAX_AUTHORIZATION_QUERY_PARAM_COUNT if more params added */
 
     result = AWS_OP_SUCCESS;
@@ -1002,14 +1025,14 @@ static int s_append_canonical_query_string(struct aws_uri *uri, struct aws_signi
         }
 
         if (i + 1 < param_count) {
-            if (s_append_character_to_byte_buf(canonical_request_buffer, '&')) {
+            if (aws_byte_buf_append_byte_dynamic(canonical_request_buffer, '&')) {
                 goto cleanup;
             }
         }
     }
 
 finish:
-    if (s_append_character_to_byte_buf(canonical_request_buffer, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(canonical_request_buffer, '\n')) {
         goto cleanup;
     }
 
@@ -1079,11 +1102,11 @@ static int s_append_canonical_header(
              * there's a previous header, add appropriate separator in both canonical header buffer
              * and signed headers buffer
              */
-            if (s_append_character_to_byte_buf(canonical_header_buffer, '\n')) {
+            if (aws_byte_buf_append_byte_dynamic(canonical_header_buffer, '\n')) {
                 return AWS_OP_ERR;
             }
 
-            if (s_append_character_to_byte_buf(signed_headers_buffer, ';')) {
+            if (aws_byte_buf_append_byte_dynamic(signed_headers_buffer, ';')) {
                 return AWS_OP_ERR;
             }
         }
@@ -1098,12 +1121,12 @@ static int s_append_canonical_header(
             return AWS_OP_ERR;
         }
 
-        if (s_append_character_to_byte_buf(canonical_header_buffer, ':')) {
+        if (aws_byte_buf_append_byte_dynamic(canonical_header_buffer, ':')) {
             return AWS_OP_ERR;
         }
     } else {
         /* we've seen this header before, add a comma before appending the value */
-        if (s_append_character_to_byte_buf(canonical_header_buffer, ',')) {
+        if (aws_byte_buf_append_byte_dynamic(canonical_header_buffer, ',')) {
             return AWS_OP_ERR;
         }
     }
@@ -1261,6 +1284,23 @@ static int s_build_canonical_stable_header_list(
                 aws_byte_cursor_from_buf(&state->date))) {
             return AWS_OP_ERR;
         }
+
+        *out_required_capacity += g_aws_signing_date_name->len + state->date.len;
+
+        /*
+         * x-amz-region-set
+         */
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            if (s_add_authorization_header(
+                    state,
+                    stable_header_list,
+                    out_required_capacity,
+                    aws_byte_cursor_from_string(g_aws_signing_region_set_name),
+                    state->config.region)) {
+                return AWS_OP_ERR;
+            }
+        }
+
         /*
          * x-amz-content-sha256 (optional)
          */
@@ -1375,11 +1415,11 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
     }
 
     /* There's always at least one header entry (X-Amz-Date), end the last one */
-    if (s_append_character_to_byte_buf(header_buffer, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
         goto on_cleanup;
     }
 
-    if (s_append_character_to_byte_buf(header_buffer, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
         goto on_cleanup;
     }
 
@@ -1388,7 +1428,7 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
         goto on_cleanup;
     }
 
-    if (s_append_character_to_byte_buf(header_buffer, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
         goto on_cleanup;
     }
 
@@ -1523,6 +1563,7 @@ static int s_append_credential_scope_terminator(enum aws_signing_algorithm algor
 
     switch (algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
             terminator_cursor = aws_byte_cursor_from_string(s_credential_scope_sigv4_terminator);
             break;
 
@@ -1554,23 +1595,25 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '/')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '/')) {
         return AWS_OP_ERR;
     }
 
-    if (aws_byte_buf_append_dynamic(dest, &config->region)) {
-        return AWS_OP_ERR;
-    }
+    if (config->algorithm != AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        if (aws_byte_buf_append_dynamic(dest, &config->region)) {
+            return AWS_OP_ERR;
+        }
 
-    if (s_append_character_to_byte_buf(dest, '/')) {
-        return AWS_OP_ERR;
+        if (aws_byte_buf_append_byte_dynamic(dest, '/')) {
+            return AWS_OP_ERR;
+        }
     }
 
     if (aws_byte_buf_append_dynamic(dest, &config->service)) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '/')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '/')) {
         return AWS_OP_ERR;
     }
 
@@ -1584,7 +1627,7 @@ static int s_build_credential_scope(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(&state->access_credential_scope, '/')) {
+    if (aws_byte_buf_append_byte_dynamic(&state->access_credential_scope, '/')) {
         return AWS_OP_ERR;
     }
 
@@ -1643,11 +1686,14 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
         return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
     }
 
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
     if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1656,7 +1702,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1843,7 +1889,7 @@ int aws_signing_build_string_to_sign(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1857,7 +1903,7 @@ int aws_signing_build_string_to_sign(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1866,7 +1912,7 @@ int aws_signing_build_string_to_sign(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '\n')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
         return AWS_OP_ERR;
     }
 
@@ -1907,7 +1953,6 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
     AWS_ZERO_STRUCT(date_buf);
 
     struct aws_byte_cursor secret_access_key_cursor = aws_credentials_get_secret_access_key(state->config.credentials);
-
     if (aws_byte_buf_init(&secret_key, allocator, s_secret_key_prefix->len + secret_access_key_cursor.len) ||
         aws_byte_buf_init(&output, allocator, AWS_SHA256_LEN) ||
         aws_byte_buf_init(&date_buf, allocator, AWS_DATE_TIME_STR_MAX_LEN)) {
@@ -1965,7 +2010,7 @@ cleanup:
 }
 
 /*
- * Appends a hex-encoding of the final signature value from the sigv4 signing process to a buffer
+ * Calculates the hex-encoding of the final signature value from the sigv4 signing process
  */
 static int s_calculate_sigv4_signature_value(struct aws_signing_state_aws *state) {
     struct aws_allocator *allocator = state->allocator;
@@ -2008,6 +2053,55 @@ cleanup:
 }
 
 /*
+ * Calculates the hex-encoding of the final signature value from the sigv4a signing process
+ */
+static int s_calculate_sigv4a_signature_value(struct aws_signing_state_aws *state) {
+    struct aws_allocator *allocator = state->allocator;
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf ecdsa_digest;
+    AWS_ZERO_STRUCT(ecdsa_digest);
+
+    struct aws_byte_buf sha256_digest;
+    AWS_ZERO_STRUCT(sha256_digest);
+
+    struct aws_ecc_key_pair *ecc_key = aws_credentials_get_ecc_key_pair(state->config.credentials);
+    if (ecc_key == NULL) {
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CREDENTIALS);
+    }
+
+    if (aws_byte_buf_init(&ecdsa_digest, allocator, aws_ecc_key_pair_signature_length(ecc_key)) ||
+        aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor string_to_sign_cursor = aws_byte_cursor_from_buf(&state->string_to_sign);
+    if (aws_sha256_compute(allocator, &string_to_sign_cursor, &sha256_digest, 0)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor sha256_digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
+    if (aws_ecc_key_pair_sign_message(ecc_key, &sha256_digest_cursor, &ecdsa_digest)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor ecdsa_digest_cursor = aws_byte_cursor_from_buf(&ecdsa_digest);
+    if (aws_hex_encode_append_dynamic(&ecdsa_digest_cursor, &state->signature)) {
+        goto cleanup;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+
+    aws_byte_buf_clean_up(&ecdsa_digest);
+    aws_byte_buf_clean_up(&sha256_digest);
+
+    return result;
+}
+
+/*
  * Appends a final signature value to a buffer based on the requested signing algorithm
  */
 int s_calculate_signature_value(struct aws_signing_state_aws *state) {
@@ -2015,9 +2109,57 @@ int s_calculate_signature_value(struct aws_signing_state_aws *state) {
         case AWS_SIGNING_ALGORITHM_V4:
             return s_calculate_sigv4_signature_value(state);
 
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            return s_calculate_sigv4a_signature_value(state);
+
         default:
             return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM);
     }
+}
+
+static int s_add_signature_property_to_result_set(struct aws_signing_state_aws *state) {
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf final_signature_buffer;
+    AWS_ZERO_STRUCT(final_signature_buffer);
+
+    if (aws_byte_buf_init(&final_signature_buffer, state->allocator, HEX_ENCODED_SIGNATURE_OVER_ESTIMATE)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor signature_value = aws_byte_cursor_from_buf(&state->signature);
+    if (aws_byte_buf_append_dynamic(&final_signature_buffer, &signature_value)) {
+        goto cleanup;
+    }
+
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
+        state->config.signature_type == AWS_ST_HTTP_REQUEST_CHUNK) {
+        if (aws_byte_buf_reserve(&final_signature_buffer, MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH)) {
+            goto cleanup;
+        }
+
+        if (signature_value.len < MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH) {
+            size_t padding_byte_count = MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH - signature_value.len;
+            if (!aws_byte_buf_write_u8_n(
+                    &final_signature_buffer, AWS_SIGV4A_SIGNATURE_PADDING_BYTE, padding_byte_count)) {
+                goto cleanup;
+            }
+        }
+    }
+
+    signature_value = aws_byte_cursor_from_buf(&final_signature_buffer);
+    if (aws_signing_result_set_property(&state->result, g_aws_signature_property_name, &signature_value)) {
+        return AWS_OP_ERR;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+
+    aws_byte_buf_clean_up(&final_signature_buffer);
+
+    return result;
 }
 
 /*
@@ -2046,11 +2188,13 @@ static int s_add_authorization_to_result(
     }
 
     /*
-     * Unconditionally add the signature value as a top-level property.  This is how chunk and event signing
-     * get their signature value.
+     * Unconditionally add the signature value as a top-level property.
      */
-    struct aws_byte_cursor signature_value = aws_byte_cursor_from_buf(&state->signature);
-    return aws_signing_result_set_property(&state->result, g_aws_signature_property_name, &signature_value);
+    if (s_add_signature_property_to_result_set(state)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_credential_prefix, " Credential=");
@@ -2081,7 +2225,7 @@ static int s_append_authorization_header_preamble(struct aws_signing_state_aws *
         return AWS_OP_ERR;
     }
 
-    if (s_append_character_to_byte_buf(dest, '/')) {
+    if (aws_byte_buf_append_byte_dynamic(dest, '/')) {
         return AWS_OP_ERR;
     }
 
@@ -2156,4 +2300,155 @@ cleanup:
     aws_byte_buf_clean_up(&authorization_value);
 
     return result;
+}
+
+int aws_validate_v4a_authorization_value(
+    struct aws_allocator *allocator,
+    struct aws_ecc_key_pair *ecc_key,
+    struct aws_byte_cursor string_to_sign_cursor,
+    struct aws_byte_cursor signature_value_cursor) {
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_SIGNING,
+        "(id=%p) Verifying v4a auth value: \n" PRInSTR "\n\nusing string-to-sign: \n" PRInSTR "\n\n",
+        (void *)ecc_key,
+        AWS_BYTE_CURSOR_PRI(signature_value_cursor),
+        AWS_BYTE_CURSOR_PRI(string_to_sign_cursor));
+
+    signature_value_cursor = aws_trim_padded_sigv4a_signature(signature_value_cursor);
+
+    size_t binary_length = 0;
+    if (aws_hex_compute_decoded_len(signature_value_cursor.len, &binary_length)) {
+        return AWS_OP_ERR;
+    }
+
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf binary_signature;
+    AWS_ZERO_STRUCT(binary_signature);
+
+    struct aws_byte_buf sha256_digest;
+    AWS_ZERO_STRUCT(sha256_digest);
+
+    if (aws_byte_buf_init(&binary_signature, allocator, binary_length) ||
+        aws_byte_buf_init(&sha256_digest, allocator, AWS_SHA256_LEN)) {
+        goto done;
+    }
+
+    if (aws_hex_decode(&signature_value_cursor, &binary_signature)) {
+        goto done;
+    }
+
+    if (aws_sha256_compute(allocator, &string_to_sign_cursor, &sha256_digest, 0)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor binary_signature_cursor =
+        aws_byte_cursor_from_array(binary_signature.buffer, binary_signature.len);
+    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&sha256_digest);
+    if (aws_ecc_key_pair_verify_signature(ecc_key, &digest_cursor, &binary_signature_cursor)) {
+        goto done;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_byte_buf_clean_up(&binary_signature);
+    aws_byte_buf_clean_up(&sha256_digest);
+
+    return result;
+}
+
+int aws_verify_sigv4a_signing(
+    struct aws_allocator *allocator,
+    const struct aws_signable *signable,
+    const struct aws_signing_config_base *base_config,
+    struct aws_byte_cursor expected_canonical_request_cursor,
+    struct aws_byte_cursor signature_cursor,
+    struct aws_byte_cursor ecc_key_pub_x,
+    struct aws_byte_cursor ecc_key_pub_y) {
+
+    int result = AWS_OP_ERR;
+
+    if (base_config->config_type != AWS_SIGNING_CONFIG_AWS) {
+        return aws_raise_error(AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION);
+    }
+
+    const struct aws_signing_config_aws *config = (void *)base_config;
+    if (config->algorithm != AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+
+    if (config->credentials == NULL) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+
+    struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, config, signable, NULL, NULL);
+    if (!signing_state) {
+        return AWS_OP_ERR;
+    }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_SIGNING,
+        "(id=%p) Verifying v4a signature: \n" PRInSTR "\n\nagainst expected canonical request: \n" PRInSTR
+        "\n\nusing ecc key:\n X:" PRInSTR "\n Y:" PRInSTR "\n\n",
+        (void *)signable,
+        AWS_BYTE_CURSOR_PRI(signature_cursor),
+        AWS_BYTE_CURSOR_PRI(expected_canonical_request_cursor),
+        AWS_BYTE_CURSOR_PRI(ecc_key_pub_x),
+        AWS_BYTE_CURSOR_PRI(ecc_key_pub_y));
+
+    struct aws_ecc_key_pair *verification_key =
+        aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
+    if (verification_key == NULL) {
+        goto done;
+    }
+
+    if (aws_credentials_get_ecc_key_pair(signing_state->config.credentials) == NULL) {
+        struct aws_credentials *ecc_credentials =
+            aws_credentials_new_ecc_from_aws_credentials(allocator, signing_state->config.credentials);
+        aws_credentials_release(signing_state->config.credentials);
+        signing_state->config.credentials = ecc_credentials;
+        if (signing_state->config.credentials == NULL) {
+            goto done;
+        }
+    }
+
+    if (aws_signing_build_canonical_request(signing_state)) {
+        goto done;
+    }
+
+    struct aws_byte_cursor canonical_request_cursor = aws_byte_cursor_from_buf(&signing_state->canonical_request);
+    if (aws_byte_cursor_compare_lexical(&expected_canonical_request_cursor, &canonical_request_cursor) != 0) {
+        aws_raise_error(AWS_AUTH_CANONICAL_REQUEST_MISMATCH);
+        goto done;
+    }
+
+    if (aws_signing_build_string_to_sign(signing_state)) {
+        goto done;
+    }
+
+    if (aws_validate_v4a_authorization_value(
+            allocator, verification_key, aws_byte_cursor_from_buf(&signing_state->string_to_sign), signature_cursor)) {
+        aws_raise_error(AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE);
+        goto done;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+done:
+
+    aws_ecc_key_pair_release(verification_key);
+    aws_signing_state_destroy(signing_state);
+
+    return result;
+}
+
+static bool s_is_padding_byte(uint8_t byte) {
+    return byte == AWS_SIGV4A_SIGNATURE_PADDING_BYTE;
+}
+
+struct aws_byte_cursor aws_trim_padded_sigv4a_signature(struct aws_byte_cursor signature) {
+    return aws_byte_cursor_trim_pred(&signature, s_is_padding_byte);
 }

@@ -80,7 +80,15 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE,
         "Attempt to sign a streaming item without supplying a previous signature"),
-
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGNING_INVALID_CREDENTIALS,
+        "Attempt to perform a signing operation with invalid credentials"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CANONICAL_REQUEST_MISMATCH,
+        "Expected canonical request did not match the computed canonical request"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE,
+        "The supplied sigv4a signature was not a valid signature for the hashed string to sign"),
 };
 /* clang-format on */
 

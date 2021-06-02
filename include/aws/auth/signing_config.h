@@ -36,6 +36,7 @@ struct aws_signing_config_base {
  */
 enum aws_signing_algorithm {
     AWS_SIGNING_ALGORITHM_V4,
+    AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC,
 };
 
 /**
@@ -102,6 +103,12 @@ AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_unsigne
 AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload;
 
 /**
+ * 'STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload;
+
+/**
  * 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
  * For use with `aws_signing_config_aws.signed_body_value`.
  *
@@ -144,8 +151,10 @@ struct aws_signing_config_aws {
      */
     enum aws_signature_type signature_type;
 
-    /**
-     * The region to sign against
+    /*
+     * Region-related configuration
+     *   (1) If Sigv4, the region to sign against
+     *   (2) If Sigv4a, the value of the X-amzn-region-set header (added in signing)
      */
     struct aws_byte_cursor region;
 
@@ -216,19 +225,28 @@ struct aws_signing_config_aws {
     /*
      * Signing key control:
      *
-     *   (1) If "credentials" is valid, use it
-     *   (2) Else if "credentials_provider" is valid, query credentials from the provider and use the result
-     *   (3) Else fail
+     *   If "credentials" is valid:
+     *      use it
+     *   Else if "credentials_provider" is valid
+     *      query credentials from the provider
+     *      If sigv4a is being used
+     *          use the ecc-based credentials derived from the query result
+     *      Else
+     *          use the query result
+     *   Else
+     *      fail
      *
      */
 
-    /**
-     * AWS Credentials to sign with.
+    /*
+     * AWS Credentials to sign with.  If Sigv4a is the algorithm and the credentials supplied are not ecc-based,
+     * a temporary ecc-based credentials object will be built and used instead.
      */
     const struct aws_credentials *credentials;
 
-    /**
-     * AWS credentials provider to fetch credentials from.
+    /*
+     * AWS credentials provider to fetch credentials from.  If the signing algorithm is asymmetric sigv4, then the
+     * ecc-based credentials will be derived from the fetched credentials.
      */
     struct aws_credentials_provider *credentials_provider;
 

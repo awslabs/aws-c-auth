@@ -103,8 +103,15 @@ static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials
 
         state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
     } else {
-        state->config.credentials = credentials;
-        aws_credentials_acquire(credentials);
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+            state->config.credentials = aws_credentials_new_ecc_from_aws_credentials(state->allocator, credentials);
+            if (state->config.credentials == NULL) {
+                state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+            }
+        } else {
+            state->config.credentials = credentials;
+            aws_credentials_acquire(credentials);
+        }
     }
 
     s_perform_signing(state);
@@ -131,10 +138,24 @@ int aws_sign_request_aws(
         return AWS_OP_ERR;
     }
 
-    bool can_sign_immediately = false;
-    if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
-        can_sign_immediately = signing_state->config.credentials != NULL;
+    if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        if (signing_state->config.credentials != NULL) {
+            /*
+             * If these are regular credentials, try to derive ecc-based ones
+             */
+            if (aws_credentials_get_ecc_key_pair(signing_state->config.credentials) == NULL) {
+                struct aws_credentials *ecc_credentials =
+                    aws_credentials_new_ecc_from_aws_credentials(allocator, signing_state->config.credentials);
+                aws_credentials_release(signing_state->config.credentials);
+                signing_state->config.credentials = ecc_credentials;
+                if (signing_state->config.credentials == NULL) {
+                    goto on_error;
+                }
+            }
+        }
     }
+
+    bool can_sign_immediately = signing_state->config.credentials != NULL;
 
     if (can_sign_immediately) {
         s_perform_signing(signing_state);

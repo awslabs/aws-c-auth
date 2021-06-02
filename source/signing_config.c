@@ -5,6 +5,8 @@
 
 #include <aws/auth/signing_config.h>
 
+#include <aws/auth/credentials.h>
+
 const struct aws_byte_cursor g_aws_signed_body_value_empty_sha256 =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
@@ -14,6 +16,9 @@ const struct aws_byte_cursor g_aws_signed_body_value_unsigned_payload =
 const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
 
+const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD");
+
 const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-EVENTS");
 
@@ -21,6 +26,9 @@ const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm
     switch (algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
             return "SigV4";
+
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            return "SigV4Asymmetric";
 
         default:
             break;
@@ -81,6 +89,27 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
                 AWS_LOGF_ERROR(
                     AWS_LS_AUTH_SIGNING,
                     "(id=%p) Sigv4 signing config is missing a credentials provider or credentials",
+                    (void *)config);
+                return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+            }
+
+            if (config->credentials != NULL) {
+                if (aws_credentials_get_access_key_id(config->credentials).len == 0 ||
+                    aws_credentials_get_secret_access_key(config->credentials).len == 0) {
+                    AWS_LOGF_ERROR(
+                        AWS_LS_AUTH_SIGNING,
+                        "(id=%p) Sigv4 signing configured with invalid credentials",
+                        (void *)config);
+                    return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CREDENTIALS);
+                }
+            }
+            break;
+
+        case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
+            if (config->credentials == NULL && config->credentials_provider == NULL) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "(id=%p) Sigv4 asymmetric signing config is missing a credentials provider or credentials",
                     (void *)config);
                 return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
             }

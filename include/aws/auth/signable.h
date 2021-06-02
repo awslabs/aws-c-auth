@@ -146,7 +146,14 @@ AWS_AUTH_API extern const struct aws_string *g_aws_http_method_property_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_http_uri_property_name;
 
 /**
- * Name of the property that holds the (hex-encoded) signature value.  This is always added to signing results.
+ * Name of the property that holds the signature value.  This is always added to signing results.
+ * Depending on the requested signature type, the signature may be padded or encoded differently:
+ *   (1) Header - hex encoding of the binary signature value
+ *   (2) QueryParam - hex encoding of the binary signature value
+ *   (3) Chunk/Sigv4 - hex encoding of the binary signature value
+ *   (4) Chunk/Sigv4a - fixed-size-rhs-padded (with AWS_SIGV4A_SIGNATURE_PADDING_BYTE) hex encoding of the
+ *       binary signature value
+ *   (5) Event - binary signature value (NYI)
  */
 AWS_AUTH_API extern const struct aws_string *g_aws_signature_property_name;
 

@@ -13,6 +13,7 @@
 #include <aws/common/byte_buf.h>
 #include <aws/common/hash_table.h>
 
+struct aws_ecc_key_pair;
 struct aws_signable;
 struct aws_signing_config_aws;
 struct aws_signing_result;
@@ -105,6 +106,7 @@ AWS_AUTH_API extern const struct aws_string *g_aws_signing_credential_query_para
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_date_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_signed_headers_query_param_name;
 AWS_AUTH_API extern const struct aws_string *g_aws_signing_security_token_name;
+AWS_AUTH_API extern const struct aws_string *g_signature_type_sigv4a_http_request;
 
 /**
  * Initializes the internal table of headers that should not be signed
