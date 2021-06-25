@@ -20,6 +20,14 @@
   THE SOFTWARE.
 */
 
+/*
+ * This file has been modified from its original version by Amazon:
+ *   (1) Include path
+ *   (2) #include order from clang-format
+ *   (3) Clang-tidy error removal: Added parens around macro params in a number of macro bodies
+ *   (4) NOLINT annotations to disable clang-tidy errors around raw/unsafe function use
+ */
+
 /* clang-format off */
 
 /* cJSON */
@@ -39,13 +47,13 @@
 #pragma warning (disable : 4001)
 #endif
 
-#include <string.h>
-#include <stdio.h>
-#include <math.h>
-#include <stdlib.h>
-#include <limits.h>
 #include <ctype.h>
 #include <float.h>
+#include <limits.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef ENABLE_LOCALES
 #include <locale.h>

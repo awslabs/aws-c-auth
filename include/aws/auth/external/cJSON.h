@@ -23,9 +23,10 @@
 /*
  * This file has been modified from its original version by Amazon:
  *   (1) Include path
+ *   (2) #include order from clang-format
  *   (3) Clang-tidy error removal: Added parens around macro params in a number of macro bodies
  *   (4) NOLINT annotations to disable clang-tidy errors around raw/unsafe function use
-*/
+ */
 
 /* clang-format off */
 
