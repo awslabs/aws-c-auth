@@ -39,6 +39,7 @@ const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm
 
 int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *config) {
     if (config == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "AWS signing config is null");
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
