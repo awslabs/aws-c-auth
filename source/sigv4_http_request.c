@@ -157,8 +157,9 @@ int aws_apply_signing_result_to_http_request(
             return AWS_OP_ERR;
         }
 
-        struct aws_http_header dest_header = {.name = aws_byte_cursor_from_string(source_header.name),
-                                              .value = aws_byte_cursor_from_string(source_header.value)};
+        struct aws_http_header dest_header = {
+            .name = aws_byte_cursor_from_string(source_header.name),
+            .value = aws_byte_cursor_from_string(source_header.value)};
         aws_http_message_add_header(request, dest_header);
     }
 

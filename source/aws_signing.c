@@ -2376,7 +2376,7 @@ int aws_verify_sigv4a_signing(
         return aws_raise_error(AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION);
     }
 
-    if (aws_validate_aws_signing_config_aws((void*)base_config)) {
+    if (aws_validate_aws_signing_config_aws((void *)base_config)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Signing config failed validation");
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
@@ -2427,7 +2427,8 @@ int aws_verify_sigv4a_signing(
         goto done;
     }
 
-    verification_key = aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
+    verification_key =
+        aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
     if (verification_key == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create an ECC key from provided coordinates");
         goto done;
