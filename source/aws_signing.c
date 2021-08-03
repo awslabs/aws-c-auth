@@ -2408,7 +2408,23 @@ int aws_verify_sigv4a_signing(
         AWS_BYTE_CURSOR_PRI(ecc_key_pub_x),
         AWS_BYTE_CURSOR_PRI(ecc_key_pub_y));
 
-    struct aws_ecc_key_pair *verification_key = NULL;
+    struct aws_ecc_key_pair *verification_key =
+        aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
+    if (verification_key == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create an ECC key from provided coordinates");
+        goto done;
+    }
+
+    if (aws_credentials_get_ecc_key_pair(signing_state->config.credentials) == NULL) {
+        struct aws_credentials *ecc_credentials =
+            aws_credentials_new_ecc_from_aws_credentials(allocator, signing_state->config.credentials);
+        aws_credentials_release(signing_state->config.credentials);
+        signing_state->config.credentials = ecc_credentials;
+        if (signing_state->config.credentials == NULL) {
+            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials")
+            goto done;
+        }
+    }
 
     if (aws_signing_build_canonical_request(signing_state)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to canonicalize request for signing");
@@ -2425,24 +2441,6 @@ int aws_verify_sigv4a_signing(
     if (aws_signing_build_string_to_sign(signing_state)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to build string to sign from canonical request");
         goto done;
-    }
-
-    verification_key =
-        aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
-    if (verification_key == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create an ECC key from provided coordinates");
-        goto done;
-    }
-
-    if (aws_credentials_get_ecc_key_pair(signing_state->config.credentials) == NULL) {
-        struct aws_credentials *ecc_credentials =
-            aws_credentials_new_ecc_from_aws_credentials(allocator, signing_state->config.credentials);
-        aws_credentials_release(signing_state->config.credentials);
-        signing_state->config.credentials = ecc_credentials;
-        if (signing_state->config.credentials == NULL) {
-            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials")
-            goto done;
-        }
     }
 
     if (aws_validate_v4a_authorization_value(
