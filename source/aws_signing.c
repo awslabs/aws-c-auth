@@ -2372,20 +2372,29 @@ int aws_verify_sigv4a_signing(
     int result = AWS_OP_ERR;
 
     if (base_config->config_type != AWS_SIGNING_CONFIG_AWS) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Signing config is not an AWS signing config");
         return aws_raise_error(AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION);
+    }
+
+    if (aws_validate_aws_signing_config_aws((void*)base_config)) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Signing config failed validation");
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
     const struct aws_signing_config_aws *config = (void *)base_config;
     if (config->algorithm != AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Signing algorithm is not V4_ASYMMETRIC");
         return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
 
     if (config->credentials == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "AWS credentials were not provided/null");
         return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
 
     struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, config, signable, NULL, NULL);
     if (!signing_state) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create new signing state");
         return AWS_OP_ERR;
     }
 
@@ -2399,9 +2408,28 @@ int aws_verify_sigv4a_signing(
         AWS_BYTE_CURSOR_PRI(ecc_key_pub_x),
         AWS_BYTE_CURSOR_PRI(ecc_key_pub_y));
 
-    struct aws_ecc_key_pair *verification_key =
-        aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
+    struct aws_ecc_key_pair *verification_key = NULL;
+
+    if (aws_signing_build_canonical_request(signing_state)) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to canonicalize request for signing");
+        goto done;
+    }
+
+    struct aws_byte_cursor canonical_request_cursor = aws_byte_cursor_from_buf(&signing_state->canonical_request);
+    if (aws_byte_cursor_compare_lexical(&expected_canonical_request_cursor, &canonical_request_cursor) != 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Canonicalized request and expected canonical request do not match");
+        aws_raise_error(AWS_AUTH_CANONICAL_REQUEST_MISMATCH);
+        goto done;
+    }
+
+    if (aws_signing_build_string_to_sign(signing_state)) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to build string to sign from canonical request");
+        goto done;
+    }
+
+    verification_key = aws_ecc_key_new_from_hex_coordinates(allocator, AWS_CAL_ECDSA_P256, ecc_key_pub_x, ecc_key_pub_y);
     if (verification_key == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create an ECC key from provided coordinates");
         goto done;
     }
 
@@ -2411,26 +2439,14 @@ int aws_verify_sigv4a_signing(
         aws_credentials_release(signing_state->config.credentials);
         signing_state->config.credentials = ecc_credentials;
         if (signing_state->config.credentials == NULL) {
+            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials")
             goto done;
         }
     }
 
-    if (aws_signing_build_canonical_request(signing_state)) {
-        goto done;
-    }
-
-    struct aws_byte_cursor canonical_request_cursor = aws_byte_cursor_from_buf(&signing_state->canonical_request);
-    if (aws_byte_cursor_compare_lexical(&expected_canonical_request_cursor, &canonical_request_cursor) != 0) {
-        aws_raise_error(AWS_AUTH_CANONICAL_REQUEST_MISMATCH);
-        goto done;
-    }
-
-    if (aws_signing_build_string_to_sign(signing_state)) {
-        goto done;
-    }
-
     if (aws_validate_v4a_authorization_value(
             allocator, verification_key, aws_byte_cursor_from_buf(&signing_state->string_to_sign), signature_cursor)) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Signature does not validate");
         aws_raise_error(AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE);
         goto done;
     }
@@ -2439,7 +2455,9 @@ int aws_verify_sigv4a_signing(
 
 done:
 
-    aws_ecc_key_pair_release(verification_key);
+    if (verification_key) {
+        aws_ecc_key_pair_release(verification_key);
+    }
     aws_signing_state_destroy(signing_state);
 
     return result;

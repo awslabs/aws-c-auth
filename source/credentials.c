@@ -212,6 +212,7 @@ struct aws_credentials *aws_credentials_new_ecc(
     uint64_t expiration_timepoint_in_seconds) {
 
     if (access_key_id.len == 0 || ecc_key == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_GENERAL, "Provided credentials do not have a valid access_key_id or ecc_key");
         return NULL;
     }
 
