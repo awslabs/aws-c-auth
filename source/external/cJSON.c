@@ -27,6 +27,7 @@ This file has been modified from its original version by Amazon:
  *   (2) header order via clang-format
  *   (3) Clang-tidy error removal: Added parens around macro params in a number of macro bodies
  *   (4) NOLINT annotations to disable clang-tidy errors around raw/unsafe function use
+ *   (5) strcpy() replaced with memcpy()
 */
 
 /* clang-format off */
@@ -867,7 +868,7 @@ static cJSON_bool print_string_ptr(const unsigned char * const input, printbuffe
         {
             return false;
         }
-        memcpy((char*)output, "\"\"", 3); /* NOLINT */
+        memcpy(output, "\"\"", 3); /* NOLINT */
 
         return true;
     }
@@ -1302,7 +1303,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            memcpy((char*)output, "null", 5); /* NOLINT */
+            memcpy(output, "null", 5); /* NOLINT */
             return true;
 
         case cJSON_False:
@@ -1311,7 +1312,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            memcpy((char*)output, "false", 6); /* NOLINT */
+            memcpy(output, "false", 6); /* NOLINT */
             return true;
 
         case cJSON_True:
@@ -1320,7 +1321,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            memcpy((char*)output, "true", 5); /* NOLINT */
+            memcpy(output, "true", 5); /* NOLINT */
             return true;
 
         case cJSON_Number:
