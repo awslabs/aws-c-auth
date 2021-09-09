@@ -867,7 +867,7 @@ static cJSON_bool print_string_ptr(const unsigned char * const input, printbuffe
         {
             return false;
         }
-        strcpy((char*)output, "\"\""); /* NOLINT */
+        memcpy((char*)output, "\"\"", 3); /* NOLINT */
 
         return true;
     }
@@ -1302,7 +1302,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "null"); /* NOLINT */
+            memcpy((char*)output, "null", 5); /* NOLINT */
             return true;
 
         case cJSON_False:
@@ -1311,7 +1311,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "false"); /* NOLINT */
+            memcpy((char*)output, "false", 6); /* NOLINT */
             return true;
 
         case cJSON_True:
@@ -1320,7 +1320,7 @@ static cJSON_bool print_value(const cJSON * const item, printbuffer * const outp
             {
                 return false;
             }
-            strcpy((char*)output, "true"); /* NOLINT */
+            memcpy((char*)output, "true", 5); /* NOLINT */
             return true;
 
         case cJSON_Number:
