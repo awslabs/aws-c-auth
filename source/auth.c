@@ -18,14 +18,8 @@
 /* clang-format off */
 static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
-        AWS_AUTH_PROFILE_PARSE_RECOVERABLE_ERROR,
-        "Recoverable error while parsing an aws profile file"),
-    AWS_DEFINE_ERROR_INFO_AUTH(
-        AWS_AUTH_PROFILE_PARSE_FATAL_ERROR,
-        "Fatal error while parsing an aws profile file"),
-    AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_UNSUPPORTED_ALGORITHM,
-        "Attempt to sign an http request with an unusupported version of the AWS signing protocol"),
+        "Attempt to sign an http request with an unsupported version of the AWS signing protocol"),
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGNING_MISMATCHED_CONFIGURATION,
         "Attempt to sign an http request with a signing configuration unrecognized by the invoked signer"),
