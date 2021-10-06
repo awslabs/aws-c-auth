@@ -139,7 +139,7 @@ on_done:
 
 static void s_check_or_get_with_profile_config(
     struct aws_allocator *allocator,
-    struct aws_profile *profile,
+    const struct aws_profile *profile,
     const struct aws_string *config_key,
     struct aws_byte_buf *target) {
 
@@ -148,9 +148,9 @@ static void s_check_or_get_with_profile_config(
     }
     if (!target->len) {
         aws_byte_buf_clean_up(target);
-        struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
+        const struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
         if (property) {
-            aws_byte_buf_init_copy_from_cursor(target, allocator, aws_byte_cursor_from_string(property->value));
+            aws_byte_buf_init_copy_from_cursor(target, allocator, aws_byte_cursor_from_string(aws_profile_property_get_value(property)));
         }
     }
 }
@@ -163,7 +163,7 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
     struct aws_string *command = NULL;
     struct aws_profile_collection *config_profiles = NULL;
     struct aws_string *profile_name = NULL;
-    struct aws_profile *profile = NULL;
+    const struct aws_profile *profile = NULL;
 
     config_profiles = s_load_profile(allocator);
     if (profile_cursor.len == 0) {

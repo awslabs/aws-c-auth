@@ -941,7 +941,7 @@ static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_by
 
 static void s_check_or_get_with_profile_config(
     struct aws_allocator *allocator,
-    struct aws_profile *profile,
+    const struct aws_profile *profile,
     struct aws_string **target,
     const struct aws_string *config_key) {
 
@@ -952,9 +952,9 @@ static void s_check_or_get_with_profile_config(
         if (*target) {
             aws_string_destroy(*target);
         }
-        struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
+        const struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
         if (property) {
-            *target = aws_string_new_from_string(allocator, property->value);
+            *target = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
         }
     }
 }
@@ -997,7 +997,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
      */
     struct aws_profile_collection *config_profile = NULL;
     struct aws_string *profile_name = NULL;
-    struct aws_profile *profile = NULL;
+    const struct aws_profile *profile = NULL;
     bool get_all_parameters =
         (region && region->len && role_arn && role_arn->len && token_file_path && token_file_path->len);
     if (!get_all_parameters) {

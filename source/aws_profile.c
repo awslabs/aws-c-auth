@@ -13,12 +13,12 @@ static const struct aws_string *s_profile_get_property_value(
     const struct aws_profile *profile,
     const struct aws_string *property_name) {
 
-    struct aws_profile_property *property = aws_profile_get_property(profile, property_name);
+    const struct aws_profile_property *property = aws_profile_get_property(profile, property_name);
     if (property == NULL) {
         return NULL;
     }
 
-    return property->value;
+    return aws_profile_property_get_value(property);
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
