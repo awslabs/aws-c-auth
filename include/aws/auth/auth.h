@@ -9,6 +9,7 @@
 #include <aws/auth/exports.h>
 
 #include <aws/io/logging.h>
+#include <aws/sdkutils/sdkutils.h>
 
 #define AWS_C_AUTH_PACKAGE_ID 6
 
