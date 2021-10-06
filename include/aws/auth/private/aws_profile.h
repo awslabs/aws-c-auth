@@ -8,7 +8,7 @@
 
 #include <aws/auth/auth.h>
 
-#include <aws/common/aws_profile.h>
+#include <aws/sdkutils/aws_profile.h>
 
 AWS_EXTERN_C_BEGIN
 
