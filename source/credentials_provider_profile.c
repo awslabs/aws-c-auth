@@ -205,7 +205,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         aws_string_c_str(aws_profile_get_name(profile)),
         aws_string_c_str(aws_profile_property_get_value(role_arn_property)));
 
-    const struct aws_profile_property *source_profile_property = aws_profile_get_property(profile, s_source_profile_name);
+    const struct aws_profile_property *source_profile_property =
+        aws_profile_get_property(profile, s_source_profile_name);
     const struct aws_profile_property *credential_source_property =
         aws_profile_get_property(profile, s_credential_source_name);
 
@@ -276,7 +277,10 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             aws_string_c_str(aws_profile_property_get_value(source_profile_property)));
 
         sts_options.creds_provider = s_create_profile_based_provider(
-            allocator, credentials_file_path, config_file_path, aws_profile_property_get_value(source_profile_property));
+            allocator,
+            credentials_file_path,
+            config_file_path,
+            aws_profile_property_get_value(source_profile_property));
 
         if (!sts_options.creds_provider) {
             goto done;
@@ -295,7 +299,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             "static: credential_source property set to %s",
             aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
 
-        if (aws_string_eq_byte_cursor_ignore_case(aws_profile_property_get_value(credential_source_property), &s_ec2_imds_name)) {
+        if (aws_string_eq_byte_cursor_ignore_case(
+                aws_profile_property_get_value(credential_source_property), &s_ec2_imds_name)) {
             struct aws_credentials_provider_imds_options imds_options = {
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
@@ -313,7 +318,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
 
             aws_credentials_provider_release(imds_provider);
 
-        } else if (aws_string_eq_byte_cursor_ignore_case(aws_profile_property_get_value(credential_source_property), &s_environment_name)) {
+        } else if (aws_string_eq_byte_cursor_ignore_case(
+                       aws_profile_property_get_value(credential_source_property), &s_environment_name)) {
             struct aws_credentials_provider_environment_options env_options;
             AWS_ZERO_STRUCT(env_options);
 

@@ -150,7 +150,8 @@ static void s_check_or_get_with_profile_config(
         aws_byte_buf_clean_up(target);
         const struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
         if (property) {
-            aws_byte_buf_init_copy_from_cursor(target, allocator, aws_byte_cursor_from_string(aws_profile_property_get_value(property)));
+            aws_byte_buf_init_copy_from_cursor(
+                target, allocator, aws_byte_cursor_from_string(aws_profile_property_get_value(property)));
         }
     }
 }
