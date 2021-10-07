@@ -18,7 +18,6 @@
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
 #include <aws/io/file_utils.h>
-#include <aws/io/pki_utils.h>
 #include <aws/io/stream.h>
 #include <aws/io/uri.h>
 
