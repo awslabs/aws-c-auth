@@ -9,7 +9,7 @@
     "upstream": [
         { "name": "aws-c-http" },
         { "name": "aws-c-cal" },
-        { "name": "aws-c-sdkutils", "revision": "profile-parser" }
+        { "name": "aws-c-sdkutils" }
     ],
     "downstream": [
     ],
