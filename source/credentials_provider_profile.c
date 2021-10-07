@@ -92,7 +92,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
     struct aws_profile_collection *merged_profiles =
         aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
     if (merged_profiles != NULL) {
-        struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
+        const struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
         if (profile != NULL) {
             AWS_LOGF_INFO(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -160,7 +160,7 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     struct aws_allocator *allocator,
     struct aws_string *credentials_file_path,
     struct aws_string *config_file_path,
-    struct aws_string *profile_name) {
+    const struct aws_string *profile_name) {
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_profile_file_impl *impl = NULL;
@@ -191,8 +191,8 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
 /* use the selected property that specifies a role_arn to load an STS based provider. */
 static struct aws_credentials_provider *s_create_sts_based_provider(
     struct aws_allocator *allocator,
-    struct aws_profile_property *role_arn_property,
-    struct aws_profile *profile,
+    const struct aws_profile_property *role_arn_property,
+    const struct aws_profile *profile,
     struct aws_string *credentials_file_path,
     struct aws_string *config_file_path,
     const struct aws_credentials_provider_profile_options *options) {
@@ -202,29 +202,30 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "static: profile %s has role_arn property is set to %s, attempting to "
         "create an STS credentials provider.",
-        aws_string_c_str(profile->name),
-        aws_string_c_str(role_arn_property->value));
+        aws_string_c_str(aws_profile_get_name(profile)),
+        aws_string_c_str(aws_profile_property_get_value(role_arn_property)));
 
-    struct aws_profile_property *source_profile_property = aws_profile_get_property(profile, s_source_profile_name);
-    struct aws_profile_property *credential_source_property =
+    const struct aws_profile_property *source_profile_property =
+        aws_profile_get_property(profile, s_source_profile_name);
+    const struct aws_profile_property *credential_source_property =
         aws_profile_get_property(profile, s_credential_source_name);
 
-    struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
+    const struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
     char session_name_array[MAX_SESSION_NAME_LEN + 1];
     AWS_ZERO_ARRAY(session_name_array);
 
     if (role_session_name) {
-        size_t to_write = role_session_name->value->len;
+        size_t to_write = aws_profile_property_get_value(role_session_name)->len;
         if (to_write > MAX_SESSION_NAME_LEN) {
             AWS_LOGF_WARN(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "static: session_name property is %d bytes long, "
                 "but the max is %d. Truncating",
-                (int)role_session_name->value->len,
+                (int)aws_profile_property_get_value(role_session_name)->len,
                 (int)MAX_SESSION_NAME_LEN);
             to_write = MAX_SESSION_NAME_LEN;
         }
-        memcpy(session_name_array, aws_string_bytes(role_session_name->value), to_write);
+        memcpy(session_name_array, aws_string_bytes(aws_profile_property_get_value(role_session_name)), to_write);
     } else {
         memcpy(session_name_array, s_default_session_name_pfx.ptr, s_default_session_name_pfx.len);
         snprintf(
@@ -262,7 +263,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     struct aws_credentials_provider_sts_options sts_options = {
         .bootstrap = options->bootstrap,
         .tls_ctx = tls_ctx,
-        .role_arn = aws_byte_cursor_from_string(role_arn_property->value),
+        .role_arn = aws_byte_cursor_from_string(aws_profile_property_get_value(role_arn_property)),
         .session_name = aws_byte_cursor_from_c_str(session_name_array),
         .duration_seconds = 0,
         .function_table = options->function_table,
@@ -273,10 +274,13 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "static: source_profile set to %s",
-            aws_string_c_str(source_profile_property->value));
+            aws_string_c_str(aws_profile_property_get_value(source_profile_property)));
 
         sts_options.creds_provider = s_create_profile_based_provider(
-            allocator, credentials_file_path, config_file_path, source_profile_property->value);
+            allocator,
+            credentials_file_path,
+            config_file_path,
+            aws_profile_property_get_value(source_profile_property));
 
         if (!sts_options.creds_provider) {
             goto done;
@@ -293,9 +297,10 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "static: credential_source property set to %s",
-            aws_string_c_str(credential_source_property->value));
+            aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
 
-        if (aws_string_eq_byte_cursor_ignore_case(credential_source_property->value, &s_ec2_imds_name)) {
+        if (aws_string_eq_byte_cursor_ignore_case(
+                aws_profile_property_get_value(credential_source_property), &s_ec2_imds_name)) {
             struct aws_credentials_provider_imds_options imds_options = {
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
@@ -313,7 +318,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
 
             aws_credentials_provider_release(imds_provider);
 
-        } else if (aws_string_eq_byte_cursor_ignore_case(credential_source_property->value, &s_environment_name)) {
+        } else if (aws_string_eq_byte_cursor_ignore_case(
+                       aws_profile_property_get_value(credential_source_property), &s_environment_name)) {
             struct aws_credentials_provider_environment_options env_options;
             AWS_ZERO_STRUCT(env_options);
 
@@ -332,7 +338,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "static: invalid credential_source property: %s",
-                aws_string_c_str(credential_source_property->value));
+                aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
             aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         }
     }
@@ -387,7 +393,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
 
     merged_profiles = aws_profile_collection_new_from_merge(allocator, config_profiles, credentials_profiles);
 
-    struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, profile_name);
+    const struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, profile_name);
 
     if (!profile) {
         AWS_LOGF_ERROR(
@@ -397,7 +403,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             aws_string_c_str(profile_name));
         goto on_finished;
     }
-    struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
+    const struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
 
     if (role_arn_property) {
         provider = s_create_sts_based_provider(
