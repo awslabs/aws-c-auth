@@ -296,7 +296,7 @@ on_error:
 /*
  * This is a simple aws_signable wrapper implementation for an s3 chunk
  */
-struct aws_signable_chunk_impl {
+struct aws_signable_chunk_impl { /* <------------------ reference here -------------------- */
     struct aws_input_stream *chunk_data;
     struct aws_string *previous_signature;
 };

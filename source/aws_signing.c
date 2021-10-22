@@ -1715,6 +1715,50 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     return AWS_OP_SUCCESS;
 }
 
+static int s_build_canonical_request_body_trailing_headers(struct aws_signing_state_aws *state) {
+
+    struct aws_byte_buf *dest = &state->string_to_sign_payload;
+
+    /* previous signature + \n */
+    struct aws_byte_cursor prev_signature_cursor;
+    AWS_ZERO_STRUCT(prev_signature_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING,
+            "(id=%p) trailing_headers signable missing previous signature property",
+            (void *)state->signable);
+        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
+    }
+
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
+    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /* empty hash + \n */
+    if (aws_byte_buf_append_dynamic(dest, &g_aws_signed_body_value_empty_sha256)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /* current hash */
+    struct aws_byte_cursor current_trailing_headers_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
+    if (aws_byte_buf_append_dynamic(dest, &current_trailing_headers_hash_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Builds a sigv4-signed canonical request and its hashed value
  */
@@ -1857,13 +1901,16 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    switch (state->config.signature_type) {
+    switch (state->config.signature_type) { /* <----------- new case hase --------------- */
         case AWS_ST_HTTP_REQUEST_HEADERS:
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
             return s_build_canonical_request_sigv4(state);
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             return s_build_canonical_request_body_chunk(state);
+
+        case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
+            return s_build_canonical_request_body_trailing_headers(state);
 
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:

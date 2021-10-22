@@ -117,12 +117,12 @@ static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials
     s_perform_signing(state);
 }
 
-int aws_sign_request_aws(
-    struct aws_allocator *allocator,
-    const struct aws_signable *signable,
-    const struct aws_signing_config_base *base_config,
-    aws_signing_complete_fn *on_complete,
-    void *userdata) {
+int aws_sign_request_aws(/* <------------------------------- look here ---------------------------------- */
+                         struct aws_allocator *allocator,
+                         const struct aws_signable *signable,
+                         const struct aws_signing_config_base *base_config,
+                         aws_signing_complete_fn *on_complete,
+                         void *userdata) {
 
     AWS_PRECONDITION(base_config);
 

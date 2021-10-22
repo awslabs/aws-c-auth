@@ -60,6 +60,14 @@ enum aws_signature_type {
      */
     AWS_ST_HTTP_REQUEST_CHUNK,
 
+    /* *********************************** come back to this when better understand requirments ***********************/
+    /**
+     * Compute a signature for the payload trailing headers.  The signable's input stream should be the chunk data and
+     * the signable should contain the most recent signature value (either the original http request or the most recent
+     * chunk) in the "previous-signature" property.
+     */
+    AWS_ST_HTTP_REQUEST_TRAILING_HEADERS,
+
     /**
      * Compute a signature for an event stream event.  The signable's input stream should be the event payload, the
      * signable should contain the most recent signature value (either the original http request or the most recent
