@@ -19,6 +19,9 @@ const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_
 const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD");
 
+const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload_trailer =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER");
+
 const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-EVENTS");
 
