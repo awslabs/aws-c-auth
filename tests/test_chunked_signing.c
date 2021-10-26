@@ -485,3 +485,117 @@ static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *
 }
 
 AWS_TEST_CASE(sigv4a_chunked_signing_test, s_sigv4a_chunked_signing_test);
+
+static int s_sigv4a_chunked_trailer_signing_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_auth_library_init(allocator);
+
+    struct chunked_signing_tester tester;
+    AWS_ZERO_STRUCT(tester);
+    ASSERT_SUCCESS(s_chunked_signing_tester_init(allocator, &tester));
+    tester.request_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+    tester.request_signing_config.signed_body_value = g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload;
+    tester.chunk_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+
+    /* Sign the base request */
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        tester.request_signable,
+        (void *)&tester.request_signing_config,
+        s_on_request_signing_complete,
+        &tester));
+
+    struct aws_byte_cursor signature_cursor =
+        aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /*
+     * Validate the request signature
+     */
+    ASSERT_SUCCESS(aws_verify_sigv4a_signing(
+        allocator,
+        tester.request_signable,
+        (void *)&tester.request_signing_config,
+        aws_byte_cursor_from_string(s_chunked_expected_canonical_request_cursor),
+        signature_cursor,
+        aws_byte_cursor_from_string(s_chunked_test_ecc_pub_x),
+        aws_byte_cursor_from_string(s_chunked_test_ecc_pub_y)));
+
+    /* Manually build the first chunk string-to-sign since it's based on a signature that varies per run */
+    struct aws_byte_buf chunk_string_to_sign;
+    ASSERT_SUCCESS(aws_byte_buf_init(&chunk_string_to_sign, allocator, 512));
+    struct aws_byte_cursor chunk_sts_pre_signature = aws_byte_cursor_from_string(s_chunk_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &signature_cursor));
+    struct aws_byte_cursor chunk_sts_post_signature = aws_byte_cursor_from_string(s_chunk1_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    /* Make and sign the first chunk */
+    struct aws_signable *first_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk1_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, first_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+
+    struct aws_byte_cursor chunk_signature_cursor =
+        aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /* Verify the first chunk's signature */
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
+
+    aws_signable_destroy(first_chunk_signable);
+
+    /* Manually build the second chunk string-to-sign since it's based on a signature that varies per run */
+    chunk_string_to_sign.len = 0;
+    chunk_sts_pre_signature = aws_byte_cursor_from_string(s_chunk_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_signature_cursor));
+    chunk_sts_post_signature = aws_byte_cursor_from_string(s_chunk2_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    /* Make and sign the second chunk */
+    struct aws_signable *second_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk2_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, second_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+
+    chunk_signature_cursor = aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /* Verify the second chunk's signature */
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
+
+    aws_signable_destroy(second_chunk_signable);
+
+    /* Manually build the final chunk string-to-sign since it's based on a signature that varies per run */
+    chunk_string_to_sign.len = 0;
+    chunk_sts_pre_signature = aws_byte_cursor_from_string(s_chunk_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_signature_cursor));
+    chunk_sts_post_signature = aws_byte_cursor_from_string(s_chunk3_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    /* Make and sign the final, empty chunk */
+    struct aws_signable *final_chunk_signable =
+        aws_signable_new_chunk(allocator, NULL, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, final_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+
+    chunk_signature_cursor = aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /* Verify the final chunk's signature */
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
+
+    aws_signable_destroy(final_chunk_signable);
+
+    aws_byte_buf_clean_up(&chunk_string_to_sign);
+
+    s_chunked_signing_tester_cleanup(&tester);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(sigv4a_chunked_trailer_signing_test, s_sigv4a_chunked_trailer_signing_test);
