@@ -65,7 +65,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_name, "X-Amz-Region-Set");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-SHA256");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_s3_chunked_payload, "AWS4-ECDSA-P256-SHA256-PAYLOAD");
-/* is this right */
+
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_trailer_payload, "AWS4-HMAC-SHA256-TRAILER");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_s3_chunked_trailer_payload, "AWS4-ECDSA-P256-SHA256-TRAILER");
 
@@ -1725,7 +1725,7 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     return AWS_OP_SUCCESS;
 }
 
-static int s_build_canonical_request_body_trailing_headers(struct aws_signing_state_aws *state) {
+static int s_build_canonical_request_trailing_headers(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
 
@@ -1751,18 +1751,13 @@ static int s_build_canonical_request_body_trailing_headers(struct aws_signing_st
         return AWS_OP_ERR;
     }
 
-    /* empty hash + \n */
-    if (aws_byte_buf_append_dynamic(dest, &g_aws_signed_body_value_empty_sha256)) {
-        return AWS_OP_ERR;
-    }
-
-    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
-        return AWS_OP_ERR;
-    }
-
     /* current hash */
-    struct aws_byte_cursor current_trailing_headers_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
-    if (aws_byte_buf_append_dynamic(dest, &current_trailing_headers_hash_cursor)) {
+
+    if (s_build_canonical_headers(state)) {
+        return AWS_OP_ERR;
+    }
+    struct aws_byte_cursor header_block_cursor = aws_byte_cursor_from_buf(&state->canonical_header_block);
+    if (aws_byte_buf_append_dynamic(dest, &header_block_cursor)) {
         return AWS_OP_ERR;
     }
 
@@ -1920,7 +1915,7 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
             return s_build_canonical_request_body_chunk(state);
 
         case AWS_ST_HTTP_REQUEST_CHUNKED_TRAILER:
-            return s_build_canonical_request_body_trailing_headers(state);
+            return s_build_canonical_request_trailing_headers(state);
 
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:

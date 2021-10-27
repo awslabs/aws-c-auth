@@ -115,28 +115,6 @@ static int s_initialize_chunk_signing_config(
     return AWS_OP_SUCCESS;
 }
 
-// static int s_initialize_chunked_trailer_signing_config(
-//     struct aws_signing_config_aws *config,
-//     struct aws_credentials *credentials) {
-//     config->config_type = AWS_SIGNING_CONFIG_AWS;
-//     config->algorithm = AWS_SIGNING_ALGORITHM_V4;
-//     config->signature_type = AWS_ST_HTTP_REQUEST_CHUNKED_TRAILER;
-//     config->region = aws_byte_cursor_from_string(s_chunked_test_region);
-//     config->service = aws_byte_cursor_from_string(s_chunked_test_service);
-
-//     struct aws_byte_cursor chunked_test_date_cursor = aws_byte_cursor_from_string(s_chunked_test_date);
-//     if (aws_date_time_init_from_str_cursor(&config->date, &chunked_test_date_cursor, AWS_DATE_FORMAT_RFC822)) {
-//         return AWS_OP_ERR;
-//     }
-
-//     config->flags.use_double_uri_encode = false;
-//     config->flags.should_normalize_uri_path = true;
-//     config->signed_body_header = AWS_SBHT_NONE;
-//     config->credentials = credentials;
-
-//     return AWS_OP_SUCCESS;
-// }
-
 struct chunked_signing_tester {
     struct aws_credentials *credentials;
     struct aws_ecc_key_pair *verification_key;
