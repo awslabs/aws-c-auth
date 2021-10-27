@@ -6,8 +6,8 @@
 #include <aws/auth/signable.h>
 #include <aws/common/string.h>
 
-struct aws_signable_trailing_headers_impl { /* <------------------ reference here -------------------- */
-    struct aws_input_stream *trailing_headers_data;
+struct aws_signable_trailing_headers_impl {
+    struct aws_array_list headers;
     struct aws_string *previous_signature;
 };
 
@@ -28,7 +28,6 @@ static int s_aws_signable_trailing_headers_get_property(
     } else {
         return AWS_OP_ERR;
     }
-
     return AWS_OP_SUCCESS;
 }
 
@@ -40,17 +39,25 @@ static int s_aws_signable_trailing_headers_get_property_list(
     (void)name;
     (void)out_list;
 
-    return AWS_OP_ERR;
+    struct aws_signable_trailing_headers_impl *impl = signable->impl;
+
+    *out_list = NULL;
+
+    if (aws_string_eq(name, g_aws_http_headers_property_list_name)) {
+        *out_list = &impl->headers;
+    } else {
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
 static int s_aws_signable_trailing_headers_get_payload_stream(
     const struct aws_signable *signable,
     struct aws_input_stream **out_input_stream) {
-
-    struct aws_signable_trailing_headers_impl *impl = signable->impl;
-    *out_input_stream = impl->trailing_headers_data;
-
-    return AWS_OP_SUCCESS;
+    (void)signable;
+    (void)out_input_stream;
+    return AWS_OP_ERR;
 }
 
 static void s_aws_signable_trailing_headers_destroy(struct aws_signable *signable) {
@@ -64,7 +71,7 @@ static void s_aws_signable_trailing_headers_destroy(struct aws_signable *signabl
     }
 
     aws_string_destroy(impl->previous_signature);
-
+    aws_array_list_clean_up(&impl->headers);
     aws_mem_release(signable->allocator, signable);
 }
 
@@ -77,17 +84,13 @@ static struct aws_signable_vtable s_signable_trailing_headers_vtable = {
 
 struct aws_signable *aws_signable_new_trailing_headers(
     struct aws_allocator *allocator,
-    struct aws_input_stream *trailing_headers_data,
+    struct aws_http_headers *trailing_headers,
     struct aws_byte_cursor previous_signature) {
 
     struct aws_signable *signable = NULL;
     struct aws_signable_trailing_headers_impl *impl = NULL;
     aws_mem_acquire_many(
         allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_trailing_headers_impl));
-
-    if (signable == NULL || impl == NULL) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
@@ -96,7 +99,23 @@ struct aws_signable *aws_signable_new_trailing_headers(
     signable->vtable = &s_signable_trailing_headers_vtable;
     signable->impl = impl;
 
-    impl->trailing_headers_data = trailing_headers_data;
+    /*
+     * Copy the headers since they're not different types
+     */
+    size_t header_count = aws_http_headers_count(trailing_headers);
+    if (aws_array_list_init_dynamic(
+            &impl->headers, allocator, header_count, sizeof(struct aws_signable_property_list_pair))) {
+        goto on_error;
+    }
+
+    for (size_t i = 0; i < header_count; ++i) {
+        struct aws_http_header header;
+        aws_http_headers_get_index(trailing_headers, i, &header);
+
+        struct aws_signable_property_list_pair property = {.name = header.name, .value = header.value};
+        aws_array_list_push_back(&impl->headers, &property);
+    }
+
     impl->previous_signature = aws_string_new_from_array(allocator, previous_signature.ptr, previous_signature.len);
     if (impl->previous_signature == NULL) {
         goto on_error;
