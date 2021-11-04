@@ -1756,11 +1756,14 @@ static int s_build_canonical_request_trailing_headers(struct aws_signing_state_a
     if (s_build_canonical_headers(state)) {
         return AWS_OP_ERR;
     }
-    struct aws_byte_cursor header_block_cursor = aws_byte_cursor_from_buf(&state->canonical_header_block);
-    if (aws_byte_buf_append_dynamic(dest, &header_block_cursor)) {
+    struct aws_byte_buf sha_output;
+    struct aws_byte_cursor canonical_headers = aws_byte_cursor_from_buf(&state->canonical_header_block);
+    aws_byte_buf_init(&sha_output, aws_default_allocator(), AWS_SHA256_LEN);
+    aws_sha256_compute(aws_default_allocator(), &canonical_headers, &sha_output, 0);
+    struct aws_byte_cursor sha_canonical_headers_cur = aws_byte_cursor_from_buf(&sha_output);
+    if (aws_hex_encode_append_dynamic(&sha_canonical_headers_cur, dest)) {
         return AWS_OP_ERR;
     }
-
     return AWS_OP_SUCCESS;
 }
 

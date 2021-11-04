@@ -306,7 +306,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_trailing_headers_signature,
-    "7e3693f4fbd52e7b1b946334cc013cba4a1529d9fcf143a125bbd4d8839463b2");
+    "17b7a1e28961dba05b733dbdbe8ea230d8bed5ea507bc8af6f76349207c05315");
 
 static int s_sigv4_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -514,13 +514,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "AWS4-ECDSA-P256-SHA256-TRAILER\n"
     "20130524T000000Z\n"
     "20130524/s3/aws4_request\n"
-    "30450221009d4367854b5ebb39d9297dc4b38ae3393267d6534b603fcfd034cf12540eef8c0220124dba5462b2453b6b559c4eb33fb1b69a74"
-    "c0f9236966a3db6b7a05213c1efc\n"
-    "first:1st\n"
-    "second:2nd\n"
-    "third:3rd\n"
-    "\n"
-    "first;second;third\n");
+    "3046022100ee1c02046fa5ee8419996abe1cdb6c9f2e361a6f0cf56a88b6e6928370ce3661022100f3f85f5597a97cb21792a030ce9322d0e2"
+    "21a3911d6c66a312230cc3263f7c43\n"
+    "1daafddca5ec34b1c188a833ab90906c0f3130db0b08b2d199e4add63864e775");
 
 static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
