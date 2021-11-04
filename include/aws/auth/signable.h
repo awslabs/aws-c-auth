@@ -202,10 +202,10 @@ struct aws_signable *aws_signable_new_chunk(
     struct aws_byte_cursor previous_signature);
 
 /**
- * Creates a signable wrapper around an http trailing_header.
+ * Creates a signable wrapper around a set of headers.
  *
  * @param allocator memory allocator use to create the signable
- * @param trailing_headers http trailing headers to create a signable for
+ * @param trailing_headers http headers to create a signable for
  * @param previous_signature the signature computed in the most recent signing that preceded this one.  It can be
  * found by copying the "signature" property from the signing_result of that most recent signing.
  *
@@ -223,7 +223,8 @@ struct aws_signable *aws_signable_new_trailing_headers(
  * @param canonical_request text of the canonical request
  * @return the new signable object, or NULL if failure
  */
-AWS_AUTH_API struct aws_signable *aws_signable_new_canonical_request(
+AWS_AUTH_API
+struct aws_signable *aws_signable_new_canonical_request(
     struct aws_allocator *allocator,
     struct aws_byte_cursor canonical_request);
 

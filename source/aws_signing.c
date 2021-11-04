@@ -1454,7 +1454,7 @@ on_cleanup:
 /*
  * Computes the canonical request payload value.
  */
-static int s_build_canonical_payload(struct aws_signing_state_aws *state) { /* <------------------ look here -------- */
+static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     const struct aws_signable *signable = state->signable;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *payload_hash_buffer = &state->payload_hash;
@@ -1909,7 +1909,7 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    switch (state->config.signature_type) { /* <----------- new case hase --------------- */
+    switch (state->config.signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
             return s_build_canonical_request_sigv4(state);

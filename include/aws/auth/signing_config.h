@@ -60,9 +60,8 @@ enum aws_signature_type {
      */
     AWS_ST_HTTP_REQUEST_CHUNK,
 
-    /* *********************************** come back to this when better understand requirments ***********************/
     /**
-     * Compute a signature for the payload chunked trailer.  The signable's input stream should be the chunk data and
+     * Compute a signature for the payload chunked trailer.
      * the signable should contain the most recent signature value (either the original http request or the most recent
      * chunk) in the "previous-signature" property.
      */
