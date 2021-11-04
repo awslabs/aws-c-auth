@@ -56,8 +56,9 @@ static int s_aws_signable_trailing_headers_get_payload_stream(
     const struct aws_signable *signable,
     struct aws_input_stream **out_input_stream) {
     (void)signable;
-    (void)out_input_stream;
-    return AWS_OP_ERR;
+    *out_input_stream = NULL;
+
+    return AWS_OP_SUCCESS;
 }
 
 static void s_aws_signable_trailing_headers_destroy(struct aws_signable *signable) {

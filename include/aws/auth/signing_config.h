@@ -66,7 +66,7 @@ enum aws_signature_type {
      * the signable should contain the most recent signature value (either the original http request or the most recent
      * chunk) in the "previous-signature" property.
      */
-    AWS_ST_HTTP_REQUEST_CHUNKED_TRAILER,
+    AWS_ST_HTTP_REQUEST_TRAILING_HEADERS,
 
     /**
      * Compute a signature for an event stream event.  The signable's input stream should be the event payload, the
