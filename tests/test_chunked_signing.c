@@ -510,13 +510,13 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
 AWS_STATIC_STRING_FROM_LITERAL(
-    s_trailing_headers_expected_string_to_sign,
+    s_trailing_headers_expected_sts_pre_signature,
     "AWS4-ECDSA-P256-SHA256-TRAILER\n"
     "20130524T000000Z\n"
-    "20130524/s3/aws4_request\n"
-    "30460221008eabfe05c09f23597fcf8b37ead75af9d5739ae4756d396b320ab18172db7c18022100e523a7a7422703a6382be6ae1f404184b4"
-    "53525a6d60fa54484aa1a2061dba9f\n"
-    "1daafddca5ec34b1c188a833ab90906c0f3130db0b08b2d199e4add63864e775");
+    "20130524/s3/aws4_request\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_trailing_headers_expected_sts_post_signature,
+    "\n1daafddca5ec34b1c188a833ab90906c0f3130db0b08b2d199e4add63864e775");
 
 static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -572,7 +572,6 @@ static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *
         aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
 
     /* Verify the first chunk's signature */
-    /*************************************************** reference here ***********************************************/
     ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
         allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
 
@@ -688,7 +687,6 @@ static int s_sigv4a_trailing_headers_signing_test(struct aws_allocator *allocato
         aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
 
     /* Verify the first chunk's signature */
-    /*************************************************** reference here ***********************************************/
     ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
         allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
 
@@ -738,15 +736,16 @@ static int s_sigv4a_trailing_headers_signing_test(struct aws_allocator *allocato
 
     aws_signable_destroy(final_chunk_signable);
 
-    /******************************************* test trailing header *******************************************/
-
-    // struct aws_byte_buf trailing_headers_string_to_sign;
-    // ASSERT_SUCCESS(aws_byte_buf_init(&trailing_headers_string_to_sign, allocator, 512));
+    chunk_string_to_sign.len = 0;
+    chunk_sts_pre_signature = aws_byte_cursor_from_string(s_trailing_headers_expected_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_signature_cursor));
+    chunk_sts_post_signature = aws_byte_cursor_from_string(s_trailing_headers_expected_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
 
     struct aws_signable *trailing_headers_signable = aws_signable_new_trailing_headers(
         allocator, tester.trailing_headers, aws_byte_cursor_from_buf(&tester.last_signature));
 
-    /* call back updates last_signature, nothing wrong with keeping I think */
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator,
         trailing_headers_signable,
@@ -757,15 +756,13 @@ static int s_sigv4a_trailing_headers_signing_test(struct aws_allocator *allocato
     struct aws_byte_cursor trailing_headers_signature_cursor =
         aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
 
-    /*********************** todo determine trailing header string to sign ****************************/
     ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
         allocator,
         tester.verification_key,
-        aws_byte_cursor_from_string(s_trailing_headers_expected_string_to_sign),
+        aws_byte_cursor_from_buf(&chunk_string_to_sign),
         trailing_headers_signature_cursor));
 
     aws_signable_destroy(trailing_headers_signable);
-    /************************************************* clean up **************************************************/
 
     aws_byte_buf_clean_up(&chunk_string_to_sign);
 
