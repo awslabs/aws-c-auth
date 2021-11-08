@@ -23,7 +23,6 @@
  *
  */
 
-// make sure chunk tests derives private key from here, otherwise look for chunked_tests private key source
 AWS_STATIC_STRING_FROM_LITERAL(s_chunked_access_key_id, "AKIAIOSFODNN7EXAMPLE");
 AWS_STATIC_STRING_FROM_LITERAL(s_chunked_secret_access_key, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
 AWS_STATIC_STRING_FROM_LITERAL(s_chunked_test_region, "us-east-1");
