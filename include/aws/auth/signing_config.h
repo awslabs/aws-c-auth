@@ -81,6 +81,13 @@ enum aws_signature_type {
      * signature query param is added to the signing result.
      */
     AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS,
+
+    /**
+     * Compute a signature for the trailing headers.
+     * the signable should contain the most recent signature value (either the original http request or the most recent
+     * chunk) in the "previous-signature" property.
+     */
+    AWS_ST_HTTP_REQUEST_TRAILING_HEADERS
 };
 
 /**
@@ -103,10 +110,23 @@ AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_unsigne
 AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload;
 
 /**
+ * 'STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload_trailer;
+
+/**
  * 'STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD'
  * For use with `aws_signing_config_aws.signed_body_value`.
  */
 AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload;
+
+/**
+ * 'STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor
+    g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload_trailer;
 
 /**
  * 'STREAMING-AWS4-HMAC-SHA256-EVENTS'

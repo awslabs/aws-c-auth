@@ -115,6 +115,28 @@ static int s_initialize_chunk_signing_config(
     return AWS_OP_SUCCESS;
 }
 
+static int s_initialize_trailing_headers_signing_config(
+    struct aws_signing_config_aws *config,
+    struct aws_credentials *credentials) {
+    config->config_type = AWS_SIGNING_CONFIG_AWS;
+    config->algorithm = AWS_SIGNING_ALGORITHM_V4;
+    config->signature_type = AWS_ST_HTTP_REQUEST_TRAILING_HEADERS;
+    config->region = aws_byte_cursor_from_string(s_chunked_test_region);
+    config->service = aws_byte_cursor_from_string(s_chunked_test_service);
+
+    struct aws_byte_cursor chunked_test_date_cursor = aws_byte_cursor_from_string(s_chunked_test_date);
+    if (aws_date_time_init_from_str_cursor(&config->date, &chunked_test_date_cursor, AWS_DATE_FORMAT_RFC822)) {
+        return AWS_OP_ERR;
+    }
+
+    config->flags.use_double_uri_encode = false;
+    config->flags.should_normalize_uri_path = true;
+    config->signed_body_header = AWS_SBHT_NONE;
+    config->credentials = credentials;
+
+    return AWS_OP_SUCCESS;
+}
+
 struct chunked_signing_tester {
     struct aws_credentials *credentials;
     struct aws_ecc_key_pair *verification_key;
@@ -122,10 +144,12 @@ struct chunked_signing_tester {
     struct aws_signable *request_signable;
     struct aws_signing_config_aws request_signing_config;
     struct aws_signing_config_aws chunk_signing_config;
+    struct aws_signing_config_aws trailing_headers_signing_config;
     struct aws_byte_buf chunk1;
     struct aws_byte_buf chunk2;
     struct aws_input_stream *chunk1_stream;
     struct aws_input_stream *chunk2_stream;
+    struct aws_http_headers *trailing_headers;
 
     struct aws_byte_buf request_authorization_header;
     struct aws_byte_buf last_signature;
@@ -156,6 +180,8 @@ static int s_chunked_signing_tester_init(struct aws_allocator *allocator, struct
     AWS_ZERO_STRUCT(tester->request_signing_config);
     ASSERT_SUCCESS(s_initialize_request_signing_config(&tester->request_signing_config, tester->credentials));
     ASSERT_SUCCESS(s_initialize_chunk_signing_config(&tester->chunk_signing_config, tester->credentials));
+    ASSERT_SUCCESS(
+        s_initialize_trailing_headers_signing_config(&tester->trailing_headers_signing_config, tester->credentials));
 
     ASSERT_SUCCESS(aws_byte_buf_init(&tester->request_authorization_header, allocator, 512));
     ASSERT_SUCCESS(aws_byte_buf_init(&tester->last_signature, allocator, 128));
@@ -165,6 +191,23 @@ static int s_chunked_signing_tester_init(struct aws_allocator *allocator, struct
 
     ASSERT_SUCCESS(aws_byte_buf_init(&tester->chunk2, allocator, CHUNK2_SIZE));
     ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->chunk2, 'a', CHUNK2_SIZE));
+
+    tester->trailing_headers = aws_http_headers_new(allocator);
+    const struct aws_http_header trailer = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("first"),
+        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("1st"),
+    };
+    const struct aws_http_header trailer1 = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("second"),
+        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2nd"),
+    };
+    const struct aws_http_header trailer2 = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("third"),
+        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("3rd"),
+    };
+    aws_http_headers_add_header(tester->trailing_headers, &trailer);
+    aws_http_headers_add_header(tester->trailing_headers, &trailer1);
+    aws_http_headers_add_header(tester->trailing_headers, &trailer2);
 
     struct aws_byte_cursor chunk1_cursor = aws_byte_cursor_from_buf(&tester->chunk1);
     tester->chunk1_stream = aws_input_stream_new_from_cursor(allocator, &chunk1_cursor);
@@ -184,6 +227,7 @@ static void s_chunked_signing_tester_cleanup(struct chunked_signing_tester *test
     aws_byte_buf_clean_up(&tester->last_signature);
     aws_byte_buf_clean_up(&tester->chunk1);
     aws_byte_buf_clean_up(&tester->chunk2);
+    aws_http_headers_release(tester->trailing_headers);
     aws_input_stream_destroy(tester->chunk1_stream);
     aws_input_stream_destroy(tester->chunk2_stream);
 }
@@ -259,6 +303,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_final_chunk_signature,
     "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expected_trailing_headers_signature,
+    "17b7a1e28961dba05b733dbdbe8ea230d8bed5ea507bc8af6f76349207c05315");
 
 static int s_sigv4_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -333,6 +380,95 @@ static int s_sigv4_chunked_signing_test(struct aws_allocator *allocator, void *c
 
 AWS_TEST_CASE(sigv4_chunked_signing_test, s_sigv4_chunked_signing_test);
 
+static int s_sigv4_trailing_headers_signing_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_auth_library_init(allocator);
+
+    struct chunked_signing_tester tester;
+    AWS_ZERO_STRUCT(tester);
+    ASSERT_SUCCESS(s_chunked_signing_tester_init(allocator, &tester));
+
+    /* Sign the base request and check the signature and authorization header */
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        tester.request_signable,
+        (void *)&tester.request_signing_config,
+        s_on_request_signing_complete,
+        &tester));
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_request_authorization_header->bytes,
+        s_expected_request_authorization_header->len,
+        tester.request_authorization_header.buffer,
+        tester.request_authorization_header.len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_request_signature->bytes,
+        s_expected_request_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+
+    /* Make and sign the first chunk */
+    struct aws_signable *first_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk1_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, first_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_first_chunk_signature->bytes,
+        s_expected_first_chunk_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+    aws_signable_destroy(first_chunk_signable);
+
+    /* Make and sign the second chunk */
+    struct aws_signable *second_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk2_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, second_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_second_chunk_signature->bytes,
+        s_expected_second_chunk_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+    aws_signable_destroy(second_chunk_signable);
+
+    /* Make and sign the final, empty chunk */
+    struct aws_signable *final_chunk_signable =
+        aws_signable_new_chunk(allocator, NULL, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, final_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_final_chunk_signature->bytes,
+        s_expected_final_chunk_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+    aws_signable_destroy(final_chunk_signable);
+
+    /* Make and sign the trailing headers */
+    struct aws_signable *trailing_headers_signable = aws_signable_new_trailing_headers(
+        allocator, tester.trailing_headers, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        trailing_headers_signable,
+        (void *)&tester.trailing_headers_signing_config,
+        s_on_chunk_signing_complete,
+        &tester));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_trailing_headers_signature->bytes,
+        s_expected_trailing_headers_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+    aws_signable_destroy(trailing_headers_signable);
+
+    s_chunked_signing_tester_cleanup(&tester);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(sigv4_trailing_headers_signing_test, s_sigv4_trailing_headers_signing_test);
+
 AWS_STATIC_STRING_FROM_LITERAL(
     s_chunked_expected_canonical_request_cursor,
     "PUT\n"
@@ -371,6 +507,15 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_chunk3_sts_post_signature,
     "\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n"
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_trailing_headers_expected_sts_pre_signature,
+    "AWS4-ECDSA-P256-SHA256-TRAILER\n"
+    "20130524T000000Z\n"
+    "20130524/s3/aws4_request\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_trailing_headers_expected_sts_post_signature,
+    "\n1daafddca5ec34b1c188a833ab90906c0f3130db0b08b2d199e4add63864e775");
 
 static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -485,3 +630,146 @@ static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *
 }
 
 AWS_TEST_CASE(sigv4a_chunked_signing_test, s_sigv4a_chunked_signing_test);
+
+static int s_sigv4a_trailing_headers_signing_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_auth_library_init(allocator);
+
+    struct chunked_signing_tester tester;
+    AWS_ZERO_STRUCT(tester);
+    ASSERT_SUCCESS(s_chunked_signing_tester_init(allocator, &tester));
+    tester.request_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+    tester.request_signing_config.signed_body_value = g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload;
+    tester.chunk_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+    tester.trailing_headers_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
+
+    /* Sign the base request */
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        tester.request_signable,
+        (void *)&tester.request_signing_config,
+        s_on_request_signing_complete,
+        &tester));
+
+    struct aws_byte_cursor signature_cursor =
+        aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /*
+     * Validate the request signature
+     */
+    ASSERT_SUCCESS(aws_verify_sigv4a_signing(
+        allocator,
+        tester.request_signable,
+        (void *)&tester.request_signing_config,
+        aws_byte_cursor_from_string(s_chunked_expected_canonical_request_cursor),
+        signature_cursor,
+        aws_byte_cursor_from_string(s_chunked_test_ecc_pub_x),
+        aws_byte_cursor_from_string(s_chunked_test_ecc_pub_y)));
+
+    /* Manually build the first chunk string-to-sign since it's based on a signature that varies per run */
+    struct aws_byte_buf chunk_string_to_sign;
+    ASSERT_SUCCESS(aws_byte_buf_init(&chunk_string_to_sign, allocator, 512));
+    struct aws_byte_cursor chunk_sts_pre_signature = aws_byte_cursor_from_string(s_chunk_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &signature_cursor));
+    struct aws_byte_cursor chunk_sts_post_signature = aws_byte_cursor_from_string(s_chunk1_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    /* Make and sign the first chunk */
+    struct aws_signable *first_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk1_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, first_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+
+    struct aws_byte_cursor chunk_signature_cursor =
+        aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /* Verify the first chunk's signature */
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
+
+    aws_signable_destroy(first_chunk_signable);
+
+    /* Manually build the second chunk string-to-sign since it's based on a signature that varies per run */
+    chunk_string_to_sign.len = 0;
+    chunk_sts_pre_signature = aws_byte_cursor_from_string(s_chunk_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_signature_cursor));
+    chunk_sts_post_signature = aws_byte_cursor_from_string(s_chunk2_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    /* Make and sign the second chunk */
+    struct aws_signable *second_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk2_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, second_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+
+    chunk_signature_cursor = aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /* Verify the second chunk's signature */
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
+
+    aws_signable_destroy(second_chunk_signable);
+
+    /* Manually build the final chunk string-to-sign since it's based on a signature that varies per run */
+    chunk_string_to_sign.len = 0;
+    chunk_sts_pre_signature = aws_byte_cursor_from_string(s_chunk_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_signature_cursor));
+    chunk_sts_post_signature = aws_byte_cursor_from_string(s_chunk3_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    /* Make and sign the final, empty chunk */
+    struct aws_signable *final_chunk_signable =
+        aws_signable_new_chunk(allocator, NULL, aws_byte_cursor_from_buf(&tester.last_signature));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, final_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete, &tester));
+
+    chunk_signature_cursor = aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    /* Verify the final chunk's signature */
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator, tester.verification_key, aws_byte_cursor_from_buf(&chunk_string_to_sign), chunk_signature_cursor));
+
+    aws_signable_destroy(final_chunk_signable);
+
+    chunk_string_to_sign.len = 0;
+    chunk_sts_pre_signature = aws_byte_cursor_from_string(s_trailing_headers_expected_sts_pre_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_pre_signature));
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_signature_cursor));
+    chunk_sts_post_signature = aws_byte_cursor_from_string(s_trailing_headers_expected_sts_post_signature);
+    ASSERT_SUCCESS(aws_byte_buf_append(&chunk_string_to_sign, &chunk_sts_post_signature));
+
+    struct aws_signable *trailing_headers_signable = aws_signable_new_trailing_headers(
+        allocator, tester.trailing_headers, aws_byte_cursor_from_buf(&tester.last_signature));
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        trailing_headers_signable,
+        (void *)&tester.trailing_headers_signing_config,
+        s_on_chunk_signing_complete,
+        &tester));
+
+    struct aws_byte_cursor trailing_headers_signature_cursor =
+        aws_trim_padded_sigv4a_signature(aws_byte_cursor_from_buf(&tester.last_signature));
+
+    ASSERT_SUCCESS(aws_validate_v4a_authorization_value(
+        allocator,
+        tester.verification_key,
+        aws_byte_cursor_from_buf(&chunk_string_to_sign),
+        trailing_headers_signature_cursor));
+
+    aws_signable_destroy(trailing_headers_signable);
+
+    aws_byte_buf_clean_up(&chunk_string_to_sign);
+
+    s_chunked_signing_tester_cleanup(&tester);
+
+    aws_auth_library_clean_up();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(sigv4a_trailing_headers_signing_test, s_sigv4a_trailing_headers_signing_test);

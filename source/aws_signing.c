@@ -66,6 +66,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_http_request, "AWS4-HMAC-S
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_payload, "AWS4-HMAC-SHA256-PAYLOAD");
 AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_s3_chunked_payload, "AWS4-ECDSA-P256-SHA256-PAYLOAD");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4_s3_chunked_trailer_payload, "AWS4-HMAC-SHA256-TRAILER");
+AWS_STATIC_STRING_FROM_LITERAL(s_signature_type_sigv4a_s3_chunked_trailer_payload, "AWS4-ECDSA-P256-SHA256-TRAILER");
+
 /* aws-related query param and header tables */
 static struct aws_hash_table s_forbidden_headers;
 static struct aws_hash_table s_forbidden_params;
@@ -283,6 +286,13 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
             } else {
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_s3_chunked_payload);
+            }
+            break;
+        case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_trailer_payload);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_s3_chunked_trailer_payload);
             }
             break;
 
@@ -1715,6 +1725,47 @@ static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *st
     return AWS_OP_SUCCESS;
 }
 
+static int s_build_canonical_request_trailing_headers(struct aws_signing_state_aws *state) {
+
+    struct aws_byte_buf *dest = &state->string_to_sign_payload;
+
+    /* previous signature + \n */
+    struct aws_byte_cursor prev_signature_cursor;
+    AWS_ZERO_STRUCT(prev_signature_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING,
+            "(id=%p) trailing_headers signable missing previous signature property",
+            (void *)state->signable);
+        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
+    }
+
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
+    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /* current hash */
+
+    if (s_build_canonical_headers(state)) {
+        return AWS_OP_ERR;
+    }
+    struct aws_byte_cursor header_block_cursor = aws_byte_cursor_from_buf(&state->canonical_header_block);
+    if (aws_byte_buf_append_dynamic(&state->canonical_request, &header_block_cursor)) {
+        return AWS_OP_ERR;
+    }
+    if (s_build_canonical_request_hash(state)) {
+        return AWS_OP_ERR;
+    }
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Builds a sigv4-signed canonical request and its hashed value
  */
@@ -1864,6 +1915,9 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             return s_build_canonical_request_body_chunk(state);
+
+        case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
+            return s_build_canonical_request_trailing_headers(state);
 
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
