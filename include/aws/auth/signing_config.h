@@ -54,11 +54,11 @@ enum aws_signature_type {
     AWS_ST_HTTP_REQUEST_QUERY_PARAMS,
 
     /**
-     * Compute a signature for the payload chunked trailer.
-     * the signable should contain the most recent signature value (either the original http request or the most recent
+     * Compute a signature for a payload chunk.  The signable's input stream should be the chunk data and the
+     * signable should contain the most recent signature value (either the original http request or the most recent
      * chunk) in the "previous-signature" property.
      */
-    AWS_ST_HTTP_REQUEST_TRAILING_HEADERS,
+    AWS_ST_HTTP_REQUEST_CHUNK,
 
     /**
      * Compute a signature for an event stream event.  The signable's input stream should be the event payload, the
@@ -83,11 +83,11 @@ enum aws_signature_type {
     AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS,
 
     /**
-     * Compute a signature for a payload chunk.  The signable's input stream should be the chunk data and the
-     * signable should contain the most recent signature value (either the original http request or the most recent
+     * Compute a signature for the trailing headers.
+     * the signable should contain the most recent signature value (either the original http request or the most recent
      * chunk) in the "previous-signature" property.
      */
-    AWS_ST_HTTP_REQUEST_CHUNK
+    AWS_ST_HTTP_REQUEST_TRAILING_HEADERS
 };
 
 /**
