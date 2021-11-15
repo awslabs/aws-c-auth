@@ -1356,12 +1356,7 @@ static int s_validate_signable_header_list(struct aws_array_list *header_list) {
     return AWS_OP_SUCCESS;
 }
 
-/*
- * Top-level-ish function to write the canonical header set into a buffer as well as the signed header names
- * into a separate buffer.  We do this very early in the canonical request construction process so that the
- * query params processing has the signed header names available to it.
- */
-static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
+static int s_canonicalize_headers(struct aws_signing_state_aws *state) {
     const struct aws_signable *signable = state->signable;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *header_buffer = &state->canonical_header_block;
@@ -1423,25 +1418,6 @@ static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
 
         last_seen_header_name = &wrapper->header.name;
     }
-
-    /* There's always at least one header entry (X-Amz-Date), end the last one */
-    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
-        goto on_cleanup;
-    }
-
-    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
-        goto on_cleanup;
-    }
-
-    struct aws_byte_cursor signed_headers_cursor = aws_byte_cursor_from_buf(signed_headers_buffer);
-    if (aws_byte_buf_append_dynamic(header_buffer, &signed_headers_cursor)) {
-        goto on_cleanup;
-    }
-
-    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
-        goto on_cleanup;
-    }
-
     result = AWS_OP_SUCCESS;
 
 on_cleanup:
@@ -1449,6 +1425,51 @@ on_cleanup:
     aws_array_list_clean_up(&headers);
 
     return result;
+}
+
+static int s_append_signed_headers(struct aws_signing_state_aws *state) {
+
+    struct aws_byte_buf *header_buffer = &state->canonical_header_block;
+    struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
+    /* There's always at least one header entry (X-Amz-Date), end the last one */
+    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_byte_cursor signed_headers_cursor = aws_byte_cursor_from_buf(signed_headers_buffer);
+    if (aws_byte_buf_append_dynamic(header_buffer, &signed_headers_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_SIGNING,
+        "Signing successfully built header bufferc with contents \n" PRInSTR "\n",
+        AWS_BYTE_BUF_PRI(*header_buffer));
+
+    return AWS_OP_SUCCESS;
+}
+
+/*
+ * Top-level-ish function to write the canonical header set into a buffer as well as the signed header names
+ * into a separate buffer.  We do this very early in the canonical request construction process so that the
+ * query params processing has the signed header names available to it.
+ */
+static int s_build_canonical_headers(struct aws_signing_state_aws *state) {
+    if (s_canonicalize_headers(state)) {
+        return AWS_OP_ERR;
+    }
+    if (s_append_signed_headers(state)) {
+        return AWS_OP_ERR;
+    }
+    return AWS_OP_SUCCESS;
 }
 
 /*
@@ -1753,7 +1774,7 @@ static int s_build_canonical_request_trailing_headers(struct aws_signing_state_a
 
     /* current hash */
 
-    if (s_build_canonical_headers(state)) {
+    if (s_canonicalize_headers(state)) {
         return AWS_OP_ERR;
     }
     struct aws_byte_cursor header_block_cursor = aws_byte_cursor_from_buf(&state->canonical_header_block);
@@ -2342,8 +2363,8 @@ int aws_signing_build_authorization_value(struct aws_signing_state_aws *state) {
 
     AWS_LOGF_INFO(
         AWS_LS_AUTH_SIGNING,
-        "(id=%p) Http request successfully built final authorization value via algorithm %s, with contents \n" PRInSTR
-        "\n",
+        "(id=%p) Http request successfully built final authorization value via algorithm %s, with contents "
+        "\n" PRInSTR "\n",
         (void *)state->signable,
         aws_signing_algorithm_to_string(state->config.algorithm),
         AWS_BYTE_BUF_PRI(authorization_value));
