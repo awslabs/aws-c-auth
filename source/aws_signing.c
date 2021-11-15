@@ -1360,10 +1360,8 @@ static int s_canonicalize_headers(struct aws_signing_state_aws *state) {
     const struct aws_signable *signable = state->signable;
     struct aws_allocator *allocator = state->allocator;
     struct aws_byte_buf *header_buffer = &state->canonical_header_block;
-    struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
 
     AWS_ASSERT(header_buffer->len == 0);
-    AWS_ASSERT(signed_headers_buffer->len == 0);
 
     int result = AWS_OP_ERR;
 
@@ -1448,11 +1446,6 @@ static int s_append_signed_headers(struct aws_signing_state_aws *state) {
     if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
         return AWS_OP_ERR;
     }
-
-    AWS_LOGF_INFO(
-        AWS_LS_AUTH_SIGNING,
-        "Signing successfully built header bufferc with contents \n" PRInSTR "\n",
-        AWS_BYTE_BUF_PRI(*header_buffer));
 
     return AWS_OP_SUCCESS;
 }
