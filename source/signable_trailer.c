@@ -5,6 +5,7 @@
 
 #include <aws/auth/signable.h>
 #include <aws/common/string.h>
+#include <aws/http/request_response.h>
 
 struct aws_signable_trailing_headers_impl {
     struct aws_array_list headers;
