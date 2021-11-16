@@ -53,6 +53,10 @@ static struct aws_http_header s_content_length_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Content-Length"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("66824"),
 };
+static struct aws_http_header s_trailer_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-trailer"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("first,second,third"),
+};
 
 AWS_STATIC_STRING_FROM_LITERAL(s_chunked_test_path, "/examplebucket/chunkObject.txt");
 
@@ -64,6 +68,21 @@ static struct aws_http_message *s_build_chunked_test_request(struct aws_allocato
     aws_http_message_add_header(request, s_content_encoding_header);
     aws_http_message_add_header(request, s_decoded_length_header);
     aws_http_message_add_header(request, s_content_length_header);
+    aws_http_message_set_request_method(request, aws_http_method_put);
+    aws_http_message_set_request_path(request, aws_byte_cursor_from_string(s_chunked_test_path));
+
+    return request;
+}
+
+static struct aws_http_message *s_build_trailing_headers_test_request(struct aws_allocator *allocator) {
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+
+    aws_http_message_add_header(request, s_host_header);
+    aws_http_message_add_header(request, s_storage_class_header);
+    aws_http_message_add_header(request, s_content_encoding_header);
+    aws_http_message_add_header(request, s_decoded_length_header);
+    aws_http_message_add_header(request, s_content_length_header);
+    aws_http_message_add_header(request, s_trailer_header);
     aws_http_message_set_request_method(request, aws_http_method_put);
     aws_http_message_set_request_path(request, aws_byte_cursor_from_string(s_chunked_test_path));
 
@@ -142,6 +161,8 @@ struct chunked_signing_tester {
     struct aws_ecc_key_pair *verification_key;
     struct aws_http_message *request;
     struct aws_signable *request_signable;
+    struct aws_http_message *trailing_request;
+    struct aws_signable *trailing_request_signable;
     struct aws_signing_config_aws request_signing_config;
     struct aws_signing_config_aws chunk_signing_config;
     struct aws_signing_config_aws trailing_headers_signing_config;
@@ -176,6 +197,9 @@ static int s_chunked_signing_tester_init(struct aws_allocator *allocator, struct
 
     tester->request = s_build_chunked_test_request(allocator);
     tester->request_signable = aws_signable_new_http_request(allocator, tester->request);
+
+    tester->trailing_request = s_build_trailing_headers_test_request(allocator);
+    tester->trailing_request_signable = aws_signable_new_http_request(allocator, tester->trailing_request);
 
     AWS_ZERO_STRUCT(tester->request_signing_config);
     ASSERT_SUCCESS(s_initialize_request_signing_config(&tester->request_signing_config, tester->credentials));
@@ -221,6 +245,8 @@ static int s_chunked_signing_tester_init(struct aws_allocator *allocator, struct
 static void s_chunked_signing_tester_cleanup(struct chunked_signing_tester *tester) {
     aws_signable_destroy(tester->request_signable);
     aws_http_message_release(tester->request);
+    aws_signable_destroy(tester->trailing_request_signable);
+    aws_http_message_release(tester->trailing_request);
     aws_credentials_release(tester->credentials);
     aws_ecc_key_pair_release(tester->verification_key);
     aws_byte_buf_clean_up(&tester->request_authorization_header);
@@ -305,7 +331,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_trailing_headers_signature,
-    "17b7a1e28961dba05b733dbdbe8ea230d8bed5ea507bc8af6f76349207c05315");
+    "0248ea7d40ea8edfeb417c5aab802f40ccf25c1f301f4f24d9032dea49bea897");
 
 static int s_sigv4_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -488,6 +514,25 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD");
 
 AWS_STATIC_STRING_FROM_LITERAL(
+    s_chunked_expected_trailing_headers_canonical_request_cursor,
+    "PUT\n"
+    "/examplebucket/chunkObject.txt\n"
+    "\n"
+    "content-encoding:aws-chunked\n"
+    "content-length:66824\n"
+    "host:s3.amazonaws.com\n"
+    "x-amz-content-sha256:STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER\n"
+    "x-amz-date:20130524T000000Z\n"
+    "x-amz-decoded-content-length:66560\n"
+    "x-amz-region-set:us-east-1\n"
+    "x-amz-storage-class:REDUCED_REDUNDANCY\n"
+    "x-amz-trailer:first,second,third\n"
+    "\n"
+    "content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-region-"
+    "set;x-amz-storage-class;x-amz-trailer\n"
+    "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER");
+
+AWS_STATIC_STRING_FROM_LITERAL(
     s_chunk_sts_pre_signature,
     "AWS4-ECDSA-P256-SHA256-PAYLOAD\n"
     "20130524T000000Z\n"
@@ -515,7 +560,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "20130524/s3/aws4_request\n");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_trailing_headers_expected_sts_post_signature,
-    "\n1daafddca5ec34b1c188a833ab90906c0f3130db0b08b2d199e4add63864e775");
+    "\n5b4a086380541fa6563b4c1ac31944b8a16d9f9b23ffb3eaf8fb05dab863a691");
 
 static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -640,14 +685,15 @@ static int s_sigv4a_trailing_headers_signing_test(struct aws_allocator *allocato
     AWS_ZERO_STRUCT(tester);
     ASSERT_SUCCESS(s_chunked_signing_tester_init(allocator, &tester));
     tester.request_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
-    tester.request_signing_config.signed_body_value = g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload;
+    tester.request_signing_config.signed_body_value =
+        g_aws_signed_body_value_streaming_aws4_ecdsa_p256_sha256_payload_trailer;
     tester.chunk_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
     tester.trailing_headers_signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC;
 
     /* Sign the base request */
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator,
-        tester.request_signable,
+        tester.trailing_request_signable,
         (void *)&tester.request_signing_config,
         s_on_request_signing_complete,
         &tester));
@@ -660,9 +706,9 @@ static int s_sigv4a_trailing_headers_signing_test(struct aws_allocator *allocato
      */
     ASSERT_SUCCESS(aws_verify_sigv4a_signing(
         allocator,
-        tester.request_signable,
+        tester.trailing_request_signable,
         (void *)&tester.request_signing_config,
-        aws_byte_cursor_from_string(s_chunked_expected_canonical_request_cursor),
+        aws_byte_cursor_from_string(s_chunked_expected_trailing_headers_canonical_request_cursor),
         signature_cursor,
         aws_byte_cursor_from_string(s_chunked_test_ecc_pub_x),
         aws_byte_cursor_from_string(s_chunked_test_ecc_pub_y)));
