@@ -2,6 +2,7 @@
 #define AWS_AUTH_SIGNABLE_H
 
 #include <aws/auth/auth.h>
+#include <aws/http/request_response.h>
 
 struct aws_http_message;
 struct aws_http_headers;
