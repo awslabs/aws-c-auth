@@ -1139,7 +1139,7 @@ static int s_sigv4a_trailing_header_integration_test(struct aws_allocator *alloc
     aws_http_message_set_body_stream(tester.integration_request, body_stream);
 
     struct aws_http_client_connection_options client_options = AWS_HTTP_CLIENT_CONNECTION_OPTIONS_INIT;
-    struct aws_byte_cursor host = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("brawn-test-bucket-1.s3.aws-master.amazon.com");
+    struct aws_byte_cursor host = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("example.amazon.com");
 
     struct aws_socket_options socket_options = {
         .type = AWS_SOCKET_STREAM,
