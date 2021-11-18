@@ -130,6 +130,7 @@ add_test_case(sigv4_chunked_signing_test)
 add_test_case(sigv4a_chunked_signing_test)
 add_test_case(sigv4_trailing_headers_signing_test)
 add_test_case(sigv4a_trailing_headers_signing_test)
+add_test_case(sigv4a_trailing_header_integration_test)
 
 add_test_case(credentials_derive_ecc_key_fixed)
 add_test_case(credentials_new_ecc_fixed)
