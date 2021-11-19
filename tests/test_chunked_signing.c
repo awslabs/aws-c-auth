@@ -1008,6 +1008,7 @@ void s_log_headers(struct aws_http_message *request) {
 }
 
 void s_send_request(struct aws_http_connection *connection, int error_code, void *user_data) {
+    (void)error_code;
     struct chunked_signing_tester *tester = user_data;
     struct aws_http_make_request_options opt = {
         .self_size = sizeof(opt),
