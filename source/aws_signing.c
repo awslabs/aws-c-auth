@@ -1416,6 +1416,15 @@ static int s_canonicalize_headers(struct aws_signing_state_aws *state) {
 
         last_seen_header_name = &wrapper->header.name;
     }
+
+    /* check for count greater than zero in case someone attempts to canonicalize an empty list of trailing headers */
+    /* There's always at least one header entry (X-Amz-Date), end the last one */
+    if (header_count > 0) {
+        if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
+            return AWS_OP_ERR;
+        }
+    }
+
     result = AWS_OP_SUCCESS;
 
 on_cleanup:
@@ -1429,10 +1438,6 @@ static int s_append_signed_headers(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *header_buffer = &state->canonical_header_block;
     struct aws_byte_buf *signed_headers_buffer = &state->signed_headers;
-    /* There's always at least one header entry (X-Amz-Date), end the last one */
-    if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
-        return AWS_OP_ERR;
-    }
 
     if (aws_byte_buf_append_byte_dynamic(header_buffer, '\n')) {
         return AWS_OP_ERR;
@@ -2202,7 +2207,8 @@ static int s_add_signature_property_to_result_set(struct aws_signing_state_aws *
     }
 
     if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
-        state->config.signature_type == AWS_ST_HTTP_REQUEST_CHUNK) {
+        (state->config.signature_type == AWS_ST_HTTP_REQUEST_CHUNK ||
+         state->config.signature_type == AWS_ST_HTTP_REQUEST_TRAILING_HEADERS)) {
         if (aws_byte_buf_reserve(&final_signature_buffer, MAX_ECDSA_P256_SIGNATURE_AS_HEX_LENGTH)) {
             goto cleanup;
         }

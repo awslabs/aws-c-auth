@@ -29,8 +29,8 @@
  *
  */
 
-AWS_STATIC_STRING_FROM_LITERAL(s_integration_chunked_access_key_id, "example_key");
-AWS_STATIC_STRING_FROM_LITERAL(s_integration_chunked_secret_access_key, "example_secret_key");
+AWS_STATIC_STRING_FROM_LITERAL(s_integration_chunked_access_key_id, "example");
+AWS_STATIC_STRING_FROM_LITERAL(s_integration_chunked_secret_access_key, "example");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_chunked_access_key_id, "AKIAIOSFODNN7EXAMPLE");
 AWS_STATIC_STRING_FROM_LITERAL(s_chunked_secret_access_key, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
@@ -45,7 +45,7 @@ static struct aws_http_header s_host_header = {
 
 static struct aws_http_header s_integration_host_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("brawn-test-bucket-1.s3.aws-master.amazon.com"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("example_bucket"),
 };
 
 static struct aws_http_header s_storage_class_header = {
@@ -1056,8 +1056,10 @@ static int s_sigv4a_trailing_header_integration_test(struct aws_allocator *alloc
     AWS_ZERO_STRUCT(tester.chunk_signing_config.date);
     AWS_ZERO_STRUCT(tester.trailing_headers_signing_config.date);
     aws_date_time_init_now(&tester.request_signing_config.date);
-    aws_date_time_init_now(&tester.chunk_signing_config.date);
-    aws_date_time_init_now(&tester.trailing_headers_signing_config.date);
+    tester.chunk_signing_config.date = tester.request_signing_config.date;
+    tester.trailing_headers_signing_config.date = tester.request_signing_config.date;
+    // aws_date_time_init_now(&tester.chunk_signing_config.date);
+    // aws_date_time_init_now(&tester.trailing_headers_signing_config.date);
 
     struct aws_credentials *credentials = aws_credentials_new_from_string(
         allocator, s_integration_chunked_access_key_id, s_integration_chunked_secret_access_key, NULL, UINT64_MAX);
@@ -1112,7 +1114,7 @@ static int s_sigv4a_trailing_header_integration_test(struct aws_allocator *alloc
     struct aws_byte_cursor carriage_return = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("\r\n\r\n");
     struct aws_byte_cursor first_chunk_signature_cursor = aws_byte_cursor_from_buf(&first_chunk_signature);
     struct aws_byte_cursor final_chunk_signature_cursor = aws_byte_cursor_from_buf(&final_chunk_signature);
-    struct aws_byte_cursor trailing_header_signature_cursor = aws_byte_cursor_from_buf(&final_chunk_signature);
+    struct aws_byte_cursor trailing_header_signature_cursor = aws_byte_cursor_from_buf(&trailing_header_signature);
 
     AWS_ASSERT(aws_byte_cursor_is_valid(&pre_chunk));
     AWS_ASSERT(aws_byte_cursor_is_valid(&first_chunk));
@@ -1139,7 +1141,7 @@ static int s_sigv4a_trailing_header_integration_test(struct aws_allocator *alloc
     aws_http_message_set_body_stream(tester.integration_request, body_stream);
 
     struct aws_http_client_connection_options client_options = AWS_HTTP_CLIENT_CONNECTION_OPTIONS_INIT;
-    struct aws_byte_cursor host = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("example.amazon.com");
+    struct aws_byte_cursor host = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("example_bucket");
 
     struct aws_socket_options socket_options = {
         .type = AWS_SOCKET_STREAM,
@@ -1173,7 +1175,9 @@ static int s_sigv4a_trailing_header_integration_test(struct aws_allocator *alloc
     client_options.socket_options = &socket_options;
     client_options.port = 80;
 
+    AWS_LOGF_INFO(AWS_LS_AUTH_SIGNING, "Headers");
     s_log_headers(tester.integration_request);
+    AWS_LOGF_INFO(AWS_LS_AUTH_SIGNING, "Request Body\n" PRInSTR "\n", AWS_BYTE_BUF_PRI(body_buffer));
 
     aws_http_client_connect(&client_options);
     aws_mutex_lock(&tester.mutex);
