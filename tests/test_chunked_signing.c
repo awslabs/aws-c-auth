@@ -72,16 +72,16 @@ static struct aws_http_header s_content_length_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Content-Length"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("66824"),
 };
+static struct aws_http_header s_trailer_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-trailer"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("first,second,third"),
+};
 
 static struct aws_http_header s_integration_content_length_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Content-Length"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("535"),
 };
 
-static struct aws_http_header s_trailer_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-trailer"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("first,second,third"),
-};
 static struct aws_http_header s_integration_trailer_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-trailer"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-checksum-crc32c"),
