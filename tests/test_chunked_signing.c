@@ -449,7 +449,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_trailing_headers_signature,
-    "0248ea7d40ea8edfeb417c5aab802f40ccf25c1f301f4f24d9032dea49bea897");
+    "df5735bd9f3295cd9386572292562fefc93ba94e80a0a1ddcbd652c4e0a75e6c");
 
 static int s_sigv4_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -678,7 +678,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "20130524/s3/aws4_request\n");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_trailing_headers_expected_sts_post_signature,
-    "\n5b4a086380541fa6563b4c1ac31944b8a16d9f9b23ffb3eaf8fb05dab863a691");
+    "\n83d8f190334fb741bc8daf73c891689d320bd8017756bc730c540021ed48001f");
 
 static int s_sigv4a_chunked_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
