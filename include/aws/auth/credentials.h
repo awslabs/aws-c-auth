@@ -256,6 +256,11 @@ struct aws_credentials_provider_ecs_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /*
+     * Port to query credentials from.  If zero, 80/443 will be used based on whether or not tls is enabled.
+     */
+    uint16_t port;
 };
 
 /**

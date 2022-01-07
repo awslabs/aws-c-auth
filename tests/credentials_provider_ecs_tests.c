@@ -32,6 +32,7 @@ struct aws_mock_ecs_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
+    uint16_t selected_port;
 
     int error_code;
 };
@@ -66,6 +67,10 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
 
     (void)allocator;
     (void)options;
+
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.selected_port = options->port;
+    aws_mutex_unlock(&s_tester.lock);
 
     return (struct aws_http_connection_manager *)1;
 }
@@ -305,8 +310,11 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
 
     s_aws_wait_for_credentials_result();
 
+    aws_mutex_lock(&s_tester.lock);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
+    ASSERT_UINT_EQUALS(80, s_tester.selected_port);
+    aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
 
@@ -349,6 +357,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
 
     s_aws_wait_for_credentials_result();
 
+    aws_mutex_lock(&s_tester.lock);
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
@@ -356,6 +365,8 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
         s_expected_ecs_relative_uri->len);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
+    ASSERT_UINT_EQUALS(80, s_tester.selected_port);
+    aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
 
@@ -392,6 +403,7 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .port = 555,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
@@ -400,6 +412,7 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
 
     s_aws_wait_for_credentials_result();
 
+    aws_mutex_lock(&s_tester.lock);
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
@@ -408,6 +421,8 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
+    ASSERT_UINT_EQUALS(555, s_tester.selected_port);
+    aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
 
@@ -441,6 +456,7 @@ static int s_do_ecs_success_test(
 
     s_aws_wait_for_credentials_result();
 
+    aws_mutex_lock(&s_tester.lock);
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
@@ -459,6 +475,7 @@ static int s_do_ecs_success_test(
     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
     ASSERT_TRUE(
         aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
+    aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
 
@@ -564,6 +581,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
 
     s_aws_wait_for_credentials_result();
 
+    aws_mutex_lock(&s_tester.lock);
     ASSERT_BIN_ARRAYS_EQUALS(
         s_tester.request_uri.buffer,
         s_tester.request_uri.len,
@@ -582,6 +600,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
     ASSERT_TRUE(
         aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
+    aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
 
@@ -692,7 +711,9 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
 
     s_aws_wait_for_credentials_result();
 
+    aws_mutex_lock(&s_tester.lock);
     ASSERT_TRUE(s_tester.credentials != NULL);
+    aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
 

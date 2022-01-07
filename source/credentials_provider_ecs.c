@@ -552,7 +552,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     manager_options.initial_window_size = ECS_RESPONSE_SIZE_LIMIT;
     manager_options.socket_options = &socket_options;
     manager_options.host = options->host;
-    manager_options.port = options->tls_ctx ? 443 : 80;
+    if (options->port == 0) {
+        manager_options.port = options->tls_ctx ? 443 : 80;
+    } else {
+        manager_options.port = options->port;
+    }
     manager_options.max_connections = 2;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
