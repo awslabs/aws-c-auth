@@ -104,6 +104,12 @@ AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_empty_s
 AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_unsigned_payload;
 
 /**
+ * 'STREAMING-UNSIGNED-PAYLOAD-TRAILER'
+ * For use with `aws_signing_config_aws.signed_body_value`.
+ */
+AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_unsigned_payload_trailer;
+
+/**
  * 'STREAMING-AWS4-HMAC-SHA256-PAYLOAD'
  * For use with `aws_signing_config_aws.signed_body_value`.
  */
