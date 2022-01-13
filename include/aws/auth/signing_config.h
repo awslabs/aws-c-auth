@@ -177,6 +177,11 @@ struct aws_signing_config_aws {
      */
     enum aws_signature_type signature_type;
 
+    /**
+     * signed_body_value for to use.
+     */
+    struct aws_byte_cursor signed_body_value;
+
     /*
      * Region-related configuration
      *   (1) If Sigv4, the region to sign against
