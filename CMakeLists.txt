@@ -68,7 +68,7 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif (APPLE)
     set(PLATFORM_LIBS "")
 elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
-    set(PLATFORM_LIBS "")
+    set(PLATFORM_LIBS "-lexecinfo")
 endif()
 
 file(GLOB AUTH_HEADERS
