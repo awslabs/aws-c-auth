@@ -12,6 +12,7 @@
         { "name": "aws-c-sdkutils" }
     ],
     "downstream": [
+        { "name": "aws-c-s3" }
     ],
     "test_steps": [
         "test"
