@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/common/date_time.h>
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
+
+#include <aws/common/json/json.h>
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
@@ -53,110 +53,34 @@ struct aws_credentials *aws_parse_credentials_from_cjson_object(
     struct cJSON *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    AWS_FATAL_ASSERT(allocator);
-    AWS_FATAL_ASSERT(document_root);
-    AWS_FATAL_ASSERT(options);
-    AWS_FATAL_ASSERT(options->access_key_id_name);
-    AWS_FATAL_ASSERT(options->secrete_access_key_name);
-
-    if (options->token_required) {
-        AWS_FATAL_ASSERT(options->token_name);
-    }
-
-    if (options->expiration_required) {
-        AWS_FATAL_ASSERT(options->expiration_name);
-    }
-
     struct aws_credentials *credentials = NULL;
-    cJSON *access_key_id = NULL;
-    cJSON *secrete_access_key = NULL;
-    cJSON *token = NULL;
-    cJSON *creds_expiration = NULL;
 
-    bool parse_error = true;
+    struct aws_json_parse_credentials_options parse_options;
+    parse_options.access_key_id_name = options->access_key_id_name;
+    parse_options.expiration_name = options->expiration_name;
+    parse_options.expiration_required = options->expiration_required;
+    parse_options.secrete_access_key_name = options->secrete_access_key_name;
+    parse_options.token_name = options->token_name;
+    parse_options.token_required = options->token_required;
 
-    /*
-     * Pull out the credentials components
-     */
-    access_key_id = cJSON_GetObjectItem(document_root, options->access_key_id_name);
-    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from Json document.");
-        goto done;
-    }
+    struct aws_json_parse_credentials_results parse_result =
+        aws_json_parse_credentials_from_cjson(document_root, &parse_options);
 
-    secrete_access_key = cJSON_GetObjectItem(document_root, options->secrete_access_key_name);
-    if (!cJSON_IsString(secrete_access_key) || (secrete_access_key->valuestring == NULL)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
-        goto done;
-    }
-
-    if (options->token_name) {
-        token = cJSON_GetObjectItem(document_root, options->token_name);
-        if (!cJSON_IsString(token) || (token->valuestring == NULL)) {
-            if (options->token_required) {
-                AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from Json document.");
-                goto done;
-            }
-        }
-    }
-
-    if (options->expiration_name) {
-        creds_expiration = cJSON_GetObjectItem(document_root, options->expiration_name);
-        if (!cJSON_IsString(creds_expiration) || (creds_expiration->valuestring == NULL)) {
-            if (options->expiration_required) {
-                AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from Json document.");
-                goto done;
-            }
-        }
-    }
-
-    uint64_t expiration_timepoint_in_seconds = UINT64_MAX;
-    if (creds_expiration) {
-        struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(creds_expiration->valuestring);
-        if (options->expiration_required && creds_expiration_cursor.len == 0) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Parsed an unexpected credentials json document with empty expiration.")
-            goto done;
-        }
-        if (creds_expiration_cursor.len != 0) {
-            struct aws_date_time expiration;
-            if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
-                AWS_OP_ERR) {
-                if (options->expiration_required) {
-                    AWS_LOGF_ERROR(
-                        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                        "Expiration in Json document is not a valid ISO_8601 date string.");
-                    goto done;
-                } else {
-                    AWS_LOGF_INFO(
-                        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                        "Expiration in Json document is not a valid ISO_8601 date string.");
-                }
-            } else {
-                expiration_timepoint_in_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
-            }
-        }
-    }
-
-    /*
-     * Build the credentials
-     */
-    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
-    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(secrete_access_key->valuestring);
+    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(parse_result.access_key_id);
+    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(parse_result.secret_access_key);
 
     if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Parsed an unexpected credentials json document, either access key, secret key is empty.")
+            "Parsed an unexpected credentials json document, either access key or secret key is empty.")
         goto done;
     }
 
     struct aws_byte_cursor session_token_cursor;
     AWS_ZERO_STRUCT(session_token_cursor);
 
-    if (token) {
-        session_token_cursor = aws_byte_cursor_from_c_str(token->valuestring);
+    if (parse_result.token != NULL) {
+        session_token_cursor = aws_byte_cursor_from_c_str(parse_result.token);
         if (options->token_required && session_token_cursor.len == 0) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed an unexpected credentials json document with empty token.")
@@ -169,20 +93,14 @@ struct aws_credentials *aws_parse_credentials_from_cjson_object(
         access_key_id_cursor,
         secret_access_key_cursor,
         session_token_cursor,
-        expiration_timepoint_in_seconds);
+        parse_result.expiration_timepoint_in_seconds);
 
     if (credentials == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to allocate memory for credentials.");
-        parse_error = false;
         goto done;
     }
 
 done:
-
-    if (parse_error) {
-        aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
-    }
-
     return credentials;
 }
 
@@ -191,12 +109,11 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     const char *document,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    cJSON *document_root = cJSON_Parse(document);
+    cJSON* document_root = aws_json_parse_cjson_from_string(document);
     if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
         return NULL;
     }
     struct aws_credentials *credentials = aws_parse_credentials_from_cjson_object(allocator, document_root, options);
-    cJSON_Delete(document_root);
+    aws_json_delete_cjson(document_root);
     return credentials;
 }

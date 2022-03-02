@@ -8,8 +8,8 @@
 
 #include <aws/auth/auth.h>
 #include <aws/auth/credentials.h>
-#include <aws/auth/external/cJSON.h>
 #include <aws/http/connection_manager.h>
+#include <aws/common/json/json.h>
 
 struct aws_http_connection;
 struct aws_http_connection_manager;
