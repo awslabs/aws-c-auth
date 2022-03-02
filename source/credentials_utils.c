@@ -109,7 +109,7 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     const char *document,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    cJSON* document_root = aws_json_parse_cjson_from_string(document);
+    cJSON *document_root = aws_json_parse_cjson_from_string(document);
     if (document_root == NULL) {
         return NULL;
     }
