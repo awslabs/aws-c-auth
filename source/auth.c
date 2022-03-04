@@ -4,7 +4,6 @@
  */
 #include <aws/auth/auth.h>
 
-//#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_signing.h>
 
 #include <aws/cal/cal.h>
@@ -132,7 +131,7 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
 
     AWS_FATAL_ASSERT(aws_signing_init_signing_tables(allocator) == AWS_OP_SUCCESS);
 
-    aws_json_init(allocator);
+    aws_json_module_init(allocator);
     s_library_initialized = true;
 }
 
@@ -149,5 +148,5 @@ void aws_auth_library_clean_up(void) {
     aws_http_library_clean_up();
     aws_cal_library_clean_up();
     s_library_allocator = NULL;
-    aws_json_clean_up();
+    aws_json_module_cleanup();
 }

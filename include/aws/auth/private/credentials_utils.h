@@ -135,9 +135,9 @@ struct aws_parse_credentials_from_json_doc_options {
  * performe a case insensitive search.
  */
 AWS_AUTH_API
-struct aws_credentials *aws_parse_credentials_from_cjson_object(
+struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     struct aws_allocator *allocator,
-    struct cJSON *document_root,
+    void *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options);
 
 /**

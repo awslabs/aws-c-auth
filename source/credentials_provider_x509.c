@@ -18,6 +18,8 @@
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
 
+#include <aws/common/json/json.h>
+
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
 #    pragma warning(disable : 4232)
@@ -145,13 +147,13 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     struct aws_byte_buf *document) {
 
     struct aws_credentials *credentials = NULL;
-    cJSON *document_root = NULL;
+    void* document_root = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
         goto done;
     }
 
-    document_root = cJSON_Parse((const char *)document->buffer);
+    document_root = aws_json_node_from_string((char *)document->buffer);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IoT Core response as Json document.");
         goto done;
@@ -160,8 +162,8 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     /*
      * pull out the root "Credentials" components
      */
-    cJSON *creds = cJSON_GetObjectItem(document_root, "credentials");
-    if (!cJSON_IsObject(creds)) {
+    void *creds = aws_json_object_get_node(document_root, "credentials");
+    if (!aws_json_node_is_object(creds)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse credentials from IoT Core response.");
         goto done;
     }
@@ -175,7 +177,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
         .expiration_required = false,
     };
 
-    credentials = aws_parse_credentials_from_cjson_object(allocator, creds, &parse_options);
+    credentials = aws_parse_credentials_from_aws_json_object(allocator, creds, &parse_options);
     if (!credentials) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "X509 credentials provider failed to parse credentials");
     }
@@ -183,7 +185,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 done:
 
     if (document_root != NULL) {
-        cJSON_Delete(document_root);
+        aws_json_node_delete(document_root);
     }
 
     return credentials;
