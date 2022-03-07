@@ -8,7 +8,7 @@
 #include <aws/common/uuid.h>
 
 #include <aws/common/date_time.h>
-#include "aws/common/json.h"
+#include <aws/common/json.h>
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
@@ -143,8 +143,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
      * Build the credentials
      */
     struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(aws_json_string_get(access_key_id));
-    struct aws_byte_cursor secret_access_key_cursor =
-        aws_byte_cursor_from_c_str(aws_json_string_get(access_key_id));
+    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(aws_json_string_get(access_key_id));
 
     if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0) {
         AWS_LOGF_ERROR(

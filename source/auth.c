@@ -11,7 +11,7 @@
 #include <aws/http/http.h>
 
 #include <aws/common/error.h>
-#include "aws/common/json.h"
+#include <aws/common/json.h>
 
 #define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
 

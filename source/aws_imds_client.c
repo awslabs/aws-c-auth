@@ -16,7 +16,7 @@
 #include <aws/io/socket.h>
 #include <ctype.h>
 
-#include "aws/common/json.h"
+#include <aws/common/json.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)

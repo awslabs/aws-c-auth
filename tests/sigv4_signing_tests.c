@@ -14,7 +14,7 @@
 #include <aws/common/condition_variable.h>
 #include <aws/common/encoding.h>
 #include <aws/common/environment.h>
-#include "aws/common/json.h"
+#include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
 #include <aws/io/file_utils.h>
@@ -282,7 +282,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     if (document_root == NULL) {
         goto done;
     }
-    
+
     struct aws_json_node *credentials_node =
         aws_json_object_get_insensitive(document_root, (char *)aws_string_c_str(s_credentials_name));
     AWS_FATAL_ASSERT(credentials_node != NULL);
@@ -296,7 +296,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         aws_json_object_get_insensitive(credentials_node, (char *)aws_string_c_str(s_secret_access_key_name));
     struct aws_json_node *session_token =
         aws_json_object_get_insensitive(credentials_node, (char *)aws_string_c_str(s_session_token_name));
-    
+
     if (!aws_json_is_string(access_key_id) || aws_json_string_get(access_key_id) == NULL) {
         goto done;
     }
@@ -341,8 +341,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     struct aws_json_node *service_node =
         aws_json_object_get_insensitive(document_root, (char *)aws_string_c_str(s_service_name));
-    if (service_node == NULL || !aws_json_is_string(service_node) ||
-        aws_json_string_get(service_node) == NULL) {
+    if (service_node == NULL || !aws_json_is_string(service_node) || aws_json_string_get(service_node) == NULL) {
         goto done;
     }
 
@@ -353,8 +352,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     struct aws_json_node *timestamp_node =
         aws_json_object_get_insensitive(document_root, (char *)aws_string_c_str(s_timestamp_name));
-    if (timestamp_node == NULL || !aws_json_is_string(timestamp_node) ||
-        aws_json_string_get(timestamp_node) == NULL) {
+    if (timestamp_node == NULL || !aws_json_is_string(timestamp_node) || aws_json_string_get(timestamp_node) == NULL) {
         goto done;
     }
 
