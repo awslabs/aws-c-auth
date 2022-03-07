@@ -147,7 +147,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     struct aws_byte_buf *document) {
 
     struct aws_credentials *credentials = NULL;
-    struct aws_json_node* document_root = NULL;
+    struct aws_json_node *document_root = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
         goto done;

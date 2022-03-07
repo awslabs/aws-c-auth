@@ -283,16 +283,19 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *credentials_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_credentials_name));
+    struct aws_json_node *credentials_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_credentials_name));
     AWS_FATAL_ASSERT(credentials_node != NULL);
 
     /*
      * Pull out the three credentials components
      */
-    struct aws_json_node *access_key_id = aws_json_object_get_node_case_insensitive(credentials_node, (char *)aws_string_c_str(s_access_key_id_name));
+    struct aws_json_node *access_key_id =
+        aws_json_object_get_node_case_insensitive(credentials_node, (char *)aws_string_c_str(s_access_key_id_name));
     struct aws_json_node *secret_access_key =
         aws_json_object_get_node_case_insensitive(credentials_node, (char *)aws_string_c_str(s_secret_access_key_name));
-    struct aws_json_node *session_token = aws_json_object_get_node_case_insensitive(credentials_node, (char *)aws_string_c_str(s_session_token_name));
+    struct aws_json_node *session_token =
+        aws_json_object_get_node_case_insensitive(credentials_node, (char *)aws_string_c_str(s_session_token_name));
 
     if (!aws_json_node_is_string(access_key_id) || aws_json_node_get_string(access_key_id) == NULL) {
         goto done;
@@ -325,7 +328,8 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     AWS_FATAL_ASSERT(context->credentials != NULL);
 
-    struct aws_json_node *region_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_region_name));
+    struct aws_json_node *region_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_region_name));
     if (region_node == NULL || !aws_json_node_is_string(region_node) || aws_json_node_get_string(region_node) == NULL) {
         goto done;
     }
@@ -335,8 +339,10 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *service_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_service_name));
-    if (service_node == NULL || !aws_json_node_is_string(service_node) || aws_json_node_get_string(service_node) == NULL) {
+    struct aws_json_node *service_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_service_name));
+    if (service_node == NULL || !aws_json_node_is_string(service_node) ||
+        aws_json_node_get_string(service_node) == NULL) {
         goto done;
     }
 
@@ -345,8 +351,10 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *timestamp_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_timestamp_name));
-    if (timestamp_node == NULL || !aws_json_node_is_string(timestamp_node) || aws_json_node_get_string(timestamp_node) == NULL) {
+    struct aws_json_node *timestamp_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_timestamp_name));
+    if (timestamp_node == NULL || !aws_json_node_is_string(timestamp_node) ||
+        aws_json_node_get_string(timestamp_node) == NULL) {
         goto done;
     }
 
@@ -355,28 +363,32 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *normalize_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_normalize_name));
+    struct aws_json_node *normalize_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_normalize_name));
     if (normalize_node == NULL || !aws_json_node_is_boolean(normalize_node)) {
         goto done;
     }
 
     context->should_normalize = aws_json_node_get_boolean(normalize_node);
 
-    struct aws_json_node *body_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_body_name));
+    struct aws_json_node *body_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_body_name));
     if (body_node == NULL || !aws_json_node_is_boolean(body_node)) {
         goto done;
     }
 
     context->should_sign_body = aws_json_node_get_boolean(body_node);
 
-    struct aws_json_node *expiration_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_expiration_name));
+    struct aws_json_node *expiration_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_expiration_name));
     if (expiration_node == NULL || !aws_json_node_is_number(expiration_node)) {
         goto done;
     }
 
     context->expiration_in_seconds = aws_json_node_get_number(expiration_node);
 
-    struct aws_json_node *omit_token_node = aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_omit_token_name));
+    struct aws_json_node *omit_token_node =
+        aws_json_object_get_node_case_insensitive(document_root, (char *)aws_string_c_str(s_omit_token_name));
     if (omit_token_node != NULL && aws_json_node_is_boolean(omit_token_node)) {
         context->omit_session_token = aws_json_node_get_boolean(omit_token_node);
     }

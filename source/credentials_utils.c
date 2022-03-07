@@ -7,8 +7,8 @@
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
 
-#include <aws/common/json/json.h>
 #include <aws/common/date_time.h>
+#include <aws/common/json/json.h>
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
@@ -79,20 +79,20 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     /*
      * Pull out the credentials components
      */
-    access_key_id = aws_json_object_get_node(document_root, (char*)options->access_key_id_name);
+    access_key_id = aws_json_object_get_node(document_root, (char *)options->access_key_id_name);
     if (!aws_json_node_is_string(access_key_id) || aws_json_node_get_string(access_key_id) == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from Json document.");
         goto done;
     }
 
-    secrete_access_key = aws_json_object_get_node(document_root, (char*)options->secrete_access_key_name);
+    secrete_access_key = aws_json_object_get_node(document_root, (char *)options->secrete_access_key_name);
     if (!aws_json_node_is_string(secrete_access_key) || aws_json_node_get_string(secrete_access_key) == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
         goto done;
     }
 
     if (options->token_name) {
-        token = aws_json_object_get_node(document_root, (char*)options->token_name);
+        token = aws_json_object_get_node(document_root, (char *)options->token_name);
         if (!aws_json_node_is_string(token) || aws_json_node_get_string(token) == NULL) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from Json document.");
             goto done;
@@ -100,7 +100,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     }
 
     if (options->expiration_name) {
-        creds_expiration = aws_json_object_get_node(document_root, (char*)options->expiration_name);
+        creds_expiration = aws_json_object_get_node(document_root, (char *)options->expiration_name);
         if (!aws_json_node_is_string(creds_expiration) || aws_json_node_get_string(creds_expiration) == NULL) {
             if (options->expiration_required) {
                 AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from Json document.");
@@ -111,7 +111,8 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
     uint64_t expiration_timepoint_in_seconds = UINT64_MAX;
     if (creds_expiration) {
-        struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str(aws_json_node_get_string(creds_expiration));
+        struct aws_byte_cursor creds_expiration_cursor =
+            aws_byte_cursor_from_c_str(aws_json_node_get_string(creds_expiration));
         if (options->expiration_required && creds_expiration_cursor.len == 0) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -142,7 +143,8 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
      * Build the credentials
      */
     struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(aws_json_node_get_string(access_key_id));
-    struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_c_str(aws_json_node_get_string(access_key_id));
+    struct aws_byte_cursor secret_access_key_cursor =
+        aws_byte_cursor_from_c_str(aws_json_node_get_string(access_key_id));
 
     if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0) {
         AWS_LOGF_ERROR(
@@ -190,7 +192,7 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     const char *document,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    struct aws_json_node *document_root = aws_json_node_from_string((char*)document);
+    struct aws_json_node *document_root = aws_json_node_from_string((char *)document);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
         return NULL;

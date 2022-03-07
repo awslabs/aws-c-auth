@@ -1085,7 +1085,7 @@ static int s_parse_iam_profile(struct aws_json_node *document_root, struct aws_i
 
     struct aws_byte_cursor last_updated_cursor = aws_byte_cursor_from_c_str(aws_json_node_get_string(last_updated));
     struct aws_byte_cursor profile_arn_cursor = aws_byte_cursor_from_c_str(aws_json_node_get_string(profile_arn));
-    struct aws_byte_cursor profile_id_cursor = aws_byte_cursor_from_c_str( aws_json_node_get_string(profile_id));
+    struct aws_byte_cursor profile_id_cursor = aws_byte_cursor_from_c_str(aws_json_node_get_string(profile_id));
 
     if (last_updated_cursor.len == 0 || profile_arn_cursor.len == 0 || profile_id_cursor.len == 0) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Parsed an unexpected Json document fro iam profile.");
@@ -1183,7 +1183,8 @@ static int s_parse_instance_info(struct aws_json_node *document_root, struct aws
     }
     dest->architecture = aws_byte_cursor_from_c_str(aws_json_node_get_string(architecture));
 
-    struct aws_json_node *availability_zone = aws_json_object_get_node_case_insensitive(document_root, "availabilityZone");
+    struct aws_json_node *availability_zone =
+        aws_json_object_get_node_case_insensitive(document_root, "availabilityZone");
     if (!aws_json_node_is_string(availability_zone) || (aws_json_node_get_string(availability_zone) == NULL)) {
         AWS_LOGF_ERROR(
             AWS_LS_IMDS_CLIENT, "Failed to parse availabilityZone from Json document for ec2 instance info.");
@@ -1191,7 +1192,8 @@ static int s_parse_instance_info(struct aws_json_node *document_root, struct aws
     }
     dest->availability_zone = aws_byte_cursor_from_c_str(aws_json_node_get_string(availability_zone));
 
-    struct aws_json_node *billing_products = aws_json_object_get_node_case_insensitive(document_root, "billingProducts");
+    struct aws_json_node *billing_products =
+        aws_json_object_get_node_case_insensitive(document_root, "billingProducts");
     if (aws_json_node_is_array(billing_products)) {
         struct aws_json_node *element;
         for (int i = 0; i < aws_json_array_get_count(billing_products); i++) {
@@ -1203,7 +1205,8 @@ static int s_parse_instance_info(struct aws_json_node *document_root, struct aws
         }
     }
 
-    struct aws_json_node *marketplace_product_codes = aws_json_object_get_node_case_insensitive(document_root, "marketplaceProductCodes");
+    struct aws_json_node *marketplace_product_codes =
+        aws_json_object_get_node_case_insensitive(document_root, "marketplaceProductCodes");
     if (aws_json_node_is_array(marketplace_product_codes)) {
         struct aws_json_node *element;
         for (int i = 0; i < aws_json_array_get_count(marketplace_product_codes); i++) {
@@ -1316,7 +1319,7 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
         goto on_finish;
     }
 
-    document_root = aws_json_node_from_string((char*)json_data.buffer);
+    document_root = aws_json_node_from_string((char *)json_data.buffer);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for ec2 instance info.");
         goto on_finish;
