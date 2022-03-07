@@ -18,7 +18,7 @@
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
 
-#include <aws/common/json/json.h>
+#include "aws/common/json.h"
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
@@ -153,7 +153,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
         goto done;
     }
 
-    document_root = aws_json_node_from_string((char *)document->buffer);
+    document_root = aws_json_from_string((char *)document->buffer);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IoT Core response as Json document.");
         goto done;
@@ -162,8 +162,8 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     /*
      * pull out the root "Credentials" components
      */
-    struct aws_json_node *creds = aws_json_object_get_node(document_root, "credentials");
-    if (!aws_json_node_is_object(creds)) {
+    struct aws_json_node *creds = aws_json_object_get(document_root, "credentials");
+    if (!aws_json_is_object(creds)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse credentials from IoT Core response.");
         goto done;
     }
@@ -185,7 +185,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 done:
 
     if (document_root != NULL) {
-        aws_json_node_delete(document_root);
+        aws_json_delete(document_root);
     }
 
     return credentials;
