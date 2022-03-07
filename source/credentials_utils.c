@@ -51,7 +51,7 @@ void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_pr
 
 struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     struct aws_allocator *allocator,
-    void *document_root,
+    struct aws_json_node *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
     AWS_FATAL_ASSERT(allocator);
@@ -69,10 +69,10 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     }
 
     struct aws_credentials *credentials = NULL;
-    void *access_key_id = NULL;
-    void *secrete_access_key = NULL;
-    void *token = NULL;
-    void *creds_expiration = NULL;
+    struct aws_json_node *access_key_id = NULL;
+    struct aws_json_node *secrete_access_key = NULL;
+    struct aws_json_node *token = NULL;
+    struct aws_json_node *creds_expiration = NULL;
 
     bool parse_error = true;
 
@@ -190,7 +190,7 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     const char *document,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    void *document_root = aws_json_node_from_string((char*)document);
+    struct aws_json_node *document_root = aws_json_node_from_string((char*)document);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
         return NULL;

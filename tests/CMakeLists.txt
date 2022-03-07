@@ -4,8 +4,7 @@ enable_testing()
 
 file(GLOB TEST_SRC "*.c")
 file(GLOB TEST_HDRS "*.h")
-file(GLOB EXTERNAL_TEST_SRC "external/*.c")
-file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC} ${EXTERNAL_TEST_SRC})
+file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC})
 
 add_test_case(credentials_create_destroy_test)
 add_test_case(static_credentials_provider_basic_test)

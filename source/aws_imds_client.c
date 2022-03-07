@@ -1061,23 +1061,23 @@ on_finish:
   "InstanceProfileId" : "AIPAQOHATHEGTGNQ5THQB"
 }
  */
-static int s_parse_iam_profile(void *document_root, struct aws_imds_iam_profile *dest) {
+static int s_parse_iam_profile(struct aws_json_node *document_root, struct aws_imds_iam_profile *dest) {
 
     bool success = false;
 
-    void *last_updated = aws_json_object_get_node_case_insensitive(document_root, "LastUpdated");
+    struct aws_json_node *last_updated = aws_json_object_get_node_case_insensitive(document_root, "LastUpdated");
     if (!aws_json_node_is_string(last_updated) || (aws_json_node_get_string(last_updated) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse LastUpdated from Json document for iam profile.");
         goto done;
     }
 
-    void *profile_arn = aws_json_object_get_node_case_insensitive(document_root, "InstanceProfileArn");
+    struct aws_json_node *profile_arn = aws_json_object_get_node_case_insensitive(document_root, "InstanceProfileArn");
     if (!aws_json_node_is_string(profile_arn) || (aws_json_node_get_string(profile_arn) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse InstanceProfileArn from Json document for iam profile.");
         goto done;
     }
 
-    void *profile_id = aws_json_object_get_node_case_insensitive(document_root, "InstanceProfileId");
+    struct aws_json_node *profile_id = aws_json_object_get_node_case_insensitive(document_root, "InstanceProfileId");
     if (!aws_json_node_is_string(profile_id) || (aws_json_node_get_string(profile_id) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse InstanceProfileId from Json document for iam profile.");
         goto done;
@@ -1109,7 +1109,7 @@ done:
 
 static void s_process_iam_profile(const struct aws_byte_buf *resource, int error_code, void *user_data) {
     struct imds_get_iam_user_data *wrapped_user_data = user_data;
-    void *document_root = NULL;
+    struct aws_json_node *document_root = NULL;
     struct aws_imds_iam_profile iam;
     AWS_ZERO_STRUCT(iam);
 
@@ -1166,24 +1166,24 @@ on_finish:
   "version" : "2017-09-30"
   }
  */
-static int s_parse_instance_info(void *document_root, struct aws_imds_instance_info *dest) {
+static int s_parse_instance_info(struct aws_json_node *document_root, struct aws_imds_instance_info *dest) {
 
     bool success = false;
-    void *account_id = aws_json_object_get_node_case_insensitive(document_root, "accountId");
+    struct aws_json_node *account_id = aws_json_object_get_node_case_insensitive(document_root, "accountId");
     if (!aws_json_node_is_string(account_id) || (aws_json_node_get_string(account_id) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse accountId from Json document for ec2 instance info.");
         goto done;
     }
     dest->account_id = aws_byte_cursor_from_c_str(aws_json_node_get_string(account_id));
 
-    void *architecture = aws_json_object_get_node_case_insensitive(document_root, "architecture");
+    struct aws_json_node *architecture = aws_json_object_get_node_case_insensitive(document_root, "architecture");
     if (!aws_json_node_is_string(architecture) || (aws_json_node_get_string(architecture) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse architecture from Json document for ec2 instance info.");
         goto done;
     }
     dest->architecture = aws_byte_cursor_from_c_str(aws_json_node_get_string(architecture));
 
-    void *availability_zone = aws_json_object_get_node_case_insensitive(document_root, "availabilityZone");
+    struct aws_json_node *availability_zone = aws_json_object_get_node_case_insensitive(document_root, "availabilityZone");
     if (!aws_json_node_is_string(availability_zone) || (aws_json_node_get_string(availability_zone) == NULL)) {
         AWS_LOGF_ERROR(
             AWS_LS_IMDS_CLIENT, "Failed to parse availabilityZone from Json document for ec2 instance info.");
@@ -1191,9 +1191,9 @@ static int s_parse_instance_info(void *document_root, struct aws_imds_instance_i
     }
     dest->availability_zone = aws_byte_cursor_from_c_str(aws_json_node_get_string(availability_zone));
 
-    void *billing_products = aws_json_object_get_node_case_insensitive(document_root, "billingProducts");
+    struct aws_json_node *billing_products = aws_json_object_get_node_case_insensitive(document_root, "billingProducts");
     if (aws_json_node_is_array(billing_products)) {
-        void *element;
+        struct aws_json_node *element;
         for (int i = 0; i < aws_json_array_get_count(billing_products); i++) {
             element = aws_json_array_get_node(billing_products, i);
             if (aws_json_node_is_string(element) && aws_json_node_get_string(element) != NULL) {
@@ -1203,9 +1203,9 @@ static int s_parse_instance_info(void *document_root, struct aws_imds_instance_i
         }
     }
 
-    void *marketplace_product_codes = aws_json_object_get_node_case_insensitive(document_root, "marketplaceProductCodes");
+    struct aws_json_node *marketplace_product_codes = aws_json_object_get_node_case_insensitive(document_root, "marketplaceProductCodes");
     if (aws_json_node_is_array(marketplace_product_codes)) {
-        void *element;
+        struct aws_json_node *element;
         for (int i = 0; i < aws_json_array_get_count(marketplace_product_codes); i++) {
             element = aws_json_array_get_node(marketplace_product_codes, i);
             if (aws_json_node_is_string(element) && aws_json_node_get_string(element) != NULL) {
@@ -1215,55 +1215,55 @@ static int s_parse_instance_info(void *document_root, struct aws_imds_instance_i
         }
     }
 
-    void *image_id = aws_json_object_get_node_case_insensitive(document_root, "imageId");
+    struct aws_json_node *image_id = aws_json_object_get_node_case_insensitive(document_root, "imageId");
     if (aws_json_node_is_string(image_id) && (aws_json_node_get_string(image_id) != NULL)) {
         dest->image_id = aws_byte_cursor_from_c_str(aws_json_node_get_string(image_id));
     }
 
-    void *instance_id = aws_json_object_get_node_case_insensitive(document_root, "instanceId");
+    struct aws_json_node *instance_id = aws_json_object_get_node_case_insensitive(document_root, "instanceId");
     if (!aws_json_node_is_string(instance_id) || (aws_json_node_get_string(instance_id) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse instanceId from Json document for ec2 instance info.");
         goto done;
     }
     dest->instance_id = aws_byte_cursor_from_c_str(aws_json_node_get_string(instance_id));
 
-    void *instance_type = aws_json_object_get_node_case_insensitive(document_root, "instanceType");
+    struct aws_json_node *instance_type = aws_json_object_get_node_case_insensitive(document_root, "instanceType");
     if (!aws_json_node_is_string(instance_type) || (aws_json_node_get_string(instance_type) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse instanceType from Json document for ec2 instance info.");
         goto done;
     }
     dest->instance_type = aws_byte_cursor_from_c_str(aws_json_node_get_string(instance_type));
 
-    void *kernel_id = aws_json_object_get_node_case_insensitive(document_root, "kernelId");
+    struct aws_json_node *kernel_id = aws_json_object_get_node_case_insensitive(document_root, "kernelId");
     if (aws_json_node_is_string(kernel_id) && (aws_json_node_get_string(kernel_id) != NULL)) {
         dest->kernel_id = aws_byte_cursor_from_c_str(aws_json_node_get_string(kernel_id));
     }
 
-    void *private_ip = aws_json_object_get_node_case_insensitive(document_root, "privateIp");
+    struct aws_json_node *private_ip = aws_json_object_get_node_case_insensitive(document_root, "privateIp");
     if (aws_json_node_is_string(private_ip) && (aws_json_node_get_string(private_ip) != NULL)) {
         dest->private_ip = aws_byte_cursor_from_c_str(aws_json_node_get_string(private_ip));
     }
 
-    void *ramdisk_id = aws_json_object_get_node_case_insensitive(document_root, "ramdiskId");
+    struct aws_json_node *ramdisk_id = aws_json_object_get_node_case_insensitive(document_root, "ramdiskId");
     if (aws_json_node_is_string(ramdisk_id) && (aws_json_node_get_string(ramdisk_id) != NULL)) {
         dest->ramdisk_id = aws_byte_cursor_from_c_str(aws_json_node_get_string(ramdisk_id));
     }
 
-    void *region = aws_json_object_get_node_case_insensitive(document_root, "region");
+    struct aws_json_node *region = aws_json_object_get_node_case_insensitive(document_root, "region");
     if (!aws_json_node_is_string(region) || (aws_json_node_get_string(region) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse region from Json document for ec2 instance info.");
         goto done;
     }
     dest->region = aws_byte_cursor_from_c_str(aws_json_node_get_string(region));
 
-    void *version = aws_json_object_get_node_case_insensitive(document_root, "version");
+    struct aws_json_node *version = aws_json_object_get_node_case_insensitive(document_root, "version");
     if (!aws_json_node_is_string(version) || (aws_json_node_get_string(version) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse version from Json document for ec2 instance info.");
         goto done;
     }
     dest->version = aws_byte_cursor_from_c_str(aws_json_node_get_string(version));
 
-    void *pending_time = aws_json_object_get_node_case_insensitive(document_root, "pendingTime");
+    struct aws_json_node *pending_time = aws_json_object_get_node_case_insensitive(document_root, "pendingTime");
     if (!aws_json_node_is_string(pending_time) || (aws_json_node_get_string(pending_time) == NULL)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse pendingTime from Json document for ec2 instance info.");
         goto done;
@@ -1289,7 +1289,7 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
     struct aws_byte_buf json_data;
     AWS_ZERO_STRUCT(json_data);
 
-    void *document_root = NULL;
+    struct aws_json_node *document_root = NULL;
 
     if (aws_array_list_init_dynamic(
             &instance_info.billing_products, wrapped_user_data->allocator, 10, sizeof(struct aws_byte_cursor))) {
