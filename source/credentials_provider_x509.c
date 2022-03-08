@@ -147,13 +147,14 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     struct aws_byte_buf *document) {
 
     struct aws_credentials *credentials = NULL;
-    struct aws_json_node *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
         goto done;
     }
 
-    document_root = aws_json_from_string((char *)document->buffer);
+    struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
+    document_root = aws_json_from_string(&document_cursor, allocator);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IoT Core response as Json document.");
         goto done;
@@ -162,7 +163,8 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     /*
      * pull out the root "Credentials" components
      */
-    struct aws_json_node *creds = aws_json_object_get(document_root, "credentials");
+    struct aws_byte_cursor str_creds_cursor = aws_byte_cursor_from_c_str("credentials");
+    struct aws_json_value *creds = aws_json_object_get(document_root, &str_creds_cursor, allocator);
     if (!aws_json_is_object(creds)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse credentials from IoT Core response.");
         goto done;
@@ -185,7 +187,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 done:
 
     if (document_root != NULL) {
-        aws_json_delete(document_root);
+        aws_json_destroy(document_root);
     }
 
     return credentials;

@@ -137,7 +137,7 @@ struct aws_parse_credentials_from_json_doc_options {
 AWS_AUTH_API
 struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     struct aws_allocator *allocator,
-    struct aws_json_node *document_root,
+    struct aws_json_value *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options);
 
 /**
