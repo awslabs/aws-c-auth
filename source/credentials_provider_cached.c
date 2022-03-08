@@ -109,17 +109,13 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
                     aws_timestamp_convert(system_now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
                 if (credentials_expiration_timepoint_seconds >=
                     system_now_seconds + REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS) {
-                    uint64_t early_refresh_time_ns = high_res_now;
-                    early_refresh_time_ns += aws_timestamp_convert(
+                    next_refresh_time_in_ns = high_res_now;
+                    next_refresh_time_in_ns += aws_timestamp_convert(
                         credentials_expiration_timepoint_seconds - system_now_seconds -
                             REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS,
                         AWS_TIMESTAMP_SECS,
                         AWS_TIMESTAMP_NANOS,
                         NULL);
-
-                    if (early_refresh_time_ns < next_refresh_time_in_ns) {
-                        next_refresh_time_in_ns = early_refresh_time_ns;
-                    }
                 }
             }
         }
