@@ -130,8 +130,6 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
     aws_register_log_subject_info_list(&s_auth_log_subject_list);
 
     AWS_FATAL_ASSERT(aws_signing_init_signing_tables(allocator) == AWS_OP_SUCCESS);
-
-    aws_json_module_init(allocator);
     s_library_initialized = true;
 }
 
@@ -148,5 +146,4 @@ void aws_auth_library_clean_up(void) {
     aws_http_library_clean_up();
     aws_cal_library_clean_up();
     s_library_allocator = NULL;
-    aws_json_module_cleanup();
 }

@@ -1064,28 +1064,39 @@ on_finish:
 static int s_parse_iam_profile(struct aws_json_value *document_root, struct aws_imds_iam_profile *dest) {
 
     bool success = false;
-    struct aws_allocator *allocator = aws_default_allocator();
 
-    struct aws_byte_cursor str_last_updated_cursor = aws_byte_cursor_from_c_str("LastUpdated");
     struct aws_byte_cursor *last_updated_cursor = NULL;
-    struct aws_json_value *last_updated = aws_json_object_get_insensitive(document_root, &str_last_updated_cursor, allocator);
-    if (!aws_json_is_string(last_updated) || (aws_json_value_get_string(last_updated, last_updated_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *last_updated =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("LastUpdated"));
+    if (last_updated == NULL) {
+        last_updated = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("lastupdated"));
+    }
+    if (!aws_json_value_is_string(last_updated) ||
+        (aws_json_value_get_string(last_updated, last_updated_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse LastUpdated from Json document for iam profile.");
         goto done;
     }
 
-    struct aws_byte_cursor str_profile_arn_cursor = aws_byte_cursor_from_c_str("InstanceProfileArn");
     struct aws_byte_cursor *profile_arn_cursor = NULL;
-    struct aws_json_value *profile_arn = aws_json_object_get_insensitive(document_root, &str_profile_arn_cursor, allocator);
-    if (!aws_json_is_string(profile_arn) || (aws_json_value_get_string(profile_arn, profile_arn_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *profile_arn =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("InstanceProfileArn"));
+    if (profile_arn == NULL) {
+        profile_arn = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("instanceprofilearn"));
+    }
+    if (!aws_json_value_is_string(profile_arn) ||
+        (aws_json_value_get_string(profile_arn, profile_arn_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse InstanceProfileArn from Json document for iam profile.");
         goto done;
     }
 
-    struct aws_byte_cursor str_profile_id_cursor = aws_byte_cursor_from_c_str("InstanceProfileId");
     struct aws_byte_cursor *profile_id_cursor = NULL;
-    struct aws_json_value *profile_id = aws_json_object_get_insensitive(document_root, &str_profile_id_cursor, allocator);
-    if (!aws_json_is_string(profile_id) || (aws_json_value_get_string(profile_id, profile_id_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *profile_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("InstanceProfileId"));
+    if (profile_id == NULL) {
+        profile_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("instanceprofileid"));
+    }
+    if (!aws_json_value_is_string(profile_id) ||
+        (aws_json_value_get_string(profile_id, profile_id_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse InstanceProfileId from Json document for iam profile.");
         goto done;
     }
@@ -1132,7 +1143,7 @@ static void s_process_iam_profile(const struct aws_byte_buf *resource, int error
     }
 
     struct aws_byte_cursor json_data_cursor = aws_byte_cursor_from_buf(&json_data);
-    document_root = aws_json_from_string(&json_data_cursor, aws_default_allocator());
+    document_root = aws_json_value_new_from_string(aws_default_allocator(), json_data_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for iam profile.");
         goto on_finish;
@@ -1147,7 +1158,7 @@ on_finish:
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
     if (document_root != NULL) {
-        aws_json_destroy(document_root);
+        aws_json_value_destroy(document_root);
     }
 }
 
@@ -1173,133 +1184,220 @@ on_finish:
 static int s_parse_instance_info(struct aws_json_value *document_root, struct aws_imds_instance_info *dest) {
 
     bool success = false;
-    struct aws_allocator *allocator = aws_default_allocator();
 
-    struct aws_byte_cursor str_account_id_cursor = aws_byte_cursor_from_c_str("accountId");
     struct aws_byte_cursor *account_id_cursor = NULL;
-    struct aws_json_value *account_id = aws_json_object_get_insensitive(document_root, &str_account_id_cursor, allocator);
-    if (!aws_json_is_string(account_id) || (aws_json_value_get_string(account_id, account_id_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *account_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("accountId"));
+    if (account_id == NULL) {
+        account_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("accountid"));
+        if (account_id == NULL) {
+            account_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("AccountId"));
+        }
+    }
+    if (!aws_json_value_is_string(account_id) ||
+        (aws_json_value_get_string(account_id, account_id_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse accountId from Json document for ec2 instance info.");
         goto done;
     }
     dest->account_id = *account_id_cursor;
 
-    struct aws_byte_cursor str_architecture_cursor = aws_byte_cursor_from_c_str("architecture");
     struct aws_byte_cursor *architecture_cursor = NULL;
-    struct aws_json_value *architecture = aws_json_object_get_insensitive(document_root, &str_architecture_cursor, allocator);
-    if (!aws_json_is_string(architecture) || (aws_json_value_get_string(architecture, architecture_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *architecture =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("architecture"));
+    if (architecture == NULL) {
+        architecture = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("Architecture"));
+    }
+    if (!aws_json_value_is_string(architecture) ||
+        (aws_json_value_get_string(architecture, architecture_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse architecture from Json document for ec2 instance info.");
         goto done;
     }
     dest->architecture = *architecture_cursor;
 
-    struct aws_byte_cursor str_availability_zone_cursor = aws_byte_cursor_from_c_str("availabilityZone");
     struct aws_byte_cursor *availability_zone_cursor = NULL;
-    struct aws_json_value *availability_zone = aws_json_object_get_insensitive(document_root, &str_availability_zone_cursor, allocator);
-    if (!aws_json_is_string(availability_zone) || (aws_json_value_get_string(availability_zone, availability_zone_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *availability_zone =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("availabilityZone"));
+    if (availability_zone == NULL) {
+        availability_zone =
+            aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("availabilityzone"));
+        if (availability_zone == NULL) {
+            availability_zone =
+                aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("AvailabilityZone"));
+        }
+    }
+    if (!aws_json_value_is_string(availability_zone) ||
+        (aws_json_value_get_string(availability_zone, availability_zone_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(
             AWS_LS_IMDS_CLIENT, "Failed to parse availabilityZone from Json document for ec2 instance info.");
         goto done;
     }
     dest->availability_zone = *availability_zone_cursor;
 
-    struct aws_byte_cursor str_billing_products_cursor = aws_byte_cursor_from_c_str("billingProducts");
     struct aws_byte_cursor *billing_products_cursor = NULL;
-    struct aws_json_value *billing_products = aws_json_object_get_insensitive(document_root, &str_billing_products_cursor, allocator);
-    if (aws_json_is_array(billing_products)) {
+    struct aws_json_value *billing_products =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("billingProducts"));
+    if (billing_products == NULL) {
+        billing_products = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("billingproducts"));
+        if (billing_products == NULL) {
+            billing_products =
+                aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("BillingProducts"));
+        }
+    }
+    if (aws_json_value_is_array(billing_products)) {
         struct aws_json_value *element;
-        for (int i = 0; i < aws_json_array_get_count(billing_products); i++) {
-            element = aws_json_array_get(billing_products, i);
-            if (aws_json_is_string(element) && aws_json_value_get_string(element, billing_products_cursor) != AWS_OP_ERR) {
+        for (size_t i = 0; i < aws_json_value_count_in_array(billing_products); i++) {
+            element = aws_json_value_get_from_array(billing_products, i);
+            if (aws_json_value_is_string(element) &&
+                aws_json_value_get_string(element, billing_products_cursor) != AWS_OP_ERR) {
                 struct aws_byte_cursor item = *billing_products_cursor;
                 aws_array_list_push_back(&dest->billing_products, (const void *)&item);
             }
         }
     }
 
-    struct aws_byte_cursor str_marketplace_product_codes_cursor = aws_byte_cursor_from_c_str("marketplaceProductCodes");
     struct aws_byte_cursor *marketplace_product_codes_cursor = NULL;
     struct aws_json_value *marketplace_product_codes =
-        aws_json_object_get_insensitive(document_root, &str_marketplace_product_codes_cursor, allocator);
-    if (aws_json_is_array(marketplace_product_codes)) {
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("marketplaceProductCodes"));
+    if (marketplace_product_codes == NULL) {
+        marketplace_product_codes =
+            aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("marketplaceproductcodes"));
+        if (marketplace_product_codes == NULL) {
+            marketplace_product_codes =
+                aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("MarketplaceProductCodes"));
+        }
+    }
+    if (aws_json_value_is_array(marketplace_product_codes)) {
         struct aws_json_value *element;
-        for (int i = 0; i < aws_json_array_get_count(marketplace_product_codes); i++) {
-            element = aws_json_array_get(marketplace_product_codes, i);
-            if (aws_json_is_string(element) && aws_json_value_get_string(element, marketplace_product_codes_cursor) != AWS_OP_ERR) {
+        for (size_t i = 0; i < aws_json_value_count_in_array(marketplace_product_codes); i++) {
+            element = aws_json_value_get_from_array(marketplace_product_codes, i);
+            if (aws_json_value_is_string(element) &&
+                aws_json_value_get_string(element, marketplace_product_codes_cursor) != AWS_OP_ERR) {
                 struct aws_byte_cursor item = *marketplace_product_codes_cursor;
                 aws_array_list_push_back(&dest->billing_products, (const void *)&item);
             }
         }
     }
 
-    struct aws_byte_cursor str_image_id_cursor = aws_byte_cursor_from_c_str("imageId");
     struct aws_byte_cursor *image_id_cursor = NULL;
-    struct aws_json_value *image_id = aws_json_object_get_insensitive(document_root, &str_image_id_cursor, allocator);
-    if (aws_json_is_string(image_id) && (aws_json_value_get_string(image_id, image_id_cursor) != AWS_OP_ERR)) {
+    struct aws_json_value *image_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("imageId"));
+    if (image_id == NULL) {
+        image_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("imageid"));
+        if (image_id == NULL) {
+            image_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("ImageId"));
+        }
+    }
+    if (aws_json_value_is_string(image_id) && (aws_json_value_get_string(image_id, image_id_cursor) != AWS_OP_ERR)) {
         dest->image_id = *image_id_cursor;
     }
 
-    struct aws_byte_cursor str_instance_id_cursor = aws_byte_cursor_from_c_str("instanceId");
     struct aws_byte_cursor *instance_id_cursor = NULL;
-    struct aws_json_value *instance_id = aws_json_object_get_insensitive(document_root, &str_instance_id_cursor, allocator);
-    if (!aws_json_is_string(instance_id) || (aws_json_value_get_string(instance_id, instance_id_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *instance_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("instanceId"));
+    if (instance_id == NULL) {
+        instance_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("instanceid"));
+        if (instance_id == NULL) {
+            instance_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("InstanceId"));
+        }
+    }
+    if (!aws_json_value_is_string(instance_id) ||
+        (aws_json_value_get_string(instance_id, instance_id_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse instanceId from Json document for ec2 instance info.");
         goto done;
     }
     dest->instance_id = *instance_id_cursor;
 
-    struct aws_byte_cursor str_instance_type_cursor = aws_byte_cursor_from_c_str("instanceType");
     struct aws_byte_cursor *instance_type_cursor = NULL;
-    struct aws_json_value *instance_type = aws_json_object_get_insensitive(document_root, &str_instance_type_cursor, allocator);
-    if (!aws_json_is_string(instance_type) || (aws_json_value_get_string(instance_type, instance_type_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *instance_type =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("instanceType"));
+    if (instance_type == NULL) {
+        instance_type = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("instancetype"));
+        if (instance_type == NULL) {
+            instance_type = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("InstanceType"));
+        }
+    }
+    if (!aws_json_value_is_string(instance_type) ||
+        (aws_json_value_get_string(instance_type, instance_type_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse instanceType from Json document for ec2 instance info.");
         goto done;
     }
     dest->instance_type = *instance_type_cursor;
 
-    struct aws_byte_cursor str_kernel_id_cursor = aws_byte_cursor_from_c_str("kernelId");
     struct aws_byte_cursor *kernel_id_cursor = NULL;
-    struct aws_json_value *kernel_id = aws_json_object_get_insensitive(document_root, &str_kernel_id_cursor, allocator);
-    if (aws_json_is_string(kernel_id) && (aws_json_value_get_string(kernel_id, kernel_id_cursor) != AWS_OP_ERR)) {
+    struct aws_json_value *kernel_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("kernelId"));
+    if (kernel_id == NULL) {
+        kernel_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("kernelid"));
+        if (kernel_id == NULL) {
+            kernel_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("KernelId"));
+        }
+    }
+    if (aws_json_value_is_string(kernel_id) && (aws_json_value_get_string(kernel_id, kernel_id_cursor) != AWS_OP_ERR)) {
         dest->kernel_id = *kernel_id_cursor;
     }
 
-    struct aws_byte_cursor str_private_ip_cursor = aws_byte_cursor_from_c_str("privateIp");
     struct aws_byte_cursor *private_ip_cursor = NULL;
-    struct aws_json_value *private_ip = aws_json_object_get_insensitive(document_root, &str_private_ip_cursor, allocator);
-    if (aws_json_is_string(private_ip) && (aws_json_value_get_string(private_ip, private_ip_cursor) != AWS_OP_ERR)) {
+    struct aws_json_value *private_ip =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("privateIp"));
+    if (private_ip == NULL) {
+        private_ip = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("privateip"));
+        if (private_ip == NULL) {
+            private_ip = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("PrivateIp"));
+        }
+    }
+    if (aws_json_value_is_string(private_ip) &&
+        (aws_json_value_get_string(private_ip, private_ip_cursor) != AWS_OP_ERR)) {
         dest->private_ip = *private_ip_cursor;
     }
 
-    struct aws_byte_cursor str_ramdisk_id_cursor = aws_byte_cursor_from_c_str("ramdiskId");
     struct aws_byte_cursor *ramdisk_id_cursor = NULL;
-    struct aws_json_value *ramdisk_id = aws_json_object_get_insensitive(document_root, &str_ramdisk_id_cursor, allocator);
-    if (aws_json_is_string(ramdisk_id) && (aws_json_value_get_string(ramdisk_id, ramdisk_id_cursor) != AWS_OP_ERR)) {
+    struct aws_json_value *ramdisk_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("ramdiskId"));
+    if (ramdisk_id == NULL) {
+        ramdisk_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("ramdiskid"));
+        if (ramdisk_id == NULL) {
+            ramdisk_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("RamdiskId"));
+        }
+    }
+    if (aws_json_value_is_string(ramdisk_id) &&
+        (aws_json_value_get_string(ramdisk_id, ramdisk_id_cursor) != AWS_OP_ERR)) {
         dest->ramdisk_id = *ramdisk_id_cursor;
     }
 
-    struct aws_byte_cursor str_region_cursor = aws_byte_cursor_from_c_str("region");
     struct aws_byte_cursor *region_cursor = NULL;
-    struct aws_json_value *region = aws_json_object_get_insensitive(document_root, &str_region_cursor, allocator);
-    if (!aws_json_is_string(region) || (aws_json_value_get_string(region, region_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *region = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("region"));
+    if (region == NULL) {
+        region = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("Region"));
+    }
+    if (!aws_json_value_is_string(region) || (aws_json_value_get_string(region, region_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse region from Json document for ec2 instance info.");
         goto done;
     }
     dest->region = *region_cursor;
 
-    struct aws_byte_cursor str_version_cursor = aws_byte_cursor_from_c_str("version");
     struct aws_byte_cursor *version_cursor = NULL;
-    struct aws_json_value *version = aws_json_object_get_insensitive(document_root, &str_version_cursor, allocator);
-    if (!aws_json_is_string(version) || (aws_json_value_get_string(version, version_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *version =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("version"));
+    if (version == NULL) {
+        version = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("Version"));
+    }
+    if (!aws_json_value_is_string(version) || (aws_json_value_get_string(version, version_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse version from Json document for ec2 instance info.");
         goto done;
     }
     dest->version = *version_cursor;
 
-    struct aws_byte_cursor str_pending_time_cursor = aws_byte_cursor_from_c_str("pendingTime");
     struct aws_byte_cursor *pending_time_cursor = NULL;
-    struct aws_json_value *pending_time = aws_json_object_get_insensitive(document_root, &str_pending_time_cursor, allocator);
-    if (!aws_json_is_string(pending_time) || (aws_json_value_get_string(pending_time, pending_time_cursor) == AWS_OP_ERR)) {
+    struct aws_json_value *pending_time =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("pendingTime"));
+    if (pending_time == NULL) {
+        pending_time = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("pendingtime"));
+        if (pending_time == NULL) {
+            pending_time = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("PendingTime"));
+        }
+    }
+    if (!aws_json_value_is_string(pending_time) ||
+        (aws_json_value_get_string(pending_time, pending_time_cursor) == AWS_OP_ERR)) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse pendingTime from Json document for ec2 instance info.");
         goto done;
     }
@@ -1351,7 +1449,7 @@ static void s_process_instance_info(const struct aws_byte_buf *resource, int err
     }
 
     struct aws_byte_cursor json_data_cursor = aws_byte_cursor_from_buf(&json_data);
-    document_root = aws_json_from_string(&json_data_cursor, aws_default_allocator());
+    document_root = aws_json_value_new_from_string(aws_default_allocator(), json_data_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to parse document as Json document for ec2 instance info.");
         goto on_finish;
@@ -1368,7 +1466,7 @@ on_finish:
     aws_byte_buf_clean_up_secure(&json_data);
     aws_mem_release(wrapped_user_data->allocator, wrapped_user_data);
     if (document_root != NULL) {
-        aws_json_destroy(document_root);
+        aws_json_value_destroy(document_root);
     }
 }
 

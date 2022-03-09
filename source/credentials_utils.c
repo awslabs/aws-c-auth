@@ -79,27 +79,28 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     /*
      * Pull out the credentials components
      */
-    struct aws_byte_cursor str_access_key_id_cursor = aws_byte_cursor_from_c_str((char *)options->access_key_id_name);
     struct aws_byte_cursor *access_key_id_cursor = NULL;
-    access_key_id = aws_json_object_get(document_root, &str_access_key_id_cursor, allocator);
-    if (!aws_json_is_string(access_key_id) || aws_json_value_get_string(access_key_id, access_key_id_cursor) == AWS_OP_ERR) {
+    access_key_id =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->access_key_id_name));
+    if (!aws_json_value_is_string(access_key_id) ||
+        aws_json_value_get_string(access_key_id, access_key_id_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse AccessKeyId from Json document.");
         goto done;
     }
 
-    struct aws_byte_cursor str_secrete_access_key_cursor = aws_byte_cursor_from_c_str((char *)options->secrete_access_key_name);
     struct aws_byte_cursor *secrete_access_key_cursor = NULL;
-    secrete_access_key = aws_json_object_get(document_root, &str_secrete_access_key_cursor, allocator);
-    if (!aws_json_is_string(secrete_access_key) || aws_json_value_get_string(secrete_access_key, secrete_access_key_cursor) == AWS_OP_ERR) {
+    secrete_access_key = aws_json_value_get_from_object(
+        document_root, aws_byte_cursor_from_c_str((char *)options->secrete_access_key_name));
+    if (!aws_json_value_is_string(secrete_access_key) ||
+        aws_json_value_get_string(secrete_access_key, secrete_access_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
         goto done;
     }
 
     struct aws_byte_cursor *token_cursor = NULL;
     if (options->token_name) {
-        struct aws_byte_cursor str_token_cursor = aws_byte_cursor_from_c_str((char *)options->token_name);
-        token = aws_json_object_get(document_root, &str_token_cursor, allocator);
-        if (!aws_json_is_string(token) || aws_json_value_get_string(token, token_cursor) == AWS_OP_ERR) {
+        token = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->token_name));
+        if (!aws_json_value_is_string(token) || aws_json_value_get_string(token, token_cursor) == AWS_OP_ERR) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from Json document.");
             goto done;
         }
@@ -107,9 +108,10 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
     struct aws_byte_cursor *creds_expiration_cursor = NULL;
     if (options->expiration_name) {
-        struct aws_byte_cursor str_creds_expiration_cursor = aws_byte_cursor_from_c_str((char *)options->expiration_name);
-        creds_expiration = aws_json_object_get(document_root, &str_creds_expiration_cursor, allocator);
-        if (!aws_json_is_string(creds_expiration) || aws_json_value_get_string(creds_expiration, creds_expiration_cursor) == AWS_OP_ERR) {
+        creds_expiration =
+            aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->expiration_name));
+        if (!aws_json_value_is_string(creds_expiration) ||
+            aws_json_value_get_string(creds_expiration, creds_expiration_cursor) == AWS_OP_ERR) {
             if (options->expiration_required) {
                 AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from Json document.");
                 goto done;
@@ -194,13 +196,13 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     const char *document,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    struct aws_byte_cursor document_root_cursor = aws_byte_cursor_from_c_str(document);
-    struct aws_json_value *document_root = aws_json_from_string(&document_root_cursor, allocator);
+    struct aws_json_value *document_root =
+        aws_json_value_new_from_string(allocator, aws_byte_cursor_from_c_str(document));
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
         return NULL;
     }
     struct aws_credentials *credentials = aws_parse_credentials_from_aws_json_object(allocator, document_root, options);
-    aws_json_destroy(document_root);
+    aws_json_value_destroy(document_root);
     return credentials;
 }
