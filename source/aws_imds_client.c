@@ -1245,8 +1245,8 @@ static int s_parse_instance_info(struct aws_json_value *document_root, struct aw
     }
     if (aws_json_value_is_array(billing_products)) {
         struct aws_json_value *element;
-        for (size_t i = 0; i < aws_json_value_count_in_array(billing_products); i++) {
-            element = aws_json_value_get_from_array(billing_products, i);
+        for (size_t i = 0; i < aws_json_get_array_size(billing_products); i++) {
+            element = aws_json_get_array_element(billing_products, i);
             if (aws_json_value_is_string(element) &&
                 aws_json_value_get_string(element, billing_products_cursor) != AWS_OP_ERR) {
                 struct aws_byte_cursor item = *billing_products_cursor;
@@ -1268,8 +1268,8 @@ static int s_parse_instance_info(struct aws_json_value *document_root, struct aw
     }
     if (aws_json_value_is_array(marketplace_product_codes)) {
         struct aws_json_value *element;
-        for (size_t i = 0; i < aws_json_value_count_in_array(marketplace_product_codes); i++) {
-            element = aws_json_value_get_from_array(marketplace_product_codes, i);
+        for (size_t i = 0; i < aws_json_get_array_size(marketplace_product_codes); i++) {
+            element = aws_json_get_array_element(marketplace_product_codes, i);
             if (aws_json_value_is_string(element) &&
                 aws_json_value_get_string(element, marketplace_product_codes_cursor) != AWS_OP_ERR) {
                 struct aws_byte_cursor item = *marketplace_product_codes_cursor;
