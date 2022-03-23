@@ -5,6 +5,7 @@
 
 #include <aws/auth/signable.h>
 #include <aws/common/string.h>
+#include <aws/io/stream.h>
 
 /*
  * This is a simple aws_signable wrapper implementation for an s3 chunk
