@@ -11,9 +11,7 @@
         { "name": "aws-c-cal" },
         { "name": "aws-c-sdkutils" }
     ],
-    "downstream": [
-        { "name": "aws-c-s3" }
-    ],
+    "downstream": [],
     "test_steps": [
         "test"
     ]
