@@ -277,12 +277,6 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    /**
-     * Make sure the JSON module is initialized. Normally this is handled in common.c
-     * but for testing we need to initialize and clean it up manually.
-     */
-    aws_json_module_init(allocator);
-
     return AWS_OP_SUCCESS;
 }
 
@@ -300,8 +294,6 @@ static int s_aws_imds_tester_cleanup(void) {
     aws_byte_buf_clean_up(&s_tester.resource);
 
     aws_auth_library_clean_up();
-
-    aws_json_module_cleanup();
 
     return AWS_OP_SUCCESS;
 }
