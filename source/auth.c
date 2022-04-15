@@ -10,6 +10,8 @@
 
 #include <aws/http/http.h>
 
+#include <aws/sdkutils/sdkutils.h>
+
 #include <aws/common/error.h>
 #include <aws/common/json.h>
 
@@ -123,6 +125,7 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
         s_library_allocator = aws_default_allocator();
     }
 
+    aws_sdkutils_library_init(s_library_allocator);
     aws_cal_library_init(s_library_allocator);
     aws_http_library_init(s_library_allocator);
 
@@ -145,5 +148,6 @@ void aws_auth_library_clean_up(void) {
     aws_unregister_error_info(&s_error_list);
     aws_http_library_clean_up();
     aws_cal_library_clean_up();
+    aws_sdkutils_library_clean_up();
     s_library_allocator = NULL;
 }

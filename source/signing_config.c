@@ -13,6 +13,9 @@ const struct aws_byte_cursor g_aws_signed_body_value_empty_sha256 =
 const struct aws_byte_cursor g_aws_signed_body_value_unsigned_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("UNSIGNED-PAYLOAD");
 
+const struct aws_byte_cursor g_aws_signed_body_value_streaming_unsigned_payload_trailer =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-UNSIGNED-PAYLOAD-TRAILER");
+
 const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-PAYLOAD");
 
