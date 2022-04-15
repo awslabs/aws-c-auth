@@ -383,7 +383,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    context->should_sign_body = aws_json_value_get_boolean(body_node);
+    aws_json_value_get_boolean(body_node, &context->should_sign_body);
 
     struct aws_json_value *expiration_node =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_expiration_name));
@@ -391,7 +391,9 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    aws_json_value_get_number(expiration_node, &context->expiration_in_seconds);
+    double expiration_in_seconds_double = 0;
+    aws_json_value_get_number(expiration_node, &expiration_in_seconds_double);
+    *context->expiration_in_seconds = (uint64_t)expiration_in_seconds_double;
 
     struct aws_json_value *omit_token_node =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_omit_token_name));
