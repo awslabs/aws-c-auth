@@ -77,12 +77,6 @@ static int s_aws_process_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    /**
-     * Make sure the JSON module is initialized. Normally this is handled in common.c
-     * but for testing we need to initialize and clean it up manually.
-     */
-    aws_json_module_init(allocator);
-
     return AWS_OP_SUCCESS;
 }
 
@@ -90,7 +84,6 @@ static void s_aws_process_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
-    aws_json_module_cleanup();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {
