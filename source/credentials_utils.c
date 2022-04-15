@@ -80,7 +80,6 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
      * Pull out the credentials components
      */
     struct aws_byte_cursor access_key_id_cursor;
-    fprintf(stdout, "\nAccess Key ID Name\n");
     access_key_id =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->access_key_id_name));
     if (!aws_json_value_is_string(access_key_id) ||
@@ -90,7 +89,6 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     }
 
     struct aws_byte_cursor secrete_access_key_cursor;
-    fprintf(stdout, "\nSecret Access Key Name\n");
     secrete_access_key = aws_json_value_get_from_object(
         document_root, aws_byte_cursor_from_c_str((char *)options->secrete_access_key_name));
     if (!aws_json_value_is_string(secrete_access_key) ||
@@ -101,7 +99,6 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
     struct aws_byte_cursor token_cursor;
     if (options->token_name) {
-        fprintf(stdout, "\nToken Name\n");
         token = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->token_name));
         if (!aws_json_value_is_string(token) || aws_json_value_get_string(token, &token_cursor) == AWS_OP_ERR) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from Json document.");
@@ -111,7 +108,6 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
     struct aws_byte_cursor creds_expiration_cursor;
     if (options->expiration_name) {
-        fprintf(stdout, "\nExpiration Name\n");
         creds_expiration =
             aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->expiration_name));
         if (!aws_json_value_is_string(creds_expiration) ||
