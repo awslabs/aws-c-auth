@@ -106,7 +106,8 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
         }
     }
 
-    struct aws_byte_cursor creds_expiration_cursor;
+    // needed to avoid uninitialized local variable error
+    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str("");
     if (options->expiration_name) {
         creds_expiration =
             aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->expiration_name));
