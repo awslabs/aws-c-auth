@@ -347,7 +347,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_service_name));
     struct aws_byte_cursor service_node_cursor;
     if (service_node == NULL || !aws_json_value_is_string(service_node) ||
-        aws_json_value_get_string(service_node, &service_node_cursor) == NULL) {
+        aws_json_value_get_string(service_node, &service_node_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
@@ -360,7 +360,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_timestamp_name));
     struct aws_byte_cursor timestamp_node_cursor;
     if (timestamp_node == NULL || !aws_json_value_is_string(timestamp_node) ||
-        aws_json_value_get_string(timestamp_node, &timestamp_node_cursor) == NULL) {
+        aws_json_value_get_string(timestamp_node, &timestamp_node_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
@@ -375,7 +375,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    context->should_normalize = aws_json_value_get_boolean(normalize_node);
+    aws_json_value_get_boolean(normalize_node, &context->should_normalize);
 
     struct aws_json_value *body_node =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_body_name));
@@ -387,16 +387,16 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     struct aws_json_value *expiration_node =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_expiration_name));
-    if (expiration_node == NULL || !aws_json_is_number(expiration_node)) {
+    if (expiration_node == NULL || !aws_json_value_is_number(expiration_node)) {
         goto done;
     }
 
-    context->expiration_in_seconds = aws_json_number_get(expiration_node);
+    aws_json_value_get_number(expiration_node, &context->expiration_in_seconds);
 
     struct aws_json_value *omit_token_node =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_omit_token_name));
     if (omit_token_node != NULL && aws_json_value_is_boolean(omit_token_node)) {
-        context->omit_session_token = aws_json_value_get_boolean(omit_token_node);
+        aws_json_value_get_boolean(omit_token_node, &context->omit_session_token);
     }
 
     result = AWS_OP_SUCCESS;
@@ -404,7 +404,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 done:
 
     if (document_root != NULL) {
-        aws_json_delete(document_root);
+        aws_json_value_destroy(document_root);
     }
 
     return result;
