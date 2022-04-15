@@ -141,7 +141,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     const struct aws_parse_credentials_from_json_doc_options *options);
 
 /**
- * This API is similar to aws_parse_credentials_from_cjson_object,
+ * This API is similar to aws_parse_credentials_from_aws_json_object,
  * except it accpets a char buffer json document as it's input.
  */
 AWS_AUTH_API

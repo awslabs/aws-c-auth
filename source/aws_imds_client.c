@@ -1332,7 +1332,8 @@ static int s_parse_instance_info(struct aws_json_value *document_root, struct aw
             kernel_id = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("KernelId"));
         }
     }
-    if (aws_json_value_is_string(kernel_id) && (aws_json_value_get_string(kernel_id, &kernel_id_cursor) != AWS_OP_ERR)) {
+    if (aws_json_value_is_string(kernel_id) &&
+        (aws_json_value_get_string(kernel_id, &kernel_id_cursor) != AWS_OP_ERR)) {
         dest->kernel_id = kernel_id_cursor;
     }
 
