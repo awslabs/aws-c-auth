@@ -68,7 +68,8 @@ static int s_aws_process_test_init_config_profile(
 }
 
 static int s_aws_process_tester_init(struct aws_allocator *allocator) {
-    (void)allocator;
+    aws_auth_library_init(allocator);
+
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
@@ -84,6 +85,7 @@ static void s_aws_process_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
+    aws_auth_library_clean_up();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {

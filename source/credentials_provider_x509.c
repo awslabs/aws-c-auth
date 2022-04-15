@@ -5,7 +5,6 @@
 
 #include <aws/auth/credentials.h>
 
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
@@ -18,6 +17,8 @@
 #include <aws/io/socket.h>
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
+
+#include <aws/common/json.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
@@ -146,13 +147,14 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     struct aws_byte_buf *document) {
 
     struct aws_credentials *credentials = NULL;
-    cJSON *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
         goto done;
     }
 
-    document_root = cJSON_Parse((const char *)document->buffer);
+    struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
+    document_root = aws_json_value_new_from_string(allocator, document_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IoT Core response as Json document.");
         goto done;
@@ -161,8 +163,9 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     /*
      * pull out the root "Credentials" components
      */
-    cJSON *creds = cJSON_GetObjectItem(document_root, "credentials");
-    if (!cJSON_IsObject(creds)) {
+    struct aws_json_value *creds =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("credentials"));
+    if (!aws_json_value_is_object(creds)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse credentials from IoT Core response.");
         goto done;
     }
@@ -176,7 +179,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
         .expiration_required = false,
     };
 
-    credentials = aws_parse_credentials_from_cjson_object(allocator, creds, &parse_options);
+    credentials = aws_parse_credentials_from_aws_json_object(allocator, creds, &parse_options);
     if (!credentials) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "X509 credentials provider failed to parse credentials");
     }
@@ -184,7 +187,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 done:
 
     if (document_root != NULL) {
-        cJSON_Delete(document_root);
+        aws_json_value_destroy(document_root);
     }
 
     return credentials;
