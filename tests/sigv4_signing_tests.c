@@ -270,7 +270,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_omit_token_name, "omit_session_token");
 
 static int s_v4_test_context_parse_context_file(struct v4_test_context *context) {
     struct aws_byte_buf *document = &context->test_case_data.context;
-    struct aws_json_node *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
     int result = AWS_OP_ERR;
 
     struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
@@ -279,27 +279,28 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     }
 
     struct aws_byte_cursor document_buffer_cursor = aws_byte_cursor_from_buf(document);
-    document_root = aws_json_value_new_from_string(aws_default_allocator(), &document_buffer_cursor);
+    document_root = aws_json_value_new_from_string(aws_default_allocator(), document_buffer_cursor);
     if (document_root == NULL) {
         goto done;
     }
 
-    struct aws_json_node *credentials_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_credentials_name));
+    struct aws_json_value *credentials_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_credentials_name));
     AWS_FATAL_ASSERT(credentials_node != NULL);
 
     /*
      * Pull out the three credentials components
      */
-    struct aws_json_node *access_key_id =
-        aws_json_value_get_from_object(credentials_node, (char *)aws_string_c_str(s_access_key_id_name));
-    struct aws_json_node *secret_access_key =
-        aws_json_value_get_from_object(credentials_node, (char *)aws_string_c_str(s_secret_access_key_name));
-    struct aws_json_node *session_token =
-        aws_json_value_get_from_object(credentials_node, (char *)aws_string_c_str(s_session_token_name));
+    struct aws_json_value *access_key_id =
+        aws_json_value_get_from_object(credentials_node, aws_byte_cursor_from_string(s_access_key_id_name));
+    struct aws_json_value *secret_access_key =
+        aws_json_value_get_from_object(credentials_node, aws_byte_cursor_from_string(s_secret_access_key_name));
+    struct aws_json_value *session_token =
+        aws_json_value_get_from_object(credentials_node, aws_byte_cursor_from_string(s_session_token_name));
 
     struct aws_byte_cursor access_key_id_cursor;
-    if (!aws_json_value_is_string(access_key_id) || aws_json_value_get_string(access_key_id, &access_key_id_cursor) == AWS_OP_ERR) {
+    if (!aws_json_value_is_string(access_key_id) ||
+        aws_json_value_get_string(access_key_id, &access_key_id_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
@@ -329,10 +330,11 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     AWS_FATAL_ASSERT(context->credentials != NULL);
 
-    struct aws_json_node *region_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_region_name));
+    struct aws_json_value *region_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_region_name));
     struct aws_byte_cursor region_node_cursor;
-    if (region_node == NULL || !aws_json_value_is_string(region_node) || aws_json_value_get_string(region_node, &region_node_cursor) == AWS_OP_ERR) {
+    if (region_node == NULL || !aws_json_value_is_string(region_node) ||
+        aws_json_value_get_string(region_node, &region_node_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
@@ -341,10 +343,11 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *service_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_service_name));
+    struct aws_json_value *service_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_service_name));
     struct aws_byte_cursor service_node_cursor;
-    if (service_node == NULL || !aws_json_value_is_string(service_node) || aws_json_value_get_string(service_node, &service_node_cursor) == NULL) {
+    if (service_node == NULL || !aws_json_value_is_string(service_node) ||
+        aws_json_value_get_string(service_node, &service_node_cursor) == NULL) {
         goto done;
     }
 
@@ -353,10 +356,11 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *timestamp_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_timestamp_name));
+    struct aws_json_value *timestamp_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_timestamp_name));
     struct aws_byte_cursor timestamp_node_cursor;
-    if (timestamp_node == NULL || !aws_json_value_is_string(timestamp_node) || aws_json_value_get_string(timestamp_node, &timestamp_node_cursor) == NULL) {
+    if (timestamp_node == NULL || !aws_json_value_is_string(timestamp_node) ||
+        aws_json_value_get_string(timestamp_node, &timestamp_node_cursor) == NULL) {
         goto done;
     }
 
@@ -365,32 +369,32 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    struct aws_json_node *normalize_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_normalize_name));
+    struct aws_json_value *normalize_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_normalize_name));
     if (normalize_node == NULL || !aws_json_value_is_boolean(normalize_node)) {
         goto done;
     }
 
     context->should_normalize = aws_json_value_get_boolean(normalize_node);
 
-    struct aws_json_node *body_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_body_name));
+    struct aws_json_value *body_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_body_name));
     if (body_node == NULL || !aws_json_value_is_boolean(body_node)) {
         goto done;
     }
 
     context->should_sign_body = aws_json_value_get_boolean(body_node);
 
-    struct aws_json_node *expiration_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_expiration_name));
+    struct aws_json_value *expiration_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_expiration_name));
     if (expiration_node == NULL || !aws_json_is_number(expiration_node)) {
         goto done;
     }
 
     context->expiration_in_seconds = aws_json_number_get(expiration_node);
 
-    struct aws_json_node *omit_token_node =
-        aws_json_value_get_from_object(document_root, (char *)aws_string_c_str(s_omit_token_name));
+    struct aws_json_value *omit_token_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_omit_token_name));
     if (omit_token_node != NULL && aws_json_value_is_boolean(omit_token_node)) {
         context->omit_session_token = aws_json_value_get_boolean(omit_token_node);
     }
@@ -614,7 +618,7 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
     AWS_ZERO_STRUCT(pub_y_buffer);
 
     struct aws_byte_buf *document = &context->test_case_data.public_key;
-    struct aws_json_node *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
     int result = AWS_OP_ERR;
 
     struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
@@ -631,8 +635,8 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
     /*
      * Pull out the three credentials components
      */
-    struct aws_json_node *pub_x = aws_json_value_get_from_object(document_root, "X");
-    struct aws_json_node *pub_y = aws_json_value_get_from_object(document_root, "Y");
+    struct aws_json_value *pub_x = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("X"));
+    struct aws_json_value *pub_y = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("Y"));
     if (!aws_json_value_is_string(pub_x) || !aws_json_value_is_string(pub_y)) {
         goto done;
     }
