@@ -276,6 +276,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     if (aws_byte_buf_init(&s_tester.resource, allocator, 256)) {
         return AWS_OP_ERR;
     }
+
     return AWS_OP_SUCCESS;
 }
 

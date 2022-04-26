@@ -4,7 +4,6 @@
  */
 
 #include <aws/auth/credentials.h>
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
