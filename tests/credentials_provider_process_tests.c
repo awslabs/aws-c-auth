@@ -228,8 +228,8 @@ static int s_credentials_provider_process_new_destroy_from_config_without_token(
     return 0;
 }
 AWS_TEST_CASE(
-    credentials_provider_process_new_destroy_from_config,
-    s_credentials_provider_process_new_destroy_from_config);
+    credentials_provider_process_new_destroy_from_config_without_token,
+    s_credentials_provider_process_new_destroy_from_config_without_token);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_process_config_file_no_process_contents,
