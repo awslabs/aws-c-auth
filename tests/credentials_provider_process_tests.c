@@ -129,6 +129,20 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\"Expiration\":\"2020-02-25T06:03:31Z\"}'");
 #endif
 
+#ifdef _WIN32
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_command_without_token,
+    "echo {\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\"}");
+#else
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_command_without_token,
+    "echo '{\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\"}'");
+#endif
+
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_test_command, "/i/dont/know/what/is/this/command");
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_command_output, "echo \"Hello, World!\"");
 
@@ -145,25 +159,13 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "region=us-west-2\n"
     "credential_process=");
 
-static int s_credentials_provider_process_new_destroy_from_config(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
+static int s_credentials_provider_process_helper(
+    struct aws_string *config_file_contents,
+    struct aws_allocator *allocator) {
 
     s_aws_process_tester_init(allocator);
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_test_command);
-    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
-    cursor = aws_byte_cursor_from_c_str("\n");
-    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
     s_aws_process_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
 
     struct aws_credentials_provider_process_options options = {
         .shutdown_options =
@@ -180,9 +182,54 @@ static int s_credentials_provider_process_new_destroy_from_config(struct aws_all
     s_aws_process_tester_cleanup();
     return 0;
 }
+
+static int s_credentials_provider_process_new_destroy_from_config(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_test_command);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    ASSERT_SUCCESS(s_credentials_provider_process_helper(config_file_contents, allocator));
+    aws_string_destroy(config_file_contents);
+    return 0;
+}
 AWS_TEST_CASE(
     credentials_provider_process_new_destroy_from_config,
     s_credentials_provider_process_new_destroy_from_config);
+
+static int s_credentials_provider_process_new_destroy_from_config_without_token(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_test_command_without_token);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    ASSERT_SUCCESS(s_credentials_provider_process_helper(config_file_contents, allocator));
+    aws_string_destroy(config_file_contents);
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_process_new_destroy_from_config_without_token,
+    s_credentials_provider_process_new_destroy_from_config_without_token);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_process_config_file_no_process_contents,
