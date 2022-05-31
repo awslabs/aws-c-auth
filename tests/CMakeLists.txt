@@ -4,8 +4,7 @@ enable_testing()
 
 file(GLOB TEST_SRC "*.c")
 file(GLOB TEST_HDRS "*.h")
-file(GLOB EXTERNAL_TEST_SRC "external/*.c")
-file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC} ${EXTERNAL_TEST_SRC})
+file(GLOB TESTS ${TEST_HDRS} ${TEST_SRC})
 
 add_test_case(credentials_create_destroy_test)
 add_test_case(static_credentials_provider_basic_test)
@@ -83,6 +82,7 @@ add_net_test_case(credentials_provider_sts_from_profile_config_environment_succe
 add_net_test_case(credentials_provider_sts_cache_expiration_conflict)
 
 add_test_case(credentials_provider_process_new_destroy_from_config)
+add_test_case(credentials_provider_process_new_destroy_from_config_without_token)
 add_test_case(credentials_provider_process_new_failed)
 add_test_case(credentials_provider_process_bad_command)
 add_test_case(credentials_provider_process_incorrect_command_output)
