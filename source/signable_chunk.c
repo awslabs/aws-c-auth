@@ -5,6 +5,7 @@
 
 #include <aws/auth/signable.h>
 #include <aws/common/string.h>
+#include <aws/io/stream.h>
 
 /*
  * This is a simple aws_signable wrapper implementation for an s3 chunk
@@ -65,7 +66,7 @@ static void s_aws_signable_chunk_destroy(struct aws_signable *signable) {
     if (impl == NULL) {
         return;
     }
-
+    aws_input_stream_release(impl->chunk_data);
     aws_string_destroy(impl->previous_signature);
 
     aws_mem_release(signable->allocator, signable);
@@ -99,7 +100,7 @@ struct aws_signable *aws_signable_new_chunk(
     signable->vtable = &s_signable_chunk_vtable;
     signable->impl = impl;
 
-    impl->chunk_data = chunk_data;
+    impl->chunk_data = aws_input_stream_acquire(chunk_data);
     impl->previous_signature = aws_string_new_from_array(allocator, previous_signature.ptr, previous_signature.len);
     if (impl->previous_signature == NULL) {
         goto on_error;

@@ -8,7 +8,7 @@
 
 #include <aws/auth/auth.h>
 #include <aws/auth/credentials.h>
-#include <aws/auth/external/cJSON.h>
+#include <aws/common/json.h>
 #include <aws/http/connection_manager.h>
 
 struct aws_http_connection;
@@ -135,13 +135,13 @@ struct aws_parse_credentials_from_json_doc_options {
  * performe a case insensitive search.
  */
 AWS_AUTH_API
-struct aws_credentials *aws_parse_credentials_from_cjson_object(
+struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     struct aws_allocator *allocator,
-    struct cJSON *document_root,
+    struct aws_json_value *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options);
 
 /**
- * This API is similar to aws_parse_credentials_from_cjson_object,
+ * This API is similar to aws_parse_credentials_from_aws_json_object,
  * except it accpets a char buffer json document as it's input.
  */
 AWS_AUTH_API

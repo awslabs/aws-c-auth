@@ -45,16 +45,8 @@ file(GLOB AWS_AUTH_PRIVATE_HEADERS
         "include/aws/auth/private/*.h"
         )
 
-file(GLOB AWS_AUTH_EXTERNAL_HEADERS
-        "include/aws/auth/external/*.h"
-        )
-
 file(GLOB AWS_AUTH_ROOT_SRC
         "source/*.c"
-        )
-
-file(GLOB AWS_AUTH_EXTERNAL_SRC
-        "source/external/*.c"
         )
 
 if (WIN32)
@@ -74,12 +66,10 @@ endif()
 file(GLOB AUTH_HEADERS
         ${AWS_AUTH_ROOT_HEADERS}
         ${AWS_AUTH_PRIVATE_HEADERS}
-        ${AWS_AUTH_EXTERNAL_HEADERS}
         )
 
 file(GLOB AUTH_SRC
         ${AWS_AUTH_ROOT_SRC}
-        ${AWS_AUTH_EXTERNAL_SRC}
         )
 
 add_library(${PROJECT_NAME} ${LIBTYPE} ${AUTH_HEADERS} ${AUTH_SRC})
