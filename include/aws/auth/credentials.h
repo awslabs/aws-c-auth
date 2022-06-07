@@ -676,6 +676,22 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     const struct aws_credentials_provider_profile_options *options);
 
 /**
+ * Creates an SSO provider which uses the aws config file ("~/.aws/config" by default)
+ * to load the parameters for SSO requests.
+ * It relies on a cached JSON access token in a directory underneath the config file.
+ * The @options are similar to the profile provider (the override fields are not used).
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sso(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_profile_options *options);
+
+/**
  * Creates a provider that assumes an IAM role via. STS AssumeRole() API. This provider will fetch new credentials
  * upon each call to aws_credentials_provider_get_credentials().
  *
