@@ -47,7 +47,7 @@ struct aws_credentials {
      *
      *  The following leaf providers set this value to a sensible timepoint:
      *    sts - value is based on current time + options->duration_seconds
-     *
+     *    sso - value is based on epoch seconds returned by the SSO portal
      */
     uint64_t expiration_timepoint_seconds;
 
