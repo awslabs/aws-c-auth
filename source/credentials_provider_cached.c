@@ -101,6 +101,10 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
             credentials_expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials);
         }
 
+        /*
+         * If the sourced credentials have an explicit expiration time, we should always use that time
+         * rather than the much cruder, mechanical refresh setting on the caching wrapper.
+         */
         if (credentials_expiration_timepoint_seconds < UINT64_MAX) {
             uint64_t system_now = 0;
             if (!impl->system_clock_fn(&system_now)) {
