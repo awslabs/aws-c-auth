@@ -339,7 +339,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sts_provider = aws_credentials_provider_new_sts_web_identity(allocator, &sts_options);
     if (sts_provider != NULL) {
         providers[index++] = sts_provider;
-        /* 1 shutdown call from the profile provider's shutdown */
+        /* 1 shutdown call from the web identity provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
