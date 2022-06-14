@@ -273,6 +273,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_tls_ctx *tls_ctx = NULL;
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *sts_provider = NULL;
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
     struct aws_credentials_provider *cached_provider = NULL;
@@ -304,7 +305,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 #endif /* BYO_CRYPTO */
     }
 
-    enum { providers_size = 3 };
+    enum { providers_size = 4 };
     struct aws_credentials_provider *providers[providers_size];
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
@@ -326,6 +327,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
     if (profile_provider != NULL) {
         providers[index++] = profile_provider;
+        /* 1 shutdown call from the profile provider's shutdown */
+        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+    }
+
+    struct aws_credentials_provider_sts_web_identity_options sts_options;
+    AWS_ZERO_STRUCT(sts_options);
+    sts_options.bootstrap = options->bootstrap;
+    sts_options.tls_ctx = tls_ctx;
+    sts_options.shutdown_options = sub_provider_shutdown_options;
+    sts_provider = aws_credentials_provider_new_sts_web_identity(allocator, &sts_options);
+    if (sts_provider != NULL) {
+        providers[index++] = sts_provider;
         /* 1 shutdown call from the profile provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
@@ -355,6 +368,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
+    aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(ecs_or_imds_provider);
 
     struct aws_credentials_provider_cached_options cached_options = {
@@ -395,6 +409,7 @@ on_error:
     } else {
         aws_credentials_provider_release(ecs_or_imds_provider);
         aws_credentials_provider_release(profile_provider);
+        aws_credentials_provider_release(sts_provider);
         aws_credentials_provider_release(environment_provider);
     }
 

@@ -790,8 +790,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_delegate(
  *
  * (1) Environment
  * (2) Profile
- * (3) (conditional, off by default) ECS
- * (4) (conditional, on by default) EC2 Instance Metadata
+ * (3) STS web identity
+ * (4) (conditional, off by default) ECS
+ * (5) (conditional, on by default) EC2 Instance Metadata
  *
  * Support for environmental control of the default provider chain is not yet
  * implemented.
