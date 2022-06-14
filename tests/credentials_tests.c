@@ -443,6 +443,131 @@ static int s_cached_credentials_provider_elapsed_test(struct aws_allocator *allo
 
 AWS_TEST_CASE(cached_credentials_provider_elapsed_test, s_cached_credentials_provider_elapsed_test);
 
+#define TEST_CACHED_CREDENTIALS_EXPIRATION_TIMEPOINT 3600
+
+static int s_cached_credentials_provider_expired_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    mock_aws_set_system_time(0);
+    mock_aws_set_high_res_time(1);
+
+    s_aws_credentials_shutdown_checker_init();
+
+    struct aws_credentials *first_creds = aws_credentials_new_from_string(
+        allocator,
+        s_access_key_id_1,
+        s_secret_access_key_1,
+        s_session_token_1,
+        TEST_CACHED_CREDENTIALS_EXPIRATION_TIMEPOINT);
+    struct aws_credentials *second_creds = aws_credentials_new_from_string(
+        allocator,
+        s_access_key_id_2,
+        s_secret_access_key_2,
+        s_session_token_2,
+        TEST_CACHED_CREDENTIALS_EXPIRATION_TIMEPOINT * 2);
+
+    struct get_credentials_mock_result mock_results[] = {
+        {.error_code = 0, .credentials = first_creds},
+        {.error_code = 0, .credentials = second_creds},
+    };
+
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+    AWS_ZERO_STRUCT(shutdown_options);
+
+    struct aws_credentials_provider *mock_provider =
+        aws_credentials_provider_new_mock(allocator, mock_results, 2, &shutdown_options);
+
+    struct aws_credentials_provider_cached_options options;
+    AWS_ZERO_STRUCT(options);
+    options.source = mock_provider;
+    options.refresh_time_in_milliseconds = TEST_CACHE_REFRESH_TIME_MS;
+    options.high_res_clock_fn = mock_aws_get_high_res_time;
+    options.system_clock_fn = mock_aws_get_system_time;
+    options.shutdown_options.shutdown_callback = s_on_shutdown_complete;
+    options.shutdown_options.shutdown_user_data = NULL;
+
+    struct aws_credentials_provider *cached_provider = aws_credentials_provider_new_cached(allocator, &options);
+    aws_credentials_provider_release(mock_provider);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Invoke a couple more times to verify the mock isn't getting called
+     */
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Advance time enough to cause a refresh from the caching provider's perspective, but not enough to expire the
+     * actual credentials.  Nothing should change because the credential's expiration takes priority.
+     */
+    uint64_t provider_refresh_in_ns =
+        aws_timestamp_convert(TEST_CACHE_REFRESH_TIME_MS, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
+
+    uint64_t now = 0;
+    mock_aws_get_high_res_time(&now);
+    mock_aws_set_high_res_time(now + provider_refresh_in_ns);
+
+    mock_aws_get_system_time(&now);
+    mock_aws_set_system_time(now + provider_refresh_in_ns);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1) ==
+        0);
+
+    /*
+     * Advance time enough to trigger credentials expiration, verify we get the second set of mocked credentials
+     */
+    uint64_t credential_expiration_in_ns = aws_timestamp_convert(
+        TEST_CACHED_CREDENTIALS_EXPIRATION_TIMEPOINT, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+
+    mock_aws_get_high_res_time(&now);
+    mock_aws_set_high_res_time(now + credential_expiration_in_ns);
+
+    mock_aws_get_system_time(&now);
+    mock_aws_set_system_time(now + credential_expiration_in_ns);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    ASSERT_TRUE(s_invoke_get_credentials(cached_provider, &callback_results, 1) == 0);
+    ASSERT_TRUE(s_wait_for_get_credentials(&callback_results) == 0);
+    ASSERT_TRUE(
+        s_verify_callback_status(&callback_results, 1, s_access_key_id_2, s_secret_access_key_2, s_session_token_2) ==
+        0);
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    aws_credentials_provider_release(cached_provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    aws_credentials_release(second_creds);
+    aws_credentials_release(first_creds);
+
+    return 0;
+}
+
+AWS_TEST_CASE(cached_credentials_provider_expired_test, s_cached_credentials_provider_expired_test);
+
 static int s_cached_credentials_provider_queued_async_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
