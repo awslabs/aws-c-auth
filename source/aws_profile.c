@@ -38,14 +38,3 @@ struct aws_credentials *aws_credentials_new_from_profile(
 
     return aws_credentials_new_from_string(allocator, access_key, secret_key, session_token, UINT64_MAX);
 }
-
-struct aws_string *aws_config_dirname( struct aws_allocator *allocator, const struct aws_string *path) {
-    if (path != NULL && path->len > 1) {
-        for (size_t i = path->len - 1; i != 0; i--) {
-            if (aws_is_any_directory_separator(path->bytes[i])) {
-                return aws_string_new_from_array(allocator, path->bytes, i);
-            }
-        }
-    }
-    return NULL;
-}
