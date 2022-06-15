@@ -34,6 +34,10 @@ cmake --build s2n-tls/build --target install
 #### Building aws-c-auth and Remaining Dependencies
 
 ```
+git clone git@github.com:awslabs/aws-c-sdkutils
+cmake -S aws-c-sdkutils -B aws-c-sdkutils/build -DCMAKE_INSTALL_PREFIX=<install-path>
+cmake --build aws-c-sdkutils/build --target install
+
 git clone git@github.com:awslabs/aws-c-common.git
 cmake -S aws-c-common -B aws-c-common/build -DCMAKE_INSTALL_PREFIX=<install-path>
 cmake --build aws-c-common/build --target install
