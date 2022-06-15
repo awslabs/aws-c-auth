@@ -582,20 +582,23 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vta
     .destroy = s_sso_credentials_provider_destroy,
 };
 
-// Constructs the access-token path, at @config_root "/sso/cache/" <sha1 of @sso_start_url> ".json"
-// Returns NULL on error.
+/* Constructs the access-token path, at "~/.aws/sso/cache/" <sha1 of @sso_start_url> ".json". */
 static struct aws_string *s_access_token_path(
         struct aws_allocator *allocator,
-        const struct aws_string *config_root,
         const struct aws_string *sso_start_url) {
+    struct aws_string *home_directory = NULL;
     struct aws_byte_buf sha1_output_buf = {0};
     struct aws_byte_buf sha1_hex = {0};
     struct aws_byte_buf access_token_path = {0};
     struct aws_string *access_token_path_str = NULL;
 
     AWS_FATAL_ASSERT(allocator);
-    AWS_FATAL_ASSERT(config_root);
     AWS_FATAL_ASSERT(sso_start_url);
+
+    home_directory = aws_get_home_directory(allocator);
+    if (home_directory == NULL) {
+        goto error;
+    }
 
     if (aws_byte_buf_init(&sha1_output_buf, allocator, AWS_SHA1_LEN)) {
         goto error;
@@ -604,29 +607,19 @@ static struct aws_string *s_access_token_path(
     // The hex-encoded length of the SHA1 hash (2 characters per byte):
     const size_t sha1_len = sha1_output_buf.capacity * 2;
 
-    struct aws_byte_cursor config_root_cursor = aws_byte_cursor_from_string(config_root);
-    struct aws_byte_cursor sso_cursor = aws_byte_cursor_from_c_str("sso");
-    struct aws_byte_cursor cache_cursor = aws_byte_cursor_from_c_str("cache");
+    struct aws_byte_cursor home_dir_cursor = aws_byte_cursor_from_string(home_directory);
+    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_c_str("/.aws/sso/cache/");
     struct aws_byte_cursor json_cursor = aws_byte_cursor_from_c_str(".json");
 
-    // Length of the SSO Access Token path: dirname + "/sso/cache/" + 40 bytes sha1 + ".json".
-    size_t full_length = config_root_cursor.len + 3 + sso_cursor.len + cache_cursor.len +
-                         sha1_len + json_cursor.len;
+    // Length of the Access Token path: <home-dir> + "/.aws/sso/cache/" + 40 bytes sha1 + ".json".
+    size_t full_length = home_dir_cursor.len + cache_dir_cursor.len + sha1_len + json_cursor.len;
     if (aws_byte_buf_init(&access_token_path, allocator, full_length)) {
         goto error;
     }
 
-    // Directory separator:
-    const char platform_sep = aws_get_platform_directory_separator();
-    struct aws_byte_cursor separator_cursor = aws_byte_cursor_from_array(&platform_sep, 1);
-
-    // Directory components:
-    if (aws_byte_buf_append(&access_token_path, &config_root_cursor) ||
-        aws_byte_buf_append(&access_token_path, &separator_cursor)   ||
-        aws_byte_buf_append(&access_token_path, &sso_cursor)         ||
-        aws_byte_buf_append(&access_token_path, &separator_cursor)   ||
-        aws_byte_buf_append(&access_token_path, &cache_cursor)       ||
-        aws_byte_buf_append(&access_token_path, &separator_cursor)) {
+    // Cache root directory (~/.aws/sso/cache):
+    if (aws_byte_buf_append(&access_token_path, &home_dir_cursor) ||
+        aws_byte_buf_append(&access_token_path, &cache_dir_cursor)) {
         goto error;
     }
 
@@ -656,6 +649,7 @@ static struct aws_string *s_access_token_path(
     access_token_path_str = aws_string_new_from_buf(allocator, &access_token_path);
 
 error:
+    aws_string_destroy(home_directory);
     aws_byte_buf_clean_up(&sha1_output_buf);
     aws_byte_buf_clean_up(&sha1_hex);
     aws_byte_buf_clean_up(&access_token_path);
@@ -849,12 +843,7 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
         goto error;
     }
 
-    config_root = aws_config_dirname(allocator, config_file_path);
-    if (config_root == NULL) {
-        goto error;
-    }
-
-    token_path = s_access_token_path(allocator, config_root, sso_start_url->value);
+    token_path = s_access_token_path(allocator, sso_start_url->value);
     if (token_path == NULL) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: unable to resolve access token path: %s", aws_error_name(aws_last_error()));
