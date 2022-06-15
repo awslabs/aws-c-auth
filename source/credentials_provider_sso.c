@@ -5,13 +5,13 @@
 #include <inttypes.h>
 
 #include <aws/auth/credentials.h>
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/cal/hash.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/encoding.h>
+#include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
@@ -193,47 +193,61 @@ error:
 static struct aws_credentials *s_parse_credentials_from_response(
     struct sso_user_data *user_data,
     struct aws_byte_buf *document) {
-    cJSON *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
     struct aws_credentials *credentials = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
         goto error;
     }
 
-    document_root = cJSON_Parse((const char *)document->buffer);
+    struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
+    document_root = aws_json_value_new_from_string(user_data->allocator, document_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to parse JSON response");
         goto error;
     }
 
     /* Top-level of the document. */
-    cJSON *role_credentials = cJSON_GetObjectItem(document_root, "roleCredentials");
-    if (!cJSON_IsObject(role_credentials)) {
+    struct aws_json_value *role_credentials =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("roleCredentials"));
+    if (!aws_json_value_is_object(role_credentials)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract roleCredentials from JSON response");
         goto error;
     }
 
     /* roleCredentials object. */
-    cJSON *access_key = cJSON_GetObjectItem(role_credentials, "accessKeyId");
-    if (!cJSON_IsString(access_key) || access_key->valuestring == NULL) {
+    struct aws_byte_cursor access_key_cursor;
+    struct aws_json_value *access_key =
+        aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("accessKeyId"));
+    if (!aws_json_value_is_string(access_key) ||
+        aws_json_value_get_string(access_key, &access_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract accessKeyId from JSON response");
         goto error;
     }
 
-    cJSON *secret_key = cJSON_GetObjectItem(role_credentials, "secretAccessKey");
-    if (!cJSON_IsString(secret_key) || secret_key->valuestring == NULL) {
+    struct aws_byte_cursor secret_key_cursor;
+    struct aws_json_value *secret_key =
+        aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("secretAccessKey"));
+    if (!aws_json_value_is_string(secret_key) ||
+        aws_json_value_get_string(secret_key, &secret_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract secretAccessKey from JSON response");
         goto error;
     }
 
-    cJSON *token = cJSON_GetObjectItem(role_credentials, "sessionToken");
-    if (!cJSON_IsString(token) || token->valuestring == NULL) {
+    struct aws_byte_cursor session_token_cursor;
+    struct aws_json_value *session_token =
+        aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("sessionToken"));
+    if (!aws_json_value_is_string(session_token) ||
+        aws_json_value_get_string(session_token, &session_token_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract sessionToken from JSON response");
         goto error;
     }
 
-    cJSON *creds_expiration = cJSON_GetObjectItem(role_credentials, "expiration");
-    if (!cJSON_IsNumber(creds_expiration) || creds_expiration->valuedouble <= 0) {
+    double expiration_value;
+    struct aws_json_value *expiration =
+        aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("expiration"));
+    if (!aws_json_value_is_number(expiration) ||
+        aws_json_value_get_number(expiration, &expiration_value) == AWS_OP_ERR || expiration_value <= 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract expiration from JSON response");
         goto error;
     }
@@ -241,10 +255,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     /*
      * Build the credentials.
      */
-    const struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_c_str(access_key->valuestring);
-    const struct aws_byte_cursor secret_key_cursor = aws_byte_cursor_from_c_str(secret_key->valuestring);
-    const struct aws_byte_cursor session_token_cursor = aws_byte_cursor_from_c_str(token->valuestring);
-    const uint64_t expiration_timepoint_milliseconds = (uint64_t)creds_expiration->valuedouble;
+    const uint64_t expiration_timepoint_milliseconds = (uint64_t)expiration_value;
 
     if (access_key_cursor.len == 0 || secret_key_cursor.len == 0 || session_token_cursor.len == 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -265,7 +276,7 @@ error:
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: new credentials expire at %" PRIu64,
                 aws_credentials_get_expiration_timepoint_seconds(credentials));
     }
-    cJSON_Delete(document_root);
+    aws_json_value_destroy(document_root);
 
     return credentials;
 }
@@ -675,6 +686,7 @@ static int s_load_access_token_from_file(
         struct aws_allocator *allocator,
         const struct aws_string *token_path,
         struct aws_byte_buf *token_buf) {
+    struct aws_json_value *document_root = NULL;
     struct aws_byte_buf file_contents = {0};
     struct aws_date_time now, expiration;
     bool success = false;
@@ -689,52 +701,58 @@ static int s_load_access_token_from_file(
         goto error;
     }
 
-    // aws_byte_buf_init_from_file() adds '\0'-termination, hence cast to (const char*) is safe:
-    cJSON *document_root = cJSON_Parse((const char *)file_contents.buffer);
+    struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(&file_contents);
+    document_root = aws_json_value_new_from_string(allocator, document_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to parse access token file %s", aws_string_c_str(token_path));
         goto error;
     }
 
-    cJSON *access_token = cJSON_GetObjectItem(document_root, "accessToken");
-    if (!cJSON_IsString(access_token) || !access_token->valuestring || !strlen(access_token->valuestring)) {
+
+    struct aws_byte_cursor access_token_cursor;
+    struct aws_json_value *access_token =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("accessToken"));
+    if (!aws_json_value_is_string(access_token) ||
+        aws_json_value_get_string(access_token, &access_token_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to parse accessToken from %s", aws_string_c_str(token_path));
         goto error;
     }
 
-    cJSON *expires_at = cJSON_GetObjectItem(document_root, "expiresAt");
-    if (!cJSON_IsString(expires_at) || !expires_at->valuestring || !strlen(expires_at->valuestring)) {
+    struct aws_byte_cursor expires_at_cursor;
+    struct aws_json_value *expires_at =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("expiresAt"));
+    if (!aws_json_value_is_string(expires_at) ||
+        aws_json_value_get_string(expires_at, &expires_at_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to parse expiresAt from %s", aws_string_c_str(token_path));
         goto error;
     }
 
-    struct aws_byte_cursor expires_at_cursor = aws_byte_cursor_from_c_str(expires_at->valuestring);
     if (aws_date_time_init_from_str_cursor(&expiration, &expires_at_cursor, AWS_DATE_FORMAT_ISO_8601)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: expiresAt '%s' in %s is not a valid ISO-8601 date string",
-            expires_at->valuestring, aws_string_c_str(token_path));
+            "sso: expiresAt '" PRInSTR "' in %s is not a valid ISO-8601 date string",
+            AWS_BYTE_CURSOR_PRI(expires_at_cursor), aws_string_c_str(token_path));
         goto error;
     }
 
     aws_date_time_init_now(&now);
     if (aws_date_time_diff(&expiration, &now) < 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: cached token %s expired at %s - please refresh login",
-             aws_string_c_str(token_path), expires_at->valuestring);
+            "sso: cached token %s expired at " PRInSTR " - please refresh login",
+             aws_string_c_str(token_path), AWS_BYTE_CURSOR_PRI(expires_at_cursor));
         goto error;
     }
 
-    struct aws_byte_buf c_token = aws_byte_buf_from_c_str(access_token->valuestring);
-    if (aws_byte_buf_init_copy(token_buf, allocator, &c_token)) {
+    if (aws_byte_buf_init_copy_from_cursor(token_buf, allocator, access_token_cursor)) {
         goto error;
     }
 
     success = true;
 
 error:
+    aws_json_value_destroy(document_root);
     aws_byte_buf_clean_up(&file_contents);
 
     return success ? AWS_OP_SUCCESS : AWS_OP_ERR;
@@ -825,17 +843,17 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
         goto error;
     }
 
-    struct aws_profile *profile = aws_profile_collection_get_profile(config_profile, profile_name);
+    const struct aws_profile *profile = aws_profile_collection_get_profile(config_profile, profile_name);
     if (!profile) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to load \"%s\" profile", aws_string_c_str(profile_name));
         goto error;
     }
 
-    struct aws_profile_property *sso_start_url  = aws_profile_get_property(profile, s_sso_start_url);
-    struct aws_profile_property *sso_region     = aws_profile_get_property(profile, s_sso_region);
-    struct aws_profile_property *sso_account_id = aws_profile_get_property(profile, s_sso_account_id);
-    struct aws_profile_property *sso_role_name  = aws_profile_get_property(profile, s_sso_role_name);
+    const struct aws_profile_property *sso_start_url  = aws_profile_get_property(profile, s_sso_start_url);
+    const struct aws_profile_property *sso_region     = aws_profile_get_property(profile, s_sso_region);
+    const struct aws_profile_property *sso_account_id = aws_profile_get_property(profile, s_sso_account_id);
+    const struct aws_profile_property *sso_role_name  = aws_profile_get_property(profile, s_sso_role_name);
 
     if (!sso_start_url || !sso_region || !sso_account_id || !sso_role_name) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -843,7 +861,7 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
         goto error;
     }
 
-    token_path = s_access_token_path(allocator, sso_start_url->value);
+    token_path = s_access_token_path(allocator, aws_profile_property_get_value(sso_start_url));
     if (token_path == NULL) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: unable to resolve access token path: %s", aws_error_name(aws_last_error()));
@@ -854,11 +872,12 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
         goto error;
     }
 
-    if (s_construct_endpoint(allocator, sso_region->value, &parameters->endpoint)) {
+    if (s_construct_endpoint(allocator, aws_profile_property_get_value(sso_region),
+                             &parameters->endpoint)) {
         goto error;
     }
-    parameters->account_id = aws_byte_cursor_from_string(sso_account_id->value);
-    parameters->role_name  = aws_byte_cursor_from_string(sso_role_name->value);
+    parameters->account_id = aws_byte_cursor_from_string(aws_profile_property_get_value(sso_account_id));
+    parameters->role_name  = aws_byte_cursor_from_string(aws_profile_property_get_value(sso_role_name));
 
     success = true;
 
