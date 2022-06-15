@@ -898,15 +898,13 @@ error:
 struct aws_credentials_provider *aws_credentials_provider_new_sso(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_profile_options *options) {
+    struct sso_parameters *parameters = NULL;
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_sso_impl *impl = NULL;
     struct aws_tls_connection_options tls_connection_options = {0};
     bool success = false;
 
-    struct sso_parameters *parameters = s_parameters_new(allocator);
-    if (!parameters) {
-        return NULL;
-    }
+    aws_json_module_init(allocator);
 
     aws_mem_acquire_many(
         allocator,
@@ -926,6 +924,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
     /* Override the default timeout (see STS web identity provider). */
     tls_connection_options.timeout_ms = 3 * SSO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS * 1000 /*msec*/;
+
+    parameters = s_parameters_new(allocator);
+    if (!parameters) {
+        return NULL;
+    }
 
     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
