@@ -814,7 +814,6 @@ AWS_STRING_FROM_LITERAL(s_sso_role_name, "sso_role_name");
 static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) {
     struct aws_profile_collection *config_profile = NULL;
     struct aws_string *config_file_path = NULL;
-    struct aws_string *config_root = NULL;
     struct aws_string *profile_name = NULL;
     struct aws_string *token_path = NULL;
     bool success = false;
@@ -888,7 +887,6 @@ error:
     }
     aws_profile_collection_destroy(config_profile);
     aws_string_destroy(config_file_path);
-    aws_string_destroy(config_root);
     aws_string_destroy(profile_name);
     aws_string_destroy(token_path);
 
