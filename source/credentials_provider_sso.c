@@ -594,7 +594,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vta
 };
 
 /* Constructs the access-token path, at "~/.aws/sso/cache/" <sha1 of @sso_start_url> ".json". */
-static struct aws_string *s_access_token_path(
+struct aws_string *sso_access_token_path(
         struct aws_allocator *allocator,
         const struct aws_string *sso_start_url) {
     struct aws_string *home_directory = NULL;
@@ -658,6 +658,14 @@ static struct aws_string *s_access_token_path(
     }
 
     access_token_path_str = aws_string_new_from_buf(allocator, &access_token_path);
+
+    // Use platform-specific directory separator.
+    const char local_platform_separator = aws_get_platform_directory_separator();
+    for (size_t i = 0; i < access_token_path_str->len; ++i) {
+        if (aws_is_any_directory_separator((char)access_token_path_str->bytes[i])) {
+            ((char *)access_token_path_str->bytes)[i] = local_platform_separator;
+        }
+    }
 
 error:
     aws_string_destroy(home_directory);
@@ -860,7 +868,7 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
         goto error;
     }
 
-    token_path = s_access_token_path(allocator, aws_profile_property_get_value(sso_start_url));
+    token_path = sso_access_token_path(allocator, aws_profile_property_get_value(sso_start_url));
     if (token_path == NULL) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: unable to resolve access token path: %s", aws_error_name(aws_last_error()));
@@ -917,6 +925,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
 
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
+
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sso_vtable, impl);
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
@@ -925,7 +934,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
 
     parameters = s_parameters_new(allocator);
     if (!parameters) {
-        return NULL;
+        goto error;
     }
 
     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
