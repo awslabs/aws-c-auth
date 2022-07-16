@@ -55,6 +55,9 @@ struct aws_credentials_provider_sso_impl {
 /* Timeout (in milliseconds) for acquiring a retry token. */
 #define SSO_RETRY_TOKEN_MSEC 100
 
+/* Location of the token cache directory relative to the home directory of the user. */
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_cache_directory, "/.aws/sso/cache/");
+
 static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
@@ -605,7 +608,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vta
     .destroy = s_sso_credentials_provider_destroy,
 };
 
-/* Constructs the access-token path, at "~/.aws/sso/cache/" <sha1 of @sso_start_url> ".json". */
+/* Constructs the access-token path, at "~/" @s_sso_cache_directory <sha1 of @sso_start_url> ".json". */
 struct aws_string *sso_access_token_path(
         struct aws_allocator *allocator,
         const struct aws_string *sso_start_url) {
@@ -631,7 +634,7 @@ struct aws_string *sso_access_token_path(
     const size_t sha1_len = sha1_output_buf.capacity * 2;
 
     struct aws_byte_cursor home_dir_cursor = aws_byte_cursor_from_string(home_directory);
-    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_c_str("/.aws/sso/cache/");
+    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_string(s_sso_cache_directory);
     struct aws_byte_cursor json_cursor = aws_byte_cursor_from_c_str(".json");
 
     // Length of the Access Token path: <home-dir> + "/.aws/sso/cache/" + 40 bytes sha1 + ".json".
