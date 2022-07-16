@@ -52,6 +52,9 @@ struct aws_credentials_provider_sso_impl {
 #define SSO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 15
 #define SSO_MAX_RETRIES 10
 
+/* Timeout (in milliseconds) for acquiring a retry token. */
+#define SSO_RETRY_TOKEN_MSEC 100
+
 static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
@@ -560,7 +563,7 @@ static int s_sso_credentials_provider_get_credentials_async(
     }
 
     if (aws_retry_strategy_acquire_retry_token(
-        impl->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, 100)) {
+        impl->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, SSO_RETRY_TOKEN_MSEC)) {
         s_user_data_destroy(wrapped_user_data);
         return AWS_OP_ERR;
     }
