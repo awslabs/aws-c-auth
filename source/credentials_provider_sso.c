@@ -142,7 +142,7 @@ static struct sso_user_data *s_user_data_new(
     struct sso_user_data *wrapped_user_data =
         aws_mem_calloc(sso_provider->allocator, 1, sizeof(struct sso_user_data));
     if (wrapped_user_data == NULL) {
-        goto error;
+        goto done;
     }
 
     wrapped_user_data->allocator = sso_provider->allocator;
@@ -167,16 +167,16 @@ static struct sso_user_data *s_user_data_new(
         aws_byte_buf_append_dynamic(&wrapped_user_data->path_and_query, &s_role_name)             ||
         aws_byte_buf_append_dynamic(&wrapped_user_data->path_and_query, &s_equal)                 ||
         aws_byte_buf_append_encoding_uri_param(&wrapped_user_data->path_and_query, &c_role_name)) {
-        goto error;
+        goto done;
     }
 
     if (aws_byte_buf_init(&wrapped_user_data->response, sso_provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
-        goto error;
+        goto done;
     }
 
     return wrapped_user_data;
 
-error:
+done:
     s_user_data_destroy(wrapped_user_data);
 
     return NULL;
@@ -620,11 +620,11 @@ struct aws_string *sso_access_token_path(
 
     home_directory = aws_get_home_directory(allocator);
     if (home_directory == NULL) {
-        goto error;
+        goto done;
     }
 
     if (aws_byte_buf_init(&sha1_output_buf, allocator, AWS_SHA1_LEN)) {
-        goto error;
+        goto done;
     }
 
     // The hex-encoded length of the SHA1 hash (2 characters per byte):
@@ -637,36 +637,36 @@ struct aws_string *sso_access_token_path(
     // Length of the Access Token path: <home-dir> + "/.aws/sso/cache/" + 40 bytes sha1 + ".json".
     size_t full_length = home_dir_cursor.len + cache_dir_cursor.len + sha1_len + json_cursor.len;
     if (aws_byte_buf_init(&access_token_path, allocator, full_length)) {
-        goto error;
+        goto done;
     }
 
     // Cache root directory (~/.aws/sso/cache):
     if (aws_byte_buf_append(&access_token_path, &home_dir_cursor) ||
         aws_byte_buf_append(&access_token_path, &cache_dir_cursor)) {
-        goto error;
+        goto done;
     }
 
     // SHA1 hash filename of the JSON Access Path Token.
     struct aws_byte_cursor input = aws_byte_cursor_from_string(sso_start_url);
     if (aws_sha1_compute(allocator, &input, &sha1_output_buf, 0)) {
-        goto error;
+        goto done;
     }
 
     // Since hex_encode() '0'-terminates the string, need to allocate room for 1 more character:
     if (aws_byte_buf_init(&sha1_hex, allocator, sha1_len + 1)) {
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor sha1_cursor = aws_byte_cursor_from_buf(&sha1_output_buf);
     if (aws_hex_encode(&sha1_cursor, &sha1_hex)) {
-        goto error;
+        goto done;
     }
 
     // Note the use of sha1_len below.
     struct aws_byte_cursor sha1_hex_cursor = aws_byte_cursor_from_array(sha1_hex.buffer, sha1_len);
     if (aws_byte_buf_append(&access_token_path, &sha1_hex_cursor) ||
         aws_byte_buf_append(&access_token_path, &json_cursor)) {
-        goto error;
+        goto done;
     }
 
     access_token_path_str = aws_string_new_from_buf(allocator, &access_token_path);
@@ -679,7 +679,7 @@ struct aws_string *sso_access_token_path(
         }
     }
 
-error:
+done:
     aws_string_destroy(home_directory);
     aws_byte_buf_clean_up(&sha1_output_buf);
     aws_byte_buf_clean_up(&sha1_hex);
@@ -718,7 +718,7 @@ static int s_load_access_token_from_file(
     if (aws_byte_buf_init_from_file(&file_contents, allocator, aws_string_c_str(token_path))) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to load access token file %s", aws_string_c_str(token_path));
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(&file_contents);
@@ -726,7 +726,7 @@ static int s_load_access_token_from_file(
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to parse access token file %s", aws_string_c_str(token_path));
-        goto error;
+        goto done;
     }
 
 
@@ -737,7 +737,7 @@ static int s_load_access_token_from_file(
         aws_json_value_get_string(access_token, &access_token_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to parse accessToken from %s", aws_string_c_str(token_path));
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor expires_at_cursor;
@@ -747,14 +747,14 @@ static int s_load_access_token_from_file(
         aws_json_value_get_string(expires_at, &expires_at_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to parse expiresAt from %s", aws_string_c_str(token_path));
-        goto error;
+        goto done;
     }
 
     if (aws_date_time_init_from_str_cursor(&expiration, &expires_at_cursor, AWS_DATE_FORMAT_ISO_8601)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: expiresAt '" PRInSTR "' in %s is not a valid ISO-8601 date string",
             AWS_BYTE_CURSOR_PRI(expires_at_cursor), aws_string_c_str(token_path));
-        goto error;
+        goto done;
     }
 
     aws_date_time_init_now(&now);
@@ -762,16 +762,16 @@ static int s_load_access_token_from_file(
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: cached token %s expired at " PRInSTR " - please refresh login",
              aws_string_c_str(token_path), AWS_BYTE_CURSOR_PRI(expires_at_cursor));
-        goto error;
+        goto done;
     }
 
     if (aws_byte_buf_init_copy_from_cursor(token_buf, allocator, access_token_cursor)) {
-        goto error;
+        goto done;
     }
 
     success = true;
 
-error:
+done:
     aws_json_value_destroy(document_root);
     aws_byte_buf_clean_up(&file_contents);
 
@@ -847,26 +847,26 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
     config_file_path = aws_get_config_file_path(allocator, NULL);
     if (!config_file_path) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to resolve config file path");
-        goto error;
+        goto done;
     }
 
     profile_name = aws_get_profile_name(allocator, NULL);
     if (!profile_name) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to resolve profile name");
-        goto error;
+        goto done;
     }
 
     config_profile = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
     if (!config_profile) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to parse configuration file");
-        goto error;
+        goto done;
     }
 
     const struct aws_profile *profile = aws_profile_collection_get_profile(config_profile, profile_name);
     if (!profile) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to load \"%s\" profile", aws_string_c_str(profile_name));
-        goto error;
+        goto done;
     }
 
     const struct aws_profile_property *sso_start_url  = aws_profile_get_property(profile, s_sso_start_url);
@@ -877,30 +877,30 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
     if (!sso_start_url || !sso_region || !sso_account_id || !sso_role_name) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: invalid configuration for \"%s\" profile", aws_string_c_str(profile_name));
-        goto error;
+        goto done;
     }
 
     token_path = sso_access_token_path(allocator, aws_profile_property_get_value(sso_start_url));
     if (token_path == NULL) {
         AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: unable to resolve access token path: %s", aws_error_name(aws_last_error()));
-        goto error;
+        goto done;
     }
 
     if (s_load_access_token_from_file(allocator, token_path, &parameters->access_token)) {
-        goto error;
+        goto done;
     }
 
     if (s_construct_endpoint(allocator, aws_profile_property_get_value(sso_region),
                              &parameters->endpoint)) {
-        goto error;
+        goto done;
     }
     parameters->account_id = aws_byte_cursor_from_string(aws_profile_property_get_value(sso_account_id));
     parameters->role_name  = aws_byte_cursor_from_string(aws_profile_property_get_value(sso_role_name));
 
     success = true;
 
-error:
+done:
     if (!success) {
         s_parameters_destroy(parameters);
         parameters = NULL;
@@ -946,14 +946,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
 
     parameters = s_parameters_new(allocator);
     if (!parameters) {
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_INFO(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: failed to create TLS connection: %s", aws_error_str(aws_last_error()));
-        goto error;
+        goto done;
     }
 
     struct aws_socket_options socket_options;
@@ -982,7 +982,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
 
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (impl->connection_manager == NULL) {
-        goto error;
+        goto done;
     }
 
     struct aws_exponential_backoff_retry_options retry_options = {
@@ -991,33 +991,33 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     };
     impl->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
     if (!impl->retry_strategy) {
-        goto error;
+        goto done;
     }
 
     impl->endpoint = aws_string_new_from_buf(allocator, &parameters->endpoint);
     if (impl->endpoint == NULL) {
-        goto error;
+        goto done;
     }
 
     impl->access_token = aws_string_new_from_buf(allocator, &parameters->access_token);
     if (impl->access_token == NULL) {
-        goto error;
+        goto done;
     }
 
     impl->account_id = aws_string_new_from_cursor(allocator, &parameters->account_id);
     if (impl->account_id == NULL) {
-        goto error;
+        goto done;
     }
 
     impl->role_name = aws_string_new_from_cursor(allocator, &parameters->role_name);
     if (impl->role_name == NULL) {
-        goto error;
+        goto done;
     }
 
     provider->shutdown_options = options->shutdown_options;
     success = true;
 
-error:
+done:
     if (!success) {
         aws_credentials_provider_destroy(provider);
         provider = NULL;
