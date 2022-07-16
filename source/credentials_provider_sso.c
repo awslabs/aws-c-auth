@@ -430,8 +430,8 @@ static void s_query_credentials(struct sso_user_data *user_data) {
 
     AWS_FATAL_ASSERT(user_data->connection);
 
-    struct aws_http_message *request = aws_http_message_new_request(user_data->allocator);
-    if (request == NULL) {
+   user_data->request = aws_http_message_new_request(user_data->allocator);
+    if (user_data->request == NULL) {
         goto on_error;
     }
 
@@ -448,22 +448,20 @@ static void s_query_credentials(struct sso_user_data *user_data) {
         .value = aws_byte_cursor_from_string(s_sso_user_agent_header_value),
     };
 
-    if (aws_http_message_add_header(request, auth_header) ||
-        aws_http_message_add_header(request, host_header) ||
-        aws_http_message_add_header(request, user_agent_header)) {
+    if (aws_http_message_add_header(user_data->request, auth_header) ||
+        aws_http_message_add_header(user_data->request, host_header) ||
+        aws_http_message_add_header(user_data->request, user_agent_header)) {
         goto on_error;
     }
 
-    if (aws_http_message_set_request_method(request, aws_http_method_get)) {
+    if (aws_http_message_set_request_method(user_data->request, aws_http_method_get)) {
         goto on_error;
     }
 
-    if (aws_http_message_set_request_path(request,
+    if (aws_http_message_set_request_path(user_data->request,
                                           aws_byte_cursor_from_buf(&user_data->path_and_query))) {
         goto on_error;
     }
-
-    user_data->request = request;
 
     struct aws_http_make_request_options request_options = {
         .self_size = sizeof(request_options),
@@ -472,7 +470,7 @@ static void s_query_credentials(struct sso_user_data *user_data) {
         .on_response_body = s_on_incoming_body_fn,
         .on_complete = s_on_stream_complete_fn,
         .user_data = user_data,
-        .request = request,
+        .request = user_data->request,
     };
 
     stream = impl->function_table->aws_http_connection_make_request(user_data->connection, &request_options);
