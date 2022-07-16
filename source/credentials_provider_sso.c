@@ -961,7 +961,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_INFO(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: failed to create TLS connection: %s", aws_error_str(aws_last_error()));
+            "sso: failed to set TLS server name option: %s", aws_error_str(aws_last_error()));
         goto done;
     }
 
