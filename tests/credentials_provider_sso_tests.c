@@ -268,10 +268,12 @@ AWS_STATIC_STRING_FROM_LITERAL(s_home_here, ".");
 
 static int s_credentials_provider_sso_provider_profile_file_missing(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    aws_auth_library_init(allocator);
+    s_aws_sso_tester_init(allocator);
 
     struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
     struct aws_credentials_provider_profile_options options = {0};
+
+    options.tls_ctx = s_tester.tls_ctx;
 
     /* Redirect $HOME to a place that has no .aws/config file. */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_here));
@@ -282,7 +284,7 @@ static int s_credentials_provider_sso_provider_profile_file_missing(struct aws_a
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
     aws_string_destroy(actual_home);
 
-    aws_auth_library_clean_up();
+    s_aws_sso_tester_cleanup();
 
     return AWS_OP_SUCCESS;
 }
@@ -311,7 +313,10 @@ AWS_STATIC_STRING_FROM_LITERAL(
 static int s_credentials_provider_sso_provider_access_token_file_missing(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     struct aws_credentials_provider_profile_options options = {0};
-    aws_auth_library_init(allocator);
+
+    s_aws_sso_tester_init(allocator);
+
+    options.tls_ctx = s_tester.tls_ctx;
 
     /* Redirect $HOME to the testing directory without creating the access token file .aws/sso/cache/<sha1>.json. */
     struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
@@ -330,7 +335,7 @@ static int s_credentials_provider_sso_provider_access_token_file_missing(struct 
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
     aws_string_destroy(actual_home);
 
-    aws_auth_library_clean_up();
+    s_aws_sso_tester_cleanup();
 
     return AWS_OP_SUCCESS;
 }
@@ -350,7 +355,9 @@ static int s_credentials_provider_sso_provider_access_token_expired(struct aws_a
           \"expiresAt\": \"2022-06-03T05:53:48Z\"\
         }\n"
     );
-    aws_auth_library_init(allocator);
+    s_aws_sso_tester_init(allocator);
+
+    options.tls_ctx = s_tester.tls_ctx;
 
     ASSERT_SUCCESS(s_sso_provider_init_config_profile(allocator, sso_test_profile_contents));
 
@@ -376,7 +383,7 @@ static int s_credentials_provider_sso_provider_access_token_expired(struct aws_a
     aws_string_destroy(start_url);
     aws_string_destroy(token_path);
 
-    aws_auth_library_clean_up();
+    s_aws_sso_tester_cleanup();
 
     return AWS_OP_SUCCESS;
 }
