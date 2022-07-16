@@ -950,7 +950,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sso_vtable, impl);
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    /* Override the default timeout (see STS web identity provider). */
+    /* Override the default TLS negotiation timeout (see #169). */
     tls_connection_options.timeout_ms = 3 * SSO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS * 1000 /*msec*/;
 
     parameters = s_parameters_new(allocator);
