@@ -369,7 +369,7 @@ static int s_on_incoming_headers_fn(
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *wrapped_user_data);
 
 /* Ported from aws-cpp-sdk-core/include/aws/core/http/HttpResponse.h */
-static bool IsRetryableHttpResponseCode(int http_response_code) {
+static bool s_is_retryable_http_response_code(int http_response_code) {
     switch (http_response_code) {
         case AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT:
         case 419 /* Authentication Timeout (no enum value defined). */:
@@ -398,7 +398,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     user_data->connection = NULL;
 
     if (error_code || user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
-        if (error_code || IsRetryableHttpResponseCode(user_data->status_code)) {
+        if (error_code || s_is_retryable_http_response_code(user_data->status_code)) {
             /* For exponential backoff, any value other than AWS_RETRY_ERROR_TYPE_CLIENT_ERROR works. */
             const enum aws_retry_error_type error_type = AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
 
