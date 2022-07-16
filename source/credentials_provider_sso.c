@@ -928,6 +928,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     struct aws_tls_connection_options tls_connection_options = {0};
     bool success = false;
 
+    AWS_FATAL_ASSERT(options);
+    AWS_FATAL_ASSERT(options->tls_ctx);
+
     aws_json_module_init(allocator);
 
     aws_mem_acquire_many(
