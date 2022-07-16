@@ -816,8 +816,8 @@ struct sso_parameters {
     struct aws_allocator *allocator;
     struct aws_byte_buf endpoint;
     struct aws_byte_buf access_token;
-    struct aws_byte_cursor account_id;
-    struct aws_byte_cursor role_name;
+    struct aws_string *account_id;
+    struct aws_string *role_name;
 };
 
 static void s_parameters_destroy(struct sso_parameters *parameters) {
@@ -826,6 +826,8 @@ static void s_parameters_destroy(struct sso_parameters *parameters) {
     }
     aws_byte_buf_clean_up(&parameters->endpoint);
     aws_byte_buf_clean_up(&parameters->access_token);
+    aws_string_destroy(parameters->account_id);
+    aws_string_destroy(parameters->role_name);
     aws_mem_release(parameters->allocator, parameters);
 }
 
@@ -899,8 +901,8 @@ static struct sso_parameters *s_parameters_new(struct aws_allocator *allocator) 
                              &parameters->endpoint)) {
         goto done;
     }
-    parameters->account_id = aws_byte_cursor_from_string(aws_profile_property_get_value(sso_account_id));
-    parameters->role_name  = aws_byte_cursor_from_string(aws_profile_property_get_value(sso_role_name));
+    parameters->account_id = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_account_id));
+    parameters->role_name  = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
 
     success = true;
 
@@ -1008,12 +1010,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
         goto done;
     }
 
-    impl->account_id = aws_string_new_from_cursor(allocator, &parameters->account_id);
+    impl->account_id = aws_string_new_from_string(allocator, parameters->account_id);
     if (impl->account_id == NULL) {
         goto done;
     }
 
-    impl->role_name = aws_string_new_from_cursor(allocator, &parameters->role_name);
+    impl->role_name = aws_string_new_from_string(allocator, parameters->role_name);
     if (impl->role_name == NULL) {
         goto done;
     }
