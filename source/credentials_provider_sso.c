@@ -821,11 +821,12 @@ struct sso_parameters {
 };
 
 static void s_parameters_destroy(struct sso_parameters *parameters) {
-    if (parameters) {
-        aws_byte_buf_clean_up(&parameters->endpoint);
-        aws_byte_buf_clean_up(&parameters->access_token);
-        aws_mem_release(parameters->allocator, parameters);
+    if (parameters == NULL) {
+        return;
     }
+    aws_byte_buf_clean_up(&parameters->endpoint);
+    aws_byte_buf_clean_up(&parameters->access_token);
+    aws_mem_release(parameters->allocator, parameters);
 }
 
 /* Profile field names. */
