@@ -100,24 +100,26 @@ static void s_user_data_reset_request_and_response(struct sso_user_data *user_da
 }
 
 static void s_user_data_destroy(struct sso_user_data *user_data) {
-    if (user_data) {
-        s_user_data_reset_request_and_response(user_data);
-
-        if (user_data->connection) {
-            struct aws_credentials_provider_sso_impl *impl = user_data->sso_provider->impl;
-
-            impl->function_table->aws_http_connection_manager_release_connection(
-                impl->connection_manager, user_data->connection);
-        }
-
-        aws_byte_buf_clean_up(&user_data->response);
-        aws_retry_token_release(user_data->retry_token);
-
-        aws_byte_buf_clean_up(&user_data->path_and_query);
-
-        aws_credentials_provider_release(user_data->sso_provider);
-        aws_mem_release(user_data->allocator, user_data);
+    if (user_data == NULL) {
+        return;
     }
+
+    s_user_data_reset_request_and_response(user_data);
+
+    if (user_data->connection) {
+        struct aws_credentials_provider_sso_impl *impl = user_data->sso_provider->impl;
+
+        impl->function_table->aws_http_connection_manager_release_connection(
+            impl->connection_manager, user_data->connection);
+    }
+
+    aws_byte_buf_clean_up(&user_data->response);
+    aws_retry_token_release(user_data->retry_token);
+
+    aws_byte_buf_clean_up(&user_data->path_and_query);
+
+    aws_credentials_provider_release(user_data->sso_provider);
+    aws_mem_release(user_data->allocator, user_data);
 }
 
 /* URL path and query components. */
