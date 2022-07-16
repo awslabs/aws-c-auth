@@ -199,14 +199,14 @@ static struct aws_credentials *s_parse_credentials_from_response(
     struct aws_credentials *credentials = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
     document_root = aws_json_value_new_from_string(user_data->allocator, document_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to parse JSON response");
-        goto error;
+        goto done;
     }
 
     /* Top-level of the document. */
@@ -214,7 +214,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("roleCredentials"));
     if (!aws_json_value_is_object(role_credentials)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract roleCredentials from JSON response");
-        goto error;
+        goto done;
     }
 
     /* roleCredentials object. */
@@ -224,7 +224,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (!aws_json_value_is_string(access_key) ||
         aws_json_value_get_string(access_key, &access_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract accessKeyId from JSON response");
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor secret_key_cursor;
@@ -233,7 +233,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (!aws_json_value_is_string(secret_key) ||
         aws_json_value_get_string(secret_key, &secret_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract secretAccessKey from JSON response");
-        goto error;
+        goto done;
     }
 
     struct aws_byte_cursor session_token_cursor;
@@ -242,7 +242,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (!aws_json_value_is_string(session_token) ||
         aws_json_value_get_string(session_token, &session_token_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract sessionToken from JSON response");
-        goto error;
+        goto done;
     }
 
     double expiration_value;
@@ -251,7 +251,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (!aws_json_value_is_number(expiration) ||
         aws_json_value_get_number(expiration, &expiration_value) == AWS_OP_ERR || expiration_value <= 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract expiration from JSON response");
-        goto error;
+        goto done;
     }
 
     /*
@@ -262,7 +262,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (access_key_cursor.len == 0 || secret_key_cursor.len == 0 || session_token_cursor.len == 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso: one of accessKeyId, secretAccessKey, or sessionToken is empty");
-        goto error;
+        goto done;
     }
 
     credentials = aws_credentials_new(user_data->allocator,
@@ -271,7 +271,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
         session_token_cursor,
         expiration_timepoint_milliseconds/1000ull);
 
-error:
+done:
     if (credentials == NULL) {
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
     } else {
