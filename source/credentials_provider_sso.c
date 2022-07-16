@@ -205,7 +205,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
     struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
     document_root = aws_json_value_new_from_string(user_data->allocator, document_cursor);
     if (document_root == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to parse JSON response");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) sso: failed to parse JSON response", (void*)user_data);
         goto done;
     }
 
@@ -213,7 +213,8 @@ static struct aws_credentials *s_parse_credentials_from_response(
     struct aws_json_value *role_credentials =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("roleCredentials"));
     if (!aws_json_value_is_object(role_credentials)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract roleCredentials from JSON response");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) sso: failed to extract roleCredentials from JSON response", (void*)user_data);
         goto done;
     }
 
@@ -223,7 +224,8 @@ static struct aws_credentials *s_parse_credentials_from_response(
         aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("accessKeyId"));
     if (!aws_json_value_is_string(access_key) ||
         aws_json_value_get_string(access_key, &access_key_cursor) == AWS_OP_ERR) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract accessKeyId from JSON response");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) sso: failed to extract accessKeyId from JSON response", (void*)user_data);
         goto done;
     }
 
@@ -232,7 +234,8 @@ static struct aws_credentials *s_parse_credentials_from_response(
         aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("secretAccessKey"));
     if (!aws_json_value_is_string(secret_key) ||
         aws_json_value_get_string(secret_key, &secret_key_cursor) == AWS_OP_ERR) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract secretAccessKey from JSON response");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) sso: failed to extract secretAccessKey from JSON response", (void*)user_data);
         goto done;
     }
 
@@ -241,7 +244,8 @@ static struct aws_credentials *s_parse_credentials_from_response(
         aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("sessionToken"));
     if (!aws_json_value_is_string(session_token) ||
         aws_json_value_get_string(session_token, &session_token_cursor) == AWS_OP_ERR) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract sessionToken from JSON response");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) sso: failed to extract sessionToken from JSON response", (void*)user_data);
         goto done;
     }
 
@@ -250,7 +254,8 @@ static struct aws_credentials *s_parse_credentials_from_response(
         aws_json_value_get_from_object(role_credentials, aws_byte_cursor_from_c_str("expiration"));
     if (!aws_json_value_is_number(expiration) ||
         aws_json_value_get_number(expiration, &expiration_value) == AWS_OP_ERR || expiration_value <= 0) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to extract expiration from JSON response");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) sso: failed to extract expiration from JSON response", (void*)user_data);
         goto done;
     }
 
@@ -261,7 +266,8 @@ static struct aws_credentials *s_parse_credentials_from_response(
 
     if (access_key_cursor.len == 0 || secret_key_cursor.len == 0 || session_token_cursor.len == 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: one of accessKeyId, secretAccessKey, or sessionToken is empty");
+            "(id=%p) sso: one of accessKeyId, secretAccessKey, or sessionToken is empty",
+            (void*)user_data);
         goto done;
     }
 
@@ -275,8 +281,8 @@ done:
     if (credentials == NULL) {
         aws_raise_error(AWS_AUTH_PROVIDER_PARSER_UNEXPECTED_RESPONSE);
     } else {
-        AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: new credentials expire at %" PRIu64,
-                aws_credentials_get_expiration_timepoint_seconds(credentials));
+        AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) sso: new credentials expire at %" PRIu64,
+            (void*)user_data, aws_credentials_get_expiration_timepoint_seconds(credentials));
     }
     aws_json_value_destroy(document_root);
 
@@ -299,7 +305,8 @@ static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
             user_data->error_code = AWS_ERROR_UNKNOWN;
         }
         AWS_LOGF_WARN(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: failed to query credentials (%s)", aws_error_str(user_data->error_code));
+            "(id=%p) sso: failed to query credentials (%s)",
+            (void*)user_data, aws_error_str(user_data->error_code));
     }
 
     /* pass the credentials back */
@@ -321,7 +328,8 @@ static int s_on_incoming_body_fn(
 
     if (body->len + user_data->response.len > SSO_RESPONSE_SIZE_LIMIT) {
         impl->function_table->aws_http_connection_close(user_data->connection);
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: response too big");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) sso: response too big", wrapped_user_data);
 
         return aws_raise_error(AWS_ERROR_SHORT_BUFFER);
     }
@@ -350,7 +358,8 @@ static int s_on_incoming_headers_fn(
 
         if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &user_data->status_code)) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "sso: failed to get http status code: %s", aws_error_str(aws_last_error()));
+                "(id=%p) sso: failed to get http status code: %s",
+                wrapped_user_data, aws_error_str(aws_last_error()));
             return AWS_OP_ERR;
         }
     }
@@ -400,11 +409,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 return;
             }
             AWS_LOGF_WARN(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "sso: failed to schedule retry: %s", aws_error_str(aws_last_error()));
+                "(id=%p) sso: failed to schedule retry: %s", data, aws_error_str(aws_last_error()));
         }
     } else if (aws_retry_token_record_success(user_data->retry_token)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: failed to register retry success: %s", aws_error_str(aws_last_error()));
+            "(id=%p) sso: failed to register retry success: %s", data, aws_error_str(aws_last_error()));
     }
 
     s_finalize_get_credentials_query(user_data);
@@ -488,7 +497,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
 
     if (connection == NULL) {
         AWS_LOGF_WARN(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: failed to acquire connection (%s)", aws_error_str(error_code));
+            "(id=%p) sso: failed to acquire connection (%s)", data, aws_error_str(error_code));
         /* Retry all connection errors: */
         s_on_stream_complete_fn(NULL, error_code, user_data);
         return;
@@ -511,7 +520,7 @@ static void s_on_retry_token_acquired(
 
     if (error_code) {
         AWS_LOGF_WARN(AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso: failed to acquire retry token: %s", aws_error_str(error_code));
+            "(id=%p) sso: failed to acquire retry token: %s", wrapped_user_data, aws_error_str(error_code));
         user_data->error_code = error_code;
 
         s_finalize_get_credentials_query(user_data);
