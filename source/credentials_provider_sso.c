@@ -275,7 +275,7 @@ static struct aws_credentials *s_parse_credentials_from_response(
         access_key_cursor,
         secret_key_cursor,
         session_token_cursor,
-        expiration_timepoint_milliseconds/1000ull);
+        aws_timestamp_convert(expiration_timepoint_milliseconds, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_SECS, NULL));
 
 done:
     if (credentials == NULL) {
