@@ -130,6 +130,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_connection_header_name = aws_byte_cursor_from_c_str("expect");
+    if (aws_hash_table_put(&s_skipped_headers, &s_connection_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     s_sec_websocket_key_header_name = aws_byte_cursor_from_c_str("sec-websocket-key");
     if (aws_hash_table_put(&s_skipped_headers, &s_sec_websocket_key_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
