@@ -8,7 +8,7 @@
 #include <aws/cal/ecc.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
-
+#include <aws/common/stdbool.h>
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
  */
@@ -50,7 +50,7 @@ struct aws_credentials {
      *
      */
     uint64_t expiration_timepoint_seconds;
-
+    bool is_anonymous; //Todo: Confirm that when we call zero struct on this, it will default to false and we don't need to do anything in existing functions.
     struct aws_ecc_key_pair *ecc_key;
 };
 
@@ -114,6 +114,37 @@ error:
 
     return NULL;
 }
+
+/*
+ * Anonymous Credentials API implementations
+ */
+struct aws_credentials *aws_credentials_new_anonymous(
+    struct aws_allocator *allocator,
+    uint64_t expiration_timepoint_seconds) {
+
+
+    struct aws_credentials *credentials = aws_mem_acquire(allocator, sizeof(struct aws_credentials));
+    if (credentials == NULL) {
+        return NULL;
+    }
+
+    AWS_ZERO_STRUCT(*credentials);
+
+    credentials->allocator = allocator;
+    aws_atomic_init_int(&credentials->ref_count, 1);
+    credentials->is_anonymous = true;
+
+    credentials->expiration_timepoint_seconds = expiration_timepoint_seconds;
+
+    return credentials;
+
+error:
+
+    aws_credentials_release(credentials);
+
+    return NULL;
+}
+
 
 static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     if (credentials == NULL) {
@@ -183,6 +214,10 @@ uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_crede
 
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials) {
     return credentials->ecc_key;
+}
+
+bool aws_credentials_is_anonymous(const struct aws_credentials *credentials){
+    return credentials->is_anonymous;
 }
 
 struct aws_credentials *aws_credentials_new_from_string(

@@ -29,6 +29,10 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
         goto done;
     }
 
+    if(aws_credentials_is_anonymous(state->config.credentials)){
+        goto done;
+    }
+
     if (aws_signing_build_canonical_request(state)) {
         state->error_code = s_aws_last_error_or_unknown();
         AWS_LOGF_ERROR(
@@ -87,7 +91,7 @@ done:
 
 static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials, int error_code, void *user_data) {
     struct aws_signing_state_aws *state = user_data;
-
+    //Todo: confirm, anonymous credentials should not be NULL over here
     if (!credentials) {
         if (error_code == AWS_ERROR_SUCCESS) {
             error_code = AWS_ERROR_UNKNOWN;
