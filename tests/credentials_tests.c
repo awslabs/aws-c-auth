@@ -128,7 +128,7 @@ static int s_do_basic_provider_test(
 
     ASSERT_TRUE(callback_results.count == expected_calls);
 
-    if (callback_results.credentials != NULL) {
+    if (callback_results.credentials != NULL && !aws_credentials_is_anonymous(callback_results.credentials)) {
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
             aws_credentials_get_access_key_id(callback_results.credentials), expected_access_key_id);
 

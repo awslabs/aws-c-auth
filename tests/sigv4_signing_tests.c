@@ -1843,13 +1843,12 @@ static int s_signer_anonymous_credentials_test(struct aws_allocator *allocator, 
     struct aws_http_message *request = aws_http_message_new_request(allocator);
     struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
 
-    struct aws_signing_config_aws config = {
-        .config_type = AWS_SIGNING_CONFIG_AWS,
-        .algorithm = AWS_SIGNING_ALGORITHM_V4,
-        .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
-        .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
-        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
-        .credentials = credentials};
+    struct aws_signing_config_aws config = {.config_type = AWS_SIGNING_CONFIG_AWS,
+                                            .algorithm = AWS_SIGNING_ALGORITHM_V4,
+                                            .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
+                                            .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+                                            .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
+                                            .credentials = credentials};
 
     struct null_credentials_state state;
     AWS_ZERO_STRUCT(state);

@@ -212,6 +212,7 @@ struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_crede
 }
 
 bool aws_credentials_is_anonymous(const struct aws_credentials *credentials) {
+    AWS_PRECONDITION(credentials);
     return credentials->is_anonymous;
 }
 
