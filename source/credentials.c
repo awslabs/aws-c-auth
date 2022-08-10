@@ -50,7 +50,7 @@ struct aws_credentials {
      *
      */
     uint64_t expiration_timepoint_seconds;
-    bool is_anonymous; //Todo: Confirm that when we call zero struct on this, it will default to false and we don't need to do anything in existing functions.
+    bool is_anonymous;
     struct aws_ecc_key_pair *ecc_key;
 };
 
@@ -122,27 +122,15 @@ struct aws_credentials *aws_credentials_new_anonymous(
     struct aws_allocator *allocator,
     uint64_t expiration_timepoint_seconds) {
 
-
-    struct aws_credentials *credentials = aws_mem_acquire(allocator, sizeof(struct aws_credentials));
-    if (credentials == NULL) {
-        return NULL;
-    }
-
-    AWS_ZERO_STRUCT(*credentials);
+    struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
 
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
-    credentials->is_anonymous = true;
 
+    credentials->is_anonymous = true;
     credentials->expiration_timepoint_seconds = expiration_timepoint_seconds;
 
     return credentials;
-
-error:
-
-    aws_credentials_release(credentials);
-
-    return NULL;
 }
 
 
@@ -187,25 +175,33 @@ void aws_credentials_release(const struct aws_credentials *credentials) {
     }
 }
 
+static struct aws_byte_cursor s_empty_token_cursor = {
+    .ptr = NULL,
+    .len = 0,
+};
+
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials) {
+    if (aws_credentials_is_anonymous(credentials)) {
+        return s_empty_token_cursor;
+    }
+
     return aws_byte_cursor_from_string(credentials->access_key_id);
 }
 
 struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials) {
+    if (aws_credentials_is_anonymous(credentials)) {
+        return s_empty_token_cursor;
+    }
+
     return aws_byte_cursor_from_string(credentials->secret_access_key);
 }
-
-static struct aws_byte_cursor s_empty_session_token_cursor = {
-    .ptr = NULL,
-    .len = 0,
-};
 
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials) {
     if (credentials->session_token != NULL) {
         return aws_byte_cursor_from_string(credentials->session_token);
     }
 
-    return s_empty_session_token_cursor;
+    return s_empty_token_cursor;
 }
 
 uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_credentials *credentials) {

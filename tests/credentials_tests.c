@@ -47,6 +47,23 @@ static int s_credentials_create_destroy_test(struct aws_allocator *allocator, vo
 
 AWS_TEST_CASE(credentials_create_destroy_test, s_credentials_create_destroy_test);
 
+static int s_anonymous_credentials_create_destroy_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator, UINT64_MAX);
+
+    ASSERT_NOT_NULL(credentials);
+    ASSERT_TRUE(aws_credentials_is_anonymous(credentials));
+    ASSERT_NULL(aws_credentials_get_access_key_id(credentials).ptr);
+    ASSERT_NULL(aws_credentials_get_secret_access_key(credentials).ptr);
+    ASSERT_NULL(aws_credentials_get_session_token(credentials).ptr);
+
+    aws_credentials_release(credentials);
+    return 0;
+}
+
+AWS_TEST_CASE(anonymous_credentials_create_destroy_test, s_anonymous_credentials_create_destroy_test);
+
 struct aws_credentials_shutdown_checker {
     struct aws_mutex lock;
     struct aws_condition_variable signal;
@@ -168,6 +185,31 @@ static int s_static_credentials_provider_basic_test(struct aws_allocator *alloca
 }
 
 AWS_TEST_CASE(static_credentials_provider_basic_test, s_static_credentials_provider_basic_test);
+
+static int s_anonymous_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials_provider_shutdown_options shutdown_options = {
+        .shutdown_callback = s_on_shutdown_complete,
+        .shutdown_user_data = NULL,
+    };
+
+    s_aws_credentials_shutdown_checker_init();
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_anonymous(allocator, &shutdown_options);
+
+    ASSERT_TRUE(s_do_basic_provider_test(provider, 1, NULL, NULL, NULL) == AWS_OP_SUCCESS);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(anonymous_credentials_provider_basic_test, s_anonymous_credentials_provider_basic_test);
 
 static int s_environment_credentials_provider_basic_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
