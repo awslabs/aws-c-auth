@@ -655,7 +655,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
  * @param shutdown_options shutdown options
  *
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
+<<<<<<< HEAD
  */
+
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_anonymous(
     struct aws_allocator *allocator,

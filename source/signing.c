@@ -143,6 +143,7 @@ int aws_sign_request_aws(
         return AWS_OP_ERR;
     }
     if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+
         if (signing_state->config.credentials != NULL &&
             !aws_credentials_is_anonymous(signing_state->config.credentials)) {
             /*
