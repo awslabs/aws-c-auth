@@ -587,7 +587,8 @@ struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_crede
 /**
  * Check if the credentials are anonymous or not
  * @param credentials credentials to check
- * @return true if anonymous, false otherwise.
+ *
+ * @return true if the credentials are anonymous; false otherwise.
  */
 AWS_AUTH_API
 bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
