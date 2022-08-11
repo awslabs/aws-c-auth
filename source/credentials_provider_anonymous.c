@@ -4,7 +4,6 @@
  */
 
 #include <aws/auth/credentials.h>
-
 #include <aws/auth/private/credentials_utils.h>
 
 static int s_anonymous_credentials_provider_get_credentials_async(
@@ -31,10 +30,6 @@ static void s_anonymous_credentials_provider_destroy(struct aws_credentials_prov
     aws_mem_release(provider->allocator, provider);
 }
 
-/*
- * shared across all providers that do not need to do anything special on shutdown
- */
-
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_anonymous_vtable = {
     .get_credentials = s_anonymous_credentials_provider_get_credentials_async,
     .destroy = s_anonymous_credentials_provider_destroy,
@@ -44,12 +39,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_anonymous(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_shutdown_options *shutdown_options) {
 
-    struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
-        return NULL;
-    }
-
-    AWS_ZERO_STRUCT(*provider);
+    struct aws_credentials_provider *provider = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials_provider));
 
     struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator, UINT64_MAX);
     if (credentials == NULL) {

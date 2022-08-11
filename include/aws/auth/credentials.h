@@ -585,11 +585,9 @@ AWS_AUTH_API
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
 /**
- * Todo: update comment
- * Get the elliptic curve key associated with this set of credentials
- * @param credentials credentials to get the the elliptic curve key for
- * @return the elliptic curve key associated with the credentials, or NULL if no key is associated with
- * these credentials
+ * Get if the credentials are anonymous or not
+ * @param credentials credentials to check
+ * @return true or false
  */
 AWS_AUTH_API
 bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
