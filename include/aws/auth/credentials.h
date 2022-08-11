@@ -489,7 +489,7 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 /**
- * Creates a new set of aws anonymous credentials credentials
+ * Creates a new set of AWS anonymous credentials
  *
  * @param allocator memory allocator to use
  * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
@@ -585,9 +585,9 @@ AWS_AUTH_API
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
 /**
- * Get if the credentials are anonymous or not
+ * Check if the credentials are anonymous or not
  * @param credentials credentials to check
- * @return true or false
+ * @return true if anonymous, false otherwise.
  */
 AWS_AUTH_API
 bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
@@ -650,7 +650,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
  * Creates a simple anonymous credentials provider
  *
  * @param allocator memory allocator to use for all memory allocation
- * @param shutdown_options shutdown options
+ * @param shutdown_options an optional shutdown callback that gets
+ * invoked when the resources used by the provider are no longer in use.
  *
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */

@@ -115,9 +115,6 @@ error:
     return NULL;
 }
 
-/*
- * Anonymous Credentials API implementations
- */
 struct aws_credentials *aws_credentials_new_anonymous(
     struct aws_allocator *allocator,
     uint64_t expiration_timepoint_seconds) {
