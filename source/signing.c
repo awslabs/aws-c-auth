@@ -92,6 +92,7 @@ done:
 
 static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials, int error_code, void *user_data) {
     struct aws_signing_state_aws *state = user_data;
+
     if (!credentials) {
         if (error_code == AWS_ERROR_SUCCESS) {
             error_code = AWS_ERROR_UNKNOWN;
@@ -139,6 +140,7 @@ int aws_sign_request_aws(
 
     struct aws_signing_state_aws *signing_state =
         aws_signing_state_new(allocator, config, signable, on_complete, userdata);
+
     if (!signing_state) {
         return AWS_OP_ERR;
     }
