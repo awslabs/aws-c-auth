@@ -1834,6 +1834,18 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
 }
 AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);
 
+static void s_anonymous_credentials_on_signing_complete(
+    struct aws_signing_result *result,
+    int error_code,
+    void *userdata) {
+
+    struct null_credentials_state *state = userdata;
+    state->result = result;
+    state->error_code = error_code;
+    AWS_FATAL_ASSERT(result->properties.p_impl != NULL);
+    AWS_FATAL_ASSERT(result->property_lists.p_impl != NULL);
+}
+
 static int s_signer_anonymous_credentials_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -1859,13 +1871,11 @@ static int s_signer_anonymous_credentials_test(struct aws_allocator *allocator, 
         allocator,
         signable,
         (struct aws_signing_config_base *)&config,
-        s_null_credentials_on_signing_complete,
+        s_anonymous_credentials_on_signing_complete,
         &state));
 
     ASSERT_INT_EQUALS(AWS_ERROR_SUCCESS, state.error_code);
     ASSERT_NOT_NULL(state.result);
-    // ASSERT_NOT_NULL(state.result->properties.p_impl);
-    // ASSERT_NOT_NULL(state.result->property_lists.p_impl);
 
     aws_credentials_release(credentials);
     aws_signable_destroy(signable);
@@ -1903,13 +1913,11 @@ static int s_signer_anonymous_credentials_provider_test(struct aws_allocator *al
         allocator,
         signable,
         (struct aws_signing_config_base *)&config,
-        s_null_credentials_on_signing_complete,
+        s_anonymous_credentials_on_signing_complete,
         &state));
 
     ASSERT_INT_EQUALS(AWS_ERROR_SUCCESS, state.error_code);
     ASSERT_NOT_NULL(state.result);
-    // ASSERT_NOT_NULL(state.result->properties.p_impl);
-    // ASSERT_NOT_NULL(state.result->property_lists.p_impl);
 
     aws_credentials_release(mock_result.credentials);
     aws_credentials_provider_release(config.credentials_provider);
