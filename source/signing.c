@@ -140,10 +140,10 @@ int aws_sign_request_aws(
 
     struct aws_signing_state_aws *signing_state =
         aws_signing_state_new(allocator, config, signable, on_complete, userdata);
-
     if (!signing_state) {
         return AWS_OP_ERR;
     }
+
     if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
 
         if (signing_state->config.credentials != NULL &&
