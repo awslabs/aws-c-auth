@@ -1873,7 +1873,6 @@ static int s_signer_anonymous_credentials_test(struct aws_allocator *allocator, 
 
     return AWS_OP_SUCCESS;
 }
-
 AWS_TEST_CASE(signer_anonymous_credentials_test, s_signer_anonymous_credentials_test);
 
 static int s_signer_anonymous_credentials_provider_test(struct aws_allocator *allocator, void *ctx) {
@@ -1919,5 +1918,4 @@ static int s_signer_anonymous_credentials_provider_test(struct aws_allocator *al
 
     return AWS_OP_SUCCESS;
 }
-
 AWS_TEST_CASE(signer_anonymous_credentials_provider_test, s_signer_anonymous_credentials_provider_test);
