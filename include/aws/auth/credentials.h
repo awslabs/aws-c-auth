@@ -582,8 +582,7 @@ AWS_AUTH_API
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
 /**
- * Check if the credentials are anonymous or not.
- * If credentials are anonymous then the signing process is skipped.
+ * If credentials are anonymous, then the signing process is skipped.
  *
  * @param credentials credentials to check
  *

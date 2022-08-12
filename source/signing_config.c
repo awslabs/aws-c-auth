@@ -51,6 +51,7 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "AWS signing config is null");
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
+
     if (config->signature_type == AWS_ST_HTTP_REQUEST_EVENT) {
         /*
          * Not supported yet.

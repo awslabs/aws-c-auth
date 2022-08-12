@@ -50,6 +50,7 @@ struct aws_credentials {
      *
      */
     uint64_t expiration_timepoint_seconds;
+
     struct aws_ecc_key_pair *ecc_key;
 };
 
