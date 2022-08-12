@@ -110,6 +110,7 @@ static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials
     } else {
         if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
             !aws_credentials_is_anonymous(credentials)) {
+
             state->config.credentials = aws_credentials_new_ecc_from_aws_credentials(state->allocator, credentials);
             if (state->config.credentials == NULL) {
                 state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
