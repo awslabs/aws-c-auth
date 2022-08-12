@@ -30,7 +30,6 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
     }
 
     if (aws_credentials_is_anonymous(state->config.credentials)) {
-        // Todo: Need to return empty list
         result = &state->result;
         goto done;
     }
@@ -107,8 +106,9 @@ static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials
             aws_error_debug_str(error_code));
 
         state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
-    } else if (!aws_credentials_is_anonymous(credentials)) {
-        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+    } else {
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
+            !aws_credentials_is_anonymous(credentials)) {
             state->config.credentials = aws_credentials_new_ecc_from_aws_credentials(state->allocator, credentials);
             if (state->config.credentials == NULL) {
                 state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;

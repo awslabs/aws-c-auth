@@ -7,8 +7,8 @@
 
 #include <aws/cal/ecc.h>
 #include <aws/common/environment.h>
-#include <aws/common/stdbool.h>
 #include <aws/common/string.h>
+
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
  */
@@ -50,7 +50,6 @@ struct aws_credentials {
      *
      */
     uint64_t expiration_timepoint_seconds;
-    bool is_anonymous;
     struct aws_ecc_key_pair *ecc_key;
 };
 
@@ -115,17 +114,14 @@ error:
     return NULL;
 }
 
-struct aws_credentials *aws_credentials_new_anonymous(
-    struct aws_allocator *allocator,
-    uint64_t expiration_timepoint_seconds) {
+struct aws_credentials *aws_credentials_new_anonymous(struct aws_allocator *allocator) {
 
     struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
 
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
 
-    credentials->is_anonymous = true;
-    credentials->expiration_timepoint_seconds = expiration_timepoint_seconds;
+    credentials->expiration_timepoint_seconds = UINT64_MAX;
 
     return credentials;
 }
@@ -177,7 +173,7 @@ static struct aws_byte_cursor s_empty_token_cursor = {
 };
 
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials) {
-    if (aws_credentials_is_anonymous(credentials)) {
+    if (credentials->access_key_id == NULL) {
         return s_empty_token_cursor;
     }
 
@@ -185,7 +181,7 @@ struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_creden
 }
 
 struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials) {
-    if (aws_credentials_is_anonymous(credentials)) {
+    if (credentials->secret_access_key == NULL) {
         return s_empty_token_cursor;
     }
 
@@ -210,7 +206,7 @@ struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_crede
 
 bool aws_credentials_is_anonymous(const struct aws_credentials *credentials) {
     AWS_PRECONDITION(credentials);
-    return credentials->is_anonymous;
+    return credentials->access_key_id == NULL && credentials->secret_access_key == NULL;
 }
 
 struct aws_credentials *aws_credentials_new_from_string(

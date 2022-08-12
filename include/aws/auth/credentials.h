@@ -489,18 +489,15 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 /**
- * Creates a new set of AWS anonymous credentials
+ * Creates a new set of aws anonymous credentials.
+ * Use Anonymous credentials, when you want to skip the signing process.
  *
  * @param allocator memory allocator to use
- * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
- * be valid past.  For credentials that do not expire, use UINT64_MAX
  *
  * @return a valid credentials object, or NULL
  */
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_anonymous(
-    struct aws_allocator *allocator,
-    uint64_t expiration_timepoint_seconds);
+struct aws_credentials *aws_credentials_new_anonymous(struct aws_allocator *allocator);
 
 /**
  * Creates a new set of AWS credentials
@@ -585,7 +582,9 @@ AWS_AUTH_API
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
 /**
- * Check if the credentials are anonymous or not
+ * Check if the credentials are anonymous or not.
+ * If credentials are anonymous then the signing process is skipped.
+ *
  * @param credentials credentials to check
  *
  * @return true if the credentials are anonymous; false otherwise.

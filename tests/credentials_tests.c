@@ -50,7 +50,7 @@ AWS_TEST_CASE(credentials_create_destroy_test, s_credentials_create_destroy_test
 static int s_anonymous_credentials_create_destroy_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
-    struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator, UINT64_MAX);
+    struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator);
 
     ASSERT_NOT_NULL(credentials);
     ASSERT_TRUE(aws_credentials_is_anonymous(credentials));
