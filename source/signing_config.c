@@ -103,7 +103,7 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
                 return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
             }
 
-            if (config->credentials != NULL) {
+            if (config->credentials != NULL && !aws_credentials_is_anonymous(config->credentials)) {
                 if (aws_credentials_get_access_key_id(config->credentials).len == 0 ||
                     aws_credentials_get_secret_access_key(config->credentials).len == 0) {
                     AWS_LOGF_ERROR(

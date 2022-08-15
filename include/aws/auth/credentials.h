@@ -489,6 +489,17 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 /**
+ * Creates a new set of aws anonymous credentials.
+ * Use Anonymous credentials, when you want to skip the signing process.
+ *
+ * @param allocator memory allocator to use
+ *
+ * @return a valid credentials object, or NULL
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_anonymous(struct aws_allocator *allocator);
+
+/**
  * Creates a new set of AWS credentials
  *
  * @param allocator memory allocator to use
@@ -570,6 +581,16 @@ uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_crede
 AWS_AUTH_API
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
+/**
+ * If credentials are anonymous, then the signing process is skipped.
+ *
+ * @param credentials credentials to check
+ *
+ * @return true if the credentials are anonymous; false otherwise.
+ */
+AWS_AUTH_API
+bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
+
 /*
  * Credentials provider APIs
  */
@@ -623,6 +644,20 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_static_options *options);
+
+/**
+ * Creates a simple anonymous credentials provider
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param shutdown_options an optional shutdown callback that gets
+ * invoked when the resources used by the provider are no longer in use.
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_anonymous(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 /**
  * Creates a provider that returns credentials sourced from the environment variables:

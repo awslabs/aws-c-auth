@@ -115,6 +115,18 @@ error:
     return NULL;
 }
 
+struct aws_credentials *aws_credentials_new_anonymous(struct aws_allocator *allocator) {
+
+    struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
+
+    credentials->allocator = allocator;
+    aws_atomic_init_int(&credentials->ref_count, 1);
+
+    credentials->expiration_timepoint_seconds = UINT64_MAX;
+
+    return credentials;
+}
+
 static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     if (credentials == NULL) {
         return;
@@ -156,25 +168,33 @@ void aws_credentials_release(const struct aws_credentials *credentials) {
     }
 }
 
+static struct aws_byte_cursor s_empty_token_cursor = {
+    .ptr = NULL,
+    .len = 0,
+};
+
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials) {
+    if (credentials->access_key_id == NULL) {
+        return s_empty_token_cursor;
+    }
+
     return aws_byte_cursor_from_string(credentials->access_key_id);
 }
 
 struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials) {
+    if (credentials->secret_access_key == NULL) {
+        return s_empty_token_cursor;
+    }
+
     return aws_byte_cursor_from_string(credentials->secret_access_key);
 }
-
-static struct aws_byte_cursor s_empty_session_token_cursor = {
-    .ptr = NULL,
-    .len = 0,
-};
 
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials) {
     if (credentials->session_token != NULL) {
         return aws_byte_cursor_from_string(credentials->session_token);
     }
 
-    return s_empty_session_token_cursor;
+    return s_empty_token_cursor;
 }
 
 uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_credentials *credentials) {
@@ -183,6 +203,11 @@ uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_crede
 
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials) {
     return credentials->ecc_key;
+}
+
+bool aws_credentials_is_anonymous(const struct aws_credentials *credentials) {
+    AWS_PRECONDITION(credentials);
+    return credentials->access_key_id == NULL && credentials->secret_access_key == NULL;
 }
 
 struct aws_credentials *aws_credentials_new_from_string(

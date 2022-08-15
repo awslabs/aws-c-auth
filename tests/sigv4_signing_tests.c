@@ -1833,3 +1833,97 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);
+
+static void s_anonymous_credentials_on_signing_complete(
+    struct aws_signing_result *result,
+    int error_code,
+    void *userdata) {
+
+    struct null_credentials_state *state = userdata;
+    state->result = result;
+    state->error_code = error_code;
+    AWS_FATAL_ASSERT(result->properties.p_impl != NULL);
+    AWS_FATAL_ASSERT(result->property_lists.p_impl != NULL);
+}
+
+static int s_signer_anonymous_credentials_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator);
+    ASSERT_NOT_NULL(credentials);
+
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
+
+    struct aws_signing_config_aws config = {
+        .config_type = AWS_SIGNING_CONFIG_AWS,
+        .algorithm = AWS_SIGNING_ALGORITHM_V4,
+        .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
+        .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
+        .credentials = credentials,
+    };
+
+    struct null_credentials_state state;
+    AWS_ZERO_STRUCT(state);
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        signable,
+        (struct aws_signing_config_base *)&config,
+        s_anonymous_credentials_on_signing_complete,
+        &state));
+
+    ASSERT_INT_EQUALS(AWS_ERROR_SUCCESS, state.error_code);
+    ASSERT_NOT_NULL(state.result);
+
+    aws_credentials_release(credentials);
+    aws_signable_destroy(signable);
+    aws_http_message_release(request);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(signer_anonymous_credentials_test, s_signer_anonymous_credentials_test);
+
+static int s_signer_anonymous_credentials_provider_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct get_credentials_mock_result mock_result = {
+        .credentials = aws_credentials_new_anonymous(allocator),
+        .error_code = AWS_ERROR_SUCCESS,
+    };
+
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
+
+    struct aws_signing_config_aws config = {
+        .config_type = AWS_SIGNING_CONFIG_AWS,
+        .algorithm = AWS_SIGNING_ALGORITHM_V4,
+        .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
+        .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
+    };
+
+    config.credentials_provider = aws_credentials_provider_new_mock(allocator, &mock_result, 1, NULL);
+
+    struct null_credentials_state state;
+    AWS_ZERO_STRUCT(state);
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        signable,
+        (struct aws_signing_config_base *)&config,
+        s_anonymous_credentials_on_signing_complete,
+        &state));
+
+    ASSERT_INT_EQUALS(AWS_ERROR_SUCCESS, state.error_code);
+    ASSERT_NOT_NULL(state.result);
+
+    aws_credentials_release(mock_result.credentials);
+    aws_credentials_provider_release(config.credentials_provider);
+    aws_signable_destroy(signable);
+    aws_http_message_release(request);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(signer_anonymous_credentials_provider_test, s_signer_anonymous_credentials_provider_test);
