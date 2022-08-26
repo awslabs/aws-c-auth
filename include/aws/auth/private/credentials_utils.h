@@ -8,13 +8,13 @@
 
 #include <aws/auth/auth.h>
 #include <aws/auth/credentials.h>
-#include <aws/common/json.h>
 #include <aws/http/connection_manager.h>
 
 struct aws_http_connection;
 struct aws_http_connection_manager;
 struct aws_http_make_request_options;
 struct aws_http_stream;
+struct aws_json_value;
 
 /*
  * Internal struct tracking an asynchronous credentials query.

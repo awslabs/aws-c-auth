@@ -31,7 +31,7 @@ static struct aws_credentials_provider_vtable s_credentials_provider_delegate_vt
 
 struct aws_credentials_provider *aws_credentials_provider_new_delegate(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_delegate_options *options) {
+    const struct aws_credentials_provider_delegate_options *options) {
 
     AWS_ASSERT(options);
     AWS_ASSERT(options->get_credentials);

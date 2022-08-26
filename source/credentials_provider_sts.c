@@ -65,18 +65,6 @@ static const int s_max_retries = 8;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
 
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close,
-};
-
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_string *assume_role_profile;
@@ -84,7 +72,7 @@ struct aws_credentials_provider_sts_impl {
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_retry_strategy *retry_strategy;
     aws_io_clock_fn *system_clock_fn;
 };
@@ -713,7 +701,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_sts_options *options) {
+    const struct aws_credentials_provider_sts_options *options) {
 
     if (!options->bootstrap) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for quering STS");
@@ -748,7 +736,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
-    impl->function_table = &s_default_function_table;
+    impl->function_table = g_aws_credentials_provider_http_function_table;
 
     if (options->function_table) {
         impl->function_table = options->function_table;

@@ -32,23 +32,12 @@
 
 struct aws_credentials_provider_x509_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_byte_buf thing_name;
     struct aws_byte_buf role_alias_path;
     struct aws_byte_buf endpoint;
     struct aws_tls_connection_options tls_connection_options;
 };
-
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close};
 
 /*
  * Tracking structure for each outstanding async query to an x509 provider
@@ -596,7 +585,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
-        impl->function_table = &s_default_function_table;
+        impl->function_table = g_aws_credentials_provider_http_function_table;
     }
 
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);

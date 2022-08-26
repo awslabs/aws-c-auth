@@ -4,11 +4,28 @@
  */
 
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/common/string.h>
-#include <aws/common/uuid.h>
 
 #include <aws/common/date_time.h>
 #include <aws/common/json.h>
+#include <aws/common/string.h>
+#include <aws/common/uuid.h>
+#include <aws/http/connection.h>
+#include <aws/http/request_response.h>
+
+static struct aws_auth_http_system_vtable s_default_function_table = {
+    .aws_http_connection_manager_new = aws_http_connection_manager_new,
+    .aws_http_connection_manager_release = aws_http_connection_manager_release,
+    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
+    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
+    .aws_http_connection_make_request = aws_http_connection_make_request,
+    .aws_http_stream_activate = aws_http_stream_activate,
+    .aws_http_stream_get_connection = aws_http_stream_get_connection,
+    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
+    .aws_http_stream_release = aws_http_stream_release,
+    .aws_http_connection_close = aws_http_connection_close,
+};
+
+const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table = &s_default_function_table;
 
 void aws_credentials_query_init(
     struct aws_credentials_query *query,
