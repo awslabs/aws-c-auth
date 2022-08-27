@@ -7,6 +7,7 @@
 
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
+#include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
@@ -14,10 +15,15 @@
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/retry_strategy.h>
 #include <aws/io/socket.h>
+#include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
+
+#include <inttypes.h>
 
 #define COGNITO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 5
 #define COGNITO_MAX_RETRIES 8
+#define HTTP_REQUEST_BODY_INITIAL_SIZE 1024
+#define HTTP_RESPONSE_BODY_INITIAL_SIZE 4096
 
 static void s_on_connection_manager_shutdown(void *user_data);
 
@@ -91,18 +97,43 @@ struct cognito_user_data {
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
 
+    struct aws_http_connection *connection;
+    struct aws_http_message *get_credentials_request;
+    struct aws_byte_buf request_body_buffer;
+    struct aws_input_stream *request_body_stream;
+
     struct aws_retry_token *retry_token;
     struct aws_credentials *credentials;
-    int error_code;
+    struct aws_byte_buf response_body;
 };
+
+static void s_user_data_reset(struct cognito_user_data *user_data) {
+    aws_byte_buf_clean_up(&user_data->request_body_buffer);
+    AWS_ZERO_STRUCT(user_data->request_body_buffer);
+
+    user_data->request_body_stream = aws_input_stream_release(user_data->request_body_stream);
+    user_data->get_credentials_request = aws_http_message_release(user_data->get_credentials_request);
+
+    struct aws_credentials_provider_cognito_impl *impl = user_data->provider->impl;
+    if (user_data->connection != NULL) {
+        impl->function_table->aws_http_connection_manager_release_connection(
+            impl->connection_manager, user_data->connection);
+        user_data->connection = NULL;
+    }
+
+    aws_byte_buf_reset(&user_data->response_body, false);
+}
 
 static void s_user_data_destroy(struct cognito_user_data *user_data) {
     if (user_data == NULL) {
         return;
     }
 
+    s_user_data_reset(user_data);
+
     aws_retry_token_release(user_data->retry_token);
     aws_credentials_provider_release(user_data->provider);
+    aws_credentials_release(user_data->credentials);
 
     aws_mem_release(user_data->allocator, user_data);
 }
@@ -119,17 +150,27 @@ static struct cognito_user_data *s_user_data_new(
     }
 
     cognito_user_data->allocator = allocator;
+
+    if (aws_byte_buf_init(
+            &cognito_user_data->response_body, cognito_user_data->allocator, HTTP_RESPONSE_BODY_INITIAL_SIZE)) {
+        goto on_error;
+    }
+
     cognito_user_data->provider = aws_credentials_provider_acquire(provider);
     cognito_user_data->original_callback = callback;
     cognito_user_data->original_user_data = user_data;
 
     return user_data;
+
+on_error:
+
+    s_user_data_destroy(cognito_user_data);
+    return NULL;
 }
 
-static void s_finalize_credentials_query(struct cognito_user_data *user_data) {
+static void s_finalize_credentials_query(struct cognito_user_data *user_data, int error_code) {
     AWS_FATAL_ASSERT(user_data != NULL);
 
-    int error_code = user_data->error_code;
     if (user_data->credentials == NULL && error_code == AWS_ERROR_SUCCESS) {
         error_code = AWS_AUTH_CREDENTIALS_PROVIDER_COGNITO_SOURCE_FAILURE;
     }
@@ -139,10 +180,245 @@ static void s_finalize_credentials_query(struct cognito_user_data *user_data) {
     s_user_data_destroy(user_data);
 }
 
-static void s_start_http_request(struct cognito_user_data *user_data) {
+static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
+    (void)stream;
+    (void)error_code;
     (void)user_data;
 
-    s_finalize_credentials_query(user_data);
+    s_finalize_credentials_query(user_data, error_code);
+}
+
+static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *data, void *user_data) {
+    (void)stream;
+
+    struct cognito_user_data *provider_user_data = user_data;
+    return aws_byte_buf_append_dynamic(&provider_user_data->response_body, data);
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(s_identity_id_key, "IdentityId");
+AWS_STATIC_STRING_FROM_LITERAL(s_custom_role_arn_key, "CustomRoleArn");
+AWS_STATIC_STRING_FROM_LITERAL(s_logins_key, "Logins");
+
+int s_create_get_credentials_for_identity_body_buffer(
+    struct aws_byte_buf *buffer,
+    struct cognito_user_data *provider_user_data) {
+    struct aws_allocator *allocator = provider_user_data->allocator;
+    struct aws_credentials_provider_cognito_impl *impl = provider_user_data->provider->impl;
+
+    struct aws_json_value *json_body = aws_json_value_new_object(allocator);
+    if (json_body == NULL) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_json_value *identity_string =
+        aws_json_value_new_string(allocator, aws_byte_cursor_from_string(impl->identity));
+    if (identity_string == NULL) {
+        goto on_error;
+    }
+
+    if (aws_json_value_add_to_object(json_body, aws_byte_cursor_from_string(s_identity_id_key), identity_string)) {
+        aws_json_value_destroy(identity_string);
+        goto on_error;
+    }
+
+    if (impl->custom_role_arn != NULL) {
+        struct aws_json_value *custom_role_arn_string =
+            aws_json_value_new_string(allocator, aws_byte_cursor_from_string(impl->custom_role_arn));
+        if (custom_role_arn_string == NULL) {
+            goto on_error;
+        }
+
+        if (aws_json_value_add_to_object(
+                json_body, aws_byte_cursor_from_string(s_custom_role_arn_key), custom_role_arn_string)) {
+            aws_json_value_destroy(custom_role_arn_string);
+            goto on_error;
+        }
+    }
+
+    size_t login_count = aws_array_list_length(&impl->logins);
+    if (login_count > 0) {
+        struct aws_json_value *logins = aws_json_value_new_object(allocator);
+        if (logins == NULL) {
+            goto on_error;
+        }
+
+        if (aws_json_value_add_to_object(json_body, aws_byte_cursor_from_string(s_logins_key), logins)) {
+            aws_json_value_destroy(logins);
+            goto on_error;
+        }
+
+        for (size_t i = 0; i < login_count; ++i) {
+            struct aws_cognito_login login;
+            if (aws_array_list_get_at(&impl->logins, &login, i)) {
+                goto on_error;
+            }
+
+            struct aws_json_value *login_value_string =
+                aws_json_value_new_string(allocator, login.identity_provider_token);
+            if (login_value_string == NULL) {
+                goto on_error;
+            }
+
+            if (aws_json_value_add_to_object(logins, login.identity_provider_name, login_value_string)) {
+                aws_json_value_destroy(login_value_string);
+                goto on_error;
+            }
+        }
+    }
+
+    if (aws_byte_buf_append_json_string(json_body, buffer)) {
+        goto on_error;
+    }
+
+    return AWS_OP_SUCCESS;
+
+on_error:
+
+    aws_json_value_destroy(json_body);
+
+    return AWS_OP_ERR;
+}
+
+static struct aws_http_header s_content_type_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-amz-json-1.1"),
+};
+
+static int s_create_get_credentials_for_identity_request(struct cognito_user_data *provider_user_data) {
+    struct aws_credentials_provider_cognito_impl *impl = provider_user_data->provider->impl;
+
+    struct aws_byte_buf body_buffer;
+    AWS_ZERO_STRUCT(body_buffer);
+
+    struct aws_input_stream *body_stream = NULL;
+    struct aws_http_message *request = aws_http_message_new_request(provider_user_data->allocator);
+    if (request == NULL) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_http_message_set_request_method(request, aws_http_method_post)) {
+        goto on_error;
+    }
+
+    struct aws_http_header host_header = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
+        .value = aws_byte_cursor_from_string(impl->endpoint),
+    };
+
+    if (aws_http_message_add_header(request, host_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_content_type_header)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_init(&body_buffer, provider_user_data->allocator, HTTP_REQUEST_BODY_INITIAL_SIZE)) {
+        goto on_error;
+    }
+
+    if (s_create_get_credentials_for_identity_body_buffer(&body_buffer, provider_user_data)) {
+        goto on_error;
+    }
+
+    char content_length[21];
+    AWS_ZERO_ARRAY(content_length);
+    snprintf(content_length, sizeof(content_length), "%" PRIu64, (uint64_t)body_buffer.len);
+
+    struct aws_http_header content_length_header = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Content-Length"),
+        .value = aws_byte_cursor_from_c_str(content_length),
+    };
+
+    if (aws_http_message_add_header(request, content_length_header)) {
+        goto on_error;
+    }
+
+    struct aws_byte_cursor payload_cur = aws_byte_cursor_from_buf(&body_buffer);
+    body_stream = aws_input_stream_new_from_cursor(provider_user_data->allocator, &payload_cur);
+    if (body_stream == NULL) {
+        goto on_error;
+    }
+
+    aws_http_message_set_body_stream(request, body_stream);
+
+    provider_user_data->get_credentials_request = request;
+    provider_user_data->request_body_buffer = body_buffer;
+    provider_user_data->request_body_stream = body_stream;
+
+    return AWS_OP_SUCCESS;
+
+on_error:
+
+    aws_byte_buf_clean_up(&body_buffer);
+    aws_input_stream_release(body_stream);
+    aws_http_message_release(request);
+
+    return AWS_OP_ERR;
+}
+
+static void s_on_connection_setup_fn(struct aws_http_connection *connection, int error_code, void *user_data) {
+    struct cognito_user_data *wrapped_user_data = user_data;
+    struct aws_http_stream *stream = NULL;
+    struct aws_credentials_provider_cognito_impl *impl = wrapped_user_data->provider->impl;
+
+    if (connection == NULL) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Cognito credentials provider failed to acquire http connection: %s",
+            (void *)wrapped_user_data->provider,
+            aws_error_debug_str(error_code));
+        goto on_error;
+    }
+
+    wrapped_user_data->connection = connection;
+    if (s_create_get_credentials_for_identity_request(wrapped_user_data)) {
+        error_code = aws_last_error();
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Cognito credentials provider failed to create http request: %s",
+            (void *)wrapped_user_data->provider,
+            aws_error_debug_str(error_code));
+        goto on_error;
+    }
+
+    struct aws_http_make_request_options options = {
+        .user_data = user_data,
+        .request = wrapped_user_data->get_credentials_request,
+        .self_size = sizeof(struct aws_http_make_request_options),
+        .on_response_headers = NULL,
+        .on_response_header_block_done = NULL,
+        .on_response_body = s_on_incoming_body_fn,
+        .on_complete = s_on_stream_complete_fn,
+    };
+
+    stream = impl->function_table->aws_http_connection_make_request(connection, &options);
+    if (!stream) {
+        error_code = aws_last_error();
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Cognito credentials provider failed to create http stream: %s",
+            (void *)wrapped_user_data->provider,
+            aws_error_debug_str(error_code));
+        goto on_error;
+    }
+
+    if (impl->function_table->aws_http_stream_activate(stream)) {
+        error_code = aws_last_error();
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Cognito credentials provider failed to activate http stream: %s",
+            (void *)wrapped_user_data->provider,
+            aws_error_debug_str(error_code));
+        goto on_error;
+    }
+
+    return;
+
+on_error:
+
+    impl->function_table->aws_http_stream_release(stream);
+    s_finalize_credentials_query(wrapped_user_data, error_code);
 }
 
 static void s_on_retry_token_acquired(
@@ -153,19 +429,22 @@ static void s_on_retry_token_acquired(
     (void)strategy;
     struct cognito_user_data *wrapped_user_data = user_data;
 
-    if (error_code != AWS_ERROR_SUCCESS) {
+    if (token == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): Cognito credentials provider failed to acquire retry token: %s",
             (void *)wrapped_user_data->provider,
             aws_error_debug_str(error_code));
-        wrapped_user_data->error_code = error_code;
-        s_finalize_credentials_query(wrapped_user_data);
+        s_finalize_credentials_query(wrapped_user_data, error_code);
         return;
     }
 
     wrapped_user_data->retry_token = token;
-    s_start_http_request(wrapped_user_data);
+
+    struct aws_credentials_provider_cognito_impl *impl = wrapped_user_data->provider->impl;
+
+    impl->function_table->aws_http_connection_manager_acquire_connection(
+        impl->connection_manager, s_on_connection_setup_fn, wrapped_user_data);
 }
 
 static int s_credentials_provider_cognito_get_credentials_async(

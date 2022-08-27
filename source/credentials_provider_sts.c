@@ -46,11 +46,6 @@ static struct aws_http_header s_content_type_header = {
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
 };
 
-static struct aws_http_header s_api_version_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15"),
-};
-
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
@@ -504,10 +499,6 @@ static void s_start_make_request(
     }
 
     if (aws_http_message_add_header(provider_user_data->message, s_content_type_header)) {
-        goto error;
-    }
-
-    if (aws_http_message_add_header(provider_user_data->message, s_api_version_header)) {
         goto error;
     }
 
