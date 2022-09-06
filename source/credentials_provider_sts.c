@@ -595,12 +595,10 @@ error:
     AWS_LOGF_ERROR(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): error occurred while creating an http request for signing: %s",
-        (void *)provider_user_data->provider,
+        provider_user_data ? (void *)provider_user_data->provider : NULL,
         aws_error_debug_str(aws_last_error()));
     if (provider_user_data) {
         s_clean_up_user_data(provider_user_data);
-    } else {
-        provider_user_data->callback(NULL, provider_user_data->error_code, provider_user_data->user_data);
     }
 }
 
