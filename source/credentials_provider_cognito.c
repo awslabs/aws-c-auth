@@ -43,7 +43,7 @@ static int s_aws_cognito_login_init(
     AWS_ZERO_STRUCT(*login);
 
     size_t combined_len = 0;
-    if (aws_add_u64_checked(identity_provider_name.len, identity_provider_token.len, &combined_len)) {
+    if (aws_add_size_checked(identity_provider_name.len, identity_provider_token.len, &combined_len)) {
         return AWS_OP_ERR;
     }
 
