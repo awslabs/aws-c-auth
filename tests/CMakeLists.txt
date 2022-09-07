@@ -91,6 +91,18 @@ add_test_case(credentials_provider_process_bad_command)
 add_test_case(credentials_provider_process_incorrect_command_output)
 add_test_case(credentials_provider_process_basic_success)
 
+
+add_test_case(credentials_provider_cognito_new_destroy)
+add_test_case(credentials_provider_cognito_failure_connect)
+add_test_case(credentials_provider_cognito_failure_request)
+add_test_case(credentials_provider_cognito_failure_bad_document)
+add_test_case(credentials_provider_cognito_success)
+add_test_case(credentials_provider_cognito_success_after_retry)
+#if (AWS_HAS_COGNITO_ENVIRONMENT)
+#    add_net_test_case(credentials_provider_cognito_success_unauthenticated)
+#    add_net_test_case(credentials_provider_cognito_success_with_login_token)
+#endif()
+
 add_test_case(imds_client_new_release)
 add_test_case(imds_client_connect_failure)
 add_test_case(imds_client_token_request_failure)

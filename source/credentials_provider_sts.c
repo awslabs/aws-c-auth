@@ -252,16 +252,6 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
     return true;
 }
 
-/* errors that mean something screwy was going on at the networking layer. */
-static inline bool s_is_transient_error(int error_code) {
-    return error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED || error_code == AWS_ERROR_HTTP_SERVER_CLOSED ||
-           error_code == AWS_IO_SOCKET_CLOSED || error_code == AWS_IO_SOCKET_CONNECT_ABORTED ||
-           error_code == AWS_IO_SOCKET_CONNECTION_REFUSED || error_code == AWS_IO_SOCKET_NETWORK_DOWN ||
-           error_code == AWS_IO_DNS_QUERY_FAILED || error_code == AWS_IO_DNS_NO_ADDRESS_FOR_HOST ||
-           error_code == AWS_IO_SOCKET_TIMEOUT || error_code == AWS_IO_TLS_NEGOTIATION_TIMEOUT ||
-           error_code == AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT;
-}
-
 static void s_start_make_request(
     struct aws_credentials_provider *provider,
     struct sts_creds_provider_user_data *provider_user_data);
@@ -311,19 +301,8 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         /* prevent connection reuse. */
         provider_impl->function_table->aws_http_connection_close(provider_user_data->connection);
 
-        enum aws_retry_error_type error_type = http_response_code >= 400 && http_response_code < 500
-                                                   ? AWS_RETRY_ERROR_TYPE_CLIENT_ERROR
-                                                   : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
-
-        if (s_is_transient_error(error_code)) {
-            error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
-        }
-
-        /* server throttling us is retryable */
-        if (http_response_code == AWS_HTTP_STATUS_CODE_429_TOO_MANY_REQUESTS) {
-            /* force a new connection on this. */
-            error_type = AWS_RETRY_ERROR_TYPE_THROTTLING;
-        }
+        enum aws_retry_error_type error_type =
+            aws_credentials_provider_compute_retry_error_type(http_response_code, error_code);
 
         s_reset_request_specific_data(provider_user_data);
 

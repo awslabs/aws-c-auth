@@ -161,7 +161,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "accessKeyId",
-        .secrete_access_key_name = "secretAccessKey",
+        .secret_access_key_name = "secretAccessKey",
         .token_name = "sessionToken",
         .expiration_name = "expiration",
         .token_required = true,

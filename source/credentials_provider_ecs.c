@@ -137,7 +137,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
     struct aws_credentials *credentials = NULL;
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "AccessKeyId",
-        .secrete_access_key_name = "SecretAccessKey",
+        .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
         .expiration_name = "Expiration",
         .token_required = true,

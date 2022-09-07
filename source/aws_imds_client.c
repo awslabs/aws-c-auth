@@ -1025,7 +1025,7 @@ static void s_process_credentials_resource(const struct aws_byte_buf *resource, 
 
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "AccessKeyId",
-        .secrete_access_key_name = "SecretAccessKey",
+        .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
         .expiration_name = "Expiration",
         .token_required = true,

@@ -9,6 +9,7 @@
 #include <aws/auth/auth.h>
 #include <aws/auth/credentials.h>
 #include <aws/http/connection_manager.h>
+#include <aws/io/retry_strategy.h>
 
 struct aws_http_connection;
 struct aws_http_connection_manager;
@@ -100,7 +101,7 @@ void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_pr
 
 struct aws_parse_credentials_from_json_doc_options {
     const char *access_key_id_name;
-    const char *secrete_access_key_name;
+    const char *secret_access_key_name;
     const char *token_name;
     const char *expiration_name;
     bool token_required;
@@ -149,6 +150,9 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     struct aws_allocator *allocator,
     const char *json_document,
     const struct aws_parse_credentials_from_json_doc_options *options);
+
+AWS_AUTH_API
+enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
 AWS_EXTERN_C_END
 

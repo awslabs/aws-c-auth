@@ -11,6 +11,7 @@
 #include <aws/common/uuid.h>
 #include <aws/http/connection.h>
 #include <aws/http/request_response.h>
+#include <aws/http/status_code.h>
 
 static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
@@ -75,7 +76,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     AWS_FATAL_ASSERT(document_root);
     AWS_FATAL_ASSERT(options);
     AWS_FATAL_ASSERT(options->access_key_id_name);
-    AWS_FATAL_ASSERT(options->secrete_access_key_name);
+    AWS_FATAL_ASSERT(options->secret_access_key_name);
 
     if (options->token_required) {
         AWS_FATAL_ASSERT(options->token_name);
@@ -107,7 +108,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
     struct aws_byte_cursor secrete_access_key_cursor;
     secrete_access_key = aws_json_value_get_from_object(
-        document_root, aws_byte_cursor_from_c_str((char *)options->secrete_access_key_name));
+        document_root, aws_byte_cursor_from_c_str((char *)options->secret_access_key_name));
     if (!aws_json_value_is_string(secrete_access_key) ||
         aws_json_value_get_string(secrete_access_key, &secrete_access_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
@@ -225,4 +226,32 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
     struct aws_credentials *credentials = aws_parse_credentials_from_aws_json_object(allocator, document_root, options);
     aws_json_value_destroy(document_root);
     return credentials;
+}
+
+static bool s_is_transient_network_error(int error_code) {
+    return error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED || error_code == AWS_ERROR_HTTP_SERVER_CLOSED ||
+           error_code == AWS_IO_SOCKET_CLOSED || error_code == AWS_IO_SOCKET_CONNECT_ABORTED ||
+           error_code == AWS_IO_SOCKET_CONNECTION_REFUSED || error_code == AWS_IO_SOCKET_NETWORK_DOWN ||
+           error_code == AWS_IO_DNS_QUERY_FAILED || error_code == AWS_IO_DNS_NO_ADDRESS_FOR_HOST ||
+           error_code == AWS_IO_SOCKET_TIMEOUT || error_code == AWS_IO_TLS_NEGOTIATION_TIMEOUT ||
+           error_code == AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT;
+}
+
+enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code) {
+
+    enum aws_retry_error_type error_type = response_code >= 400 && response_code < 500
+                                               ? AWS_RETRY_ERROR_TYPE_CLIENT_ERROR
+                                               : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
+
+    if (s_is_transient_network_error(error_code)) {
+        error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
+    }
+
+    /* server throttling us is retryable */
+    if (response_code == AWS_HTTP_STATUS_CODE_429_TOO_MANY_REQUESTS) {
+        /* force a new connection on this. */
+        error_type = AWS_RETRY_ERROR_TYPE_THROTTLING;
+    }
+
+    return error_type;
 }
