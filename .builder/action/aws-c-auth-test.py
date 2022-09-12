@@ -1,8 +1,9 @@
 import Builder
-import sys
+import json
 import os
 import re
 import subprocess
+import sys
 
 
 class AWSCAuthTest(Builder.Action):
