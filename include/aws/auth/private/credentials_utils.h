@@ -70,6 +70,18 @@ struct aws_auth_http_system_vtable {
     aws_http_connection_close_fn *aws_http_connection_close;
 };
 
+enum aws_parse_credentials_expiration_format { AWS_PCEF_STRING_ISO_8601_DATE, AWS_PCEF_NUMBER_UNIX_EPOCH };
+
+struct aws_parse_credentials_from_json_doc_options {
+    const char *access_key_id_name;
+    const char *secret_access_key_name;
+    const char *token_name;
+    const char *expiration_name;
+    enum aws_parse_credentials_expiration_format expiration_format;
+    bool token_required;
+    bool expiration_required;
+};
+
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -98,15 +110,6 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
 
 AWS_AUTH_API
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
-
-struct aws_parse_credentials_from_json_doc_options {
-    const char *access_key_id_name;
-    const char *secret_access_key_name;
-    const char *token_name;
-    const char *expiration_name;
-    bool token_required;
-    bool expiration_required;
-};
 
 /**
  * This API is used internally to parse credentials from json document.

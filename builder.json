@@ -14,6 +14,6 @@
     "downstream": [
     ],
     "test_steps": [
-        "test"
+        "aws-c-auth-test"
     ]
 }

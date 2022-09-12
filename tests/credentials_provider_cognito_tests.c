@@ -9,6 +9,7 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/date_time.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
 #include <aws/io/channel_bootstrap.h>
@@ -421,7 +422,7 @@ AWS_TEST_CASE(
 AWS_STATIC_STRING_FROM_LITERAL(
     s_good_document_response,
     "{\"Credentials\":{\"AccessKeyId\":\"SomeAccessKeyIdValue\",\"SecretKey\":\"SomeSecretKeyValue\",\"SessionToken\":"
-    "\"SomeSessionTokenValue\",\"Expiration\":\"2022-09-07T18:42:48Z\"}}");
+    "\"SomeSessionTokenValue\",\"Expiration\":1663003154}}");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_expected_access_key_id, "SomeAccessKeyIdValue");
 AWS_STATIC_STRING_FROM_LITERAL(s_expected_secret_access_key, "SomeSecretKeyValue");
@@ -527,3 +528,46 @@ static int s_credentials_provider_cognito_success_after_retry_fn(struct aws_allo
 }
 
 AWS_TEST_CASE(credentials_provider_cognito_success_after_retry, s_credentials_provider_cognito_success_after_retry_fn);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_cognito_identity_environment_variable, "AWS_TESTING_COGNITO_IDENTITY");
+
+static int s_credentials_provider_cognito_success_unauthenticated_fn(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_cognito_tester_init(allocator);
+
+    struct aws_string *identity = NULL;
+    ASSERT_SUCCESS(aws_get_environment_value(allocator, s_cognito_identity_environment_variable, &identity));
+    ASSERT_NOT_NULL(identity);
+
+    struct aws_credentials_provider_cognito_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .endpoint = aws_byte_cursor_from_c_str("cognito-identity.us-east-1.amazonaws.com"),
+        .identity = aws_byte_cursor_from_string(identity),
+        .tls_ctx = s_tester.ctx,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+
+    ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.error_code == AWS_ERROR_SUCCESS);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_cognito_tester_cleanup();
+
+    aws_string_destroy(identity);
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_cognito_success_unauthenticated,
+    s_credentials_provider_cognito_success_unauthenticated_fn);

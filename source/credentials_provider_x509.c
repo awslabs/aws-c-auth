@@ -164,6 +164,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
         .secret_access_key_name = "secretAccessKey",
         .token_name = "sessionToken",
         .expiration_name = "expiration",
+        .expiration_format = AWS_PCEF_STRING_ISO_8601_DATE,
         .token_required = true,
         .expiration_required = false,
     };

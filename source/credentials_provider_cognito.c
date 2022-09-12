@@ -211,6 +211,7 @@ static int s_parse_credentials_from_response(struct cognito_user_data *user_data
         .secret_access_key_name = aws_string_c_str(s_secret_access_key_name),
         .token_name = aws_string_c_str(s_session_token_name),
         .expiration_name = aws_string_c_str(s_expiration_name),
+        .expiration_format = AWS_PCEF_NUMBER_UNIX_EPOCH,
         .token_required = true,
         .expiration_required = true,
     };
@@ -416,6 +417,13 @@ static struct aws_http_header s_content_type_header = {
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-amz-json-1.1"),
 };
 
+AWS_STATIC_STRING_FROM_LITERAL(s_get_credentials_for_identity_path, "/");
+
+static struct aws_http_header s_x_amz_target_header = {
+    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("X-Amz-Target"),
+    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AWSCognitoIdentityService.GetCredentialsForIdentity"),
+};
+
 static int s_create_get_credentials_for_identity_request(struct cognito_user_data *provider_user_data) {
     struct aws_credentials_provider_cognito_impl *impl = provider_user_data->provider->impl;
 
@@ -432,6 +440,10 @@ static int s_create_get_credentials_for_identity_request(struct cognito_user_dat
         goto on_error;
     }
 
+    if (aws_http_message_set_request_path(request, aws_byte_cursor_from_string(s_get_credentials_for_identity_path))) {
+        goto on_error;
+    }
+
     struct aws_http_header host_header = {
         .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
         .value = aws_byte_cursor_from_string(impl->endpoint),
@@ -442,6 +454,10 @@ static int s_create_get_credentials_for_identity_request(struct cognito_user_dat
     }
 
     if (aws_http_message_add_header(request, s_content_type_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_add_header(request, s_x_amz_target_header)) {
         goto on_error;
     }
 

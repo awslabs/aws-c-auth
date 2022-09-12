@@ -67,6 +67,80 @@ void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_pr
     }
 }
 
+static bool s_parse_expiration_value_from_json_object(
+    struct aws_json_value *value,
+    const struct aws_parse_credentials_from_json_doc_options *options,
+    uint64_t *expiration_timepoint_in_seconds) {
+
+    if (value == NULL) {
+        AWS_LOGF_INFO(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "No credentials Expiration field in Json document.");
+        return false;
+    }
+
+    struct aws_byte_cursor expiration_cursor = {
+        .ptr = NULL,
+        .len = 0,
+    };
+
+    switch (options->expiration_format) {
+        case AWS_PCEF_STRING_ISO_8601_DATE: {
+
+            if (!aws_json_value_is_string(value)) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "Expected string for type of credentials Expiration field in Json document.");
+                return false;
+            }
+
+            if (aws_json_value_get_string(value, &expiration_cursor)) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "Unabled to extract credentials Expiration field from Json document.");
+                return false;
+            }
+
+            if (expiration_cursor.len == 0) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed a credentials json document with empty expiration.")
+                return false;
+            }
+
+            struct aws_date_time expiration;
+            if (aws_date_time_init_from_str_cursor(&expiration, &expiration_cursor, AWS_DATE_FORMAT_ISO_8601)) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "credentials Expiration in Json document is not a valid ISO_8601 date string.");
+                return false;
+            }
+
+            *expiration_timepoint_in_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
+            return true;
+        }
+
+        case AWS_PCEF_NUMBER_UNIX_EPOCH:
+            if (!aws_json_value_is_number(value)) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "Expected number for type of credentials Expiration field in Json document.");
+                return false;
+            }
+
+            double expiration_value = 0;
+            if (aws_json_value_get_number(value, &expiration_value)) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "Unabled to extract credentials Expiration field from Json document.");
+                return false;
+            }
+
+            *expiration_timepoint_in_seconds = (uint64_t)expiration_value;
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     struct aws_allocator *allocator,
     struct aws_json_value *document_root,
@@ -127,43 +201,15 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     }
 
     // needed to avoid uninitialized local variable error
-    struct aws_byte_cursor creds_expiration_cursor = aws_byte_cursor_from_c_str("");
+    uint64_t expiration_timepoint_in_seconds = UINT64_MAX;
     if (options->expiration_name) {
         creds_expiration =
             aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->expiration_name));
-        if (!aws_json_value_is_string(creds_expiration) ||
-            aws_json_value_get_string(creds_expiration, &creds_expiration_cursor) == AWS_OP_ERR) {
+
+        if (!s_parse_expiration_value_from_json_object(creds_expiration, options, &expiration_timepoint_in_seconds)) {
             if (options->expiration_required) {
                 AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Expiration from Json document.");
                 goto done;
-            }
-        }
-    }
-
-    uint64_t expiration_timepoint_in_seconds = UINT64_MAX;
-    if (creds_expiration) {
-        if (options->expiration_required && creds_expiration_cursor.len == 0) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Parsed an unexpected credentials json document with empty expiration.")
-            goto done;
-        }
-        if (creds_expiration_cursor.len != 0) {
-            struct aws_date_time expiration;
-            if (aws_date_time_init_from_str_cursor(&expiration, &creds_expiration_cursor, AWS_DATE_FORMAT_ISO_8601) ==
-                AWS_OP_ERR) {
-                if (options->expiration_required) {
-                    AWS_LOGF_ERROR(
-                        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                        "Expiration in Json document is not a valid ISO_8601 date string.");
-                    goto done;
-                } else {
-                    AWS_LOGF_INFO(
-                        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                        "Expiration in Json document is not a valid ISO_8601 date string.");
-                }
-            } else {
-                expiration_timepoint_in_seconds = (uint64_t)aws_date_time_as_epoch_secs(&expiration);
             }
         }
     }
