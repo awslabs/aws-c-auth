@@ -25,7 +25,7 @@ class AWSCAuthTest(Builder.Action):
         return secret_value['SecretString']
 
     def run(self, env):
-        env.shell.setenv("AWS_TESTING_COGNITO_IDENTITY", _get_secret(env, "aws-c-auth-testing/cognito-identity"))
+        env.shell.setenv("AWS_TESTING_COGNITO_IDENTITY", self._get_secret(env, "aws-c-auth-testing/cognito-identity"))
 
         actions = []
 
