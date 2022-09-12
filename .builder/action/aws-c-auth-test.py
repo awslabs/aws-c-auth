@@ -7,7 +7,7 @@ import subprocess
 
 class AWSCAuthTest(Builder.Action):
 
-    def _get_secret(self, secret_id):
+    def _get_secret(self, env, secret_id):
         """get string from secretsmanager"""
 
         # NOTE: using AWS CLI instead of boto3 because we know CLI is already
@@ -20,12 +20,12 @@ class AWSCAuthTest(Builder.Action):
         # NOTE: print command args, but use "quiet" mode so that output isn't printed.
         # we don't want secrets leaked to the build log
         print('>', subprocess.list2cmdline(cmd))
-        result = self.env.shell.exec(*cmd, check=True, quiet=True)
+        result = env.shell.exec(*cmd, check=True, quiet=True)
         secret_value = json.loads(result.output)
         return secret_value['SecretString']
 
     def run(self, env):
-        self.env.shell.setenv("AWS_TESTING_COGNITO_IDENTITY", _get_secret("aws-c-auth-testing/cognito-identity"))
+        env.shell.setenv("AWS_TESTING_COGNITO_IDENTITY", _get_secret(env, "aws-c-auth-testing/cognito-identity"))
 
         actions = []
 
