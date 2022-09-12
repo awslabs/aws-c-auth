@@ -13,6 +13,10 @@
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
 
+#if defined(_MSC_VER)
+#    pragma warning(disable : 4232)
+#endif /* _MSC_VER */
+
 static struct aws_auth_http_system_vtable s_default_function_table = {
     .aws_http_connection_manager_new = aws_http_connection_manager_new,
     .aws_http_connection_manager_release = aws_http_connection_manager_release,
