@@ -70,7 +70,10 @@ struct aws_auth_http_system_vtable {
     aws_http_connection_close_fn *aws_http_connection_close;
 };
 
-enum aws_parse_credentials_expiration_format { AWS_PCEF_STRING_ISO_8601_DATE, AWS_PCEF_NUMBER_UNIX_EPOCH };
+enum aws_parse_credentials_expiration_format {
+    AWS_PCEF_STRING_ISO_8601_DATE,
+    AWS_PCEF_NUMBER_UNIX_EPOCH,
+};
 
 struct aws_parse_credentials_from_json_doc_options {
     const char *access_key_id_name;
