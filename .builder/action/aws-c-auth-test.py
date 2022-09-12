@@ -15,7 +15,7 @@ class AWSCAuthTest(Builder.Action):
         # boto3 by installing it while the builder was running but this didn't
         # work in some rare scenarios.
 
-        cmd = ['aws', 'secretsmanager', 'get-secret-value',
+        cmd = ['aws', '--region', 'us-east-1', 'secretsmanager', 'get-secret-value',
                '--secret-id', secret_id]
         # NOTE: print command args, but use "quiet" mode so that output isn't printed.
         # we don't want secrets leaked to the build log
