@@ -483,7 +483,7 @@ struct aws_credentials_provider_cognito_options {
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Client TLS context to use when querying STS web identity provider.
+     * Client TLS context to use when querying cognito credentials.
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
