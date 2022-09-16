@@ -127,21 +127,13 @@ static struct cognito_user_data *s_user_data_new(
     struct cognito_user_data *cognito_user_data = aws_mem_calloc(allocator, 1, sizeof(struct cognito_user_data));
     cognito_user_data->allocator = allocator;
 
-    if (aws_byte_buf_init(
-            &cognito_user_data->response_body, cognito_user_data->allocator, HTTP_RESPONSE_BODY_INITIAL_SIZE)) {
-        goto on_error;
-    }
+    aws_byte_buf_init(&cognito_user_data->response_body, cognito_user_data->allocator, HTTP_RESPONSE_BODY_INITIAL_SIZE);
 
     cognito_user_data->provider = aws_credentials_provider_acquire(provider);
     cognito_user_data->original_callback = callback;
     cognito_user_data->original_user_data = user_data;
 
     return cognito_user_data;
-
-on_error:
-
-    s_user_data_destroy(cognito_user_data);
-    return NULL;
 }
 
 static void s_finalize_credentials_query(struct cognito_user_data *user_data, int error_code) {
@@ -765,45 +757,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito(
     }
 
     impl->endpoint = aws_string_new_from_cursor(allocator, &options->endpoint);
-    if (impl->endpoint == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Cognito credentials provider failed to copy endpoint with error %s",
-            (void *)provider,
-            aws_error_debug_str(aws_last_error()));
-        goto on_error;
-    }
-
     impl->identity = aws_string_new_from_cursor(allocator, &options->identity);
-    if (impl->identity == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Cognito credentials provider failed to copy identity with error %s",
-            (void *)provider,
-            aws_error_debug_str(aws_last_error()));
-        goto on_error;
-    }
 
     if (options->custom_role_arn != NULL) {
         impl->custom_role_arn = aws_string_new_from_cursor(allocator, options->custom_role_arn);
-        if (impl->custom_role_arn == NULL) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p): Cognito credentials provider failed to copy custom_role_arn with error %s",
-                (void *)provider,
-                aws_error_debug_str(aws_last_error()));
-            goto on_error;
-        }
     }
 
-    if (aws_array_list_init_dynamic(&impl->logins, allocator, options->login_count, sizeof(struct aws_cognito_login))) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Cognito credentials provider failed to initialize login list with error %s",
-            (void *)provider,
-            aws_error_debug_str(aws_last_error()));
-        goto on_error;
-    }
+    aws_array_list_init_dynamic(&impl->logins, allocator, options->login_count, sizeof(struct aws_cognito_login));
 
     for (size_t i = 0; i < options->login_count; ++i) {
         struct aws_cognito_identity_provider_token_pair *login_token_pair = &options->logins[i];
