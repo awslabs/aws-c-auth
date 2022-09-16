@@ -375,6 +375,11 @@ struct aws_credentials_provider_sts_options {
      */
     uint16_t duration_seconds;
 
+    /**
+     * (Optional) Http proxy configuration for the AssumeRole http request that fetches credentials
+     */
+    const struct aws_http_proxy_options *http_proxy_options;
+
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /* For mocking, leave NULL otherwise */
