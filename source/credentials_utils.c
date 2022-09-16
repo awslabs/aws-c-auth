@@ -89,13 +89,6 @@ static bool s_parse_expiration_value_from_json_object(
     switch (options->expiration_format) {
         case AWS_PCEF_STRING_ISO_8601_DATE: {
 
-            if (!aws_json_value_is_string(value)) {
-                AWS_LOGF_INFO(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Expected string for type of credentials Expiration field in Json document.");
-                return false;
-            }
-
             if (aws_json_value_get_string(value, &expiration_cursor)) {
                 AWS_LOGF_INFO(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -121,14 +114,7 @@ static bool s_parse_expiration_value_from_json_object(
             return true;
         }
 
-        case AWS_PCEF_NUMBER_UNIX_EPOCH:
-            if (!aws_json_value_is_number(value)) {
-                AWS_LOGF_INFO(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Expected number for type of credentials Expiration field in Json document.");
-                return false;
-            }
-
+        case AWS_PCEF_NUMBER_UNIX_EPOCH: {
             double expiration_value = 0;
             if (aws_json_value_get_number(value, &expiration_value)) {
                 AWS_LOGF_INFO(
@@ -139,6 +125,7 @@ static bool s_parse_expiration_value_from_json_object(
 
             *expiration_timepoint_in_seconds = (uint64_t)expiration_value;
             return true;
+        }
 
         default:
             return false;
