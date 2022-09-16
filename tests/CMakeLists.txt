@@ -98,7 +98,7 @@ add_test_case(credentials_provider_cognito_failure_request)
 add_test_case(credentials_provider_cognito_failure_bad_document)
 add_test_case(credentials_provider_cognito_success)
 add_test_case(credentials_provider_cognito_success_after_retry)
-if (AWS_HAS_COGNITO_ENVIRONMENT)
+if (AWS_HAS_CI_ENVIRONMENT)
     add_net_test_case(credentials_provider_cognito_success_unauthenticated)
 endif()
 

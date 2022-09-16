@@ -290,10 +290,7 @@ struct aws_credentials_provider_x509_options {
     struct aws_byte_cursor role_alias;
 
     /**
-     * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo
-     * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
-     *
-     * This a different endpoint than the IoT data mqtt broker endpoint.
+     * Per-account X509 credentials sourcing endpoint.
      */
     struct aws_byte_cursor endpoint;
 
@@ -460,21 +457,47 @@ struct aws_credentials_provider_delegate_options {
     void *delegate_user_data;
 };
 
+/**
+ * A (string) pair defining an identity provider and a valid login token sourced from it.
+ */
 struct aws_cognito_identity_provider_token_pair {
+
+    /**
+     * Name of an identity provider
+     */
     struct aws_byte_cursor identity_provider_name;
+
+    /**
+     * Valid login token source from the identity provider
+     */
     struct aws_byte_cursor identity_provider_token;
 };
 
+/**
+ * Configuration options needed to create a Cognito-based Credentials Provider
+ */
 struct aws_credentials_provider_cognito_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
+    /**
+     * Cognito service regional endpoint to source credentials from.
+     */
     struct aws_byte_cursor endpoint;
 
+    /**
+     * Cognito identity to fetch credentials relative to.
+     */
     struct aws_byte_cursor identity;
 
+    /**
+     * Optional set of identity provider token pairs to allow for authenticated identity access.
+     */
     struct aws_cognito_identity_provider_token_pair *logins;
     size_t login_count;
 
+    /**
+     * Optional ARN of the role to be assumed when multiple roles were received in the token from the identity provider.
+     */
     struct aws_byte_cursor *custom_role_arn;
 
     /*
@@ -487,6 +510,11 @@ struct aws_credentials_provider_cognito_options {
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /**
+     * (Optional) Http proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_http_proxy_options *http_proxy_options;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
