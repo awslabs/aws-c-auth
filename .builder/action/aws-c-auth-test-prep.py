@@ -29,5 +29,6 @@ class AWSCAuthTest(Builder.Action):
         env.shell.setenv("AWS_TESTING_COGNITO_IDENTITY", self._get_secret(env, "aws-c-auth-testing/cognito-identity"), quiet=True)
 
         actions = []
+        actions.append(['exit 0'])
 
         return Builder.Script(actions, name='aws-c-auth-test-prep')

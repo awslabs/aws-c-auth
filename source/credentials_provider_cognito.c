@@ -42,39 +42,16 @@ static int s_aws_cognito_login_init(
     struct aws_byte_cursor identity_provider_token) {
     AWS_ZERO_STRUCT(*login);
 
-    size_t combined_len = 0;
-    if (aws_add_size_checked(identity_provider_name.len, identity_provider_token.len, &combined_len)) {
-        return AWS_OP_ERR;
-    }
-
-    if (aws_byte_buf_init(&login->login_buffer, allocator, combined_len)) {
-        return AWS_OP_ERR;
-    }
-
     login->identity_provider_name = identity_provider_name;
     login->identity_provider_token = identity_provider_token;
 
-    if (aws_byte_buf_append_and_update(&login->login_buffer, &login->identity_provider_name)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_and_update(&login->login_buffer, &login->identity_provider_token)) {
-        goto on_error;
-    }
-
-    return AWS_OP_SUCCESS;
-
-on_error:
-
-    /* return to zeroed state */
-    aws_byte_buf_clean_up(&login->login_buffer);
-    AWS_ZERO_STRUCT(*login);
-
-    return AWS_OP_ERR;
+    return aws_byte_buf_init_cache_and_update_cursors(&login->login_buffer, allocator, &login->identity_provider_name, &login->identity_provider_token, NULL);
 }
 
 static void s_aws_cognito_login_clean_up(struct aws_cognito_login *login) {
     aws_byte_buf_clean_up(&login->login_buffer);
+
+    AWS_ZERO_STRUCT(*login);
 }
 
 struct aws_credentials_provider_cognito_impl {
@@ -111,7 +88,6 @@ struct cognito_user_data {
 
 static void s_user_data_reset(struct cognito_user_data *user_data) {
     aws_byte_buf_clean_up(&user_data->request_body_buffer);
-    AWS_ZERO_STRUCT(user_data->request_body_buffer);
 
     user_data->request_body_stream = aws_input_stream_release(user_data->request_body_stream);
     user_data->get_credentials_request = aws_http_message_release(user_data->get_credentials_request);
@@ -148,10 +124,6 @@ static struct cognito_user_data *s_user_data_new(
 
     struct aws_allocator *allocator = provider->allocator;
     struct cognito_user_data *cognito_user_data = aws_mem_calloc(allocator, 1, sizeof(struct cognito_user_data));
-    if (cognito_user_data == NULL) {
-        return NULL;
-    }
-
     cognito_user_data->allocator = allocator;
 
     if (aws_byte_buf_init(
