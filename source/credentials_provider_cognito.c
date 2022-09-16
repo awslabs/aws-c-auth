@@ -45,7 +45,8 @@ static int s_aws_cognito_login_init(
     login->identity_provider_name = identity_provider_name;
     login->identity_provider_token = identity_provider_token;
 
-    return aws_byte_buf_init_cache_and_update_cursors(&login->login_buffer, allocator, &login->identity_provider_name, &login->identity_provider_token, NULL);
+    return aws_byte_buf_init_cache_and_update_cursors(
+        &login->login_buffer, allocator, &login->identity_provider_name, &login->identity_provider_token, NULL);
 }
 
 static void s_aws_cognito_login_clean_up(struct aws_cognito_login *login) {

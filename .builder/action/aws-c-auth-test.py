@@ -29,6 +29,16 @@ class AWSCAuthTest(Builder.Action):
         env.shell.setenv("AWS_TESTING_COGNITO_IDENTITY", self._get_secret(env, "aws-c-auth-testing/cognito-identity"), quiet=True)
 
         actions = []
-        actions.append(['exit 0'])
 
-        return Builder.Script(actions, name='aws-c-auth-test-prep')
+        if os.path.exists('./build/aws-c-auth/'):
+            # This is the directory (relative to repo root) that will contain the build when the repo is built directly by the
+            # builder
+            os.chdir('./build/aws-c-auth/')
+        elif os.path.exists('../../aws-c-auth'):
+            # This is the directory (relative to repo root) that will contain the build when the repo is built as an upstream
+            # consumer
+            os.chdir('../../aws-c-auth')
+
+        actions.append(['ctest', '--output-on-failure'])
+
+        return Builder.Script(actions, name='aws-c-auth-test')

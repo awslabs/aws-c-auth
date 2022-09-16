@@ -17,7 +17,6 @@
         "-DAWS_HAS_CI_ENVIRONMENT=ON"
     ],
     "test_steps": [
-        "aws-c-auth-test-prep",
-        "test"
+        "aws-c-auth-test"
     ]
 }
