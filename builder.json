@@ -14,7 +14,7 @@
     "downstream": [
     ],
     "+cmake_args": [
-        "-DAWS_HAS_COGNITO_ENVIRONMENT=ON"
+        "-DAWS_HAS_CI_ENVIRONMENT=ON"
     ],
     "test_steps": [
         "aws-c-auth-test"
