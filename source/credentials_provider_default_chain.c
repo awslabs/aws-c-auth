@@ -352,7 +352,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sso_provider = aws_credentials_provider_new_sso(allocator, &sso_options);
     if (sso_provider != NULL) {
         providers[index++] = sso_provider;
-        /* 1 shutdown call from the profile provider's shutdown */
+        /* 1 shutdown call from the sso provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
