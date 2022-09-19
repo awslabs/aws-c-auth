@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 
-class AWSCAuthTest(Builder.Action):
+class AuthCiPrep(Builder.Action):
 
     def _get_secret(self, env, secret_id):
         """get string from secretsmanager"""
@@ -30,15 +30,4 @@ class AWSCAuthTest(Builder.Action):
 
         actions = []
 
-        if os.path.exists('./build/aws-c-auth/'):
-            # This is the directory (relative to repo root) that will contain the build when the repo is built directly by the
-            # builder
-            os.chdir('./build/aws-c-auth/')
-        elif os.path.exists('../../aws-c-auth'):
-            # This is the directory (relative to repo root) that will contain the build when the repo is built as an upstream
-            # consumer
-            os.chdir('../../aws-c-auth')
-
-        actions.append(['ctest', '--output-on-failure'])
-
-        return Builder.Script(actions, name='aws-c-auth-test')
+        return Builder.Script(actions, name='auth-ci-prep')
