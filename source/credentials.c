@@ -305,19 +305,27 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
     }
 }
 
-void aws_credentials_provider_release(struct aws_credentials_provider *provider) {
+struct aws_credentials_provider *aws_credentials_provider_release(struct aws_credentials_provider *provider) {
     if (provider == NULL) {
-        return;
+        return NULL;
     }
 
     size_t old_value = aws_atomic_fetch_sub(&provider->ref_count, 1);
     if (old_value == 1) {
         aws_credentials_provider_destroy(provider);
     }
+
+    return NULL;
 }
 
-void aws_credentials_provider_acquire(struct aws_credentials_provider *provider) {
+struct aws_credentials_provider *aws_credentials_provider_acquire(struct aws_credentials_provider *provider) {
+    if (provider == NULL) {
+        return NULL;
+    }
+
     aws_atomic_fetch_add(&provider->ref_count, 1);
+
+    return provider;
 }
 
 int aws_credentials_provider_get_credentials(

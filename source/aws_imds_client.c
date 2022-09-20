@@ -54,7 +54,7 @@ struct aws_imds_client {
     struct aws_allocator *allocator;
     struct aws_http_connection_manager *connection_manager;
     struct aws_retry_strategy *retry_strategy;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_imds_client_shutdown_options shutdown_options;
     /* will be set to true by default, means using IMDS V2 */
     bool token_required;
@@ -65,19 +65,6 @@ struct aws_imds_client {
     struct aws_condition_variable token_signal;
 
     struct aws_atomic_var ref_count;
-};
-
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_connection = aws_http_stream_get_connection,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close,
 };
 
 static void s_aws_imds_client_destroy(struct aws_imds_client *client) {
@@ -152,7 +139,8 @@ struct aws_imds_client *aws_imds_client_new(
 
     aws_atomic_store_int(&client->ref_count, 1);
     client->allocator = allocator;
-    client->function_table = options->function_table ? options->function_table : &s_default_function_table;
+    client->function_table =
+        options->function_table ? options->function_table : g_aws_credentials_provider_http_function_table;
     client->token_required = options->imds_version == IMDS_PROTOCOL_V1 ? false : true;
     client->shutdown_options = options->shutdown_options;
 
@@ -1037,7 +1025,7 @@ static void s_process_credentials_resource(const struct aws_byte_buf *resource, 
 
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "AccessKeyId",
-        .secrete_access_key_name = "SecretAccessKey",
+        .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
         .expiration_name = "Expiration",
         .token_required = true,

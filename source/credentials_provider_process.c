@@ -49,7 +49,7 @@ static int s_get_credentials_from_process(
 
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "AccessKeyId",
-        .secrete_access_key_name = "SecretAccessKey",
+        .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
         .expiration_name = "Expiration",
         .token_required = false,
