@@ -227,6 +227,7 @@ static int s_aws_cognito_tester_init(struct aws_allocator *allocator) {
     struct aws_tls_ctx_options tls_options;
     aws_tls_ctx_options_init_default_client(&tls_options, allocator);
     s_tester.ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    ASSERT_NOT_NULL(s_tester.ctx);
     aws_tls_ctx_options_clean_up(&tls_options);
     aws_tls_connection_options_init_from_ctx(&s_tester.tls_connection_options, s_tester.ctx);
 
@@ -299,6 +300,7 @@ static int s_credentials_provider_cognito_new_destroy(struct aws_allocator *allo
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
     aws_credentials_provider_release(provider);
 
     s_aws_cognito_tester_cleanup();
@@ -323,6 +325,7 @@ static int s_credentials_provider_cognito_failure_connect_fn(struct aws_allocato
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
 
     ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
 
@@ -358,6 +361,7 @@ static int s_credentials_provider_cognito_failure_request_fn(struct aws_allocato
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
 
     ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
 
@@ -397,6 +401,7 @@ static int s_credentials_provider_cognito_failure_bad_document_fn(struct aws_all
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
 
     ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
 
@@ -467,6 +472,7 @@ static int s_credentials_provider_cognito_success_fn(struct aws_allocator *alloc
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
 
     ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
 
@@ -508,6 +514,7 @@ static int s_credentials_provider_cognito_success_after_retry_fn(struct aws_allo
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
 
     ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
 
@@ -548,6 +555,7 @@ static int s_credentials_provider_cognito_success_unauthenticated_fn(struct aws_
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
 
     ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
 
