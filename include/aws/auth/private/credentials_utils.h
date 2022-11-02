@@ -31,7 +31,7 @@ struct aws_credentials_query {
 
 typedef struct aws_http_connection_manager *(aws_http_connection_manager_new_fn)(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options);
+    const struct aws_http_connection_manager_options *options);
 typedef void(aws_http_connection_manager_release_fn)(struct aws_http_connection_manager *manager);
 typedef void(aws_http_connection_manager_acquire_connection_fn)(
     struct aws_http_connection_manager *manager,
