@@ -107,7 +107,7 @@ on_error:
 /*
  * Tracking structure for each outstanding async query to an imds provider
  */
-struct imds_user_data {
+struct imds_provider_user_data {
     /* immutable post-creation */
     struct aws_allocator *allocator;
     struct aws_credentials_provider *imds_provider;
@@ -116,7 +116,7 @@ struct imds_user_data {
     void *original_user_data;
 };
 
-static void s_imds_user_data_destroy(struct imds_user_data *user_data) {
+static void s_imds_provider_user_data_destroy(struct imds_provider_user_data *user_data) {
     if (user_data == NULL) {
         return;
     }
@@ -125,13 +125,13 @@ static void s_imds_user_data_destroy(struct imds_user_data *user_data) {
     aws_mem_release(user_data->allocator, user_data);
 }
 
-static struct imds_user_data *s_imds_user_data_new(
+static struct imds_provider_user_data *s_imds_provider_user_data_new(
     struct aws_credentials_provider *imds_provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
-    struct imds_user_data *wrapped_user_data =
-        aws_mem_calloc(imds_provider->allocator, 1, sizeof(struct imds_user_data));
+    struct imds_provider_user_data *wrapped_user_data =
+        aws_mem_calloc(imds_provider->allocator, 1, sizeof(struct imds_provider_user_data));
     if (wrapped_user_data == NULL) {
         goto on_error;
     }
@@ -147,20 +147,20 @@ static struct imds_user_data *s_imds_user_data_new(
     return wrapped_user_data;
 
 on_error:
-    s_imds_user_data_destroy(wrapped_user_data);
+    s_imds_provider_user_data_destroy(wrapped_user_data);
     return NULL;
 }
 
 static void s_on_get_credentials(const struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)error_code;
-    struct imds_user_data *wrapped_user_data = user_data;
+    struct imds_provider_user_data *wrapped_user_data = user_data;
     wrapped_user_data->original_callback(
         (struct aws_credentials *)credentials, error_code, wrapped_user_data->original_user_data);
-    s_imds_user_data_destroy(wrapped_user_data);
+    s_imds_provider_user_data_destroy(wrapped_user_data);
 }
 
 static void s_on_get_role(const struct aws_byte_buf *role, int error_code, void *user_data) {
-    struct imds_user_data *wrapped_user_data = user_data;
+    struct imds_provider_user_data *wrapped_user_data = user_data;
     if (!role || error_code || role->len == 0) {
         goto on_error;
     }
@@ -181,7 +181,7 @@ static void s_on_get_role(const struct aws_byte_buf *role, int error_code, void 
 on_error:
     wrapped_user_data->original_callback(
         NULL, AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, wrapped_user_data->original_user_data);
-    s_imds_user_data_destroy(wrapped_user_data);
+    s_imds_provider_user_data_destroy(wrapped_user_data);
 }
 
 static int s_credentials_provider_imds_get_credentials_async(
@@ -191,7 +191,7 @@ static int s_credentials_provider_imds_get_credentials_async(
 
     struct aws_credentials_provider_imds_impl *impl = provider->impl;
 
-    struct imds_user_data *wrapped_user_data = s_imds_user_data_new(provider, callback, user_data);
+    struct imds_provider_user_data *wrapped_user_data = s_imds_provider_user_data_new(provider, callback, user_data);
     if (wrapped_user_data == NULL) {
         goto error;
     }
@@ -203,6 +203,6 @@ static int s_credentials_provider_imds_get_credentials_async(
     return AWS_OP_SUCCESS;
 
 error:
-    s_imds_user_data_destroy(wrapped_user_data);
+    s_imds_provider_user_data_destroy(wrapped_user_data);
     return AWS_OP_ERR;
 }
