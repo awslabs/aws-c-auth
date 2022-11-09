@@ -7,7 +7,7 @@ on:
       - '!main'
 
 env:
-  BUILDER_VERSION: v0.9.25
+  BUILDER_VERSION: v0.9.26
   BUILDER_HOST: https://d19elf31gohf1l.cloudfront.net
   BUILDER_SOURCE: releases
   PACKAGE_NAME: aws-c-auth
@@ -59,7 +59,7 @@ jobs:
       - name: Build ${{ env.PACKAGE_NAME }}
         run: |
           aws s3 cp s3://aws-crt-test-stuff/ci/${{ env.BUILDER_VERSION }}/linux-container-ci.sh ./linux-container-ci.sh && chmod a+x ./linux-container-ci.sh
-          ./linux-container-ci.sh ${{ env.BUILDER_VERSION }} aws-crt-${{ env.LINUX_BASE_IMAGE }} build -p ${{ env.PACKAGE_NAME }} --compiler=${{ matrix.compiler }} --spec
+          ./linux-container-ci.sh ${{ env.BUILDER_VERSION }} aws-crt-${{ env.LINUX_BASE_IMAGE }} build -p ${{ env.PACKAGE_NAME }} --compiler=${{ matrix.compiler }}
 
   linux-shared-libs:
     runs-on: ubuntu-20.04 # latest
