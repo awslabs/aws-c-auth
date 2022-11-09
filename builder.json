@@ -12,6 +12,7 @@
         { "name": "aws-c-sdkutils" }
     ],
     "downstream": [
+        { "name": "aws-c-s3" }
     ],
     "+cmake_args": [
         "-DAWS_HAS_CI_ENVIRONMENT=ON"
