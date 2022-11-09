@@ -53,7 +53,7 @@ static struct aws_mock_web_credential_provider_tester s_tester;
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
     (void)options;

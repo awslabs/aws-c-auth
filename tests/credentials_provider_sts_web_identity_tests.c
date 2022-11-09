@@ -74,7 +74,7 @@ struct mock_connection_manager {
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     struct mock_connection_manager *mock_manager = aws_mem_calloc(allocator, 1, sizeof(struct mock_connection_manager));
     mock_manager->allocator = allocator;
