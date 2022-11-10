@@ -79,7 +79,7 @@ static void s_aws_wait_for_imds_client_shutdown_callback(void) {
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
     (void)options;
