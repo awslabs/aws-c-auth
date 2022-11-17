@@ -283,7 +283,7 @@ static int s_credentials_provider_ecs_new_destroy(struct aws_allocator *allocato
 
     s_aws_ecs_tester_cleanup();
 
-    return 0;
+    return -1;
 }
 
 AWS_TEST_CASE(credentials_provider_ecs_new_destroy, s_credentials_provider_ecs_new_destroy);
