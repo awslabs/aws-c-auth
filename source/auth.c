@@ -88,6 +88,9 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_COGNITO_SOURCE_FAILURE,
         "Valid credentials could not be sourced by the cognito provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_DELEGATE_FAILURE,
+        "Valid credentials could not be sourced by the delegate provider"),
 
 };
 /* clang-format on */
