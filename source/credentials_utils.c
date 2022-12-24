@@ -98,7 +98,7 @@ static bool s_parse_expiration_value_from_json_object(
 
             if (expiration_cursor.len == 0) {
                 AWS_LOGF_INFO(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed a credentials json document with empty expiration.")
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed a credentials json document with empty expiration.");
                 return false;
             }
 
@@ -211,7 +211,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     if (access_key_id_cursor.len == 0 || secrete_access_key_cursor.len == 0) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Parsed an unexpected credentials json document, either access key, secret key is empty.")
+            "Parsed an unexpected credentials json document, either access key, secret key is empty.");
         goto done;
     }
 
@@ -222,7 +222,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
         aws_json_value_get_string(token, &session_token_cursor);
         if (options->token_required && session_token_cursor.len == 0) {
             AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed an unexpected credentials json document with empty token.")
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed an unexpected credentials json document with empty token.");
             goto done;
         }
     }

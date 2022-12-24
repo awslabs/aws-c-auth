@@ -231,7 +231,7 @@ static bool s_parse_retryable_error_from_response(struct aws_allocator *allocato
     if (xml_parser == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to init xml parser for sts web identity credentials provider to parse error information.")
+            "Failed to init xml parser for sts web identity credentials provider to parse error information.");
         return false;
     }
     bool get_retryable_error = false;
@@ -330,14 +330,14 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (xml_parser == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to init xml parser for sts web identity credentials provider to parse error information.")
+            "Failed to init xml parser for sts web identity credentials provider to parse error information.");
         return NULL;
     }
     uint64_t now = UINT64_MAX;
     if (aws_sys_clock_get_ticks(&now) != AWS_OP_SUCCESS) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to get sys clock for sts web identity credentials provider to parse error information.")
+            "Failed to get sys clock for sts web identity credentials provider to parse error information.");
         goto on_finish;
     }
     uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
@@ -998,7 +998,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "Failed to resolve either region, role arn or token file path during sts web identity provider "
-                "initialization.")
+                "initialization.");
             goto on_finish;
 
         } else {
@@ -1021,7 +1021,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
         aws_byte_buf_init_copy_from_cursor(&parameters->role_arn, allocator, aws_byte_cursor_from_string(role_arn))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve role arn during sts web identity provider initialization.")
+            "Failed to resolve role arn during sts web identity provider initialization.");
         goto on_finish;
     }
 
@@ -1031,7 +1031,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
             &parameters->token_file_path, allocator, aws_byte_cursor_from_string(token_file_path))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve token file path during sts web identity provider initialization.")
+            "Failed to resolve token file path during sts web identity provider initialization.");
         goto on_finish;
     }
 
@@ -1047,7 +1047,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Successfully loaded all required parameters for sts web identity credentials provider.")
+        "Successfully loaded all required parameters for sts web identity credentials provider.");
     success = true;
 
 on_finish:
