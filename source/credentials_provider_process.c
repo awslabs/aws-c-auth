@@ -187,7 +187,7 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
     if (!command_buf.len) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve credentials_process command during process credentials provider initialization.")
+            "Failed to resolve credentials_process command during process credentials provider initialization.");
         goto on_finish;
     }
 
@@ -202,7 +202,7 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Successfully loaded credentials_process command for process credentials provider.")
+        "Successfully loaded credentials_process command for process credentials provider.");
 
 on_finish:
     aws_string_destroy(profile_name);
