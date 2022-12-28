@@ -529,7 +529,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "To create an X.509 creds provider, a tls_connection_options, an IoT thing name and an IAM role alias are "
-            "required.")
+            "required.");
         goto on_error;
     }
 

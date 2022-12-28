@@ -2500,7 +2500,7 @@ int aws_verify_sigv4a_signing(
         aws_credentials_release(signing_state->config.credentials);
         signing_state->config.credentials = ecc_credentials;
         if (signing_state->config.credentials == NULL) {
-            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials")
+            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials");
             goto done;
         }
     }
