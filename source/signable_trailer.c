@@ -106,7 +106,7 @@ struct aws_signable *aws_signable_new_trailing_headers(
     signable->impl = impl;
 
     /*
-     * Convert headers list to aws_signable_property_list_pair arraylist.
+     * Convert headers list to aws_signable_property_list_pair arraylist since they're not different types.
      */
     size_t header_count = aws_http_headers_count(trailing_headers);
     if (aws_array_list_init_dynamic(
