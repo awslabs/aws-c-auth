@@ -99,6 +99,7 @@ struct aws_signable *aws_signable_new_trailing_headers(
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
 
+    /* Keep the headers alive. We're referencing the underlying strings. */
     aws_http_headers_acquire(trailing_headers);
     impl->trailing_headers = trailing_headers;
     signable->allocator = allocator;
