@@ -8,6 +8,7 @@
 #include <aws/http/request_response.h>
 
 struct aws_signable_trailing_headers_impl {
+    struct aws_http_headers *trailing_headers;
     struct aws_array_list headers;
     struct aws_string *previous_signature;
 };
@@ -71,7 +72,7 @@ static void s_aws_signable_trailing_headers_destroy(struct aws_signable *signabl
     if (impl == NULL) {
         return;
     }
-
+    aws_http_headers_release(impl->trailing_headers);
     aws_string_destroy(impl->previous_signature);
     aws_array_list_clean_up(&impl->headers);
     aws_mem_release(signable->allocator, signable);
@@ -96,13 +97,14 @@ struct aws_signable *aws_signable_new_trailing_headers(
 
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
-
+    aws_http_headers_acquire(trailing_headers);
+    impl->trailing_headers = trailing_headers;
     signable->allocator = allocator;
     signable->vtable = &s_signable_trailing_headers_vtable;
     signable->impl = impl;
 
     /*
-     * Copy the headers since they're not different types
+     * Convert headers list to aws_signable_property_list_pair array list.
      */
     size_t header_count = aws_http_headers_count(trailing_headers);
     if (aws_array_list_init_dynamic(
@@ -113,7 +115,6 @@ struct aws_signable *aws_signable_new_trailing_headers(
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_http_header header;
         aws_http_headers_get_index(trailing_headers, i, &header);
-
         struct aws_signable_property_list_pair property = {.name = header.name, .value = header.value};
         aws_array_list_push_back(&impl->headers, &property);
     }
