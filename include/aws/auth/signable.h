@@ -214,7 +214,7 @@ struct aws_signable *aws_signable_new_chunk(
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_trailing_headers(
     struct aws_allocator *allocator,
-    const struct aws_http_headers *trailing_headers,
+    struct aws_http_headers *trailing_headers,
     const struct aws_byte_cursor previous_signature);
 
 /**

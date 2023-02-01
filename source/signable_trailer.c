@@ -88,7 +88,7 @@ static struct aws_signable_vtable s_signable_trailing_headers_vtable = {
 
 struct aws_signable *aws_signable_new_trailing_headers(
     struct aws_allocator *allocator,
-    const struct aws_http_headers *trailing_headers,
+    struct aws_http_headers *trailing_headers,
     const struct aws_byte_cursor previous_signature) {
 
     struct aws_signable *signable = NULL;
