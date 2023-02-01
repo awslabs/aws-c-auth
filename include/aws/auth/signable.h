@@ -214,8 +214,8 @@ struct aws_signable *aws_signable_new_chunk(
 AWS_AUTH_API
 struct aws_signable *aws_signable_new_trailing_headers(
     struct aws_allocator *allocator,
-    struct aws_http_headers *trailing_headers,
-    struct aws_byte_cursor previous_signature);
+    const struct aws_http_headers *trailing_headers,
+    const struct aws_byte_cursor previous_signature);
 
 /**
  * Creates a signable that represents a pre-computed canonical request from an http request
