@@ -163,6 +163,12 @@ struct aws_imds_client *aws_imds_client_new(
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = client;
 
+    struct aws_http_connection_monitoring_options monitor_options;
+    AWS_ZERO_STRUCT(monitor_options);
+    monitor_options.allowable_throughput_failure_interval_seconds = 1;
+    monitor_options.minimum_throughput_bytes_per_second = 1;
+    manager_options.monitoring_options = &monitor_options;
+
     client->connection_manager = client->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (!client->connection_manager) {
         goto on_error;
