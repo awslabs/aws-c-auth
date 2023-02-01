@@ -117,6 +117,7 @@ struct aws_signable *aws_signable_new_trailing_headers(
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_http_header header;
         aws_http_headers_get_index(trailing_headers, i, &header);
+
         struct aws_signable_property_list_pair property = {.name = header.name, .value = header.value};
         aws_array_list_push_back(&impl->headers, &property);
     }
