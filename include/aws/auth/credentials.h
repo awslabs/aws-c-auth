@@ -111,6 +111,12 @@ struct aws_credentials_provider_profile_options {
      */
     struct aws_byte_cursor credentials_file_name_override;
 
+    /**
+     * Use a cached merged profile collection.
+     * If this option is provided, config_file_name_override and credentials_file_name_override will be ignored.
+     */
+    struct aws_profile_collection *profile_collection_cached;
+
     /*
      * Bootstrap to use for any network connections made while sourcing credentials (for example,
      * a profile that uses assume-role will need to hit STS)
