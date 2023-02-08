@@ -336,6 +336,12 @@ struct aws_credentials_provider_sts_web_identity_options {
      */
     struct aws_client_bootstrap *bootstrap;
 
+    /**
+     * Use a cached config profile collection.
+     * If this option is provided, config_file_name_override and credentials_file_name_override will be ignored.
+     */
+    struct aws_profile_collection *config_profile_collection_cached;
+
     /*
      * Client TLS context to use when querying STS web identity provider.
      * Required.
