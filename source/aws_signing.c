@@ -1733,10 +1733,34 @@ static int s_build_canonical_request_event(struct aws_signing_state_aws *state) 
     }
 
     /* Append hex sha encoded date header */
-    struct aws_byte_buf date_buffer = aws_byte_buf_from_c_str("5:date8");
-    struct aws_byte_cursor date = aws_byte_cursor_from_buf(&state->date);
+    struct aws_byte_buf date_buffer;
+    AWS_ZERO_STRUCT(date_buffer);
+    if (aws_byte_buf_init(&date_buffer, state->allocator, 15)) {
+        goto cleanup;
+    }
+    char s[] = "5:date8";
+    s[0] = 5;
+    s[6] = 8;
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_c_str(s);
+    aws_byte_buf_append_dynamic(&date_buffer, &cursor);
 
-    aws_byte_buf_append_dynamic(&date_buffer, &date);
+    const struct aws_signing_config_aws *config = &state->config;
+    uint64_t milliseconds = aws_date_time_as_millis(&config->date);
+    struct aws_byte_buf millibuffer;
+    AWS_ZERO_STRUCT(millibuffer);
+    if (aws_byte_buf_init(&millibuffer, state->allocator, 8)) {
+        goto cleanup;
+    }
+    aws_write_u64((uint64_t)milliseconds, millibuffer.buffer);
+    millibuffer.len+=8;
+    struct aws_byte_cursor millicursor = aws_byte_cursor_from_buf(&millibuffer);
+    aws_byte_buf_append_dynamic(&date_buffer, &millicursor);
+    printf("waahm7 start\n");
+    for(int i=0;i<15;i++){
+        printf("%d:",date_buffer.buffer[i]);
+    }
+    printf("\nwaahm7 end");
+
     struct aws_byte_buf digest_buffer;
     AWS_ZERO_STRUCT(digest_buffer);
     if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
@@ -1767,6 +1791,7 @@ static int s_build_canonical_request_event(struct aws_signing_state_aws *state) 
 
 cleanup:
     aws_byte_buf_clean_up(&date_buffer);
+    aws_byte_buf_clean_up(&millibuffer);
     aws_byte_buf_clean_up(&digest_buffer);
 
     return result;
