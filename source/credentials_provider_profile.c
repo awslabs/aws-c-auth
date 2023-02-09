@@ -367,9 +367,17 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_string *credentials_file_path = NULL;
     struct aws_string *config_file_path = NULL;
     struct aws_string *profile_name = NULL;
+
+    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
+    if (!profile_name) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed to resolve profile name");
+        goto on_finished;
+    }
     if (options->profile_collection_cached) {
         merged_profiles = aws_profile_collection_acquire(options->profile_collection_cached);
     }
+
     if (!merged_profiles) {
         credentials_file_path = aws_get_credentials_file_path(allocator, &options->credentials_file_name_override);
         if (!credentials_file_path) {
@@ -386,12 +394,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             goto on_finished;
         }
 
-        profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
-        if (!profile_name) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed to resolve profile name");
-            goto on_finished;
-        }
         config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
         credentials_profiles =
             aws_profile_collection_new_from_file(allocator, credentials_file_path, AWS_PST_CREDENTIALS);
