@@ -15,7 +15,6 @@
 #include <aws/common/date_time.h>
 #include <aws/common/encoding.h>
 #include <aws/common/string.h>
-#include <aws/event-stream/event_stream.h>
 #include <aws/io/stream.h>
 #include <aws/io/uri.h>
 
@@ -1708,6 +1707,7 @@ cleanup:
     return result;
 }
 
+
 static int s_build_canonical_request_event(struct aws_signing_state_aws *state) {
     int result = AWS_OP_ERR;
 
@@ -1735,43 +1735,27 @@ static int s_build_canonical_request_event(struct aws_signing_state_aws *state) 
 
     /* Append hex sha encoded date header */
     const struct aws_signing_config_aws *config = &state->config;
-    struct aws_array_list headers;
-    AWS_ZERO_STRUCT(headers);
-    if (aws_event_stream_headers_list_init(&headers, state->allocator)) {
-        goto cleanup;
-    }
-    if (aws_event_stream_add_timestamp_header(&headers, ":date", 5, (int64_t)aws_date_time_as_millis(&config->date))) {
-        goto cleanup;
-    }
+
+    /*
+     * Encode the date.
+     * This duplicates event stream timestamp encoding implementation here to avoid a direct dependency.
+     */
     struct aws_byte_buf date_buffer;
     AWS_ZERO_STRUCT(date_buffer);
     if (aws_byte_buf_init(&date_buffer, state->allocator, 15)) {
         goto cleanup;
     }
-    aws_event_stream_write_headers_to_buffer_safe(&headers, &date_buffer);
 
-    // char s[] = "5:date8";
-    // s[0] = 5;
-    // s[6] = 8;
-    // struct aws_byte_cursor cursor = aws_byte_cursor_from_c_str(s);
-    // aws_byte_buf_append_dynamic(&date_buffer, &cursor);
-
-    // uint64_t milliseconds = aws_date_time_as_millis(&config->date);
-    // struct aws_byte_buf millibuffer;
-    // AWS_ZERO_STRUCT(millibuffer);
-    // if (aws_byte_buf_init(&millibuffer, state->allocator, 8)) {
-    //     goto cleanup;
-    // }
-    // aws_write_u64((uint64_t)milliseconds, millibuffer.buffer);
-    // millibuffer.len += 8;
-    // struct aws_byte_cursor millicursor = aws_byte_cursor_from_buf(&millibuffer);
-    // aws_byte_buf_append_dynamic(&date_buffer, &millicursor);
-    printf("waahm7 start\n");
-    for (int i = 0; i < 15; i++) {
-        printf("%d:", date_buffer.buffer[i]);
+    struct aws_byte_cursor header_name = aws_byte_cursor_from_c_str(":date");
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, (uint8_t ) header_name.len));
+    if (aws_byte_buf_append_dynamic(&date_buffer, &header_name)) {
+        goto cleanup;
     }
-    printf("\nwaahm7 end");
+    /* Type of timestamp header */
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, 8));
+    AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&config->date)));
 
+    /* calculate sha 256 of encoded buffer */
     struct aws_byte_buf digest_buffer;
     AWS_ZERO_STRUCT(digest_buffer);
     if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
