@@ -285,7 +285,7 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
                 *cursor = aws_byte_cursor_from_string(g_signature_type_sigv4a_http_request);
             }
             break;
-
+        case AWS_ST_HTTP_REQUEST_EVENT:
         case AWS_ST_HTTP_REQUEST_CHUNK:
             if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
@@ -1707,6 +1707,69 @@ cleanup:
     return result;
 }
 
+static int s_build_canonical_request_event(struct aws_signing_state_aws *state) {
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf *dest = &state->string_to_sign_payload;
+
+    /* previous signature + \n */
+    struct aws_byte_cursor prev_signature_cursor;
+    AWS_ZERO_STRUCT(prev_signature_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING, "(id=%p) Event signable missing previous signature property", (void *)state->signable);
+        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
+    }
+
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
+    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /* Append hex sha encoded date header */
+    struct aws_byte_buf date_buffer = aws_byte_buf_from_c_str("5:date8");
+    aws_byte_buf_append_dynamic(&date_buffer, aws_byte_cursor_from_buf(&state->date));
+    struct aws_byte_buf digest_buffer;
+    AWS_ZERO_STRUCT(digest_buffer);
+    if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_buf(&date_buffer);
+    if (aws_sha256_compute(state->allocator, &date_cursor, &digest_buffer, 0)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
+    if (aws_hex_encode_append_dynamic(&digest_cursor, dest)) {
+        goto cleanup;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        goto cleanup;
+    }
+
+    /* current hash */
+    struct aws_byte_cursor current_chunk_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
+    if (aws_byte_buf_append_dynamic(dest, &current_chunk_hash_cursor)) {
+        goto cleanup;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+    aws_byte_buf_clean_up(&date_buffer);
+    aws_byte_buf_clean_up(&digest_buffer);
+
+    return result;
+}
+
 static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
@@ -1946,6 +2009,8 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
             return s_apply_existing_canonical_request(state);
+        case AWS_ST_HTTP_REQUEST_EVENT:
+            return s_build_canonical_request_event(state);
 
         default:
             return AWS_OP_ERR;
