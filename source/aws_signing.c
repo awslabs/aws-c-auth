@@ -1734,7 +1734,9 @@ static int s_build_canonical_request_event(struct aws_signing_state_aws *state) 
 
     /* Append hex sha encoded date header */
     struct aws_byte_buf date_buffer = aws_byte_buf_from_c_str("5:date8");
-    aws_byte_buf_append_dynamic(&date_buffer, aws_byte_cursor_from_buf(&state->date));
+    struct aws_byte_cursor date = aws_byte_cursor_from_buf(&state->date);
+
+    aws_byte_buf_append_dynamic(&date_buffer, &date);
     struct aws_byte_buf digest_buffer;
     AWS_ZERO_STRUCT(digest_buffer);
     if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
