@@ -1707,7 +1707,6 @@ cleanup:
     return result;
 }
 
-
 static int s_build_canonical_request_event(struct aws_signing_state_aws *state) {
     int result = AWS_OP_ERR;
 
@@ -1747,7 +1746,7 @@ static int s_build_canonical_request_event(struct aws_signing_state_aws *state) 
     }
 
     struct aws_byte_cursor header_name = aws_byte_cursor_from_c_str(":date");
-    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, (uint8_t ) header_name.len));
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, (uint8_t)header_name.len));
     if (aws_byte_buf_append_dynamic(&date_buffer, &header_name)) {
         goto cleanup;
     }

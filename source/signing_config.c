@@ -52,16 +52,16 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
-    // if (config->signature_type == AWS_ST_HTTP_REQUEST_EVENT) {
-    //     /*
-    //      * Not supported yet.
-    //      *
-    //      * Need to determine how the (header) properties on the event signable precisely factor into the
-    //      * string-to-sign.  Transcribe's examples are insufficient.
-    //      */
-    //     AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Event signing is not yet supported", (void *)config);
-    //     return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
-    // }
+    if (config->signature_type == AWS_ST_HTTP_REQUEST_EVENT && config->algorithm != AWS_SIGNING_ALGORITHM_V4) {
+        /*
+         * Not supported yet.
+         *
+         * Currently the Transcribe service doesn't accept Sigv4a signature.
+         * Need to determine how to test Sigv4a signature.
+         */
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Event signing is only supported for Sigv4 yet", (void *)config);
+        return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+    }
 
     if (config->signature_type != AWS_ST_HTTP_REQUEST_HEADERS &&
         config->signature_type != AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {

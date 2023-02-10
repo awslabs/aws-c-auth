@@ -61,12 +61,9 @@ enum aws_signature_type {
     AWS_ST_HTTP_REQUEST_CHUNK,
 
     /**
-     * Compute a signature for an event stream event.  The signable's input stream should be the event payload, the
-     * signable should contain the most recent signature value (either the original http request or the most recent
-     * event) in the "previous-signature" property as well as any event headers that should be signed with the
-     * exception of ":date"
-     *
-     * This option is not yet supported.
+     * Compute a signature for an event stream event.  The signable's input stream should be encoded event-stream
+     * message (headers + payload), the signable should contain the most recent signature value (either the original
+     * http request or the most recent event) in the "previous-signature" property.
      */
     AWS_ST_HTTP_REQUEST_EVENT,
 
