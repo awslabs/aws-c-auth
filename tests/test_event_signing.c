@@ -30,6 +30,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_event_test_service, "demo");
 AWS_STATIC_STRING_FROM_LITERAL(s_event_request_date, "Fri, 16 Jan 1981 06:30:00 GMT");
 AWS_STATIC_STRING_FROM_LITERAL(s_event_test_date, "Fri, 16 Jan 1981 06:30:01 GMT");
 AWS_STATIC_STRING_FROM_LITERAL(s_event_test_date_2, "Fri, 16 Jan 1981 06:30:02 GMT");
+AWS_STATIC_STRING_FROM_LITERAL(s_event_test_date_3, "Fri, 16 Jan 1981 06:30:03 GMT");
+AWS_STATIC_STRING_FROM_LITERAL(s_event_test_date_4, "Fri, 16 Jan 1981 06:30:04 GMT");
 
 static struct aws_http_header s_host_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
@@ -39,11 +41,6 @@ static struct aws_http_header s_host_header = {
 static struct aws_http_header s_content_encoding_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Content-Encoding"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/vnd.amazon.eventstream"),
-};
-
-static struct aws_http_header s_content_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-content-sha256"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("STREAMING-AWS4-HMAC-SHA256-EVENTS"),
 };
 
 AWS_STATIC_STRING_FROM_LITERAL(s_event_test_path, "/streaming");
@@ -108,8 +105,12 @@ struct event_signing_tester {
     struct aws_signing_config_aws event_signing_config;
     struct aws_byte_buf chunk1;
     struct aws_byte_buf chunk2;
+    struct aws_byte_buf chunk3;
+
     struct aws_input_stream *chunk1_stream;
     struct aws_input_stream *chunk2_stream;
+    struct aws_input_stream *chunk3_stream;
+
     struct aws_mutex mutex;
     bool request_completed;
     struct aws_condition_variable c_var;
@@ -118,8 +119,7 @@ struct event_signing_tester {
     struct aws_byte_buf last_signature;
 };
 
-#define CHUNK1_SIZE 1
-#define CHUNK2_SIZE 1
+#define EVENT_SIZE 1
 
 static int s_event_signing_tester_init(struct aws_allocator *allocator, struct event_signing_tester *tester) {
     tester->credentials =
@@ -135,17 +135,23 @@ static int s_event_signing_tester_init(struct aws_allocator *allocator, struct e
     ASSERT_SUCCESS(aws_byte_buf_init(&tester->request_authorization_header, allocator, 512));
     ASSERT_SUCCESS(aws_byte_buf_init(&tester->last_signature, allocator, 128));
 
-    ASSERT_SUCCESS(aws_byte_buf_init(&tester->chunk1, allocator, CHUNK1_SIZE));
-    ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->chunk1, 'A', CHUNK1_SIZE));
+    ASSERT_SUCCESS(aws_byte_buf_init(&tester->chunk1, allocator, EVENT_SIZE));
+    ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->chunk1, 'A', EVENT_SIZE));
 
-    ASSERT_SUCCESS(aws_byte_buf_init(&tester->chunk2, allocator, CHUNK2_SIZE));
-    ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->chunk2, 'B', CHUNK2_SIZE));
+    ASSERT_SUCCESS(aws_byte_buf_init(&tester->chunk2, allocator, EVENT_SIZE));
+    ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->chunk2, 'B', EVENT_SIZE));
+
+    ASSERT_SUCCESS(aws_byte_buf_init(&tester->chunk3, allocator, EVENT_SIZE));
+    ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->chunk3, 'C', EVENT_SIZE));
 
     struct aws_byte_cursor chunk1_cursor = aws_byte_cursor_from_buf(&tester->chunk1);
     tester->chunk1_stream = aws_input_stream_new_from_cursor(allocator, &chunk1_cursor);
 
     struct aws_byte_cursor chunk2_cursor = aws_byte_cursor_from_buf(&tester->chunk2);
     tester->chunk2_stream = aws_input_stream_new_from_cursor(allocator, &chunk2_cursor);
+
+    struct aws_byte_cursor chunk3_cursor = aws_byte_cursor_from_buf(&tester->chunk3);
+    tester->chunk3_stream = aws_input_stream_new_from_cursor(allocator, &chunk3_cursor);
 
     aws_mutex_init(&tester->mutex);
     tester->c_var = (struct aws_condition_variable)AWS_CONDITION_VARIABLE_INIT;
@@ -162,8 +168,12 @@ static void s_event_signing_tester_cleanup(struct event_signing_tester *tester) 
     aws_byte_buf_clean_up(&tester->last_signature);
     aws_byte_buf_clean_up(&tester->chunk1);
     aws_byte_buf_clean_up(&tester->chunk2);
+    aws_byte_buf_clean_up(&tester->chunk3);
+
     aws_input_stream_destroy(tester->chunk1_stream);
     aws_input_stream_destroy(tester->chunk2_stream);
+    aws_input_stream_destroy(tester->chunk3_stream);
+
     aws_mutex_clean_up(&tester->mutex);
 }
 
@@ -232,8 +242,11 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_second_chunk_signature,
     "f72aa9642f571d24a6e1ae42f10f073ad9448d8a028b6bcd82da081335adda02");
 AWS_STATIC_STRING_FROM_LITERAL(
+    s_expected_third_chunk_signature,
+    "632af120435b57ec241d8bfbb12e496dfd5e2730a1a02ac0ab6eaa230ae02e9a");
+AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_final_chunk_signature,
-    "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9");
+    "c6f679ddb3af68f5e82f0cf6761244cb2338cf11e7d01a24130aea1b7c17e53e");
 
 static int s_sigv4_event_signing_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -252,11 +265,11 @@ static int s_sigv4_event_signing_test(struct aws_allocator *allocator, void *ctx
         s_on_request_signing_complete,
         &tester));
 
-    // ASSERT_BIN_ARRAYS_EQUALS(
-    //     s_expected_request_authorization_header->bytes,
-    //     s_expected_request_authorization_header->len,
-    //     tester.request_authorization_header.buffer,
-    //     tester.request_authorization_header.len);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_request_authorization_header->bytes,
+        s_expected_request_authorization_header->len,
+        tester.request_authorization_header.buffer,
+        tester.request_authorization_header.len);
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_request_signature->bytes,
         s_expected_request_signature->len,
@@ -267,10 +280,8 @@ static int s_sigv4_event_signing_test(struct aws_allocator *allocator, void *ctx
     struct aws_signable *first_chunk_signable =
         aws_signable_new_chunk(allocator, tester.chunk1_stream, aws_byte_cursor_from_buf(&tester.last_signature));
     struct aws_byte_cursor event_test_date_cursor = aws_byte_cursor_from_string(s_event_test_date);
-    if (aws_date_time_init_from_str_cursor(
-            &tester.event_signing_config.date, &event_test_date_cursor, AWS_DATE_FORMAT_RFC822)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(
+        &tester.event_signing_config.date, &event_test_date_cursor, AWS_DATE_FORMAT_RFC822));
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator, first_chunk_signable, (void *)&tester.event_signing_config, s_on_event_signing_complete, &tester));
     ASSERT_BIN_ARRAYS_EQUALS(
@@ -284,10 +295,8 @@ static int s_sigv4_event_signing_test(struct aws_allocator *allocator, void *ctx
     struct aws_signable *second_chunk_signable =
         aws_signable_new_chunk(allocator, tester.chunk2_stream, aws_byte_cursor_from_buf(&tester.last_signature));
     event_test_date_cursor = aws_byte_cursor_from_string(s_event_test_date_2);
-    if (aws_date_time_init_from_str_cursor(
-            &tester.event_signing_config.date, &event_test_date_cursor, AWS_DATE_FORMAT_RFC822)) {
-        return AWS_OP_ERR;
-    }
+    ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(
+        &tester.event_signing_config.date, &event_test_date_cursor, AWS_DATE_FORMAT_RFC822));
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator, second_chunk_signable, (void *)&tester.event_signing_config, s_on_event_signing_complete, &tester));
     ASSERT_BIN_ARRAYS_EQUALS(
@@ -297,18 +306,35 @@ static int s_sigv4_event_signing_test(struct aws_allocator *allocator, void *ctx
         tester.last_signature.len);
     aws_signable_destroy(second_chunk_signable);
 
-    // /* Make and sign the final, empty chunk */
-    // struct aws_signable *final_chunk_signable =
-    //     aws_signable_new_chunk(allocator, NULL, aws_byte_cursor_from_buf(&tester.last_signature));
-    // ASSERT_SUCCESS(aws_sign_request_aws(
-    //     allocator, final_chunk_signable, (void *)&tester.chunk_signing_config, s_on_chunk_signing_complete,
-    //     &tester));
-    // ASSERT_BIN_ARRAYS_EQUALS(
-    //     s_expected_final_chunk_signature->bytes,
-    //     s_expected_final_chunk_signature->len,
-    //     tester.last_signature.buffer,
-    //     tester.last_signature.len);
-    // aws_signable_destroy(final_chunk_signable);
+    /* Make and sign the third chunk */
+    struct aws_signable *third_chunk_signable =
+        aws_signable_new_chunk(allocator, tester.chunk3_stream, aws_byte_cursor_from_buf(&tester.last_signature));
+    event_test_date_cursor = aws_byte_cursor_from_string(s_event_test_date_3);
+    ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(
+        &tester.event_signing_config.date, &event_test_date_cursor, AWS_DATE_FORMAT_RFC822));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, third_chunk_signable, (void *)&tester.event_signing_config, s_on_event_signing_complete, &tester));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_third_chunk_signature->bytes,
+        s_expected_third_chunk_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+    aws_signable_destroy(third_chunk_signable);
+
+    /* Make and sign the final, empty chunk */
+    struct aws_signable *final_chunk_signable =
+        aws_signable_new_chunk(allocator, NULL, aws_byte_cursor_from_buf(&tester.last_signature));
+    event_test_date_cursor = aws_byte_cursor_from_string(s_event_test_date_4);
+    ASSERT_SUCCESS(aws_date_time_init_from_str_cursor(
+        &tester.event_signing_config.date, &event_test_date_cursor, AWS_DATE_FORMAT_RFC822));
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator, final_chunk_signable, (void *)&tester.event_signing_config, s_on_event_signing_complete, &tester));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_final_chunk_signature->bytes,
+        s_expected_final_chunk_signature->len,
+        tester.last_signature.buffer,
+        tester.last_signature.len);
+    aws_signable_destroy(final_chunk_signable);
 
     s_event_signing_tester_cleanup(&tester);
 
