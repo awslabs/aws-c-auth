@@ -64,6 +64,8 @@ enum aws_signature_type {
      * Compute a signature for an event stream event.  The signable's input stream should be encoded event-stream
      * message (headers + payload), the signable should contain the most recent signature value (either the original
      * http request or the most recent event) in the "previous-signature" property.
+     *
+     * This option is only supported for Sigv4 for now.
      */
     AWS_ST_HTTP_REQUEST_EVENT,
 
@@ -135,7 +137,7 @@ AWS_AUTH_API extern const struct aws_byte_cursor
  * 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
  * For use with `aws_signing_config_aws.signed_body_value`.
  *
- * Event signing is only supported for Sigv4.
+ * Event signing is only supported for Sigv4 for now.
  */
 AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events;
 
