@@ -56,8 +56,8 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
         /*
          * Not supported yet.
          *
-         * Currently the Transcribe service doesn't accept Sigv4a signature.
-         * Need to determine how to test Sigv4a signature.
+         * Need to determine if the Transcribe service supports Sigv4a and how to test it.
+         * Transcribe's examples are insufficient.
          */
         AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Event signing is only supported for Sigv4 yet", (void *)config);
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
