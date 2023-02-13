@@ -1736,8 +1736,9 @@ static int s_build_canonical_request_event(struct aws_signing_state_aws *state) 
     const struct aws_signing_config_aws *config = &state->config;
 
     /*
-     * Encode the date.
-     * This duplicates event stream timestamp encoding implementation here to avoid a direct dependency.
+     * Encode the date header.
+     * This duplicates event stream timestamp header encoding implementation here to avoid a direct dependency.
+     * More information: https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
      */
     struct aws_byte_buf date_buffer;
     AWS_ZERO_STRUCT(date_buffer);

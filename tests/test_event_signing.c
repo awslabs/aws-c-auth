@@ -50,7 +50,6 @@ static struct aws_http_message *s_build_event_request(struct aws_allocator *allo
 
     aws_http_message_add_header(request, s_host_header);
     aws_http_message_add_header(request, s_content_encoding_header);
-    // aws_http_message_add_header(request, s_content_header);
     aws_http_message_set_request_method(request, aws_http_method_post);
     aws_http_message_set_request_path(request, aws_byte_cursor_from_string(s_event_test_path));
 
