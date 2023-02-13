@@ -112,7 +112,6 @@ struct event_signing_tester {
 
     struct aws_mutex mutex;
     bool request_completed;
-    struct aws_condition_variable c_var;
 
     struct aws_byte_buf request_authorization_header;
     struct aws_byte_buf last_signature;
@@ -153,7 +152,6 @@ static int s_event_signing_tester_init(struct aws_allocator *allocator, struct e
     tester->chunk3_stream = aws_input_stream_new_from_cursor(allocator, &chunk3_cursor);
 
     aws_mutex_init(&tester->mutex);
-    tester->c_var = (struct aws_condition_variable)AWS_CONDITION_VARIABLE_INIT;
     tester->request_completed = false;
 
     return AWS_OP_SUCCESS;
