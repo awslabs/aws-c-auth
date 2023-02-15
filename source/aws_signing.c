@@ -1781,12 +1781,12 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
     if (aws_byte_buf_append_dynamic(&date_buffer, &header_name)) {
         goto cleanup;
     }
+
     /* Type of timestamp header */
     AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, 8));
     AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&state->config.date)));
 
     /* calculate sha 256 of encoded buffer */
-
     if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
         goto cleanup;
     }
