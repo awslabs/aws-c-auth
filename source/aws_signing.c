@@ -285,8 +285,8 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
                 *cursor = aws_byte_cursor_from_string(g_signature_type_sigv4a_http_request);
             }
             break;
-        case AWS_ST_HTTP_REQUEST_EVENT:
         case AWS_ST_HTTP_REQUEST_CHUNK:
+        case AWS_ST_HTTP_REQUEST_EVENT:
             if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
             } else {
