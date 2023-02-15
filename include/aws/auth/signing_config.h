@@ -54,14 +54,14 @@ enum aws_signature_type {
     AWS_ST_HTTP_REQUEST_QUERY_PARAMS,
 
     /**
-     * Compute a signature for a payload chunk.  The signable's input stream should be the chunk data and the
+     * Compute a signature for a payload chunk. The signable's input stream should be the chunk data and the
      * signable should contain the most recent signature value (either the original http request or the most recent
      * chunk) in the "previous-signature" property.
      */
     AWS_ST_HTTP_REQUEST_CHUNK,
 
     /**
-     * Compute a signature for an event stream event.  The signable's input stream should be the encoded event-stream
+     * Compute a signature for an event stream event. The signable's input stream should be the encoded event-stream
      * message (headers + payload), the signable should contain the most recent signature value (either the original
      * http request or the most recent event) in the "previous-signature" property.
      *
