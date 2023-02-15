@@ -1769,6 +1769,9 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
      */
     struct aws_byte_buf date_buffer;
     AWS_ZERO_STRUCT(date_buffer);
+    struct aws_byte_buf digest_buffer;
+    AWS_ZERO_STRUCT(digest_buffer);
+
     if (aws_byte_buf_init(&date_buffer, state->allocator, 15)) {
         goto cleanup;
     }
@@ -1783,8 +1786,7 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
     AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&state->config.date)));
 
     /* calculate sha 256 of encoded buffer */
-    struct aws_byte_buf digest_buffer;
-    AWS_ZERO_STRUCT(digest_buffer);
+
     if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
         goto cleanup;
     }
