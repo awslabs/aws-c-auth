@@ -1757,9 +1757,14 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
     const struct aws_signing_config_aws *config = &state->config;
 
     /*
-     * Encode the date header.
-     * This duplicates event stream timestamp header encoding implementation here to avoid a direct dependency.
-     * More information: https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
+     * HexHash(nonSignatureHeaders) + "\n"
+     *
+     * nonSignatureHeaders is just the ":date" header.
+     * We need to encode these headers in event-stream format, as described here:
+     * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
+     * 
+     * | Header Name Length | Header Name | Header Value Type | Header Value Length | Header Value |
+     * |       1 byte       |   N bytes   |       1 byte      |        2 bytes      |    N bytes   |
      */
     struct aws_byte_buf date_buffer;
     AWS_ZERO_STRUCT(date_buffer);
