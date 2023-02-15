@@ -55,6 +55,9 @@ struct aws_signing_state_aws {
     struct aws_byte_buf access_credential_scope;
     struct aws_byte_buf date;
     struct aws_byte_buf signature;
+    /* The "payload" to be used in the string-to-sign.
+     * For a normal HTTP request, this is the hashed canonical-request.
+     * But for other types of signing (i.e chunk, event) it's something else. */
     struct aws_byte_buf string_to_sign_payload;
 
     /* temp buf for writing out strings */

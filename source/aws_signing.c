@@ -1711,7 +1711,7 @@ cleanup:
  * Note that there is no canonical request for event signing.
  * The string to sign for events is detailed here:
  * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-http2.html
- * 
+ *
  *      String stringToSign =
  *      "AWS4-HMAC-SHA256" +
  *      "\n" +
@@ -1735,7 +1735,7 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
 
     /*
      * Hex(priorSignature) + "\n"
-     * 
+     *
      * Fortunately, the prior signature is already hex.
      */
     struct aws_byte_cursor prev_signature_cursor;
@@ -1757,16 +1757,13 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
         return AWS_OP_ERR;
     }
 
-    /* Append hex sha encoded date header */
-    const struct aws_signing_config_aws *config = &state->config;
-
     /*
      * HexHash(nonSignatureHeaders) + "\n"
      *
      * nonSignatureHeaders is just the ":date" header.
      * We need to encode these headers in event-stream format, as described here:
      * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
-     * 
+     *
      * | Header Name Length | Header Name | Header Value Type | Header Value Length | Header Value |
      * |       1 byte       |   N bytes   |       1 byte      |        2 bytes      |    N bytes   |
      */
@@ -1783,7 +1780,7 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
     }
     /* Type of timestamp header */
     AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, 8));
-    AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&config->date)));
+    AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&state->config.date)));
 
     /* calculate sha 256 of encoded buffer */
     struct aws_byte_buf digest_buffer;
@@ -2057,6 +2054,8 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             return s_build_canonical_request_body_chunk(state);
+        case AWS_ST_HTTP_REQUEST_EVENT:
+            return s_build_string_to_sign_payload_for_event(state);
 
         case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
             return s_build_canonical_request_trailing_headers(state);
@@ -2064,8 +2063,6 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
             return s_apply_existing_canonical_request(state);
-        case AWS_ST_HTTP_REQUEST_EVENT:
-            return s_build_canonical_request_event(state);
 
         default:
             return AWS_OP_ERR;
