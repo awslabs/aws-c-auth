@@ -1733,7 +1733,11 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
 
-    /* previous signature + \n */
+    /*
+     * Hex(priorSignature) + "\n"
+     * 
+     * Fortunately, the prior signature is already hex.
+     */
     struct aws_byte_cursor prev_signature_cursor;
     AWS_ZERO_STRUCT(prev_signature_cursor);
     if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
