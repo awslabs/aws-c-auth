@@ -1797,7 +1797,11 @@ static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws
         goto cleanup;
     }
 
-    /* current hash */
+    /*
+     * HexHash(payload);
+     *
+     * The payload was already hashed in an earlier stage
+     */
     struct aws_byte_cursor current_chunk_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
     if (aws_byte_buf_append_dynamic(dest, &current_chunk_hash_cursor)) {
         goto cleanup;
