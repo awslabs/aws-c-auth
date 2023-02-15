@@ -1707,7 +1707,28 @@ cleanup:
     return result;
 }
 
-static int s_build_canonical_request_event(struct aws_signing_state_aws *state) {
+/**
+ * Note that there is no canonical request for event signing.
+ * The string to sign for events is detailed here:
+ * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-http2.html
+ * 
+ *      String stringToSign =
+ *      "AWS4-HMAC-SHA256" +
+ *      "\n" +
+ *      DateTime +
+ *      "\n" +
+ *      Keypath +
+ *      "\n" +
+ *      Hex(priorSignature) +
+ *      "\n" +
+ *      HexHash(nonSignatureHeaders) +
+ *      "\n" +
+ *      HexHash(payload);
+ *
+ * This function will build the string_to_sign_payload,
+ * aka "everything after the Keypath line in the string to sign".
+ */
+static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws *state) {
     int result = AWS_OP_ERR;
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
