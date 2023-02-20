@@ -950,33 +950,32 @@ static int s_profile_credentials_provider_cached_test(struct aws_allocator *allo
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NOT_NULL(provider);
 
-    // struct aws_get_credentials_test_callback_result callback_results;
-    // aws_get_credentials_test_callback_result_init(&callback_results, 1);
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
 
-    // ASSERT_SUCCESS(
-    //     aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback,
-    //     &callback_results));
-    // aws_wait_on_credentials_callback(&callback_results);
-    // ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
+    ASSERT_SUCCESS(
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
+    aws_wait_on_credentials_callback(&callback_results);
+    ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
 
-    // aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
-    // /* Update profile files */
-    // if (aws_create_profile_file(config_file_str, s_config_contents2)) {
-    //     return AWS_OP_ERR;
-    // }
+    /* Update profile files */
+    if (aws_create_profile_file(config_file_str, s_config_contents2)) {
+        return AWS_OP_ERR;
+    }
 
-    // /* Fetch the credentials again */
-    // aws_get_credentials_test_callback_result_init(&callback_results, 1);
+    /* Fetch the credentials again */
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
 
-    // ASSERT_SUCCESS(
-    //     aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback,
-    //     &callback_results));
-    // aws_wait_on_credentials_callback(&callback_results);
+    ASSERT_SUCCESS(
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
+    aws_wait_on_credentials_callback(&callback_results);
 
-    // ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
+    /* assert that credentials are not changed */
+    ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
 
-    // aws_get_credentials_test_callback_result_clean_up(&callback_results);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
     aws_credentials_provider_release(provider);
 

@@ -151,7 +151,7 @@ static void s_profile_file_credentials_provider_destroy(struct aws_credentials_p
     aws_string_destroy(impl->config_file_path);
     aws_string_destroy(impl->credentials_file_path);
     aws_string_destroy(impl->profile_name);
-    aws_profile_collection_acquire(impl->profile_collection_cached);
+    aws_profile_collection_release(impl->profile_collection_cached);
     aws_credentials_provider_invoke_shutdown_callback(provider);
 
     aws_mem_release(provider->allocator, provider);
@@ -189,8 +189,12 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_profile_file_vtable, impl);
-    impl->credentials_file_path = aws_string_clone_or_reuse(allocator, credentials_file_path);
-    impl->config_file_path = aws_string_clone_or_reuse(allocator, config_file_path);
+    if (credentials_file_path) {
+        impl->credentials_file_path = aws_string_clone_or_reuse(allocator, credentials_file_path);
+    }
+    if (config_file_path) {
+        impl->config_file_path = aws_string_clone_or_reuse(allocator, config_file_path);
+    }
     impl->profile_name = aws_string_clone_or_reuse(allocator, profile_name);
     impl->profile_collection_cached = aws_profile_collection_acquire(profile_collection_cached);
     return provider;
