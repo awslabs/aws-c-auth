@@ -450,6 +450,12 @@ struct aws_credentials_provider_chain_default_options {
      * Must be provided if using BYO_CRYPTO.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /**
+     * Use a cached merged profile collection.
+     * If this option is provided, profile and sts web identity credentials provider will use the cached config.
+     */
+    struct aws_profile_collection *profile_collection_cached;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(

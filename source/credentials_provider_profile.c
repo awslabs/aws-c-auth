@@ -147,7 +147,7 @@ static void s_profile_file_credentials_provider_destroy(struct aws_credentials_p
     if (impl == NULL) {
         return;
     }
-    // TODO: is this safe if string was not initialized?
+
     aws_string_destroy(impl->config_file_path);
     aws_string_destroy(impl->credentials_file_path);
     aws_string_destroy(impl->profile_name);
