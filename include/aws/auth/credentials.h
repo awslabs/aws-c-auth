@@ -113,7 +113,7 @@ struct aws_credentials_provider_profile_options {
 
     /**
      * Use a cached merged profile collection.
-     * If this option is provided, config_file_name_override and credentials_file_name_override will be ignored.
+     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
 
@@ -338,7 +338,6 @@ struct aws_credentials_provider_sts_web_identity_options {
 
     /**
      * Use a cached config profile collection.
-     * If this option is provided, config_file_name_override and credentials_file_name_override will be ignored.
      */
     struct aws_profile_collection *config_profile_collection_cached;
 
