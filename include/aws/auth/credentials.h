@@ -452,7 +452,7 @@ struct aws_credentials_provider_chain_default_options {
 
     /**
      * Use a cached merged profile collection.
-     * If this option is provided, profile and sts web identity credentials provider will use the cached config.
+     * If this option is provided, profile and sts web identity credentials provider will use the cached collection.
      */
     struct aws_profile_collection *profile_collection_cached;
 };
