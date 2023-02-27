@@ -850,6 +850,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(
     s_credentials_contents,
     "[foo]\naws_access_key_id=foo_access\naws_secret_access_key=foo_secret\naws_session_token=foo_session\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_credentials_contents2,
+    "[foo]\naws_access_key_id=foo_access2\naws_secret_access_key=foo_secret2\naws_session_token=foo_session2\n");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_fake_access, "fake_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_fake_secret, "fake_secret_key");
@@ -947,6 +950,12 @@ static int s_profile_credentials_provider_cached_test(struct aws_allocator *allo
 
     s_aws_credentials_shutdown_checker_init();
 
+    /* Update config file */
+    if (aws_create_profile_file(config_file_str, s_config_contents2) ||
+        aws_create_profile_file(creds_file_str, s_credentials_contents2)) {
+        return AWS_OP_ERR;
+    }
+
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NOT_NULL(provider);
 
@@ -959,11 +968,6 @@ static int s_profile_credentials_provider_cached_test(struct aws_allocator *allo
     ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
-
-    /* Update profile files */
-    if (aws_create_profile_file(config_file_str, s_config_contents2)) {
-        return AWS_OP_ERR;
-    }
 
     /* Fetch the credentials again */
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
