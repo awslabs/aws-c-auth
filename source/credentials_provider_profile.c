@@ -137,7 +137,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
      * clean up
      */
     aws_credentials_release(credentials);
-    aws_profile_collection_destroy(merged_profiles);
+    aws_profile_collection_release(merged_profiles);
 
     return AWS_OP_SUCCESS;
 }
@@ -378,10 +378,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed to resolve profile name");
         goto on_finished;
     }
-    if (options->profile_collection_cached) {
-        merged_profiles = aws_profile_collection_acquire(options->profile_collection_cached);
-    }
 
+    merged_profiles = aws_profile_collection_acquire(options->profile_collection_cached);
     if (!merged_profiles) {
         credentials_file_path = aws_get_credentials_file_path(allocator, &options->credentials_file_name_override);
         if (!credentials_file_path) {
@@ -433,17 +431,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     }
 
 on_finished:
-    if (config_profiles) {
-        aws_profile_collection_release(config_profiles);
-    }
-
-    if (credentials_profiles) {
-        aws_profile_collection_release(credentials_profiles);
-    }
-
-    if (merged_profiles) {
-        aws_profile_collection_release(merged_profiles);
-    }
+    aws_profile_collection_release(config_profiles);
+    aws_profile_collection_release(credentials_profiles);
+    aws_profile_collection_release(merged_profiles);
 
     aws_string_destroy(credentials_file_path);
     aws_string_destroy(config_file_path);
