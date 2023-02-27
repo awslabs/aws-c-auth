@@ -950,7 +950,7 @@ static int s_profile_credentials_provider_cached_test(struct aws_allocator *allo
 
     s_aws_credentials_shutdown_checker_init();
 
-    /* Update config file */
+    /* Update profile and config file */
     if (aws_create_profile_file(config_file_str, s_config_contents2) ||
         aws_create_profile_file(creds_file_str, s_credentials_contents2)) {
         return AWS_OP_ERR;
