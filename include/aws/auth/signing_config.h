@@ -54,19 +54,18 @@ enum aws_signature_type {
     AWS_ST_HTTP_REQUEST_QUERY_PARAMS,
 
     /**
-     * Compute a signature for a payload chunk.  The signable's input stream should be the chunk data and the
+     * Compute a signature for a payload chunk. The signable's input stream should be the chunk data and the
      * signable should contain the most recent signature value (either the original http request or the most recent
      * chunk) in the "previous-signature" property.
      */
     AWS_ST_HTTP_REQUEST_CHUNK,
 
     /**
-     * Compute a signature for an event stream event.  The signable's input stream should be the event payload, the
-     * signable should contain the most recent signature value (either the original http request or the most recent
-     * event) in the "previous-signature" property as well as any event headers that should be signed with the
-     * exception of ":date"
+     * Compute a signature for an event stream event. The signable's input stream should be the encoded event-stream
+     * message (headers + payload), the signable should contain the most recent signature value (either the original
+     * http request or the most recent event) in the "previous-signature" property.
      *
-     * This option is not yet supported.
+     * This option is only supported for Sigv4 for now.
      */
     AWS_ST_HTTP_REQUEST_EVENT,
 
@@ -138,7 +137,7 @@ AWS_AUTH_API extern const struct aws_byte_cursor
  * 'STREAMING-AWS4-HMAC-SHA256-EVENTS'
  * For use with `aws_signing_config_aws.signed_body_value`.
  *
- * Event signing is not yet supported
+ * Event signing is only supported for Sigv4 for now.
  */
 AWS_AUTH_API extern const struct aws_byte_cursor g_aws_signed_body_value_streaming_aws4_hmac_sha256_events;
 
