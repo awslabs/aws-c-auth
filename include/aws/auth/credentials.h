@@ -529,7 +529,7 @@ struct aws_credentials_provider_cognito_options {
  * Configuration options for a provider that sources credentials from the aws profile and credentials files
  * (by default ~/.aws/profile and ~/.aws/credentials)
  */
-struct aws_token_provider_profile_options {
+struct aws_sso_token_provider_profile_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /*
@@ -1009,9 +1009,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_token_provider_new_profile(
+struct aws_credentials_provider *aws_sso_token_provider_new_profile(
     struct aws_allocator *allocator,
-    const struct aws_token_provider_profile_options *options);
+    const struct aws_sso_token_provider_profile_options *options);
 
 AWS_AUTH_API extern const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table;
 
