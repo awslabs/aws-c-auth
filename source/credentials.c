@@ -107,22 +107,23 @@ struct aws_credentials *aws_credentials_new(
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
     credentials->type = CREDENTIALS_IDENTITY;
-    credentials->identity.credentials.access_key_id =
+    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials;
+    credentials_identity->access_key_id =
         aws_string_new_from_array(allocator, access_key_id_cursor.ptr, access_key_id_cursor.len);
-    if (credentials->identity.credentials.access_key_id == NULL) {
+    if (credentials_identity->access_key_id == NULL) {
         goto error;
     }
 
-    credentials->identity.credentials.secret_access_key =
+    credentials_identity->secret_access_key =
         aws_string_new_from_array(allocator, secret_access_key_cursor.ptr, secret_access_key_cursor.len);
-    if (credentials->identity.credentials.secret_access_key == NULL) {
+    if (credentials_identity->secret_access_key == NULL) {
         goto error;
     }
 
     if (session_token_cursor.ptr != NULL && session_token_cursor.len > 0) {
-        credentials->identity.credentials.session_token =
+        credentials_identity->session_token =
             aws_string_new_from_array(allocator, session_token_cursor.ptr, session_token_cursor.len);
-        if (credentials->identity.credentials.session_token == NULL) {
+        if (credentials_identity->session_token == NULL) {
             goto error;
         }
     }
@@ -157,26 +158,13 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     }
     switch (credentials->type) {
         case CREDENTIALS_IDENTITY:
-            if (credentials->identity.credentials.access_key_id != NULL) {
-                aws_string_destroy(credentials->identity.credentials.access_key_id);
-            }
-
-            if (credentials->identity.credentials.secret_access_key != NULL) {
-                aws_string_destroy_secure(credentials->identity.credentials.secret_access_key);
-            }
-
-            if (credentials->identity.credentials.session_token != NULL) {
-                aws_string_destroy_secure(credentials->identity.credentials.session_token);
-            }
+            aws_string_destroy(credentials->identity.credentials.access_key_id);
+            aws_string_destroy_secure(credentials->identity.credentials.secret_access_key);
+            aws_string_destroy_secure(credentials->identity.credentials.session_token);
             break;
         case ECC_IDENTITY:
-            if (credentials->identity.ecc_identity.access_key_id != NULL) {
-
-                aws_string_destroy(credentials->identity.ecc_identity.access_key_id);
-            }
-            if (credentials->identity.ecc_identity.session_token != NULL) {
-                aws_string_destroy_secure(credentials->identity.ecc_identity.session_token);
-            }
+            aws_string_destroy(credentials->identity.ecc_identity.access_key_id);
+            aws_string_destroy_secure(credentials->identity.ecc_identity.session_token);
             aws_ecc_key_pair_release(credentials->identity.ecc_identity.ecc_key);
             break;
 
