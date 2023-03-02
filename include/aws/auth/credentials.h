@@ -525,6 +525,24 @@ struct aws_credentials_provider_cognito_options {
     struct aws_auth_http_system_vtable *function_table;
 };
 
+/**
+ * Configuration options for a provider that sources credentials from the aws profile and credentials files
+ * (by default ~/.aws/profile and ~/.aws/credentials)
+ */
+struct aws_token_provider_profile_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Override of what profile to use to source credentials from ('default' by default)
+     */
+    struct aws_byte_cursor profile_name_override;
+
+    /*
+     * Override path to the profile config file (~/.aws/config by default)
+     */
+    struct aws_byte_cursor config_file_name_override;
+};
+
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -979,6 +997,21 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_chain_default_options *options);
+
+/**
+ * Creates a provider that sources credentials from key-value profiles loaded from the aws credentials
+ * file ("~/.aws/credentials" by default) and the aws config file ("~/.aws/config" by
+ * default)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_token_provider_new_profile(
+    struct aws_allocator *allocator,
+    const struct aws_token_provider_profile_options *options);
 
 AWS_AUTH_API extern const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table;
 
