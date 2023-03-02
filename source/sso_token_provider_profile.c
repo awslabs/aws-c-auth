@@ -82,8 +82,9 @@ static int s_token_provider_profile_parameters_init(
         return AWS_OP_ERR;
     }
 
-    parameters->sso_region = aws_string_new_from_string(allocator, sso_region_property);
-    parameters->sso_start_url = aws_string_new_from_string(allocator, sso_start_url_property);
+    parameters->sso_region = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_region_property));
+    parameters->sso_start_url =
+        aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_start_url_property));
     return AWS_OP_SUCCESS;
 }
 
@@ -240,7 +241,7 @@ struct aws_credentials_provider *aws_sso_token_provider_new_profile(
     const struct aws_sso_token_provider_profile_options *options) {
 
     const struct token_provider_profile_parameters *parameters = s_token_provider_profile_parameters_new(
-        allocator, options->config_file_name_override, options->config_file_name_override);
+        allocator, options->profile_name_override, options->config_file_name_override);
     if (!parameters) {
         return NULL;
     }
