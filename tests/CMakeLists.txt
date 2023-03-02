@@ -102,6 +102,8 @@ if (AWS_HAS_CI_ENVIRONMENT)
     add_net_test_case(credentials_provider_cognito_success_unauthenticated)
 endif()
 
+add_net_test_case(sso_token_provider_profile_default_test)
+
 add_test_case(imds_client_new_release)
 add_test_case(imds_client_connect_failure)
 add_test_case(imds_client_token_request_failure)
