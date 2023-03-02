@@ -9,6 +9,29 @@
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 
+struct aws_ecc_identity {
+    struct aws_string *access_key_id;
+    struct aws_string *session_token;
+    struct aws_ecc_key_pair *ecc_key;
+};
+
+struct aws_credentials_identity {
+    struct aws_string *access_key_id;
+    struct aws_string *secret_access_key;
+    struct aws_string *session_token;
+};
+
+struct aws_token_identity {
+    struct aws_string *token;
+};
+
+enum IdentityType {
+    CREDENTIALS_IDENTITY,
+    TOKEN_IDENTITY,
+    ANONYMOUS_IDENTITY,
+    ECC_IDENTITY,
+};
+
 /*
  * A structure that wraps the public/private data needed to sign an authenticated AWS request
  */
@@ -16,11 +39,6 @@ struct aws_credentials {
     struct aws_allocator *allocator;
 
     struct aws_atomic_var ref_count;
-
-    struct aws_string *access_key_id;
-    struct aws_string *secret_access_key;
-    struct aws_string *session_token;
-
     /*
      * A timepoint, in seconds since epoch, at which the credentials should no longer be used because they
      * will have expired.
@@ -51,7 +69,12 @@ struct aws_credentials {
      */
     uint64_t expiration_timepoint_seconds;
 
-    struct aws_ecc_key_pair *ecc_key;
+    enum IdentityType type;
+    union {
+        struct aws_credentials_identity credentials;
+        struct aws_token_identity token;
+        struct aws_ecc_identity ecc_identity;
+    } identity;
 };
 
 /*
@@ -83,23 +106,23 @@ struct aws_credentials *aws_credentials_new(
 
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
-
-    credentials->access_key_id =
+    credentials->type = CREDENTIALS_IDENTITY;
+    credentials->identity.credentials.access_key_id =
         aws_string_new_from_array(allocator, access_key_id_cursor.ptr, access_key_id_cursor.len);
-    if (credentials->access_key_id == NULL) {
+    if (credentials->identity.credentials.access_key_id == NULL) {
         goto error;
     }
 
-    credentials->secret_access_key =
+    credentials->identity.credentials.secret_access_key =
         aws_string_new_from_array(allocator, secret_access_key_cursor.ptr, secret_access_key_cursor.len);
-    if (credentials->secret_access_key == NULL) {
+    if (credentials->identity.credentials.secret_access_key == NULL) {
         goto error;
     }
 
     if (session_token_cursor.ptr != NULL && session_token_cursor.len > 0) {
-        credentials->session_token =
+        credentials->identity.credentials.session_token =
             aws_string_new_from_array(allocator, session_token_cursor.ptr, session_token_cursor.len);
-        if (credentials->session_token == NULL) {
+        if (credentials->identity.credentials.session_token == NULL) {
             goto error;
         }
     }
@@ -120,6 +143,7 @@ struct aws_credentials *aws_credentials_new_anonymous(struct aws_allocator *allo
     struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
 
     credentials->allocator = allocator;
+    credentials->type = ANONYMOUS_IDENTITY;
     aws_atomic_init_int(&credentials->ref_count, 1);
 
     credentials->expiration_timepoint_seconds = UINT64_MAX;
@@ -131,20 +155,34 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     if (credentials == NULL) {
         return;
     }
+    switch (credentials->type) {
+        case CREDENTIALS_IDENTITY:
+            if (credentials->identity.credentials.access_key_id != NULL) {
+                aws_string_destroy(credentials->identity.credentials.access_key_id);
+            }
 
-    if (credentials->access_key_id != NULL) {
-        aws_string_destroy(credentials->access_key_id);
+            if (credentials->identity.credentials.secret_access_key != NULL) {
+                aws_string_destroy_secure(credentials->identity.credentials.secret_access_key);
+            }
+
+            if (credentials->identity.credentials.session_token != NULL) {
+                aws_string_destroy_secure(credentials->identity.credentials.session_token);
+            }
+            break;
+        case ECC_IDENTITY:
+            if (credentials->identity.ecc_identity.access_key_id != NULL) {
+
+                aws_string_destroy(credentials->identity.ecc_identity.access_key_id);
+            }
+            if (credentials->identity.ecc_identity.session_token != NULL) {
+                aws_string_destroy_secure(credentials->identity.ecc_identity.session_token);
+            }
+            aws_ecc_key_pair_release(credentials->identity.ecc_identity.ecc_key);
+            break;
+
+        default:
+            break;
     }
-
-    if (credentials->secret_access_key != NULL) {
-        aws_string_destroy_secure(credentials->secret_access_key);
-    }
-
-    if (credentials->session_token != NULL) {
-        aws_string_destroy_secure(credentials->session_token);
-    }
-
-    aws_ecc_key_pair_release(credentials->ecc_key);
 
     aws_mem_release(credentials->allocator, credentials);
 }
@@ -174,26 +212,51 @@ static struct aws_byte_cursor s_empty_token_cursor = {
 };
 
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials) {
-    if (credentials->access_key_id == NULL) {
-        return s_empty_token_cursor;
+    switch (credentials->type) {
+        case CREDENTIALS_IDENTITY:
+            if (credentials->identity.credentials.access_key_id != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.credentials.access_key_id);
+            }
+            break;
+        case ECC_IDENTITY:
+            if (credentials->identity.ecc_identity.access_key_id != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.ecc_identity.access_key_id);
+            }
+            break;
+        default:
+            break;
     }
-
-    return aws_byte_cursor_from_string(credentials->access_key_id);
+    return s_empty_token_cursor;
 }
 
 struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials) {
-    if (credentials->secret_access_key == NULL) {
-        return s_empty_token_cursor;
+    switch (credentials->type) {
+        case CREDENTIALS_IDENTITY:
+            if (credentials->identity.credentials.secret_access_key != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.credentials.secret_access_key);
+            }
+            break;
+        default:
+            break;
     }
-
-    return aws_byte_cursor_from_string(credentials->secret_access_key);
+    return s_empty_token_cursor;
 }
 
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials) {
-    if (credentials->session_token != NULL) {
-        return aws_byte_cursor_from_string(credentials->session_token);
+    switch (credentials->type) {
+        case CREDENTIALS_IDENTITY:
+            if (credentials->identity.credentials.session_token != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.credentials.session_token);
+            }
+            break;
+        case ECC_IDENTITY:
+            if (credentials->identity.ecc_identity.session_token != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.ecc_identity.session_token);
+            }
+            break;
+        default:
+            break;
     }
-
     return s_empty_token_cursor;
 }
 
@@ -202,12 +265,15 @@ uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_crede
 }
 
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials) {
-    return credentials->ecc_key;
+    if (credentials->type == ECC_IDENTITY) {
+        return credentials->identity.ecc_identity.ecc_key;
+    }
+    return NULL;
 }
 
 bool aws_credentials_is_anonymous(const struct aws_credentials *credentials) {
     AWS_PRECONDITION(credentials);
-    return credentials->access_key_id == NULL && credentials->secret_access_key == NULL;
+    return credentials->type == ANONYMOUS_IDENTITY;
 }
 
 struct aws_credentials *aws_credentials_new_from_string(
@@ -250,16 +316,19 @@ struct aws_credentials *aws_credentials_new_ecc(
     credentials->expiration_timepoint_seconds = expiration_timepoint_in_seconds;
     aws_atomic_init_int(&credentials->ref_count, 1);
     aws_ecc_key_pair_acquire(ecc_key);
-    credentials->ecc_key = ecc_key;
+    credentials->type = ECC_IDENTITY;
+    credentials->identity.ecc_identity.ecc_key = ecc_key;
 
-    credentials->access_key_id = aws_string_new_from_array(allocator, access_key_id.ptr, access_key_id.len);
-    if (credentials->access_key_id == NULL) {
+    credentials->identity.ecc_identity.access_key_id =
+        aws_string_new_from_array(allocator, access_key_id.ptr, access_key_id.len);
+    if (credentials->identity.ecc_identity.access_key_id == NULL) {
         goto on_error;
     }
 
     if (session_token.ptr != NULL && session_token.len > 0) {
-        credentials->session_token = aws_string_new_from_array(allocator, session_token.ptr, session_token.len);
-        if (credentials->session_token == NULL) {
+        credentials->identity.ecc_identity.session_token =
+            aws_string_new_from_array(allocator, session_token.ptr, session_token.len);
+        if (credentials->identity.ecc_identity.session_token == NULL) {
             goto on_error;
         }
     }
