@@ -93,7 +93,7 @@ static int s_token_provider_profile_parameters_sso_session_init(
     struct token_provider_profile_parameters *parameters,
     const struct aws_profile_collection *profile_collection,
     const struct aws_profile *profile,
-    struct aws_string *sso_session_name) {
+    const struct aws_string *sso_session_name) {
 
     const struct aws_profile *session_profile =
         aws_profile_collection_get_sso_session(profile_collection, sso_session_name);
@@ -120,8 +120,8 @@ static int s_token_provider_profile_parameters_sso_session_init(
         return AWS_OP_ERR;
     }
 
-    struct aws_string *sso_region = aws_profile_property_get_value(sso_region_property);
-    struct aws_string *sso_start_url = aws_profile_property_get_value(sso_start_url_property);
+    const struct aws_string *sso_region = aws_profile_property_get_value(sso_region_property);
+    const struct aws_string *sso_start_url = aws_profile_property_get_value(sso_start_url_property);
 
     /* Verify if sso_region & start_url are the same in profile section if they exist */
     const struct aws_profile_property *profile_sso_region_property =
@@ -130,14 +130,14 @@ static int s_token_provider_profile_parameters_sso_session_init(
         aws_profile_get_property(profile, s_sso_start_url_name);
 
     if (profile_sso_region_property &&
-        aws_string_eq(sso_region, aws_profile_property_get_value(profile_sso_region_property))) {
+        !aws_string_eq(sso_region, aws_profile_property_get_value(profile_sso_region_property))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: profile & sso-session have different value for sso_region");
         return AWS_OP_ERR;
     }
 
     if (profile_sso_start_url_property &&
-        aws_string_eq(sso_start_url, aws_profile_property_get_value(profile_sso_start_url_property))) {
+        !aws_string_eq(sso_start_url, aws_profile_property_get_value(profile_sso_start_url_property))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: profile & sso-session have different value for sso_start_url");
         return AWS_OP_ERR;
@@ -240,7 +240,7 @@ struct aws_credentials_provider *aws_sso_token_provider_new_profile(
     struct aws_allocator *allocator,
     const struct aws_sso_token_provider_profile_options *options) {
 
-    const struct token_provider_profile_parameters *parameters = s_token_provider_profile_parameters_new(
+    struct token_provider_profile_parameters *parameters = s_token_provider_profile_parameters_new(
         allocator, options->profile_name_override, options->config_file_name_override);
     if (!parameters) {
         return NULL;
@@ -264,8 +264,9 @@ struct aws_credentials_provider *aws_sso_token_provider_new_profile(
 
     s_token_provider_profile_parameters_destroy(allocator, parameters);
     return provider;
-on_error:
-    aws_credentials_provider_destroy(provider);
-    s_token_provider_profile_parameters_destroy(allocator, parameters);
-    return NULL;
+
+    // on_error:
+    //     aws_credentials_provider_destroy(provider);
+    //     s_token_provider_profile_parameters_destroy(allocator, parameters);
+    //     return NULL;
 }

@@ -116,10 +116,39 @@ static int s_sso_token_provider_profile_valid_profile_test(struct aws_allocator 
 
     static struct sso_session_profile_example s_valid_profile_examples[] = {
         {
-            .name = "Profile",
+            .name = "profile",
             .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[default]\naws_access_key_id=fake_access_key\naws_secret_"
                                                           "access_key=fake_secret_key\nsso_region=us-east-"
                                                           "1\nsso_start_url=url"),
+        },
+        {
+            .name = "sso_session",
+            .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
+                "[default]\naws_access_key_id=fake_access_key\naws_secret_"
+                "access_key=fake_secret_key\nsso_session=dev\n[sso-session dev]\nsso_region=us-east-"
+                "1\nsso_start_url=url"),
+        },
+        {
+            .name = "sso_session with profile region",
+            .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[default]\naws_access_key_id=fake_access_key\naws_secret_"
+                                                          "access_key=fake_secret_key\nsso_region=us-east-1\nsso_"
+                                                          "session=dev\n[sso-session dev]\nsso_region=us-east-"
+                                                          "1\nsso_start_url=url"),
+        },
+        {
+            .name = "sso_session with start url",
+            .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[default]\naws_access_key_id=fake_access_key\naws_secret_"
+                                                          "access_key=fake_secret_key\nsso_start_url=url\nsso_"
+                                                          "session=dev\n[sso-session dev]\nsso_region=us-east-"
+                                                          "1\nsso_start_url=url"),
+        },
+        {
+            .name = "sso_session with region and start url",
+            .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
+                "[default]\naws_access_key_id=fake_access_key\naws_secret_"
+                "access_key=fake_secret_key\nsso_region=us-east-1\nsso_start_url=url\nsso_"
+                "session=dev\n[sso-session dev]\nsso_region=us-east-"
+                "1\nsso_start_url=url"),
         },
     };
 
