@@ -634,6 +634,12 @@ struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
     struct aws_allocator *allocator,
     const struct aws_credentials *credentials);
 
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_token(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor token,
+    uint64_t expiration_timepoint_in_seconds);
+
 /**
  * Add a reference to some credentials
  *

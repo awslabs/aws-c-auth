@@ -33,8 +33,38 @@ static int s_token_provider_profile_get_token_async(
     (void)callback;
     (void)user_data;
     struct aws_token_provider_profile_impl *impl = provider->impl;
+    struct aws_sso_token *sso_token = NULL;
+    struct aws_credentials *credentials = NULL;
+    sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
+    if (!sso_token) {
+        goto on_error;
+    }
 
-    // TODO:
+    /* Check token expiration. TODO: Refresh token if it is within refresh window */
+    struct aws_date_time now;
+    aws_date_time_init_now(&now);
+    if (aws_date_time_diff(&sso_token->expiration, &now) < 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: cached token is expired.");
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
+        goto on_error;
+    }
+
+    credentials = aws_credentials_new_token(
+        provider->allocator,
+        aws_byte_cursor_from_string(sso_token->token),
+        aws_date_time_as_epoch_secs(&sso_token->expiration));
+    if (!credentials) {
+        goto on_error;
+    }
+
+    callback(credentials, AWS_OP_SUCCESS, user_data);
+    return AWS_OP_SUCCESS;
+on_error:
+    if (sso_token) {
+        aws_sso_token_destroy(provider->allocator, sso_token);
+    }
+    aws_credentials_release(credentials);
+    callback(credentials, aws_last_error(), user_data);
     return AWS_OP_ERR;
 }
 

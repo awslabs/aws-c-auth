@@ -352,6 +352,25 @@ struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
     return ecc_credentials;
 }
 
+struct aws_credentials *aws_credentials_new_token(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor token,
+    uint64_t expiration_timepoint_in_seconds) {
+    if (token.ptr == NULL || token.len == 0) {
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+    struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
+
+    credentials->allocator = allocator;
+    aws_atomic_init_int(&credentials->ref_count, 1);
+    credentials->type = TOKEN_IDENTITY;
+    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials;
+    credentials_identity->access_key_id = aws_string_new_from_array(allocator, token.ptr, token.len);
+    credentials->expiration_timepoint_seconds = expiration_timepoint_in_seconds;
+    return credentials;
+}
+
 /*
  * global credentials provider APIs
  */
