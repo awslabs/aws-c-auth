@@ -105,6 +105,10 @@ endif()
 add_net_test_case(sso_token_provider_profile_invalid_profile_test)
 add_net_test_case(sso_token_provider_profile_valid_profile_test)
 
+add_net_test_case(parse_token_location_url_test)
+add_net_test_case(parse_token_location_session_test)
+add_net_test_case(parse_sso_token_valid)
+
 add_test_case(imds_client_new_release)
 add_test_case(imds_client_connect_failure)
 add_test_case(imds_client_token_request_failure)

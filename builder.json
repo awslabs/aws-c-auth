@@ -7,12 +7,20 @@
         }
     },
     "upstream": [
-        { "name": "aws-c-http" },
-        { "name": "aws-c-cal" },
-        { "name": "aws-c-sdkutils" }
+        {
+            "name": "aws-c-http"
+        },
+        {
+            "name": "aws-c-cal"
+        },
+        {
+            "name": "aws-c-sdkutils"
+        }
     ],
     "downstream": [
-        { "name": "aws-c-s3" }
+        {
+            "name": "aws-c-s3"
+        }
     ],
     "+cmake_args": [
         "-DAWS_HAS_CI_ENVIRONMENT=ON"

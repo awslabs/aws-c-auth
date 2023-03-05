@@ -7,10 +7,10 @@
 
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/auth/private/sso_token_utils.h>
 #include <aws/common/process.h>
 #include <aws/common/string.h>
 #include <aws/io/tls_channel_handler.h>
-
 #ifdef _MSC_VER
 /* allow non-constant declared initializers. */
 #    pragma warning(disable : 4204)
@@ -29,6 +29,11 @@ static int s_token_provider_profile_get_token_async(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
+    (void)provider;
+    (void)callback;
+    (void)user_data;
+    struct aws_token_provider_profile_impl *impl = provider->impl;
+
     // TODO:
     return AWS_OP_ERR;
 }
@@ -61,6 +66,7 @@ AWS_STRING_FROM_LITERAL(s_sso_start_url_name, "sso_start_url");
 struct token_provider_profile_parameters {
     struct aws_string *sso_region;
     struct aws_string *sso_start_url;
+    struct aws_string *token_path;
 };
 
 static int s_token_provider_profile_parameters_init(
@@ -73,18 +79,25 @@ static int s_token_provider_profile_parameters_init(
     if (!sso_region_property) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to find sso_region in profile");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     if (!sso_start_url_property) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to find sso_start_url in profile");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     parameters->sso_region = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_region_property));
     parameters->sso_start_url =
         aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_start_url_property));
+    parameters->token_path = construct_token_path(allocator, parameters->sso_start_url);
+    if (!parameters->token_path) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to construct token path in profile");
+        return AWS_OP_ERR;
+    }
+
     return AWS_OP_SUCCESS;
 }
 
@@ -99,7 +112,7 @@ static int s_token_provider_profile_parameters_sso_session_init(
         aws_profile_collection_get_sso_session(profile_collection, sso_session_name);
     if (!session_profile) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to find an sso-session");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     const struct aws_profile_property *sso_region_property =
@@ -110,14 +123,14 @@ static int s_token_provider_profile_parameters_sso_session_init(
     if (!sso_region_property) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to find sso_region in sso-session");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     if (!sso_start_url_property) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "static: Profile token parser failed to find sso_start_url in sso-session");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     const struct aws_string *sso_region = aws_profile_property_get_value(sso_region_property);
@@ -133,26 +146,35 @@ static int s_token_provider_profile_parameters_sso_session_init(
         !aws_string_eq(sso_region, aws_profile_property_get_value(profile_sso_region_property))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: profile & sso-session have different value for sso_region");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     if (profile_sso_start_url_property &&
         !aws_string_eq(sso_start_url, aws_profile_property_get_value(profile_sso_start_url_property))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: profile & sso-session have different value for sso_start_url");
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     parameters->sso_region = aws_string_new_from_string(allocator, sso_region);
     parameters->sso_start_url = aws_string_new_from_string(allocator, sso_start_url);
+    parameters->token_path = construct_token_path(allocator, sso_session_name);
+    if (!parameters->token_path) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "static: Profile token parser failed to construct token path in sso-session");
+        return AWS_OP_ERR;
+    }
     return AWS_OP_SUCCESS;
 }
+
 static void s_token_provider_profile_parameters_destroy(
     struct aws_allocator *allocator,
     struct token_provider_profile_parameters *parameters) {
 
     aws_string_destroy(parameters->sso_region);
     aws_string_destroy(parameters->sso_start_url);
+    aws_string_destroy(parameters->token_path);
     aws_mem_release(allocator, parameters);
 }
 
@@ -260,6 +282,7 @@ struct aws_credentials_provider *aws_sso_token_provider_new_profile(
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_profile_vtable, impl);
     impl->sso_region = aws_string_new_from_string(allocator, parameters->sso_region);
     impl->sso_start_url = aws_string_new_from_string(allocator, parameters->sso_start_url);
+    impl->token_file_path = aws_string_new_from_string(allocator, parameters->sso_start_url);
     provider->shutdown_options = options->shutdown_options;
 
     s_token_provider_profile_parameters_destroy(allocator, parameters);
