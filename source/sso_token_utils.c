@@ -69,6 +69,7 @@ struct aws_string *construct_token_path(struct aws_allocator *allocator, const s
 cleanup:
     aws_byte_buf_clean_up(&token_path_buf);
     aws_byte_buf_clean_up(&sha1_buf);
+    aws_string_destroy(home_directory);
     return token_path_str;
 }
 

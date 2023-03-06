@@ -104,6 +104,8 @@ endif()
 
 add_net_test_case(sso_token_provider_profile_invalid_profile_test)
 add_net_test_case(sso_token_provider_profile_valid_profile_test)
+add_net_test_case(sso_token_provider_sso_session_invalid_profile_test)
+add_net_test_case(sso_token_provider_sso_session_valid_profile_test)
 
 add_net_test_case(parse_token_location_url_test)
 add_net_test_case(parse_token_location_session_test)

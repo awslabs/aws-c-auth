@@ -543,6 +543,20 @@ struct aws_sso_token_provider_profile_options {
     struct aws_byte_cursor config_file_name_override;
 };
 
+struct aws_sso_token_provider_sso_session_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Override of what profile to use to source credentials from ('default' by default)
+     */
+    struct aws_byte_cursor profile_name_override;
+
+    /*
+     * Override path to the profile config file (~/.aws/config by default)
+     */
+    struct aws_byte_cursor config_file_name_override;
+};
+
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -1018,6 +1032,11 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_sso_token_provider_new_profile(
     struct aws_allocator *allocator,
     const struct aws_sso_token_provider_profile_options *options);
+
+AWS_AUTH_API
+struct aws_credentials_provider *aws_sso_token_provider_new_sso_session(
+    struct aws_allocator *allocator,
+    const struct aws_sso_token_provider_sso_session_options *options);
 
 AWS_AUTH_API extern const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table;
 
