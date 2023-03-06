@@ -160,6 +160,14 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
 AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
+/*
+ * Loads an aws config profile collection
+ */
+AWS_AUTH_API
+struct aws_profile_collection *aws_load_config(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor config_file_name_override);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_PRIVATE_H */

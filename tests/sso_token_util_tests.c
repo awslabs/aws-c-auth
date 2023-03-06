@@ -12,31 +12,31 @@
 
 static int s_parse_token_location_url_test(struct aws_allocator *allocator, void *ctx) {
     struct aws_string *start_url = aws_string_new_from_c_str(allocator, "https://d-92671207e4.awsapps.com/start");
-    struct aws_string *token_path = construct_token_path(allocator, start_url);
-    struct aws_string *expected_token_path =
-        aws_string_new_from_c_str(allocator, "13f9d35043871d073ab260e020f0ffde092cb14b.json");
+    struct aws_string *token_path = aws_construct_token_path(allocator, start_url);
 
-    // TODO: mock home
-    ASSERT_TRUE(aws_string_eq(token_path, expected_token_path));
+    struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(token_path);
+    struct aws_byte_cursor expected_token_cursor =
+        aws_byte_cursor_from_c_str("/.aws/sso/cache/13f9d35043871d073ab260e020f0ffde092cb14b.json");
+    struct aws_byte_cursor find_cursor;
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&token_cursor, &expected_token_cursor, &find_cursor));
 
     aws_string_destroy(start_url);
     aws_string_destroy(token_path);
-    aws_string_destroy(expected_token_path);
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(parse_token_location_url_test, s_parse_token_location_url_test);
 
 static int s_parse_token_location_session_test(struct aws_allocator *allocator, void *ctx) {
     struct aws_string *session = aws_string_new_from_c_str(allocator, "admin");
-    struct aws_string *token_path = construct_token_path(allocator, session);
-    struct aws_string *expected_token_path =
-        aws_string_new_from_c_str(allocator, "d033e22ae348aeb5660fc2140aec35850c4da997.json");
-    // TODO: mock home
-    ASSERT_TRUE(aws_string_eq(token_path, expected_token_path));
+    struct aws_string *token_path = aws_construct_token_path(allocator, session);
+    struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(token_path);
+    struct aws_byte_cursor expected_token_cursor =
+        aws_byte_cursor_from_c_str("/.aws/sso/cache/d033e22ae348aeb5660fc2140aec35850c4da997.json");
+    struct aws_byte_cursor find_cursor;
+    ASSERT_SUCCESS(aws_byte_cursor_find_exact(&token_cursor, &expected_token_cursor, &find_cursor));
 
     aws_string_destroy(session);
     aws_string_destroy(token_path);
-    aws_string_destroy(expected_token_path);
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(parse_token_location_session_test, s_parse_token_location_session_test);

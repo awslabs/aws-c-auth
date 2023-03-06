@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
+#include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 
 #include <aws/common/date_time.h>
@@ -291,4 +292,44 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
     }
 
     return error_type;
+}
+
+struct aws_profile_collection *aws_load_config(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor config_file_name_override) {
+
+    struct aws_profile_collection *config_profiles = NULL;
+    struct aws_string *config_file_path = NULL;
+
+    config_file_path = aws_get_config_file_path(allocator, &config_file_name_override);
+    if (!config_file_path) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Failed to resolve config file path: %s",
+            aws_error_str(aws_last_error()));
+        goto on_error;
+    }
+
+    config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
+    if (config_profiles != NULL) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Successfully built config profile collection from file at (%s)",
+            aws_string_c_str(config_file_path));
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Failed to build config profile collection from file at (%s) : %s",
+            aws_string_c_str(config_file_path),
+            aws_error_str(aws_last_error()));
+        goto on_error;
+    }
+
+    aws_string_destroy(config_file_path);
+    return config_profiles;
+
+on_error:
+    aws_string_destroy(config_file_path);
+    aws_profile_collection_destroy(config_profiles);
+    return NULL;
 }

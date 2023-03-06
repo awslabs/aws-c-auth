@@ -340,6 +340,34 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_auth_http_system_vtable *function_table;
 };
 
+struct aws_credentials_provider_sso_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Override of what profile to use to source credentials from ('default' by default)
+     */
+    struct aws_byte_cursor profile_name_override;
+
+    /*
+     * Override path to the profile config file (~/.aws/config by default)
+     */
+    struct aws_byte_cursor config_file_name_override;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
+    struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when querying STS web identity provider.
+     * Required.
+     */
+    struct aws_tls_ctx *tls_ctx;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_auth_http_system_vtable *function_table;
+};
+
 /**
  * Configuration options for the STS credentials provider
  */
@@ -940,6 +968,11 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_web_identity_options *options);
+
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sso(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sso_options *options);
 
 /*
  * Creates a provider that sources credentials from running an external command or process

@@ -100,8 +100,6 @@ static int s_sso_token_provider_profile_valid_profile_test(struct aws_allocator 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_sso_token_provider_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
-        .profile_name_override = NULL,
-        .shutdown_options = NULL,
     };
 
     for (size_t i = 0; i < AWS_ARRAY_SIZE(s_valid_profile_examples); ++i) {
@@ -221,8 +219,6 @@ static int s_sso_token_provider_sso_session_valid_profile_test(struct aws_alloca
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_sso_token_provider_sso_session_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
-        .profile_name_override = NULL,
-        .shutdown_options = NULL,
     };
 
     for (size_t i = 0; i < AWS_ARRAY_SIZE(s_valid_profile_examples); ++i) {
