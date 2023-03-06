@@ -19,7 +19,7 @@ AWS_EXTERN_C_BEGIN
 
 /* Construct token path which ~/.aws/sso/cache/<hex encoded sha1 of input>.json */
 AWS_AUTH_API
-struct aws_string *construct_token_path(struct aws_allocator *allocator, const struct aws_string *input);
+struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, const struct aws_string *input);
 
 AWS_AUTH_API
 void aws_sso_token_destroy(struct aws_allocator *allocator, struct aws_sso_token *token);

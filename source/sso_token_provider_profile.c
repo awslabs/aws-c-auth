@@ -122,7 +122,7 @@ static int s_token_provider_profile_parameters_init(
     parameters->sso_region = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_region_property));
     parameters->sso_start_url =
         aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_start_url_property));
-    parameters->token_path = construct_token_path(allocator, parameters->sso_start_url);
+    parameters->token_path = aws_construct_token_path(allocator, parameters->sso_start_url);
     if (!parameters->token_path) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -244,9 +244,4 @@ struct aws_credentials_provider *aws_sso_token_provider_new_profile(
 
     s_token_provider_profile_parameters_destroy(allocator, parameters);
     return provider;
-
-    // on_error:
-    //     aws_credentials_provider_destroy(provider);
-    //     s_token_provider_profile_parameters_destroy(allocator, parameters);
-    //     return NULL;
 }

@@ -15,7 +15,7 @@
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_cache_directory, "/.aws/sso/cache/");
 
-struct aws_string *construct_token_path(struct aws_allocator *allocator, const struct aws_string *input) {
+struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, const struct aws_string *input) {
     AWS_PRECONDITION(input);
 
     struct aws_string *token_path_str = NULL;
