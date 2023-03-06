@@ -29,22 +29,24 @@ static int s_token_provider_sso_session_get_token_async(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
-    (void)provider;
-    (void)callback;
-    (void)user_data;
+
     struct aws_token_provider_sso_session_impl *impl = provider->impl;
     struct aws_sso_token *sso_token = NULL;
     struct aws_credentials *credentials = NULL;
+
     sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
     if (!sso_token) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: unable to read file.");
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto on_error;
     }
 
-    /* Check token expiration. TODO: Refresh token if it is within refresh window */
+    /* TODO: Refresh token if it is within refresh window */
+    /* check token expiration. */
     struct aws_date_time now;
     aws_date_time_init_now(&now);
     if (aws_date_time_diff(&sso_token->expiration, &now) < 0) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: cached token is expired.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: cached token is expired.");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto on_error;
     }
@@ -59,6 +61,7 @@ static int s_token_provider_sso_session_get_token_async(
 
     callback(credentials, AWS_OP_SUCCESS, user_data);
     return AWS_OP_SUCCESS;
+
 on_error:
     if (sso_token) {
         aws_sso_token_destroy(provider->allocator, sso_token);

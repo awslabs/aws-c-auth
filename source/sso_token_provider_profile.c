@@ -17,7 +17,7 @@
 #endif
 
 /*
- * Profile provider implementation
+ * sso-token profile provider implementation
  */
 struct aws_token_provider_profile_impl {
     struct aws_string *sso_region;
@@ -29,22 +29,23 @@ static int s_token_provider_profile_get_token_async(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
-    (void)provider;
-    (void)callback;
-    (void)user_data;
     struct aws_token_provider_profile_impl *impl = provider->impl;
+
     struct aws_sso_token *sso_token = NULL;
     struct aws_credentials *credentials = NULL;
+
     sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
     if (!sso_token) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: unable to read file.");
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto on_error;
     }
 
-    /* Check token expiration. TODO: Refresh token if it is within refresh window */
+    /* check token expiration. */
     struct aws_date_time now;
     aws_date_time_init_now(&now);
     if (aws_date_time_diff(&sso_token->expiration, &now) < 0) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: cached token is expired.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: cached token is expired.");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto on_error;
     }
@@ -59,11 +60,11 @@ static int s_token_provider_profile_get_token_async(
 
     callback(credentials, AWS_OP_SUCCESS, user_data);
     return AWS_OP_SUCCESS;
+
 on_error:
-    if (sso_token) {
-        aws_sso_token_destroy(provider->allocator, sso_token);
-    }
+    aws_sso_token_destroy(provider->allocator, sso_token);
     aws_credentials_release(credentials);
+    // TODO: Should I check last error and set it to source failure?
     callback(credentials, aws_last_error(), user_data);
     return AWS_OP_ERR;
 }
@@ -107,13 +108,14 @@ static int s_token_provider_profile_parameters_init(
 
     if (!sso_region_property) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to find sso_region in profile");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: Profile token parser failed to find sso_region in profile");
         return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
     if (!sso_start_url_property) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to find sso_start_url in profile");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "sso-profile: Profile token parser failed to find sso_start_url in profile");
         return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
     }
 
@@ -123,7 +125,8 @@ static int s_token_provider_profile_parameters_init(
     parameters->token_path = construct_token_path(allocator, parameters->sso_start_url);
     if (!parameters->token_path) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to construct token path in profile");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "sso-profile: Profile token parser failed to construct token path in profile");
         return AWS_OP_ERR;
     }
 
@@ -155,13 +158,16 @@ static struct token_provider_profile_parameters *s_token_provider_profile_parame
 
     if (!config_file_path) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed resolve config file path");
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: Profile token parser failed resolve config file path");
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
 
     profile_name = aws_get_profile_name(allocator, &profile_name_override);
     if (!profile_name) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile token parser failed to resolve profile name");
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: Profile token parser failed to resolve profile name");
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
     config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
@@ -169,8 +175,9 @@ static struct token_provider_profile_parameters *s_token_provider_profile_parame
     if (!config_profiles) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "static: Profile token parser could not load or parse"
+            "sso-profile: Profile token parser could not load or parse"
             " a config file.");
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
 
@@ -179,17 +186,19 @@ static struct token_provider_profile_parameters *s_token_provider_profile_parame
     if (!profile) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "static: Profile token provider could not load"
+            "sso-profile: Profile token provider could not load"
             " a profile at %s.",
             aws_string_c_str(profile_name));
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
 
     if (s_token_provider_profile_parameters_init(allocator, parameters, profile)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "static: Profile token provider could not load a valid sso profile at %s",
+            "sso-profile: Profile token provider could not load a valid sso profile at %s",
             aws_string_c_str(profile_name));
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
 

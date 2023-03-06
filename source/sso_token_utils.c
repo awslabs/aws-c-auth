@@ -74,6 +74,10 @@ cleanup:
 }
 
 void aws_sso_token_destroy(struct aws_allocator *allocator, struct aws_sso_token *token) {
+    if (token == NULL) {
+        return;
+    }
+
     aws_string_destroy(token->token);
     aws_mem_release(allocator, token);
 }
