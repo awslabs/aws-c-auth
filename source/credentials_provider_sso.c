@@ -30,6 +30,155 @@
 #    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
+#define SSO_RESPONSE_SIZE_INITIAL 2048
+#define SSO_RESPONSE_SIZE_LIMIT 10000
+#define SSO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
+#define SSO_CREDS_DEFAULT_DURATION_SECONDS 900
+#define SSO_MAX_ATTEMPTS 3
+
+struct aws_credentials_provider_sso_impl {
+    struct aws_http_connection_manager *connection_manager;
+    const struct aws_auth_http_system_vtable *function_table;
+    struct aws_string *endpoint;
+    struct aws_string *sso_account_id;
+    struct aws_string *sso_role_name;
+    struct aws_credentials_provider *token_provider;
+};
+
+/**
+ * sso_user_data - scratch data for each outstanding SSO query.
+ */
+struct sso_user_data {
+    /* immutable post-creation */
+    struct aws_allocator *allocator;
+    struct aws_credentials_provider *provider;
+    aws_on_get_credentials_callback_fn *original_callback;
+    void *original_user_data;
+
+    /* mutable */
+    struct aws_http_connection *connection;
+    struct aws_http_message *request;
+    struct aws_byte_buf response;
+    struct aws_retry_token *retry_token;
+
+    /* URI path and query string. */
+    struct aws_byte_buf path_and_query;
+
+    /* Track last HTTP response status and last error code. */
+    int status_code;
+    int error_code;
+};
+
+static void s_user_data_destroy(struct sso_user_data *user_data) {
+    if (user_data == NULL) {
+        return;
+    }
+
+    s_user_data_reset_request_and_response(user_data);
+
+    if (user_data->connection) {
+        struct aws_credentials_provider_sso_impl *impl = user_data->provider->impl;
+
+        impl->function_table->aws_http_connection_manager_release_connection(
+            impl->connection_manager, user_data->connection);
+    }
+
+    aws_byte_buf_clean_up(&user_data->response);
+    aws_retry_token_release(user_data->retry_token);
+
+    aws_byte_buf_clean_up(&user_data->path_and_query);
+
+    aws_credentials_provider_release(user_data->provider);
+    aws_mem_release(user_data->allocator, user_data);
+}
+
+static struct sso_user_data *s_user_data_new(
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+    struct aws_credentials_provider_sso_impl *impl = provider->impl;
+
+    struct sso_user_data *wrapped_user_data = aws_mem_calloc(provider->allocator, 1, sizeof(struct sso_user_data));
+    wrapped_user_data->allocator = provider->allocator;
+    wrapped_user_data->provider = aws_credentials_provider_acquire(provider);
+    wrapped_user_data->original_user_data = user_data;
+    wrapped_user_data->original_callback = callback;
+
+    struct aws_byte_cursor account_id_cursor = aws_byte_cursor_from_string(impl->sso_account_id);
+    struct aws_byte_cursor role_name_cursor = aws_byte_cursor_from_string(impl->sso_role_name);
+    struct aws_byte_cursor path_cursor = aws_byte_cursor_from_c_str("/federation/credentials?account_id=");
+    struct aws_byte_cursor role_name_param_cursor = aws_byte_cursor_from_c_str("&role_name=");
+
+    if (aws_byte_buf_init_copy_from_cursor(&wrapped_user_data->path_and_query, provider->allocator, path_cursor) ||
+        aws_byte_buf_append_encoding_uri_param(&wrapped_user_data->path_and_query, &account_id_cursor) ||
+        aws_byte_buf_append_dynamic(&wrapped_user_data->path_and_query, &role_name_param_cursor) ||
+        aws_byte_buf_append_encoding_uri_param(&wrapped_user_data->path_and_query, &role_name_cursor)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_init(&wrapped_user_data->response, provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
+        goto on_error;
+    }
+
+    return wrapped_user_data;
+
+on_error:
+    s_user_data_destroy(wrapped_user_data);
+
+    return NULL;
+}
+
+static int s_credentials_provider_sso_get_credentials_async(
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+
+    struct aws_credentials_provider_sso_impl *impl = provider->impl;
+
+    struct sso_user_data *wrapped_user_data = s_user_data_new(provider, callback, user_data);
+    if (wrapped_user_data == NULL) {
+        callback(NULL, aws_last_error(), user_data);
+        return AWS_OP_ERR;
+    }
+
+    return AWS_OP_ERR;
+}
+
+static void s_on_connection_manager_shutdown(void *user_data) {
+    struct aws_credentials_provider *provider = user_data;
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+    aws_mem_release(provider->allocator, provider);
+}
+static void s_credentials_provider_sso_destroy(struct aws_credentials_provider *provider) {
+
+    struct aws_credentials_provider_sso_impl *impl = provider->impl;
+    if (impl == NULL) {
+        return;
+    }
+    aws_string_destroy(impl->endpoint);
+    aws_string_destroy(impl->sso_account_id);
+    aws_string_destroy(impl->sso_role_name);
+    aws_credentials_provider_release(impl->token_provider);
+
+    /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
+     * which will do memory release for provider and impl. So We should be freeing impl
+     * related memory first, then call aws_http_connection_manager_release.
+     */
+    if (impl->connection_manager) {
+        impl->function_table->aws_http_connection_manager_release(impl->connection_manager);
+    } else {
+        /* If provider setup failed halfway through, connection_manager might not exist.
+         * In this case invoke shutdown completion callback directly to finish cleanup */
+        s_on_connection_manager_shutdown(provider);
+    }
+}
+
+static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vtable = {
+    .get_credentials = s_credentials_provider_sso_get_credentials_async,
+    .destroy = s_credentials_provider_sso_destroy,
+};
+
 static int s_construct_endpoint(
     struct aws_allocator *allocator,
     struct aws_byte_buf *endpoint,
@@ -74,7 +223,6 @@ struct sso_parameters {
     struct aws_allocator *allocator;
     struct aws_byte_buf endpoint;
     struct aws_string *sso_account_id;
-    /* region is actually used to construct endpoint */
     struct aws_string *sso_role_name;
     struct aws_credentials_provider *token_provider;
 };
@@ -169,7 +317,7 @@ static struct sso_parameters *s_parameters_new(
     parameters->sso_account_id = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_account_id));
     parameters->sso_role_name = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
     /* determine endpoint */
-    if (s_construct_endpoint(allocator, &parameters->endpoint, parameters->sso_region)) {
+    if (s_construct_endpoint(allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region))) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sso endpoint");
         goto on_finish;
     }
@@ -198,106 +346,84 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
         return NULL;
     }
 
-    //     struct aws_tls_connection_options tls_connection_options;
-    //     AWS_ZERO_STRUCT(tls_connection_options);
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_sso_impl *impl = NULL;
+    struct aws_tls_connection_options tls_connection_options;
 
-    //     struct aws_credentials_provider *provider = NULL;
-    //     struct aws_credentials_provider_sts_web_identity_impl *impl = NULL;
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_sso_impl));
 
-    //     aws_mem_acquire_many(
-    //         allocator,
-    //         2,
-    //         &provider,
-    //         sizeof(struct aws_credentials_provider),
-    //         &impl,
-    //         sizeof(struct aws_credentials_provider_sts_web_identity_impl));
+    AWS_ZERO_STRUCT(*provider);
+    AWS_ZERO_STRUCT(*impl);
+    AWS_ZERO_STRUCT(tls_connection_options);
 
-    //     if (!provider) {
-    //         goto on_error;
-    //     }
+    aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sso_vtable, impl);
 
-    //     AWS_ZERO_STRUCT(*provider);
-    //     AWS_ZERO_STRUCT(*impl);
+    if (!options->tls_ctx) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a TLS context must be provided to the SSO credentials provider");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
 
-    //     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_web_identity_vtable,
-    //     impl);
+    aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
+    struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
+    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to create a tls connection options with error %s",
+            (void *)provider,
+            aws_error_str(aws_last_error()));
+        goto on_error;
+    }
 
-    //     if (!options->tls_ctx) {
-    //         AWS_LOGF_ERROR(
-    //             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-    //             "a TLS context must be provided to the STS web identity credentials provider");
-    //         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-    //         return NULL;
-    //     }
+    struct aws_socket_options socket_options;
+    AWS_ZERO_STRUCT(socket_options);
+    socket_options.type = AWS_SOCKET_STREAM;
+    socket_options.domain = AWS_SOCKET_IPV4;
+    socket_options.connect_timeout_ms = (uint32_t)aws_timestamp_convert(
+        SSO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
 
-    //     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    //     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
-    //     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
-    //         AWS_LOGF_ERROR(
-    //             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-    //             "(id=%p): failed to create a tls connection options with error %s",
-    //             (void *)provider,
-    //             aws_error_str(aws_last_error()));
-    //         goto on_error;
-    //     }
+    struct aws_http_connection_manager_options manager_options;
+    AWS_ZERO_STRUCT(manager_options);
+    manager_options.bootstrap = options->bootstrap;
+    manager_options.initial_window_size = SSO_RESPONSE_SIZE_LIMIT;
+    manager_options.socket_options = &socket_options;
+    manager_options.host = host;
+    manager_options.port = 443;
+    manager_options.max_connections = 2;
+    manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
+    manager_options.shutdown_complete_user_data = provider;
+    manager_options.tls_connection_options = &tls_connection_options;
 
-    //     struct aws_socket_options socket_options;
-    //     AWS_ZERO_STRUCT(socket_options);
-    //     socket_options.type = AWS_SOCKET_STREAM;
-    //     socket_options.domain = AWS_SOCKET_IPV4;
-    //     socket_options.connect_timeout_ms = (uint32_t)aws_timestamp_convert(
-    //         STS_WEB_IDENTITY_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
+    impl->function_table = options->function_table;
+    if (impl->function_table == NULL) {
+        impl->function_table = g_aws_credentials_provider_http_function_table;
+    }
 
-    //     struct aws_http_connection_manager_options manager_options;
-    //     AWS_ZERO_STRUCT(manager_options);
-    //     manager_options.bootstrap = options->bootstrap;
-    //     manager_options.initial_window_size = STS_WEB_IDENTITY_RESPONSE_SIZE_LIMIT;
-    //     manager_options.socket_options = &socket_options;
-    //     manager_options.host = host;
-    //     manager_options.port = 443;
-    //     manager_options.max_connections = 2;
-    //     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
-    //     manager_options.shutdown_complete_user_data = provider;
-    //     manager_options.tls_connection_options = &tls_connection_options;
+    impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
+    if (impl->connection_manager == NULL) {
+        goto on_error;
+    }
 
-    //     impl->function_table = options->function_table;
-    //     if (impl->function_table == NULL) {
-    //         impl->function_table = g_aws_credentials_provider_http_function_table;
-    //     }
+    impl->token_provider = aws_credentials_provider_acquire(parameters->token_provider);
+    impl->endpoint = aws_string_new_from_buf(allocator, &parameters->endpoint);
+    impl->sso_account_id = aws_string_new_from_string(allocator, parameters->sso_account_id);
+    impl->sso_role_name = aws_string_new_from_string(allocator, parameters->sso_role_name);
 
-    //     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator,
-    //     &manager_options); if (impl->connection_manager == NULL) {
-    //         goto on_error;
-    //     }
+    provider->shutdown_options = options->shutdown_options;
+    s_parameters_destroy(parameters);
+    aws_tls_connection_options_clean_up(&tls_connection_options);
+    return provider;
 
-    //     impl->role_arn = aws_string_new_from_array(allocator, parameters->role_arn.buffer, parameters->role_arn.len);
-    //     if (impl->role_arn == NULL) {
-    //         goto on_error;
-    //     }
-
-    //     impl->role_session_name =
-    //         aws_string_new_from_array(allocator, parameters->role_session_name.buffer,
-    //         parameters->role_session_name.len);
-    //     if (impl->role_session_name == NULL) {
-    //         goto on_error;
-    //     }
-
-    //     impl->token_file_path =
-    //         aws_string_new_from_array(allocator, parameters->token_file_path.buffer,
-    //         parameters->token_file_path.len);
-    //     if (impl->token_file_path == NULL) {
-    //         goto on_error;
-    //     }
-
-    //     provider->shutdown_options = options->shutdown_options;
-    //     s_parameters_destroy(parameters);
-    //     aws_tls_connection_options_clean_up(&tls_connection_options);
-    //     return provider;
-
-    // on_error:
-
-    //     aws_credentials_provider_destroy(provider);
-    //     s_parameters_destroy(parameters);
-    //     aws_tls_connection_options_clean_up(&tls_connection_options);
+on_error:
+    aws_credentials_provider_destroy(provider);
+    s_parameters_destroy(parameters);
+    aws_tls_connection_options_clean_up(&tls_connection_options);
     return NULL;
 }
