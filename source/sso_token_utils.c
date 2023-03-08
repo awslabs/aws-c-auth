@@ -29,17 +29,14 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
     struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_string(s_sso_cache_directory);
     struct aws_byte_cursor input_cursor = aws_byte_cursor_from_string(input);
     struct aws_byte_cursor json_cursor = aws_byte_cursor_from_c_str(".json");
-    const size_t hex_sha_length = AWS_SHA1_LEN * 2;
-    size_t path_length = home_dir_cursor.len + cache_dir_cursor.len + hex_sha_length + json_cursor.len;
 
     struct aws_byte_buf token_path_buf;
     AWS_ZERO_STRUCT(token_path_buf);
     struct aws_byte_buf sha1_buf;
     AWS_ZERO_STRUCT(sha1_buf);
 
-    aws_byte_buf_init(&token_path_buf, allocator, path_length);
     /* append home directory */
-    aws_byte_buf_append_dynamic(&token_path_buf, &home_dir_cursor);
+    aws_byte_buf_init_copy_from_cursor(&token_path_buf, allocator, home_dir_cursor);
     /* append sso cache directory */
     aws_byte_buf_append_dynamic(&token_path_buf, &cache_dir_cursor);
 
@@ -106,6 +103,7 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso token: failed to parse access token file %s",
             aws_string_c_str(file_path));
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto cleanup;
     }
 

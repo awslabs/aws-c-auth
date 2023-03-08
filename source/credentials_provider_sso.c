@@ -654,7 +654,7 @@ static struct sso_parameters *s_parameters_new(
 
     const struct aws_profile_property *sso_account_id = aws_profile_get_property(profile, s_sso_account_id);
     const struct aws_profile_property *sso_role_name = aws_profile_get_property(profile, s_sso_role_name);
-    const struct aws_profile_property *sso_region = aws_profile_get_property(profile, s_sso_region);
+    const struct aws_profile_property *sso_region = NULL;
 
     if (!sso_account_id) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: sso_account_id is missing");
@@ -663,11 +663,6 @@ static struct sso_parameters *s_parameters_new(
     }
     if (!sso_role_name) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: sso_role_name is missing");
-        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
-        goto on_finish;
-    }
-    if (!sso_region) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: sso_region is missing");
         aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
         goto on_finish;
     }
@@ -685,18 +680,31 @@ static struct sso_parameters *s_parameters_new(
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
             goto on_finish;
         }
+        sso_region = aws_profile_get_property(
+            aws_profile_collection_get_section(
+                config_profile,
+                aws_profile_property_get_value(sso_session_property),
+                AWS_PROFILE_SECTION_TYPE_SSO_SESSION),
+            s_sso_region);
     } else {
-        struct aws_token_provider_profile_options token_provider_options;
+        struct aws_token_provider_sso_profile_options token_provider_options;
         AWS_ZERO_STRUCT(token_provider_options);
         token_provider_options.config_file_name_override = options->config_file_name_override;
         token_provider_options.profile_name_override = options->profile_name_override;
 
-        parameters->token_provider = aws_token_provider_new_profile(allocator, &token_provider_options);
+        parameters->token_provider = aws_token_provider_new_sso_profile(allocator, &token_provider_options);
         if (!parameters->token_provider) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: unable to create a profile token provider");
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
             goto on_finish;
         }
+        sso_region = aws_profile_get_property(profile, s_sso_region);
+    }
+
+    if (!sso_region) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: sso_region is missing");
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
+        goto on_finish;
     }
 
     parameters->sso_account_id = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_account_id));

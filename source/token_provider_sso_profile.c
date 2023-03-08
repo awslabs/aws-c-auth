@@ -20,8 +20,6 @@
  * sso-token profile provider implementation
  */
 struct aws_token_provider_profile_impl {
-    struct aws_string *sso_region;
-    struct aws_string *sso_start_url;
     struct aws_string *token_file_path;
 };
 
@@ -36,8 +34,7 @@ static int s_token_provider_profile_get_token_async(
     bool success = false;
     sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
     if (!sso_token) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", provider);
-        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", (void *)provider);
         goto done;
     }
 
@@ -45,7 +42,7 @@ static int s_token_provider_profile_get_token_async(
     struct aws_date_time now;
     aws_date_time_init_now(&now);
     if (aws_date_time_diff(&sso_token->expiration, &now) < 0) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", provider);
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", (void *)provider);
         aws_raise_error(AWS_AUTH_SSO_TOKEN_EXPIRED);
         goto done;
     }
@@ -76,8 +73,6 @@ static void s_token_provider_profile_destroy(struct aws_credentials_provider *pr
         return;
     }
 
-    aws_string_destroy(impl->sso_region);
-    aws_string_destroy(impl->sso_start_url);
     aws_string_destroy(impl->token_file_path);
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
@@ -89,78 +84,16 @@ static struct aws_credentials_provider_vtable s_aws_token_provider_profile_vtabl
     .destroy = s_token_provider_profile_destroy,
 };
 
-AWS_STRING_FROM_LITERAL(s_profile_sso_region_name, "sso_region");
 AWS_STRING_FROM_LITERAL(s_profile_sso_start_url_name, "sso_start_url");
 
-struct token_provider_profile_parameters {
-    struct aws_string *sso_region;
-    struct aws_string *sso_start_url;
-    struct aws_string *token_path;
-};
-
-static int s_token_provider_profile_parameters_init(
-    struct aws_allocator *allocator,
-    struct token_provider_profile_parameters *parameters,
-    const struct aws_profile *profile) {
-    const struct aws_profile_property *sso_region_property =
-        aws_profile_get_property(profile, s_profile_sso_region_name);
-    const struct aws_profile_property *sso_start_url_property =
-        aws_profile_get_property(profile, s_profile_sso_start_url_name);
-
-    if (!sso_region_property) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to find sso_region in profile");
-        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
-    }
-
-    if (!sso_start_url_property) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to find sso_start_url in profile");
-        return aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
-    }
-
-    parameters->sso_region = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_region_property));
-    parameters->sso_start_url =
-        aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_start_url_property));
-    parameters->token_path = aws_construct_token_path(allocator, parameters->sso_start_url);
-    if (!parameters->token_path) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to construct token path in profile");
-        return AWS_OP_ERR;
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-static void s_token_provider_profile_parameters_destroy(
-    struct aws_allocator *allocator,
-    struct token_provider_profile_parameters *parameters) {
-
-    aws_string_destroy(parameters->sso_region);
-    aws_string_destroy(parameters->sso_start_url);
-    aws_string_destroy(parameters->token_path);
-    aws_mem_release(allocator, parameters);
-}
-
-static struct token_provider_profile_parameters *s_token_provider_profile_parameters_new(
+static struct aws_string *s_construct_profile_token_path(
     struct aws_allocator *allocator,
     struct aws_byte_cursor profile_name_override,
     struct aws_byte_cursor config_file_name_override) {
 
     struct aws_profile_collection *config_profiles = NULL;
-    struct aws_string *config_file_path = NULL;
     struct aws_string *profile_name = NULL;
-    bool success = false;
-
-    struct token_provider_profile_parameters *parameters =
-        aws_mem_calloc(allocator, 1, sizeof(struct token_provider_profile_parameters));
-    config_file_path = aws_get_config_file_path(allocator, &config_file_name_override);
-
-    if (!config_file_path) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed resolve config file path");
-        aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
-        goto cleanup;
-    }
+    struct aws_string *token_path = NULL;
 
     profile_name = aws_get_profile_name(allocator, &profile_name_override);
     if (!profile_name) {
@@ -168,7 +101,7 @@ static struct token_provider_profile_parameters *s_token_provider_profile_parame
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
-    config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
+    config_profiles = aws_load_config(allocator, config_file_name_override);
 
     if (!config_profiles) {
         AWS_LOGF_ERROR(
@@ -191,37 +124,32 @@ static struct token_provider_profile_parameters *s_token_provider_profile_parame
         goto cleanup;
     }
 
-    if (s_token_provider_profile_parameters_init(allocator, parameters, profile)) {
+    const struct aws_profile_property *sso_start_url_property =
+        aws_profile_get_property(profile, s_profile_sso_start_url_name);
+
+    if (!sso_start_url_property) {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso-profile: token provider could not load a valid sso profile at %s",
-            aws_string_c_str(profile_name));
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to find sso_start_url in profile");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
 
-    success = true;
+    token_path = aws_construct_token_path(allocator, aws_profile_property_get_value(sso_start_url_property));
+    if (!token_path) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to construct token path in profile");
+    }
 
 cleanup:
-    aws_string_destroy(config_file_path);
     aws_string_destroy(profile_name);
     aws_profile_collection_release(config_profiles);
-    if (!success) {
-        s_token_provider_profile_parameters_destroy(allocator, parameters);
-        parameters = NULL;
-    }
-    return parameters;
+    return token_path;
 }
 
-struct aws_credentials_provider *aws_token_provider_new_profile(
+struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     struct aws_allocator *allocator,
-    const struct aws_token_provider_profile_options *options) {
+    const struct aws_token_provider_sso_profile_options *options) {
 
-    struct token_provider_profile_parameters *parameters = s_token_provider_profile_parameters_new(
-        allocator, options->profile_name_override, options->config_file_name_override);
-    if (!parameters) {
-        return NULL;
-    }
     struct aws_credentials_provider *provider = NULL;
     struct aws_token_provider_profile_impl *impl = NULL;
 
@@ -235,11 +163,9 @@ struct aws_credentials_provider *aws_token_provider_new_profile(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_profile_vtable, impl);
-    impl->sso_region = aws_string_new_from_string(allocator, parameters->sso_region);
-    impl->sso_start_url = aws_string_new_from_string(allocator, parameters->sso_start_url);
-    impl->token_file_path = aws_string_new_from_string(allocator, parameters->token_path);
+    impl->token_file_path =
+        s_construct_profile_token_path(allocator, options->profile_name_override, options->config_file_name_override);
     provider->shutdown_options = options->shutdown_options;
 
-    s_token_provider_profile_parameters_destroy(allocator, parameters);
     return provider;
 }

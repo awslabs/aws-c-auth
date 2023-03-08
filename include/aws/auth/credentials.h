@@ -554,10 +554,10 @@ struct aws_credentials_provider_cognito_options {
 };
 
 /**
- * Configuration options for a provider that sources credentials from the aws profile and credentials files
- * (by default ~/.aws/profile and ~/.aws/credentials)
+ * Configuration options for a provider that sources sso token information from the aws profile  (by default
+ * ~/.aws/profile) and token from ~/.aws/sso/cache/<sha1>.json.
  */
-struct aws_token_provider_profile_options {
+struct aws_token_provider_sso_profile_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /*
@@ -1061,9 +1061,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     const struct aws_credentials_provider_chain_default_options *options);
 
 /**
- * Creates a provider that sources credentials from key-value profiles loaded from the aws credentials
- * file ("~/.aws/credentials" by default) and the aws config file ("~/.aws/config" by
- * default)
+ * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
+ * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1>.json
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options
@@ -1071,9 +1070,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
 AWS_AUTH_API
-struct aws_credentials_provider *aws_token_provider_new_profile(
+struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     struct aws_allocator *allocator,
-    const struct aws_token_provider_profile_options *options);
+    const struct aws_token_provider_sso_profile_options *options);
 
 AWS_AUTH_API
 struct aws_credentials_provider *aws_token_provider_new_sso_session(

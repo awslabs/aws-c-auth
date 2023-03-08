@@ -56,7 +56,7 @@ static int s_sso_token_provider_profile_invalid_profile_test(struct aws_allocato
     aws_unset_environment_value(s_default_config_path_env_variable_name);
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
-    struct aws_token_provider_profile_options options = {
+    struct aws_token_provider_sso_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
     };
 
@@ -64,7 +64,7 @@ static int s_sso_token_provider_profile_invalid_profile_test(struct aws_allocato
         printf("invalid example [%zu]: %s\n", i, s_invalid_profile_examples[i].name);
         struct aws_string *config_contents = aws_string_new_from_cursor(allocator, &s_invalid_profile_examples[i].text);
         ASSERT_SUCCESS(aws_create_profile_file(config_file_str, config_contents));
-        ASSERT_NULL(aws_token_provider_new_profile(allocator, &options));
+        ASSERT_NULL(aws_token_provider_new_sso_profile(allocator, &options));
         aws_string_destroy(config_contents);
     }
 
@@ -98,7 +98,7 @@ static int s_sso_token_provider_profile_valid_profile_test(struct aws_allocator 
     aws_unset_environment_value(s_default_config_path_env_variable_name);
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
-    struct aws_token_provider_profile_options options = {
+    struct aws_token_provider_sso_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
     };
 
@@ -106,7 +106,7 @@ static int s_sso_token_provider_profile_valid_profile_test(struct aws_allocator 
         printf("valid example [%zu]: %s\n", i, s_valid_profile_examples[i].name);
         struct aws_string *config_contents = aws_string_new_from_cursor(allocator, &s_valid_profile_examples[i].text);
         ASSERT_SUCCESS(aws_create_profile_file(config_file_str, config_contents));
-        struct aws_credentials_provider *provider = aws_token_provider_new_profile(allocator, &options);
+        struct aws_credentials_provider *provider = aws_token_provider_new_sso_profile(allocator, &options);
         ASSERT_NOT_NULL(provider);
         aws_credentials_provider_release(provider);
         aws_string_destroy(config_contents);
