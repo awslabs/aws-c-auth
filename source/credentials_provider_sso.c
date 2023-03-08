@@ -673,24 +673,24 @@ static struct sso_parameters *s_parameters_new(
 
     const struct aws_profile_property *sso_session_property = aws_profile_get_property(profile, s_sso_session);
     if (sso_session_property) {
-        struct aws_sso_token_provider_sso_session_options token_provider_options;
+        struct aws_token_provider_sso_session_options token_provider_options;
         AWS_ZERO_STRUCT(token_provider_options);
         token_provider_options.config_file_name_override = options->config_file_name_override;
         token_provider_options.profile_name_override = options->profile_name_override;
 
-        parameters->token_provider = aws_sso_token_provider_new_sso_session(allocator, &token_provider_options);
+        parameters->token_provider = aws_token_provider_new_sso_session(allocator, &token_provider_options);
         if (!parameters->token_provider) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: unable to create a sso token provider");
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
             goto on_finish;
         }
     } else {
-        struct aws_sso_token_provider_profile_options token_provider_options;
+        struct aws_token_provider_profile_options token_provider_options;
         AWS_ZERO_STRUCT(token_provider_options);
         token_provider_options.config_file_name_override = options->config_file_name_override;
         token_provider_options.profile_name_override = options->profile_name_override;
 
-        parameters->token_provider = aws_sso_token_provider_new_profile(allocator, &token_provider_options);
+        parameters->token_provider = aws_token_provider_new_profile(allocator, &token_provider_options);
         if (!parameters->token_provider) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: unable to create a profile token provider");
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE);
