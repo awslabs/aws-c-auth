@@ -167,7 +167,9 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
             aws_string_destroy_secure(credentials->identity.ecc_identity.session_token);
             aws_ecc_key_pair_release(credentials->identity.ecc_identity.ecc_key);
             break;
-
+        case TOKEN_IDENTITY:
+            aws_string_destroy(credentials->identity.token.token);
+            break;
         default:
             break;
     }

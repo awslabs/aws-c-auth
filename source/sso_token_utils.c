@@ -142,7 +142,6 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto cleanup;
     }
-    printf("%s", access_token_cursor.ptr);
     token->token = aws_string_new_from_cursor(allocator, &access_token_cursor);
     token->expiration = expiration;
 

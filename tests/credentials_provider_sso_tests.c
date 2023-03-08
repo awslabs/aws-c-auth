@@ -24,15 +24,22 @@
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
 
+static bool received_callback = false;
+static struct aws_mutex lock;
+static struct aws_condition_variable tester_signal;
 static bool s_has_tester_received_credentials_callback(void *user_data) {
     (void)user_data;
 
-    return false;
+    return received_callback;
 }
 static void s_get_credentials_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)user_data;
     (void)credentials;
-    printf("get credentials callback, %d", error_code);
+    printf("credentials callback, %d", error_code);
+    AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "waahm7 callback %d", error_code);
+
+    received_callback = true;
+    aws_condition_variable_notify_one(&tester_signal);
 }
 
 static int s_credentials_provider_sso_new_destroy(struct aws_allocator *allocator, void *ctx) {
@@ -62,18 +69,25 @@ static int s_credentials_provider_sso_new_destroy(struct aws_allocator *allocato
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-    struct aws_mutex lock;
-    struct aws_condition_variable signal;
+
     if (aws_mutex_init(&lock)) {
         return AWS_OP_ERR;
     }
 
-    if (aws_condition_variable_init(&signal)) {
+    if (aws_condition_variable_init(&tester_signal)) {
         return AWS_OP_ERR;
     }
 
-    aws_condition_variable_wait_pred(&signal, &lock, s_has_tester_received_credentials_callback, NULL);
+    aws_condition_variable_wait_pred(&tester_signal, &lock, s_has_tester_received_credentials_callback, NULL);
 
+    AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "waahm7 releasing");
+
+    aws_credentials_provider_release(provider);
+    aws_event_loop_group_release(el_group);
+    aws_host_resolver_release(resolver);
+    aws_client_bootstrap_release(options.bootstrap);
+    aws_tls_ctx_release(options.tls_ctx);
+    aws_auth_library_clean_up();
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_sso_new_destroy, s_credentials_provider_sso_new_destroy);

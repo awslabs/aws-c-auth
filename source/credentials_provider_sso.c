@@ -101,6 +101,7 @@ static void s_user_data_destroy(struct sso_user_data *user_data) {
     aws_byte_buf_clean_up(&user_data->path_and_query);
     aws_credentials_provider_release(user_data->provider);
     aws_retry_token_release(user_data->retry_token);
+    aws_string_destroy(user_data->token);
     aws_mem_release(user_data->allocator, user_data);
 }
 
