@@ -33,12 +33,13 @@ static int s_token_provider_sso_session_get_token_async(
     struct aws_token_provider_sso_session_impl *impl = provider->impl;
     struct aws_sso_token *sso_token = NULL;
     struct aws_credentials *credentials = NULL;
+    bool success = false;
 
     sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
     if (!sso_token) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: unable to read file.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", provider);
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
-        goto on_error;
+        goto done;
     }
 
     /* TODO: Refresh token if it is within refresh window and refreshable */
@@ -46,9 +47,9 @@ static int s_token_provider_sso_session_get_token_async(
     struct aws_date_time now;
     aws_date_time_init_now(&now);
     if (aws_date_time_diff(&sso_token->expiration, &now) < 0) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: cached token is expired.");
-        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
-        goto on_error;
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", provider);
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_EXPIRED);
+        goto done;
     }
 
     credentials = aws_credentials_new_token(
@@ -56,19 +57,18 @@ static int s_token_provider_sso_session_get_token_async(
         aws_byte_cursor_from_string(sso_token->token),
         aws_date_time_as_epoch_secs(&sso_token->expiration));
     if (!credentials) {
-        goto on_error;
+        goto done;
     }
-
     callback(credentials, AWS_OP_SUCCESS, user_data);
-    return AWS_OP_SUCCESS;
+    success = true;
 
-on_error:
-    if (sso_token) {
-        aws_sso_token_destroy(provider->allocator, sso_token);
-    }
+done:
+    aws_sso_token_destroy(provider->allocator, sso_token);
     aws_credentials_release(credentials);
-    callback(credentials, aws_last_error(), user_data);
-    return AWS_OP_ERR;
+    if (!success) {
+        callback(NULL, aws_last_error(), user_data);
+    }
+    return success ? AWS_OP_SUCCESS : AWS_OP_ERR;
 }
 
 static void s_token_provider_sso_session_destroy(struct aws_credentials_provider *provider) {
