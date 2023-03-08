@@ -41,7 +41,7 @@ static int s_token_provider_sso_session_get_token_async(
         goto on_error;
     }
 
-    /* TODO: Refresh token if it is within refresh window */
+    /* TODO: Refresh token if it is within refresh window and refreshable */
     /* check token expiration. */
     struct aws_date_time now;
     aws_date_time_init_now(&now);
@@ -257,9 +257,9 @@ cleanup:
     return parameters;
 }
 
-struct aws_credentials_provider *aws_sso_token_provider_new_sso_session(
+struct aws_credentials_provider *aws_token_provider_new_sso_session(
     struct aws_allocator *allocator,
-    const struct aws_sso_token_provider_sso_session_options *options) {
+    const struct aws_token_provider_sso_session_options *options) {
 
     struct token_provider_sso_session_parameters *parameters = s_token_provider_sso_session_parameters_new(
         allocator, options->profile_name_override, options->config_file_name_override);

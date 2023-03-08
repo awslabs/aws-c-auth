@@ -211,9 +211,9 @@ cleanup:
     return parameters;
 }
 
-struct aws_credentials_provider *aws_sso_token_provider_new_profile(
+struct aws_credentials_provider *aws_token_provider_new_profile(
     struct aws_allocator *allocator,
-    const struct aws_sso_token_provider_profile_options *options) {
+    const struct aws_token_provider_profile_options *options) {
 
     struct token_provider_profile_parameters *parameters = s_token_provider_profile_parameters_new(
         allocator, options->profile_name_override, options->config_file_name_override);
