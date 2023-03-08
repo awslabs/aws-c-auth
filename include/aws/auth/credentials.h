@@ -726,6 +726,15 @@ AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials);
 
 /**
+ * Get the AWS token from a set of credentials
+ *
+ * @param credentials credentials to get the session token from
+ * @return a byte cursor to the session token or an empty byte cursor if there is no session token
+ */
+AWS_AUTH_API
+struct aws_byte_cursor aws_credentials_get_token(const struct aws_credentials *credentials);
+
+/**
  * Get the expiration timepoint (in seconds since epoch) associated with a set of credentials
  *
  * @param credentials credentials to get the expiration timepoint for

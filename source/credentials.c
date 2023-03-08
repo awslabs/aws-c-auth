@@ -248,6 +248,19 @@ struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_creden
     return s_empty_token_cursor;
 }
 
+struct aws_byte_cursor aws_credentials_get_token(const struct aws_credentials *credentials) {
+    switch (credentials->type) {
+        case TOKEN_IDENTITY:
+            if (credentials->identity.token.token != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.token.token);
+            }
+            break;
+        default:
+            break;
+    }
+    return s_empty_token_cursor;
+}
+
 uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_credentials *credentials) {
     return credentials->expiration_timepoint_seconds;
 }

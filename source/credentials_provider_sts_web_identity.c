@@ -751,6 +751,7 @@ static int s_credentials_provider_sts_web_identity_get_credentials_async(
 
 error:
     s_user_data_destroy(wrapped_user_data);
+    callback(NULL, aws_last_error(), user_data);
     return AWS_OP_ERR;
 }
 

@@ -235,7 +235,7 @@ struct aws_credentials_provider *aws_sso_token_provider_new_profile(
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_profile_vtable, impl);
     impl->sso_region = aws_string_new_from_string(allocator, parameters->sso_region);
     impl->sso_start_url = aws_string_new_from_string(allocator, parameters->sso_start_url);
-    impl->token_file_path = aws_string_new_from_string(allocator, parameters->sso_start_url);
+    impl->token_file_path = aws_string_new_from_string(allocator, parameters->token_path);
     provider->shutdown_options = options->shutdown_options;
 
     s_token_provider_profile_parameters_destroy(allocator, parameters);
