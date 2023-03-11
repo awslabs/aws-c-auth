@@ -36,13 +36,17 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
     AWS_ZERO_STRUCT(sha1_buf);
 
     /* append home directory */
-    aws_byte_buf_init_copy_from_cursor(&token_path_buf, allocator, home_dir_cursor);
+    if (aws_byte_buf_init_copy_from_cursor(&token_path_buf, allocator, home_dir_cursor)) {
+        goto cleanup;
+    }
     /* append sso cache directory */
-    aws_byte_buf_append_dynamic(&token_path_buf, &cache_dir_cursor);
+    if (aws_byte_buf_append_dynamic(&token_path_buf, &cache_dir_cursor)) {
+        goto cleanup;
+    }
 
     /* append hex encoded sha1 of input */
-    aws_byte_buf_init(&sha1_buf, allocator, AWS_SHA1_LEN);
-    if (aws_sha1_compute(allocator, &input_cursor, &sha1_buf, 0)) {
+    if (aws_byte_buf_init(&sha1_buf, allocator, AWS_SHA1_LEN) ||
+        aws_sha1_compute(allocator, &input_cursor, &sha1_buf, 0)) {
         goto cleanup;
     }
     struct aws_byte_cursor sha1_cursor = aws_byte_cursor_from_buf(&sha1_buf);
@@ -51,7 +55,9 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
     }
 
     /* append .json */
-    aws_byte_buf_append_dynamic(&token_path_buf, &json_cursor);
+    if (aws_byte_buf_append_dynamic(&token_path_buf, &json_cursor)) {
+        goto cleanup;
+    }
 
     // Use platform-specific directory separator.
     const char local_platform_separator = aws_get_platform_directory_separator();
@@ -70,13 +76,13 @@ cleanup:
     return token_path_str;
 }
 
-void aws_sso_token_destroy(struct aws_allocator *allocator, struct aws_sso_token *token) {
-    if (token == NULL) {
+void aws_sso_token_destroy(struct aws_sso_token *sso_token) {
+    if (sso_token == NULL) {
         return;
     }
 
-    aws_string_destroy(token->token);
-    aws_mem_release(allocator, token);
+    aws_string_destroy(sso_token->token);
+    aws_mem_release(sso_token->allocator, sso_token);
 }
 
 struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocator, const struct aws_string *file_path) {
@@ -86,6 +92,7 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
     bool success = false;
 
     struct aws_sso_token *token = aws_mem_calloc(allocator, 1, sizeof(struct aws_sso_token));
+    token->allocator = allocator;
     struct aws_byte_buf file_contents_buf;
     AWS_ZERO_STRUCT(file_contents_buf);
     struct aws_json_value *document_root = NULL;

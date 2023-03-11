@@ -56,7 +56,7 @@ static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
     ASSERT_TRUE(aws_string_eq_c_str(token->token, "string"));
     ASSERT_INT_EQUALS(aws_date_time_as_epoch_secs(&token->expiration), 1573704345);
     aws_string_destroy(file_path);
-    aws_sso_token_destroy(allocator, token);
+    aws_sso_token_destroy(token);
     aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }

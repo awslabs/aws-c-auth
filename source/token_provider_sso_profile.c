@@ -59,7 +59,7 @@ static int s_token_provider_profile_get_token_async(
     success = true;
 
 done:
-    aws_sso_token_destroy(provider->allocator, sso_token);
+    aws_sso_token_destroy(sso_token);
     aws_credentials_release(credentials);
     if (!success) {
         callback(NULL, aws_last_error(), user_data);
@@ -91,7 +91,7 @@ static struct aws_string *s_construct_profile_token_path(
     struct aws_byte_cursor profile_name_override,
     struct aws_byte_cursor config_file_name_override) {
 
-    struct aws_profile_collection *config_profiles = NULL;
+    struct aws_profile_collection *config_collection = NULL;
     struct aws_string *profile_name = NULL;
     struct aws_string *token_path = NULL;
 
@@ -101,9 +101,9 @@ static struct aws_string *s_construct_profile_token_path(
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
-    config_profiles = aws_load_config(allocator, config_file_name_override);
+    config_collection = aws_load_config(allocator, config_file_name_override);
 
-    if (!config_profiles) {
+    if (!config_collection) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "sso-profile: token parser could not load or parse"
@@ -112,7 +112,7 @@ static struct aws_string *s_construct_profile_token_path(
         goto cleanup;
     }
 
-    const struct aws_profile *profile = aws_profile_collection_get_profile(config_profiles, profile_name);
+    const struct aws_profile *profile = aws_profile_collection_get_profile(config_collection, profile_name);
 
     if (!profile) {
         AWS_LOGF_ERROR(
@@ -142,7 +142,7 @@ static struct aws_string *s_construct_profile_token_path(
 
 cleanup:
     aws_string_destroy(profile_name);
-    aws_profile_collection_release(config_profiles);
+    aws_profile_collection_release(config_collection);
     return token_path;
 }
 

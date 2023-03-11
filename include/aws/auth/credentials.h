@@ -583,6 +583,17 @@ struct aws_token_provider_sso_session_options {
      * Override path to the profile config file (~/.aws/config by default)
      */
     struct aws_byte_cursor config_file_name_override;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
+    struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when querying STS web identity provider.
+     * Required.
+     */
+    struct aws_tls_ctx *tls_ctx;
 };
 
 AWS_EXTERN_C_BEGIN

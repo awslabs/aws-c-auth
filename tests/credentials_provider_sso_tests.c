@@ -39,6 +39,7 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, int 
     AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "waahm7 callback %d", error_code);
 
     received_callback = true;
+    AWS_FATAL_ASSERT(credentials != NULL);
     aws_condition_variable_notify_one(&tester_signal);
 }
 
