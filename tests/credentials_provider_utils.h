@@ -102,6 +102,7 @@ struct aws_credentials_provider_http_mock_tester {
     struct aws_host_resolver *resolver;
     struct aws_client_bootstrap *bootstrap;
 
+    struct aws_byte_buf request_path;
     struct aws_byte_buf request_body;
 
     struct aws_array_list response_data_callbacks;

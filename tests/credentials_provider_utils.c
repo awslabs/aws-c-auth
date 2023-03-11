@@ -524,6 +524,9 @@ int aws_credentials_provider_http_mock_tester_init(struct aws_allocator *allocat
         return AWS_OP_ERR;
     }
 
+    if (aws_byte_buf_init(&credentials_provider_http_mock_tester.request_path, allocator, 256)) {
+        return AWS_OP_ERR;
+    }
     if (aws_byte_buf_init(&credentials_provider_http_mock_tester.request_body, allocator, 256)) {
         return AWS_OP_ERR;
     }
@@ -549,6 +552,7 @@ void aws_credentials_provider_http_mock_tester_cleanup(void) {
     aws_host_resolver_release(credentials_provider_http_mock_tester.resolver);
     aws_event_loop_group_release(credentials_provider_http_mock_tester.el_group);
     aws_array_list_clean_up(&credentials_provider_http_mock_tester.response_data_callbacks);
+    aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_path);
     aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_body);
     aws_condition_variable_clean_up(&credentials_provider_http_mock_tester.signal);
     aws_mutex_clean_up(&credentials_provider_http_mock_tester.lock);
@@ -680,6 +684,14 @@ struct aws_http_stream *aws_credentials_provider_http_mock_make_request(
     aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_body);
     aws_byte_buf_init(&credentials_provider_http_mock_tester.request_body, allocator, 256);
     aws_input_stream_read(body_stream, &credentials_provider_http_mock_tester.request_body);
+
+    aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_path);
+
+    struct aws_byte_cursor request_path_cursor;
+    aws_http_message_get_request_path(options->request, &request_path_cursor);
+    aws_byte_buf_init_copy_from_cursor(
+        &credentials_provider_http_mock_tester.request_body, allocator, request_path_cursor);
+
     aws_credentials_provider_http_mock_invoke_request_callbacks(
         options,
         &credentials_provider_http_mock_tester.response_data_callbacks,

@@ -246,3 +246,43 @@ static int s_credentials_provider_sso_failed_without_config(struct aws_allocator
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_sso_failed_without_config, s_credentials_provider_sso_failed_without_config);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expected_sso_request_path,
+    "/federation/credentials?account_id=123&role_name=roleName");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_good_response,
+    "{\"roleCredentials\": {\"accessKeyId\": \"SuccessfulAccessKey\",\"secretAccessKey\": "
+    "\"SuccessfulSecret\",\"sessionToken\": \"SuccessfulToken\",\"expiration\": 1678574216000}}");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "SuccessfulToken");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
+
+static int s_verify_credentials(bool request_made, bool got_credentials, int expected_attempts) {
+
+    if (request_made) {
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_byte_cursor_from_buf(&credentials_provider_http_mock_tester.request_path), s_expected_sso_request_path);
+    }
+
+    ASSERT_TRUE(credentials_provider_http_mock_tester.has_received_credentials_callback);
+
+    if (got_credentials) {
+        ASSERT_TRUE(credentials_provider_http_mock_tester.credentials != NULL);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_access_key_id(credentials_provider_http_mock_tester.credentials), s_good_access_key_id);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_secret_access_key(credentials_provider_http_mock_tester.credentials),
+            s_good_secret_access_key);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_session_token(credentials_provider_http_mock_tester.credentials), s_good_session_token);
+    } else {
+        ASSERT_TRUE(credentials_provider_http_mock_tester.credentials == NULL);
+    }
+
+    ASSERT_TRUE(credentials_provider_http_mock_tester.attempts == expected_attempts);
+
+    return AWS_OP_SUCCESS;
+}

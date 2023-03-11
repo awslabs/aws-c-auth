@@ -157,6 +157,7 @@ static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
             .expiration_required = true,
             .expiration_format = AWS_PCEF_NUMBER_UNIX_EPOCH,
         };
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "waahm7:%s", user_data->payload.buffer);
 
         credentials = aws_parse_credentials_from_json_document(
             user_data->allocator, (const char *)user_data->payload.buffer, &parse_options);
