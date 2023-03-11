@@ -410,7 +410,7 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
             error_code,
             aws_error_str(error_code));
         sso_user_data->error_code = error_code;
-        s_finalize_get_credentials_query(user_data);
+        s_finalize_get_credentials_query(sso_user_data);
         return;
     }
 

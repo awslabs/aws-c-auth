@@ -65,7 +65,7 @@ done:
     if (!success) {
         callback(NULL, aws_last_error(), user_data);
     }
-    return success ? AWS_OP_SUCCESS : AWS_OP_ERR;
+    return AWS_OP_SUCCESS;
 }
 
 static void s_token_provider_sso_session_destroy(struct aws_credentials_provider *provider) {
