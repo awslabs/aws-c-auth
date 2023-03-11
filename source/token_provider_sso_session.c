@@ -215,5 +215,6 @@ struct aws_credentials_provider *aws_token_provider_new_sso_session(
     impl->token_file_path = aws_string_new_from_string(allocator, token_path);
     provider->shutdown_options = options->shutdown_options;
 
+    aws_string_destroy(token_path);
     return provider;
 }

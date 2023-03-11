@@ -112,6 +112,7 @@ static int s_aws_credentials_provider_sso_test_init_config_profile(
     aws_string_destroy(config_file_path_str);
     return AWS_OP_SUCCESS;
 }
+// TODO: add config tests
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sso_profile_config_contents,
@@ -161,6 +162,8 @@ static int s_credentials_provider_sso_new_destroy_from_profile_config(struct aws
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
     aws_credentials_provider_release(provider);
 
     aws_credentials_provider_http_mock_wait_for_shutdown_callback();
@@ -172,3 +175,74 @@ static int s_credentials_provider_sso_new_destroy_from_profile_config(struct aws
 AWS_TEST_CASE(
     credentials_provider_sso_new_destroy_from_profile_config,
     s_credentials_provider_sso_new_destroy_from_profile_config);
+
+static int s_credentials_provider_sso_new_destroy_from_sso_session_config(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sso_new_destroy_from_sso_session_config,
+    s_credentials_provider_sso_new_destroy_from_sso_session_config);
+
+static int s_credentials_provider_sso_failed_without_config(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    struct aws_string *empty_content = aws_string_new_from_c_str(allocator, "");
+    ASSERT_TRUE(empty_content != NULL);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, empty_content);
+    aws_string_destroy(empty_content);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NULL(provider);
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_failed_without_config, s_credentials_provider_sso_failed_without_config);

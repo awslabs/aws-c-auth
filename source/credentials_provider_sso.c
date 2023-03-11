@@ -686,6 +686,8 @@ static struct sso_parameters *s_parameters_new(
         struct aws_token_provider_sso_session_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
             .profile_name_override = options->profile_name_override,
+            .bootstrap = options->bootstrap,
+            .tls_ctx = options->tls_ctx,
         };
         parameters->token_provider = aws_token_provider_new_sso_session(allocator, &token_provider_options);
         if (!parameters->token_provider) {
