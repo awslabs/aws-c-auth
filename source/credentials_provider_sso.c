@@ -776,6 +776,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
         goto on_error;
     }
 
+    if (!options->bootstrap) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): a bootstrap instance must be provided", (void *)provider);
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        goto on_error;
+    }
+
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
     struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {

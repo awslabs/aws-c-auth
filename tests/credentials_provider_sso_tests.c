@@ -5,7 +5,9 @@
 
 #include <aws/testing/aws_test_harness.h>
 
+#include "credentials_provider_utils.h"
 #include "shared_credentials_test_definitions.h"
+
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
@@ -92,3 +94,81 @@ static int s_credentials_provider_sso_new_destroy(struct aws_allocator *allocato
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_sso_new_destroy, s_credentials_provider_sso_new_destroy);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_profile, "sso");
+static int s_aws_credentials_provider_sso_test_init_config_profile(
+    struct aws_allocator *allocator,
+    const struct aws_string *config_contents) {
+
+    struct aws_string *config_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(config_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(config_file_path_str, config_contents) == AWS_OP_SUCCESS);
+
+    ASSERT_TRUE(
+        aws_set_environment_value(s_default_config_path_env_variable_name, config_file_path_str) == AWS_OP_SUCCESS);
+
+    ASSERT_TRUE(aws_set_environment_value(s_default_profile_env_variable_name, s_sso_profile) == AWS_OP_SUCCESS);
+
+    aws_string_destroy(config_file_path_str);
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_sso_profile_config_contents,
+    "[profile sso]\n"
+    "sso_start_url = https://d-123.awsapps.com/start\n"
+    "sso_region = us-west-2\n"
+    "sso_account_id = 123\n"
+    "sso_role_name = roleName\n");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_sso_session_config_contents,
+    "[profile sso]\n"
+    "sso_start_url = https://d-123.awsapps.com/start\n"
+    "sso_region = us-west-2\n"
+    "sso_account_id = 123\n"
+    "sso_role_name = roleName\n"
+    "sso_session = session\n"
+    "[sso-session session]\n"
+    "sso_start_url = https://d-123.awsapps.com/start\n"
+    "sso_region = us-west-2\n");
+
+static int s_credentials_provider_sso_new_destroy_from_profile_config(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_profile_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sso_new_destroy_from_profile_config,
+    s_credentials_provider_sso_new_destroy_from_profile_config);
