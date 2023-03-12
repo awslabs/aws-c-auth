@@ -222,7 +222,7 @@ AWS_TEST_CASE(
     credentials_provider_sso_new_destroy_from_sso_session_config,
     s_credentials_provider_sso_new_destroy_from_sso_session_config);
 
-static int s_credentials_provider_sso_failed_without_config(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     aws_credentials_provider_http_mock_tester_init(allocator);
@@ -249,7 +249,7 @@ static int s_credentials_provider_sso_failed_without_config(struct aws_allocator
 
     return 0;
 }
-AWS_TEST_CASE(credentials_provider_sso_failed_without_config, s_credentials_provider_sso_failed_without_config);
+AWS_TEST_CASE(credentials_provider_sso_failed_invalid_config, s_credentials_provider_sso_failed_invalid_config);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expected_sso_request_path,
@@ -262,8 +262,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "SuccessfulToken");
-AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
-
+static int s_good_response_expiration = 1678574216;
 static int s_verify_credentials(bool request_made, bool got_credentials, int expected_attempts) {
 
     if (request_made) {
@@ -282,6 +281,9 @@ static int s_verify_credentials(bool request_made, bool got_credentials, int exp
             s_good_secret_access_key);
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
             aws_credentials_get_session_token(credentials_provider_http_mock_tester.credentials), s_good_session_token);
+        ASSERT_INT_EQUALS(
+            aws_credentials_get_expiration_timepoint_seconds(credentials_provider_http_mock_tester.credentials),
+            s_good_response_expiration);
     } else {
         ASSERT_TRUE(credentials_provider_http_mock_tester.credentials == NULL);
     }
