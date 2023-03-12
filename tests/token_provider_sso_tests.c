@@ -299,14 +299,14 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "sso_region = us-west-2\n");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_valid_sso_token,
-    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2030-03-12T05:35:19Z\"}");
+    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2099-03-12T05:35:19Z\"}");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_expired_sso_token,
     "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2015-03-12T05:35:19Z\"}");
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_token, "ValidAccessToken");
-
+static uint64_t s_good_token_expiration = 4076976919;
 static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     s_aws_mock_token_provider_sso_tester_init(allocator);
@@ -341,6 +341,8 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     aws_wait_on_credentials_callback(&callback_results);
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_token(callback_results.credentials), s_good_token);
+    ASSERT_INT_EQUALS(
+        aws_credentials_get_expiration_timepoint_seconds(callback_results.credentials), s_good_token_expiration);
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
@@ -440,6 +442,8 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     aws_wait_on_credentials_callback(&callback_results);
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_token(callback_results.credentials), s_good_token);
+    ASSERT_INT_EQUALS(
+        aws_credentials_get_expiration_timepoint_seconds(callback_results.credentials), s_good_token_expiration);
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
