@@ -149,7 +149,11 @@ cleanup:
 struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     struct aws_allocator *allocator,
     const struct aws_token_provider_sso_profile_options *options) {
-
+    struct aws_string *token_path =
+        s_construct_profile_token_path(allocator, options->profile_name_override, options->config_file_name_override);
+    if (!token_path) {
+        return NULL;
+    }
     struct aws_credentials_provider *provider = NULL;
     struct aws_token_provider_profile_impl *impl = NULL;
 
@@ -163,9 +167,9 @@ struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_profile_vtable, impl);
-    impl->token_file_path =
-        s_construct_profile_token_path(allocator, options->profile_name_override, options->config_file_name_override);
+    impl->token_file_path = aws_string_new_from_string(allocator, token_path);
     provider->shutdown_options = options->shutdown_options;
 
+    aws_string_destroy(token_path);
     return provider;
 }

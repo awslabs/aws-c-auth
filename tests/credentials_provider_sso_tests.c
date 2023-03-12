@@ -225,11 +225,99 @@ AWS_TEST_CASE(
 static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
+    const struct {
+        const char *name;
+        const char *text;
+    } invalid_config_examples[] = {
+        {"empty", ""},
+
+        {"profile without any sso config", "[profile sso]\naccessKey=access"},
+
+        {"profile without role_name",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-west-2\n"},
+
+        {"profile without account_id",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-west-2\n"
+         "sso_role_name=roleName\n"},
+
+        {"profile without region",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"},
+
+        {"profile without start_url",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_region=us-west-2\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"},
+
+        {"profile with invalid session",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-west-2\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"
+         "sso_session = session\n"
+         "[sso-session session]\n"},
+
+        {"session without start_url",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-west-2\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"
+         "sso_session = session\n"
+         "[sso-session session]\n"
+         "sso_region = us-west-2\n"},
+
+        {"session without region",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-west-2\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"
+         "sso_session = session\n"
+         "[sso-session session]\n"
+         "sso_start_url = https://d-123.awsapps.com/start\n"},
+
+        {"session with different region",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-east-1\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"
+         "sso_session = session\n"
+         "[sso-session session]\n"
+         "sso_start_url = https://d-123.awsapps.com/start\n"
+         "sso_region = us-west-2\n"},
+
+        {"session with different start-url",
+         "[profile sso]\n"
+         "accessKey=access\n"
+         "sso_start_url=https://d-123.awsapps.com/start\n"
+         "sso_region=us-west-2\n"
+         "sso_account_id=123\n"
+         "sso_role_name=roleName\n"
+         "sso_session = session\n"
+         "[sso-session session]\n"
+         "sso_start_url = https://d-321.awsapps.com/start\n"
+         "sso_region = us-west-2\n"},
+    };
+
     aws_credentials_provider_http_mock_tester_init(allocator);
-    struct aws_string *empty_content = aws_string_new_from_c_str(allocator, "");
-    ASSERT_TRUE(empty_content != NULL);
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, empty_content);
-    aws_string_destroy(empty_content);
 
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -241,9 +329,15 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
                 .shutdown_user_data = NULL,
             },
     };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
-    ASSERT_NULL(provider);
+    for (int i = 0; i < AWS_ARRAY_SIZE(invalid_config_examples); i++) {
+        printf("invalid config example [%d]: %s\n", i, invalid_config_examples[i].name);
+        struct aws_string *content = aws_string_new_from_c_str(allocator, invalid_config_examples[i].text);
+        ASSERT_TRUE(content != NULL);
+        s_aws_credentials_provider_sso_test_init_config_profile(allocator, content);
+        aws_string_destroy(content);
+        struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+        ASSERT_NULL(provider);
+    }
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
