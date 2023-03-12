@@ -44,7 +44,6 @@ static int s_aws_credentials_provider_sso_test_init_config_profile(
     aws_string_destroy(config_file_path_str);
     return AWS_OP_SUCCESS;
 }
-// TODO: add config tests
 
 /* start_url should be same in `s_sso_profile_start_url` and `s_sso_profile_config_contents` */
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_profile_start_url, "https://d-123.awsapps.com/start");
@@ -401,37 +400,12 @@ static int s_credentials_provider_sso_token_failure(struct aws_allocator *alloca
 }
 AWS_TEST_CASE(credentials_provider_sso_token_failure, s_credentials_provider_sso_token_failure);
 
-/**
- * Create the directory components of @path:
- * - if @path ends in a path separator, create every directory component;
- * - else, stop at the last path separator (parent directory of @path).
- */
-static int s_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path) {
-    const char local_platform_separator = aws_get_platform_directory_separator();
-
-    /* Create directory components and ensure use of platform separator at the same time. */
-    for (size_t i = 0; i < path->len; ++i) {
-        if (aws_is_any_directory_separator((char)path->bytes[i])) {
-            ((char *)path->bytes)[i] = local_platform_separator;
-
-            struct aws_string *segment = aws_string_new_from_array(allocator, path->bytes, i);
-            int rc = aws_directory_create(segment);
-            aws_string_destroy(segment);
-
-            if (rc != AWS_OP_SUCCESS) {
-                return rc;
-            }
-        }
-    }
-    return AWS_OP_SUCCESS;
-}
-
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_valid_sso_token,
-    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2030-03-12T05:35:19Z\"}");
+    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2099-03-12T05:35:19Z\"}");
 
 static int s_credentials_provider_sso_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -447,8 +421,7 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
-
-    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -511,7 +484,7 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -576,7 +549,7 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -640,7 +613,7 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -705,7 +678,7 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
