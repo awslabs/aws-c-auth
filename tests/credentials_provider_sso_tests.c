@@ -10,6 +10,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/auth/private/sso_token_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/date_time.h>
@@ -114,6 +115,8 @@ static int s_aws_credentials_provider_sso_test_init_config_profile(
 }
 // TODO: add config tests
 
+/* start_url should be same in `s_sso_profile_start_url` and `s_sso_profile_config_contents` */
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_profile_start_url, "https://d-123.awsapps.com/start");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sso_profile_config_contents,
     "[profile sso]\n"
@@ -121,7 +124,8 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "sso_region = us-west-2\n"
     "sso_account_id = 123\n"
     "sso_role_name = roleName\n");
-
+/* session name should be same in both `s_sso_session_name` and `s_sso_session_config_contents`*/
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_session_name, "session");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sso_session_config_contents,
     "[profile sso]\n"
@@ -282,7 +286,7 @@ static int s_verify_credentials(bool request_made, bool got_credentials, int exp
         ASSERT_TRUE(credentials_provider_http_mock_tester.credentials == NULL);
     }
 
-    ASSERT_TRUE(credentials_provider_http_mock_tester.attempts == expected_attempts);
+    ASSERT_INT_EQUALS(credentials_provider_http_mock_tester.attempts, expected_attempts);
 
     return AWS_OP_SUCCESS;
 }
@@ -382,3 +386,359 @@ static int s_credentials_provider_sso_token_failure(struct aws_allocator *alloca
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_sso_token_failure, s_credentials_provider_sso_token_failure);
+
+/**
+ * Create the directory components of @path:
+ * - if @path ends in a path separator, create every directory component;
+ * - else, stop at the last path separator (parent directory of @path).
+ */
+static int s_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path) {
+    const char local_platform_separator = aws_get_platform_directory_separator();
+
+    /* Create directory components and ensure use of platform separator at the same time. */
+    for (size_t i = 0; i < path->len; ++i) {
+        if (aws_is_any_directory_separator((char)path->bytes[i])) {
+            ((char *)path->bytes)[i] = local_platform_separator;
+
+            struct aws_string *segment = aws_string_new_from_array(allocator, path->bytes, i);
+            int rc = aws_directory_create(segment);
+            aws_string_destroy(segment);
+
+            if (rc != AWS_OP_SUCCESS) {
+                return rc;
+            }
+        }
+    }
+    return AWS_OP_SUCCESS;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
+AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_valid_sso_token,
+    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2030-03-12T05:35:19Z\"}");
+
+static int s_credentials_provider_sso_request_failure(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    credentials_provider_http_mock_tester.is_request_successful = false;
+
+    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    ASSERT_NOT_NULL(token_path);
+
+    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, false /*get creds*/, 4 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    /* reset $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
+    aws_string_destroy(actual_home);
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_request_failure, s_credentials_provider_sso_request_failure);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_bad_json_response, "{ \"accessKey\": \"bad\"}");
+static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+
+    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    ASSERT_NOT_NULL(token_path);
+
+    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_byte_cursor bad_json_cursor = aws_byte_cursor_from_string(s_bad_json_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &bad_json_cursor);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, false /*get creds*/, 1 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    /* reset $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
+    aws_string_destroy(actual_home);
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_bad_response, s_credentials_provider_sso_bad_response);
+
+static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    credentials_provider_http_mock_tester.response_code = AWS_HTTP_STATUS_CODE_500_INTERNAL_SERVER_ERROR;
+    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    ASSERT_NOT_NULL(token_path);
+
+    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_byte_cursor bad_json_cursor = aws_byte_cursor_from_string(s_bad_json_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &bad_json_cursor);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, false /*get creds*/, 4 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    /* reset $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
+    aws_string_destroy(actual_home);
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_retryable_error, s_credentials_provider_sso_retryable_error);
+
+static int s_credentials_provider_sso_basic_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    ASSERT_NOT_NULL(token_path);
+
+    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    /* set the response */
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, true /*get creds*/, 1 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    /* reset $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
+    aws_string_destroy(actual_home);
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_basic_success, s_credentials_provider_sso_basic_success);
+
+static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
+    ASSERT_NOT_NULL(token_path);
+
+    ASSERT_SUCCESS(s_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_profile_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    /* set the response */
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, true /*get creds*/, 1 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    /* reset $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
+    aws_string_destroy(actual_home);
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_basic_success_profile, s_credentials_provider_sso_basic_success_profile);

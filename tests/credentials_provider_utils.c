@@ -683,26 +683,27 @@ struct aws_http_stream *aws_credentials_provider_http_mock_make_request(
     struct aws_allocator *allocator = credentials_provider_http_mock_tester.request_body.allocator;
     aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_body);
     aws_byte_buf_init(&credentials_provider_http_mock_tester.request_body, allocator, 256);
-    aws_input_stream_read(body_stream, &credentials_provider_http_mock_tester.request_body);
-
+    if (body_stream) {
+        aws_input_stream_read(body_stream, &credentials_provider_http_mock_tester.request_body);
+    }
     aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_path);
 
     struct aws_byte_cursor request_path_cursor;
     aws_http_message_get_request_path(options->request, &request_path_cursor);
     aws_byte_buf_init_copy_from_cursor(
-        &credentials_provider_http_mock_tester.request_body, allocator, request_path_cursor);
-
-    aws_credentials_provider_http_mock_invoke_request_callbacks(
-        options,
-        &credentials_provider_http_mock_tester.response_data_callbacks,
-        credentials_provider_http_mock_tester.is_request_successful);
-
+        &credentials_provider_http_mock_tester.request_path, allocator, request_path_cursor);
     credentials_provider_http_mock_tester.attempts++;
+    credentials_provider_http_mock_tester.request_options = *options;
+
     return (struct aws_http_stream *)1;
 }
 
 int aws_credentials_provider_http_mock_stream_activate(struct aws_http_stream *stream) {
     (void)stream;
+    aws_credentials_provider_http_mock_invoke_request_callbacks(
+        &credentials_provider_http_mock_tester.request_options,
+        &credentials_provider_http_mock_tester.response_data_callbacks,
+        credentials_provider_http_mock_tester.is_request_successful);
     return AWS_OP_SUCCESS;
 }
 

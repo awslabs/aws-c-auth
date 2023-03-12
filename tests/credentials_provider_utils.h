@@ -104,6 +104,7 @@ struct aws_credentials_provider_http_mock_tester {
 
     struct aws_byte_buf request_path;
     struct aws_byte_buf request_body;
+    struct aws_http_make_request_options request_options;
 
     struct aws_array_list response_data_callbacks;
     bool is_connection_acquire_successful;

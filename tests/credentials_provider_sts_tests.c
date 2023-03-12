@@ -448,7 +448,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
     s_tester.mock_failure_code = 429;
-    s_tester.fail_operations = 2;
+    s_tester.fail_operations = 20;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 

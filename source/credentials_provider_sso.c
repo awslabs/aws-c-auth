@@ -209,9 +209,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         /* don't retry client errors at all. */
         if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
 
-            /* clear data used by the previous attempt. */
-            s_user_data_reset_request_and_response(user_data);
-
             if (aws_retry_strategy_schedule_retry(user_data->retry_token, error_type, s_on_retry_ready, user_data) ==
                 AWS_OP_SUCCESS) {
                 return;
@@ -427,7 +424,8 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
         s_finalize_get_credentials_query(user_data);
         return;
     }
-
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): successfully accquired a token", (void *)sso_user_data->provider);
     /* clear the result from previous attempt */
     s_user_data_reset_request_and_response(sso_user_data);
 
@@ -449,7 +447,10 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
         s_finalize_get_credentials_query(user_data);
         return;
     }
-
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): successfully accquired a connection",
+        (void *)sso_user_data->provider);
     sso_user_data->connection = connection;
 
     struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
@@ -482,7 +483,10 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
         s_finalize_get_credentials_query(sso_user_data);
         return;
     }
-
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): successfully acquired a retry token",
+        (void *)sso_user_data->provider);
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_on_acquire_connection, sso_user_data);
 }
@@ -506,7 +510,6 @@ static void s_on_retry_token_acquired(
         return;
     }
 
-    /* success */
     sso_user_data->retry_token = token;
     struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
     impl->function_table->aws_http_connection_manager_acquire_connection(
