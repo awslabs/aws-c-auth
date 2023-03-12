@@ -497,9 +497,9 @@ int aws_credentials_provider_http_mock_tester_init(struct aws_allocator *allocat
 
     AWS_ZERO_STRUCT(credentials_provider_http_mock_tester);
 
-    struct aws_tls_ctx_options tls_options;
-    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
-    credentials_provider_http_mock_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    struct aws_tls_ctx_options tls_ctx_options;
+    aws_tls_ctx_options_init_default_client(&tls_ctx_options, allocator);
+    credentials_provider_http_mock_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_ctx_options);
     ASSERT_NOT_NULL(credentials_provider_http_mock_tester.tls_ctx);
 
     credentials_provider_http_mock_tester.el_group = aws_event_loop_group_new_default(allocator, 0, NULL);
