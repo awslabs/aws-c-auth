@@ -8,24 +8,9 @@
 #include "credentials_provider_utils.h"
 #include "shared_credentials_test_definitions.h"
 
-#include <aws/auth/credentials.h>
-#include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/sso_token_utils.h>
-#include <aws/common/clock.h>
-#include <aws/common/condition_variable.h>
-#include <aws/common/date_time.h>
 #include <aws/common/environment.h>
-#include <aws/common/string.h>
-#include <aws/common/thread.h>
-#include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
-#include <aws/io/channel_bootstrap.h>
-#include <aws/io/event_loop.h>
-#include <aws/io/host_resolver.h>
-#include <aws/io/logging.h>
-#include <aws/io/socket.h>
-#include <aws/io/stream.h>
-#include <aws/io/tls_channel_handler.h>
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_profile, "sso");
 static int s_aws_credentials_provider_sso_test_init_config_profile(
