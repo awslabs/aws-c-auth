@@ -337,7 +337,7 @@ static int s_credentials_provider_sso_connect_failure(struct aws_allocator *allo
 }
 AWS_TEST_CASE(credentials_provider_sso_connect_failure, s_credentials_provider_sso_connect_failure);
 
-static int s_credentials_provider_sso_token_failure(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     aws_credentials_provider_http_mock_tester_init(allocator);
@@ -383,10 +383,75 @@ static int s_credentials_provider_sso_token_failure(struct aws_allocator *alloca
 
     return 0;
 }
-AWS_TEST_CASE(credentials_provider_sso_token_failure, s_credentials_provider_sso_token_failure);
+AWS_TEST_CASE(credentials_provider_sso_failure_token_missing, s_credentials_provider_sso_failure_token_missing);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expired_sso_token,
+    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2015-03-12T05:35:19Z\"}");
+static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    credentials_provider_http_mock_tester.is_request_successful = false;
+
+    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    ASSERT_NOT_NULL(token_path);
+    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_expired_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(false /*no request*/, false /*get creds*/, 0 /*expected attempts*/));
+    ASSERT_INT_EQUALS(credentials_provider_http_mock_tester.error_code, AWS_AUTH_SSO_TOKEN_EXPIRED);
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    /* reset $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
+    aws_string_destroy(actual_home);
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_sso_failure_token_expired, s_credentials_provider_sso_failure_token_expired);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_valid_sso_token,

@@ -443,14 +443,15 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
 
     struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
     if (aws_credentials_provider_get_credentials(impl->token_provider, s_on_get_token_callback, user_data)) {
+        int last_error_code = aws_last_error();
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to get a token, error code %d(%s)",
             (void *)sso_user_data->provider,
-            error_code,
-            aws_error_str(error_code));
+            last_error_code,
+            aws_error_str(last_error_code));
 
-        sso_user_data->error_code = error_code;
+        sso_user_data->error_code = last_error_code;
         s_finalize_get_credentials_query(sso_user_data);
     }
 }
