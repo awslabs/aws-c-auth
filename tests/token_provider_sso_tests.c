@@ -389,13 +389,10 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
     int get_async_result =
         aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
-    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
-    aws_wait_on_credentials_callback(&callback_results);
+    ASSERT_FALSE(get_async_result == AWS_OP_SUCCESS);
 
-    ASSERT_NULL(callback_results.credentials);
-    ASSERT_INT_EQUALS(callback_results.last_error, AWS_AUTH_SSO_TOKEN_EXPIRED);
+    ASSERT_INT_EQUALS(aws_last_error(), AWS_AUTH_SSO_TOKEN_EXPIRED);
 
-    aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
 
     /* reset $HOME */
@@ -488,13 +485,10 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
     int get_async_result =
         aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
-    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
-    aws_wait_on_credentials_callback(&callback_results);
+    ASSERT_FALSE(get_async_result == AWS_OP_SUCCESS);
 
-    ASSERT_NULL(callback_results.credentials);
-    ASSERT_INT_EQUALS(callback_results.last_error, AWS_AUTH_SSO_TOKEN_EXPIRED);
+    ASSERT_INT_EQUALS(aws_last_error(), AWS_AUTH_SSO_TOKEN_EXPIRED);
 
-    aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
 
     /* reset $HOME */

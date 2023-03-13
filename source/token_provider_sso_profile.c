@@ -8,9 +8,6 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/sso_token_utils.h>
-#include <aws/common/process.h>
-#include <aws/common/string.h>
-#include <aws/io/tls_channel_handler.h>
 #ifdef _MSC_VER
 /* allow non-constant declared initializers. */
 #    pragma warning(disable : 4204)
@@ -31,7 +28,7 @@ static int s_token_provider_profile_get_token_async(
 
     struct aws_sso_token *sso_token = NULL;
     struct aws_credentials *credentials = NULL;
-    bool success = false;
+    int result = AWS_OP_ERR;
     sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
     if (!sso_token) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", (void *)provider);
@@ -56,15 +53,12 @@ static int s_token_provider_profile_get_token_async(
     }
 
     callback(credentials, AWS_OP_SUCCESS, user_data);
-    success = true;
+    result = AWS_OP_SUCCESS;
 
 done:
     aws_sso_token_destroy(sso_token);
     aws_credentials_release(credentials);
-    if (!success) {
-        callback(NULL, aws_last_error(), user_data);
-    }
-    return AWS_OP_SUCCESS;
+    return result;
 }
 
 static void s_token_provider_profile_destroy(struct aws_credentials_provider *provider) {
