@@ -112,7 +112,10 @@ struct aws_credentials_provider_profile_options {
     struct aws_byte_cursor credentials_file_name_override;
 
     /**
-     * Use a cached merged profile collection.
+     * (Optional)
+     * Use a cached merged profile collection. A merge collection has both config file
+     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * `aws_profile_collection_new_from_merge`.
      * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
@@ -337,7 +340,8 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_client_bootstrap *bootstrap;
 
     /**
-     * Use a cached config profile collection.
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
      */
     struct aws_profile_collection *config_profile_collection_cached;
 
@@ -451,8 +455,11 @@ struct aws_credentials_provider_chain_default_options {
     struct aws_tls_ctx *tls_ctx;
 
     /**
-     * Use a cached merged profile collection.
-     * If this option is provided, profile and sts web identity credentials provider will use the cached collection.
+     * (Optional)
+     * Use a cached merged profile collection. A merge collection has both config file
+     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * `aws_profile_collection_new_from_merge`.
+     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
 };
