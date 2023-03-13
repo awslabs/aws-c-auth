@@ -379,8 +379,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
         goto on_finished;
     }
 
-    merged_profiles = aws_profile_collection_acquire(options->profile_collection_cached);
-    if (!merged_profiles) {
+    if (options->profile_collection_cached) {
+        /* Use cached profile collection */
+        merged_profiles = aws_profile_collection_acquire(options->profile_collection_cached);
+    } else {
+        /* Load profile collection from files */
+
         credentials_file_path = aws_get_credentials_file_path(allocator, &options->credentials_file_name_override);
         if (!credentials_file_path) {
             AWS_LOGF_ERROR(
