@@ -8,24 +8,13 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
-#include <aws/common/date_time.h>
-#include <aws/common/environment.h>
-#include <aws/common/string.h>
-#include <aws/common/uuid.h>
-#include <aws/common/xml_parser.h>
-#include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
-#include <aws/io/file_utils.h>
-#include <aws/io/logging.h>
-#include <aws/io/retry_strategy.h>
 #include <aws/io/socket.h>
-#include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
-#include <inttypes.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
