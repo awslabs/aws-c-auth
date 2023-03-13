@@ -71,8 +71,8 @@ struct aws_credentials {
 
     enum IdentityType identity_type;
     union {
-        struct aws_credentials_identity credentials;
-        struct aws_token_identity token;
+        struct aws_credentials_identity credentials_identity;
+        struct aws_token_identity token_identity;
         struct aws_ecc_identity ecc_identity;
     } identity;
 };
@@ -107,7 +107,7 @@ struct aws_credentials *aws_credentials_new(
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
     credentials->identity_type = AWS_CREDENTIALS_IDENTITY;
-    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials;
+    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials_identity;
     credentials_identity->access_key_id =
         aws_string_new_from_array(allocator, access_key_id_cursor.ptr, access_key_id_cursor.len);
     if (credentials_identity->access_key_id == NULL) {
@@ -158,9 +158,9 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     }
     switch (credentials->identity_type) {
         case AWS_CREDENTIALS_IDENTITY:
-            aws_string_destroy(credentials->identity.credentials.access_key_id);
-            aws_string_destroy_secure(credentials->identity.credentials.secret_access_key);
-            aws_string_destroy_secure(credentials->identity.credentials.session_token);
+            aws_string_destroy(credentials->identity.credentials_identity.access_key_id);
+            aws_string_destroy_secure(credentials->identity.credentials_identity.secret_access_key);
+            aws_string_destroy_secure(credentials->identity.credentials_identity.session_token);
             break;
         case ECC_IDENTITY:
             aws_string_destroy(credentials->identity.ecc_identity.access_key_id);
@@ -168,7 +168,7 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
             aws_ecc_key_pair_release(credentials->identity.ecc_identity.ecc_key);
             break;
         case TOKEN_IDENTITY:
-            aws_string_destroy(credentials->identity.token.token);
+            aws_string_destroy(credentials->identity.token_identity.token);
             break;
         default:
             break;
@@ -204,8 +204,8 @@ static struct aws_byte_cursor s_empty_token_cursor = {
 struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_credentials *credentials) {
     switch (credentials->identity_type) {
         case AWS_CREDENTIALS_IDENTITY:
-            if (credentials->identity.credentials.access_key_id != NULL) {
-                return aws_byte_cursor_from_string(credentials->identity.credentials.access_key_id);
+            if (credentials->identity.credentials_identity.access_key_id != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.credentials_identity.access_key_id);
             }
             break;
         case ECC_IDENTITY:
@@ -222,8 +222,8 @@ struct aws_byte_cursor aws_credentials_get_access_key_id(const struct aws_creden
 struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_credentials *credentials) {
     switch (credentials->identity_type) {
         case AWS_CREDENTIALS_IDENTITY:
-            if (credentials->identity.credentials.secret_access_key != NULL) {
-                return aws_byte_cursor_from_string(credentials->identity.credentials.secret_access_key);
+            if (credentials->identity.credentials_identity.secret_access_key != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.credentials_identity.secret_access_key);
             }
             break;
         default:
@@ -235,8 +235,8 @@ struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_cr
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials) {
     switch (credentials->identity_type) {
         case AWS_CREDENTIALS_IDENTITY:
-            if (credentials->identity.credentials.session_token != NULL) {
-                return aws_byte_cursor_from_string(credentials->identity.credentials.session_token);
+            if (credentials->identity.credentials_identity.session_token != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.credentials_identity.session_token);
             }
             break;
         case ECC_IDENTITY:
@@ -253,8 +253,8 @@ struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_creden
 struct aws_byte_cursor aws_credentials_get_token(const struct aws_credentials *credentials) {
     switch (credentials->identity_type) {
         case TOKEN_IDENTITY:
-            if (credentials->identity.token.token != NULL) {
-                return aws_byte_cursor_from_string(credentials->identity.token.token);
+            if (credentials->identity.token_identity.token != NULL) {
+                return aws_byte_cursor_from_string(credentials->identity.token_identity.token);
             }
             break;
         default:
@@ -380,7 +380,7 @@ struct aws_credentials *aws_credentials_new_token(
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
     credentials->identity_type = TOKEN_IDENTITY;
-    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials;
+    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials_identity;
     credentials_identity->access_key_id = aws_string_new_from_array(allocator, token.ptr, token.len);
     credentials->expiration_timepoint_seconds = expiration_timepoint_in_seconds;
     return credentials;
