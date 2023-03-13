@@ -340,6 +340,12 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_auth_http_system_vtable *function_table;
 };
 
+/*
+ * Configuration for the SSOCredentialsProvider that sends a GetRoleCredentialsRequest to the AWS Single
+ * Sign-On Service to maintain short-lived sessions to use for authentication.
+ *
+ * https://docs.aws.amazon.com/sdkref/latest/guide/feature-sso-credentials.html
+ */
 struct aws_credentials_provider_sso_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
@@ -355,11 +361,12 @@ struct aws_credentials_provider_sso_options {
 
     /*
      * Connection bootstrap to use for any network connections made while sourcing credentials
+     * Required.
      */
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Client TLS context to use when querying STS web identity provider.
+     * Client TLS context to use when querying SSO provider.
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
@@ -554,8 +561,8 @@ struct aws_credentials_provider_cognito_options {
 };
 
 /**
- * Configuration options for a provider that sources sso token information from the aws profile  (by default
- * ~/.aws/profile) and token from ~/.aws/sso/cache/<sha1>.json.
+ * Configuration options for a provider that sources sso token information from the aws profile (by default
+ * ~/.aws/profile) and token from ~/.aws/sso/cache/<sha1 of start url>.json.
  */
 struct aws_token_provider_sso_profile_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -571,6 +578,10 @@ struct aws_token_provider_sso_profile_options {
     struct aws_byte_cursor config_file_name_override;
 };
 
+/**
+ * Configuration options for a provider that sources sso token information from the aws profile (by default
+ * ~/.aws/profile) and token from ~/.aws/sso/cache/<sha1 of session name>.json.
+ */
 struct aws_token_provider_sso_session_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
@@ -585,13 +596,12 @@ struct aws_token_provider_sso_session_options {
     struct aws_byte_cursor config_file_name_override;
 
     /*
-     * Connection bootstrap to use for any network connections made while sourcing credentials
+     * Connection bootstrap to use for any network connections made
      */
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Client TLS context to use when querying STS web identity provider.
-     * Required.
+     * Client TLS context to use for any network connections made.
      */
     struct aws_tls_ctx *tls_ctx;
 };

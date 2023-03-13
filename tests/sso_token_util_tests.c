@@ -7,8 +7,6 @@
 
 #include "shared_credentials_test_definitions.h"
 #include <aws/auth/private/sso_token_utils.h>
-#include <aws/common/environment.h>
-#include <aws/common/string.h>
 
 static int s_parse_token_location_url_test(struct aws_allocator *allocator, void *ctx) {
     struct aws_string *start_url = aws_string_new_from_c_str(allocator, "https://d-92671207e4.awsapps.com/start");
@@ -44,12 +42,10 @@ AWS_TEST_CASE(parse_token_location_session_test, s_parse_token_location_session_
 AWS_STATIC_STRING_FROM_LITERAL(
     s_valid_token_json,
     "{\"accessToken\": \"string\",\"expiresAt\": \"2019-11-14T04:05:45Z\",\"refreshToken\": \"string\",\"clientId\": "
-    "\"ABCDEFG323242423121312312312312312\",\"clientSecret\": \"ABCDE123\",\"registrationExpiresAt\": "
+    "\"123321\",\"clientSecret\": \"ABCDE123\",\"registrationExpiresAt\": "
     "\"2022-03-06T19:53:17Z\",\"region\": \"us-west-2\",\"startUrl\": \"https://d-abc123.awsapps.com/start\"}");
 static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
-
     aws_auth_library_init(allocator);
-
     struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
     ASSERT_TRUE(aws_create_profile_file(file_path, s_valid_token_json) == AWS_OP_SUCCESS);
     struct aws_sso_token *token = aws_sso_token_new_from_file(allocator, file_path);
