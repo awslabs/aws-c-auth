@@ -121,7 +121,7 @@ static struct aws_string *s_verify_config_and_construct_token_path(
     }
     const struct aws_string *sso_session_name = aws_profile_property_get_value(sso_session_property);
     const struct aws_profile *session_profile =
-        aws_profile_collection_get_section(config_collection, sso_session_name, AWS_PROFILE_SECTION_TYPE_SSO_SESSION);
+        aws_profile_collection_get_section(config_collection, AWS_PROFILE_SECTION_TYPE_SSO_SESSION, sso_session_name);
     if (!session_profile) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: token parser failed to find an sso-session");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);

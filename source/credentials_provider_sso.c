@@ -691,8 +691,8 @@ static struct sso_parameters *s_parameters_new(
         sso_region = aws_profile_get_property(
             aws_profile_collection_get_section(
                 config_profile,
-                aws_profile_property_get_value(sso_session_property),
-                AWS_PROFILE_SECTION_TYPE_SSO_SESSION),
+                AWS_PROFILE_SECTION_TYPE_SSO_SESSION,
+                aws_profile_property_get_value(sso_session_property)),
             s_sso_region);
     } else {
         struct aws_token_provider_sso_profile_options token_provider_options = {
