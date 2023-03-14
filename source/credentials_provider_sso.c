@@ -646,7 +646,7 @@ static struct sso_parameters *s_parameters_new(
         goto on_finish;
     }
 
-    config_profile = aws_load_config(allocator, options->config_file_name_override);
+    config_profile = aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
     if (!config_profile) {
         goto on_finish;
     }

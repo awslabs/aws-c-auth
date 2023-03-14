@@ -97,7 +97,7 @@ static struct aws_string *s_verify_config_and_construct_token_path(
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: token provider failed to resolve profile name");
         goto cleanup;
     }
-    config_collection = aws_load_config(allocator, config_file_name_override);
+    config_collection = aws_load_profile_collection_from_config_file(allocator, config_file_name_override);
 
     const struct aws_profile *profile = aws_profile_collection_get_profile(config_collection, profile_name);
 

@@ -95,7 +95,7 @@ static struct aws_string *s_construct_profile_token_path(
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
-    config_collection = aws_load_config(allocator, config_file_name_override);
+    config_collection = aws_load_profile_collection_from_config_file(allocator, config_file_name_override);
 
     if (!config_collection) {
         AWS_LOGF_ERROR(

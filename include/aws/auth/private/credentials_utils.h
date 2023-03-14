@@ -166,7 +166,7 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
  * Loads an aws config profile collection
  */
 AWS_AUTH_API
-struct aws_profile_collection *aws_load_config(
+struct aws_profile_collection *aws_load_profile_collection_from_config_file(
     struct aws_allocator *allocator,
     struct aws_byte_cursor config_file_name_override);
 
