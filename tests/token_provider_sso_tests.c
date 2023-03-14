@@ -312,7 +312,7 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
@@ -364,7 +364,7 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_expired_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
@@ -412,7 +412,7 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
@@ -462,7 +462,7 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_expired_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);

@@ -403,7 +403,7 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_expired_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -471,7 +471,7 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     /* create token file */
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -534,7 +534,7 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -599,7 +599,7 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -663,7 +663,7 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;
@@ -728,7 +728,7 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
 
-    ASSERT_SUCCESS(s_aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
 
     struct aws_byte_buf content_buf;

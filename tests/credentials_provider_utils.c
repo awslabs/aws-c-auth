@@ -487,6 +487,26 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
     return provider;
 }
 
+int aws_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path) {
+    const char local_platform_separator = aws_get_platform_directory_separator();
+
+    /* Create directory components and ensure use of platform separator at the same time. */
+    for (size_t i = 0; i < path->len; ++i) {
+        if (aws_is_any_directory_separator((char)path->bytes[i])) {
+            ((char *)path->bytes)[i] = local_platform_separator;
+
+            struct aws_string *segment = aws_string_new_from_array(allocator, path->bytes, i);
+            int rc = aws_directory_create(segment);
+            aws_string_destroy(segment);
+
+            if (rc != AWS_OP_SUCCESS) {
+                return rc;
+            }
+        }
+    }
+    return AWS_OP_SUCCESS;
+}
+
 /*
  * Mocked Functions for Tests
  */

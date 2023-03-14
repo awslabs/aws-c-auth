@@ -94,6 +94,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
     struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 /**
+ * Create the directory components of @path:
+ * - if @path ends in a path separator, create every directory component;
+ * - else, stop at the last path separator (parent directory of @path).
+ */
+int aws_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path);
+
+/**
  * Mocked Function
  */
 struct aws_credentials_provider_http_mock_tester {
