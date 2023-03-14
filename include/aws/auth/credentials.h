@@ -697,6 +697,14 @@ struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
     struct aws_allocator *allocator,
     const struct aws_credentials *credentials);
 
+/**
+ * Creates a set of AWS credentials based on a token with expiration.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param token token for the credentials
+ * @param expiration_timepoint_in_seconds time at which these credentials expire
+ * @return a new pair of AWS credentials, or NULL
+ */
 AWS_AUTH_API
 struct aws_credentials *aws_credentials_new_token(
     struct aws_allocator *allocator,
@@ -747,10 +755,10 @@ AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials);
 
 /**
- * Get the AWS token from a set of credentials
+ * Get the token from a set of AWS credentials
  *
- * @param credentials credentials to get the session token from
- * @return a byte cursor to the session token or an empty byte cursor if there is no session token
+ * @param credentials credentials to get the token from
+ * @return a byte cursor to the token or an empty byte cursor if there is no token
  */
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_token(const struct aws_credentials *credentials);
@@ -999,6 +1007,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_web_identity_options *options);
 
+/**
+ * Creates a provider that sources credentials from SSO using a SSOToken.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sso(
     struct aws_allocator *allocator,
@@ -1083,7 +1099,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
 /**
  * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
- * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1>.json
+ * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1 of start url>.json
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options
@@ -1095,6 +1111,15 @@ struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     struct aws_allocator *allocator,
     const struct aws_token_provider_sso_profile_options *options);
 
+/**
+ * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
+ * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1 of session name>.json
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_token_provider_new_sso_session(
     struct aws_allocator *allocator,
