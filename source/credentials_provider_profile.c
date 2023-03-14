@@ -46,11 +46,14 @@ static int s_profile_file_credentials_provider_get_credentials_async(
 
     struct aws_credentials_provider_profile_file_impl *impl = provider->impl;
     struct aws_credentials *credentials = NULL;
-    struct aws_profile_collection *merged_profiles = aws_profile_collection_acquire(impl->profile_collection_cached);
+    struct aws_profile_collection *merged_profiles = NULL;
 
-    if (!merged_profiles) {
+    if (impl->profile_collection_cached) {
+        /* Use cached profile collection */
+        merged_profiles = aws_profile_collection_acquire(impl->profile_collection_cached);
+    } else {
         /*
-         * Parse config file, if it exists
+         * Parse config file from file, if it exists
          */
         struct aws_profile_collection *config_profiles =
             aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
