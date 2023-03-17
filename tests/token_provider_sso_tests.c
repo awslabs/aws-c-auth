@@ -22,7 +22,7 @@ struct sso_session_profile_example {
 
 static int s_sso_token_provider_profile_invalid_profile_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-
+    aws_auth_library_init(allocator);
     const struct sso_session_profile_example invalid_profile_examples[] = {
         {
             .name = "No config",
@@ -58,6 +58,7 @@ static int s_sso_token_provider_profile_invalid_profile_test(struct aws_allocato
     }
 
     aws_string_destroy(config_file_str);
+    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 
@@ -65,7 +66,7 @@ AWS_TEST_CASE(sso_token_provider_profile_invalid_profile_test, s_sso_token_provi
 
 static int s_sso_token_provider_profile_valid_profile_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-
+    aws_auth_library_init(allocator);
     static struct sso_session_profile_example s_valid_profile_examples[] = {
         {
             .name = "profile",
@@ -99,6 +100,7 @@ static int s_sso_token_provider_profile_valid_profile_test(struct aws_allocator 
     }
 
     aws_string_destroy(config_file_str);
+    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 

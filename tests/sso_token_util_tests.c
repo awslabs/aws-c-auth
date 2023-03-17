@@ -9,6 +9,7 @@
 #include <aws/auth/private/sso_token_utils.h>
 
 static int s_parse_token_location_url_test(struct aws_allocator *allocator, void *ctx) {
+    aws_auth_library_init(allocator);
     struct aws_string *start_url = aws_string_new_from_c_str(allocator, "https://d-92671207e4.awsapps.com/start");
     struct aws_string *token_path = aws_construct_token_path(allocator, start_url);
 
@@ -20,11 +21,13 @@ static int s_parse_token_location_url_test(struct aws_allocator *allocator, void
 
     aws_string_destroy(start_url);
     aws_string_destroy(token_path);
+    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(parse_token_location_url_test, s_parse_token_location_url_test);
 
 static int s_parse_token_location_session_test(struct aws_allocator *allocator, void *ctx) {
+    aws_auth_library_init(allocator);
     struct aws_string *session = aws_string_new_from_c_str(allocator, "admin");
     struct aws_string *token_path = aws_construct_token_path(allocator, session);
     struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(token_path);
@@ -35,6 +38,7 @@ static int s_parse_token_location_session_test(struct aws_allocator *allocator, 
 
     aws_string_destroy(session);
     aws_string_destroy(token_path);
+    aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(parse_token_location_session_test, s_parse_token_location_session_test);
