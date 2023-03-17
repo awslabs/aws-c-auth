@@ -139,7 +139,7 @@ static bool s_parse_expiration_value_from_json_object(
             }
 
             *expiration_timepoint_in_seconds =
-                (uint64_t)aws_timestamp_convert(expiration_value_ms, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_SECS, NULL);
+                aws_timestamp_convert((uint64_t)expiration_value_ms, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_SECS, NULL);
             return true;
         }
 
