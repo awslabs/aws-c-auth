@@ -260,7 +260,6 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "SuccessfulToken");
 static int s_good_response_expiration = 1678574216;
 static int s_verify_credentials(bool request_made, bool got_credentials, int expected_attempts) {
-
     if (request_made) {
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
             aws_byte_cursor_from_buf(&credentials_provider_http_mock_tester.request_path), s_expected_sso_request_path);
@@ -281,6 +280,7 @@ static int s_verify_credentials(bool request_made, bool got_credentials, int exp
             aws_credentials_get_expiration_timepoint_seconds(credentials_provider_http_mock_tester.credentials),
             s_good_response_expiration);
     } else {
+        ASSERT_TRUE(credentials_provider_http_mock_tester.error_code);
         ASSERT_TRUE(credentials_provider_http_mock_tester.credentials == NULL);
     }
 
@@ -324,7 +324,6 @@ static int s_credentials_provider_sso_connect_failure(struct aws_allocator *allo
         provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
 
     aws_credentials_provider_http_mock_wait_for_credentials_result();
-
     ASSERT_SUCCESS(s_verify_credentials(false /*no request*/, false /*get creds*/, 0 /*expected attempts*/));
 
     aws_credentials_provider_release(provider);

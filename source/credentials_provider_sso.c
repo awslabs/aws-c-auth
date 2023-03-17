@@ -155,7 +155,7 @@ static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) successfully queried credentials", (void *)user_data->provider);
     } else {
-        AWS_LOGF_WARN(
+        AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) failed to query credentials", (void *)user_data->provider);
 
         if (user_data->error_code == AWS_ERROR_SUCCESS) {
@@ -388,7 +388,7 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
     struct sso_user_data *sso_user_data = user_data;
 
     if (error_code) {
-        AWS_LOGF_WARN(
+        AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to acquire a token, error code %d(%s)",
             (void *)sso_user_data->provider,
@@ -401,7 +401,7 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
 
     struct aws_byte_cursor token = aws_credentials_get_token(credentials);
     if (token.len == 0 || token.ptr == NULL) {
-        AWS_LOGF_WARN(
+        AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: token is empty with error code %d(%s)",
             (void *)sso_user_data->provider,
@@ -425,7 +425,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
     struct sso_user_data *sso_user_data = user_data;
 
     if (error_code) {
-        AWS_LOGF_WARN(
+        AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to acquire a connection, error code %d(%s)",
             (void *)sso_user_data->provider,
@@ -444,7 +444,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
     struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
     if (aws_credentials_provider_get_credentials(impl->token_provider, s_on_get_token_callback, user_data)) {
         int last_error_code = aws_last_error();
-        AWS_LOGF_WARN(
+        AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to get a token, error code %d(%s)",
             (void *)sso_user_data->provider,
@@ -514,7 +514,7 @@ static int s_credentials_provider_sso_get_credentials_async(
 
     struct sso_user_data *wrapped_user_data = s_user_data_new(provider, callback, user_data);
     if (wrapped_user_data == NULL) {
-        goto on_error;
+        return AWS_OP_ERR;
     }
 
     if (aws_retry_strategy_acquire_retry_token(
@@ -531,7 +531,6 @@ static int s_credentials_provider_sso_get_credentials_async(
 
 on_error:
     s_user_data_destroy(wrapped_user_data);
-    callback(NULL, aws_last_error(), user_data);
     return AWS_OP_ERR;
 }
 
