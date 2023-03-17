@@ -47,7 +47,7 @@ static int s_token_provider_sso_session_get_token_async(
     uint64_t now_seconds = aws_timestamp_convert(now_nano, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
 
     if (aws_date_time_as_epoch_secs(&sso_token->expiration) - now_seconds < 0) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", (void *)provider);
         aws_raise_error(AWS_AUTH_SSO_TOKEN_EXPIRED);
         goto done;
     }
