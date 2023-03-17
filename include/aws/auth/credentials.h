@@ -111,6 +111,15 @@ struct aws_credentials_provider_profile_options {
      */
     struct aws_byte_cursor credentials_file_name_override;
 
+    /**
+     * (Optional)
+     * Use a cached merged profile collection. A merge collection has both config file
+     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * `aws_profile_collection_new_from_merge`.
+     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
+     */
+    struct aws_profile_collection *profile_collection_cached;
+
     /*
      * Bootstrap to use for any network connections made while sourcing credentials (for example,
      * a profile that uses assume-role will need to hit STS)
@@ -330,6 +339,12 @@ struct aws_credentials_provider_sts_web_identity_options {
      */
     struct aws_client_bootstrap *bootstrap;
 
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     */
+    struct aws_profile_collection *config_profile_collection_cached;
+
     /*
      * Client TLS context to use when querying STS web identity provider.
      * Required.
@@ -473,6 +488,15 @@ struct aws_credentials_provider_chain_default_options {
      * Must be provided if using BYO_CRYPTO.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /**
+     * (Optional)
+     * Use a cached merged profile collection. A merge collection has both config file
+     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * `aws_profile_collection_new_from_merge`.
+     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
+     */
+    struct aws_profile_collection *profile_collection_cached;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
