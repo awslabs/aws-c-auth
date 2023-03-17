@@ -454,7 +454,7 @@ AWS_TEST_CASE(credentials_provider_sso_failure_token_expired, s_credentials_prov
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_valid_sso_token,
-    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2099-03-12T05:35:19Z\"}");
+    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"9999-03-12T05:35:19Z\"}");
 
 static int s_credentials_provider_sso_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
