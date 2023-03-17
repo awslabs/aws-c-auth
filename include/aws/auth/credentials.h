@@ -386,8 +386,9 @@ struct aws_credentials_provider_sso_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
-    /* For mocking the http layer in tests, leave NULL otherwise */
+    /* For mocking, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+    aws_io_clock_fn *system_clock_fn;
 };
 
 /**
@@ -600,6 +601,9 @@ struct aws_token_provider_sso_profile_options {
      * Override path to the profile config file (~/.aws/config by default)
      */
     struct aws_byte_cursor config_file_name_override;
+
+    /* For mocking, leave NULL otherwise */
+    aws_io_clock_fn *system_clock_fn;
 };
 
 /**
@@ -628,6 +632,9 @@ struct aws_token_provider_sso_session_options {
      * Client TLS context to use for any network connections made.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /* For mocking, leave NULL otherwise */
+    aws_io_clock_fn *system_clock_fn;
 };
 
 AWS_EXTERN_C_BEGIN

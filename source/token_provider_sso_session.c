@@ -8,6 +8,8 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/sso_token_utils.h>
+#include <aws/common/clock.h>
+
 #ifdef _MSC_VER
 /* allow non-constant declared initializers. */
 #    pragma warning(disable : 4204)
@@ -18,6 +20,7 @@
  */
 struct aws_token_provider_sso_session_impl {
     struct aws_string *token_file_path;
+    aws_io_clock_fn *system_clock_fn;
 };
 
 static int s_token_provider_sso_session_get_token_async(
@@ -37,15 +40,14 @@ static int s_token_provider_sso_session_get_token_async(
     }
 
     /* check token expiration. */
-    struct aws_date_time now;
-    aws_date_time_init_now(&now);
-    if (aws_date_time_diff(&sso_token->expiration, &now) < 0) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) cached token is expired. current time=%ld, expiration time=%ld",
-            (void *)provider,
-            sso_token->expiration.timestamp,
-            now.timestamp);
+    uint64_t now_nano = UINT64_MAX;
+    if (impl->system_clock_fn(&now_nano) != AWS_OP_SUCCESS) {
+        goto done;
+    }
+    uint64_t now_seconds = aws_timestamp_convert(now_nano, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
+
+    if (aws_date_time_as_epoch_secs(&sso_token->expiration) - now_seconds < 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_EXPIRED);
         goto done;
     }
@@ -215,6 +217,11 @@ struct aws_credentials_provider *aws_token_provider_new_sso_session(
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_sso_session_vtable, impl);
     impl->token_file_path = aws_string_new_from_string(allocator, token_path);
     provider->shutdown_options = options->shutdown_options;
+    if (options->system_clock_fn) {
+        impl->system_clock_fn = options->system_clock_fn;
+    } else {
+        impl->system_clock_fn = aws_sys_clock_get_ticks;
+    }
 
     aws_string_destroy(token_path);
     return provider;

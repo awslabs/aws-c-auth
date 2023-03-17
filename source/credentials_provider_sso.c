@@ -680,6 +680,7 @@ static struct sso_parameters *s_parameters_new(
             .profile_name_override = options->profile_name_override,
             .bootstrap = options->bootstrap,
             .tls_ctx = options->tls_ctx,
+            .system_clock_fn = options->system_clock_fn,
         };
         parameters->token_provider = aws_token_provider_new_sso_session(allocator, &token_provider_options);
         if (!parameters->token_provider) {
@@ -697,6 +698,7 @@ static struct sso_parameters *s_parameters_new(
         struct aws_token_provider_sso_profile_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
             .profile_name_override = options->profile_name_override,
+            .system_clock_fn = options->system_clock_fn,
         };
 
         parameters->token_provider = aws_token_provider_new_sso_profile(allocator, &token_provider_options);

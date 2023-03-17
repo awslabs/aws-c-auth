@@ -6,6 +6,7 @@
 #include <aws/testing/aws_test_harness.h>
 
 #include <aws/auth/private/sso_token_utils.h>
+#include <aws/common/clock.h>
 #include <aws/common/environment.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
@@ -294,15 +295,13 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "sso_start_url = https://d-123.awsapps.com/start\n"
     "sso_region = us-west-2\n");
 AWS_STATIC_STRING_FROM_LITERAL(
-    s_valid_sso_token,
-    "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"9999-03-12T05:35:19Z\"}");
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_expired_sso_token,
+    s_sso_token,
     "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2015-03-12T05:35:19Z\"}");
+
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
 AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_token, "ValidAccessToken");
-static uint64_t s_good_token_expiration = 253376832919;
+static uint64_t s_token_expiration_s = 1426138519;
 static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     s_aws_mock_token_provider_sso_tester_init(allocator);
@@ -316,15 +315,16 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
-    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     ASSERT_SUCCESS(aws_create_profile_file(config_file_str, s_sso_session_config_contents));
-
+    mock_aws_set_system_time(0);
     struct aws_token_provider_sso_session_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
         .tls_ctx = s_tester.tls_ctx,
         .bootstrap = s_tester.bootstrap,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
     struct aws_credentials_provider *provider = aws_token_provider_new_sso_session(allocator, &options);
@@ -339,7 +339,7 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_token(callback_results.credentials), s_good_token);
     ASSERT_INT_EQUALS(
-        aws_credentials_get_expiration_timepoint_seconds(callback_results.credentials), s_good_token_expiration);
+        aws_credentials_get_expiration_timepoint_seconds(callback_results.credentials), s_token_expiration_s);
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
@@ -369,15 +369,18 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
-    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_expired_sso_token));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     ASSERT_SUCCESS(aws_create_profile_file(config_file_str, s_sso_session_config_contents));
-
+    uint64_t nano_expiration =
+        aws_timestamp_convert(s_token_expiration_s + 100, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    mock_aws_set_system_time(nano_expiration);
     struct aws_token_provider_sso_session_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
         .tls_ctx = s_tester.tls_ctx,
         .bootstrap = s_tester.bootstrap,
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
     struct aws_credentials_provider *provider = aws_token_provider_new_sso_session(allocator, &options);
@@ -396,7 +399,6 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     /* reset $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, actual_home));
     aws_string_destroy(actual_home);
-
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
@@ -418,13 +420,15 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
-    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_valid_sso_token));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     ASSERT_SUCCESS(aws_create_profile_file(config_file_str, s_sso_profile_config_contents));
 
+    mock_aws_set_system_time(0);
     struct aws_token_provider_sso_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
     struct aws_credentials_provider *provider = aws_token_provider_new_sso_profile(allocator, &options);
@@ -439,7 +443,7 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_token(callback_results.credentials), s_good_token);
     ASSERT_INT_EQUALS(
-        aws_credentials_get_expiration_timepoint_seconds(callback_results.credentials), s_good_token_expiration);
+        aws_credentials_get_expiration_timepoint_seconds(callback_results.credentials), s_token_expiration_s);
 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
@@ -469,13 +473,17 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
     struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
-    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_expired_sso_token));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     ASSERT_SUCCESS(aws_create_profile_file(config_file_str, s_sso_profile_config_contents));
 
+    uint64_t nano_expiration =
+        aws_timestamp_convert(s_token_expiration_s + 100, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    mock_aws_set_system_time(nano_expiration);
     struct aws_token_provider_sso_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .system_clock_fn = mock_aws_get_system_time,
     };
 
     struct aws_credentials_provider *provider = aws_token_provider_new_sso_profile(allocator, &options);
