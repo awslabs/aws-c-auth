@@ -9,6 +9,7 @@
 #include <aws/auth/private/sso_token_utils.h>
 
 static int s_parse_token_location_url_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
     aws_auth_library_init(allocator);
     struct aws_string *start_url = aws_string_new_from_c_str(allocator, "https://d-92671207e4.awsapps.com/start");
     struct aws_string *token_path = aws_construct_token_path(allocator, start_url);
@@ -27,6 +28,7 @@ static int s_parse_token_location_url_test(struct aws_allocator *allocator, void
 AWS_TEST_CASE(parse_token_location_url_test, s_parse_token_location_url_test);
 
 static int s_parse_token_location_session_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
     aws_auth_library_init(allocator);
     struct aws_string *session = aws_string_new_from_c_str(allocator, "admin");
     struct aws_string *token_path = aws_construct_token_path(allocator, session);
@@ -49,6 +51,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\"123321\",\"clientSecret\": \"ABCDE123\",\"registrationExpiresAt\": "
     "\"2022-03-06T19:53:17Z\",\"region\": \"us-west-2\",\"startUrl\": \"https://d-abc123.awsapps.com/start\"}");
 static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
     aws_auth_library_init(allocator);
     struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
     ASSERT_TRUE(aws_create_profile_file(file_path, s_valid_token_json) == AWS_OP_SUCCESS);
