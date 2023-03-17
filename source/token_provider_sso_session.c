@@ -50,7 +50,7 @@ static int s_token_provider_sso_session_get_token_async(
     credentials = aws_credentials_new_token(
         provider->allocator,
         aws_byte_cursor_from_string(sso_token->token),
-        aws_date_time_as_epoch_secs(&sso_token->expiration));
+        (uint64_t)aws_date_time_as_epoch_secs(&sso_token->expiration));
     if (!credentials) {
         goto done;
     }
