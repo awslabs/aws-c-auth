@@ -68,7 +68,8 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
     }
 
     token_path_str = aws_string_new_from_buf(allocator, &token_path_buf);
-
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "successfully constructed token path: %s", aws_string_c_str(token_path_str));
 cleanup:
     aws_byte_buf_clean_up(&token_path_buf);
     aws_byte_buf_clean_up(&sha1_buf);
