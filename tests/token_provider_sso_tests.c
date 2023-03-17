@@ -308,7 +308,8 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
@@ -360,7 +361,8 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
@@ -408,7 +410,8 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
@@ -458,7 +461,8 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */

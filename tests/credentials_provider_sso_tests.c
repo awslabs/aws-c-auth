@@ -394,7 +394,8 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     aws_credentials_provider_http_mock_tester_init(allocator);
     credentials_provider_http_mock_tester.is_request_successful = false;
 
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
@@ -462,7 +463,8 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     credentials_provider_http_mock_tester.is_request_successful = false;
     credentials_provider_http_mock_tester.response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
 
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
@@ -524,7 +526,8 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
 
     aws_credentials_provider_http_mock_tester_init(allocator);
 
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
@@ -589,7 +592,8 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
 
     aws_credentials_provider_http_mock_tester_init(allocator);
     credentials_provider_http_mock_tester.response_code = AWS_HTTP_STATUS_CODE_500_INTERNAL_SERVER_ERROR;
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
@@ -653,7 +657,8 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     (void)ctx;
 
     aws_credentials_provider_http_mock_tester_init(allocator);
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
@@ -718,7 +723,8 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     (void)ctx;
 
     aws_credentials_provider_http_mock_tester_init(allocator);
-    struct aws_string *actual_home = aws_string_new_from_c_str(allocator, getenv("HOME"));
+    struct aws_string *actual_home;
+    aws_get_environment_value(allocator, s_home_env_var, &actual_home);
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
