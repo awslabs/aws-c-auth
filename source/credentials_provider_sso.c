@@ -412,7 +412,7 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
         s_finalize_get_credentials_query(user_data);
         return;
     }
-    AWS_LOGF_ERROR(
+    AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): successfully accquired a token", (void *)sso_user_data->provider);
     /* clear the result from previous attempt */
     s_user_data_reset_request_and_response(sso_user_data);
@@ -435,7 +435,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
         s_finalize_get_credentials_query(user_data);
         return;
     }
-    AWS_LOGF_ERROR(
+    AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): successfully accquired a connection",
         (void *)sso_user_data->provider);
