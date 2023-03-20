@@ -129,20 +129,6 @@ static bool s_parse_expiration_value_from_json_object(
             return true;
         }
 
-        case AWS_PCEF_NUMBER_UNIX_EPOCH_MS: {
-            double expiration_value_ms = 0;
-            if (aws_json_value_get_number(value, &expiration_value_ms)) {
-                AWS_LOGF_INFO(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Unabled to extract credentials Expiration field from Json document.");
-                return false;
-            }
-
-            *expiration_timepoint_in_seconds =
-                aws_timestamp_convert((uint64_t)expiration_value_ms, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_SECS, NULL);
-            return true;
-        }
-
         default:
             return false;
     }
