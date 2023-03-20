@@ -39,6 +39,7 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
     if (aws_byte_buf_init_copy_from_cursor(&token_path_buf, allocator, home_dir_cursor)) {
         goto cleanup;
     }
+
     /* append sso cache directory */
     if (aws_byte_buf_append_dynamic(&token_path_buf, &cache_dir_cursor)) {
         goto cleanup;
@@ -157,8 +158,7 @@ cleanup:
     aws_json_value_destroy(document_root);
     aws_byte_buf_clean_up(&file_contents_buf);
     if (!success) {
-        aws_string_destroy(token->token);
-        aws_mem_release(allocator, token);
+        aws_sso_token_destroy(token);
         token = NULL;
     }
     return token;

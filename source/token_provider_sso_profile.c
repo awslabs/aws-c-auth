@@ -40,11 +40,11 @@ static int s_token_provider_profile_get_token_async(
     }
 
     /* check token expiration. */
-    uint64_t now_ms = UINT64_MAX;
-    if (impl->system_clock_fn(&now_ms) != AWS_OP_SUCCESS) {
+    uint64_t now_ns = UINT64_MAX;
+    if (impl->system_clock_fn(&now_ns) != AWS_OP_SUCCESS) {
         goto done;
     }
-    uint64_t now_seconds = aws_timestamp_convert(now_ms, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
+    uint64_t now_seconds = aws_timestamp_convert(now_ns, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
 
     if (aws_date_time_as_epoch_secs(&sso_token->expiration) - now_seconds < 0) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", (void *)provider);
@@ -141,6 +141,7 @@ static struct aws_string *s_construct_profile_token_path(
     if (!token_path) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to construct token path in profile");
+        goto cleanup;
     }
 
 cleanup:

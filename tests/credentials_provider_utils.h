@@ -101,7 +101,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
 int aws_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path);
 
 /**
- * Mocked Function
+ * Mocked HTTP connection manager for tests
  */
 struct aws_credentials_provider_http_mock_tester {
     struct aws_tls_ctx *tls_ctx;

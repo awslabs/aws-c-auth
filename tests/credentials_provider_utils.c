@@ -508,7 +508,7 @@ int aws_create_directory_components(struct aws_allocator *allocator, const struc
 }
 
 /*
- * Mocked Functions for Tests
+ * Mocked HTTP connection manager for tests
  */
 struct aws_credentials_provider_http_mock_tester credentials_provider_http_mock_tester;
 

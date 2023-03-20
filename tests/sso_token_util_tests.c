@@ -54,7 +54,7 @@ static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     aws_auth_library_init(allocator);
     struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
-    ASSERT_TRUE(aws_create_profile_file(file_path, s_valid_token_json) == AWS_OP_SUCCESS);
+    ASSERT_SUCCESS(aws_create_profile_file(file_path, s_valid_token_json));
     struct aws_sso_token *token = aws_sso_token_new_from_file(allocator, file_path);
     ASSERT_TRUE(aws_string_eq_c_str(token->token, "string"));
     ASSERT_INT_EQUALS((uint64_t)aws_date_time_as_epoch_secs(&token->expiration), 1573704345);
@@ -64,3 +64,71 @@ static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(parse_sso_token_valid, s_parse_sso_token_valid);
+
+AWS_STATIC_STRING_FROM_LITERAL(s_invalid_token_json, "asdasdas");
+static int s_parse_sso_token_invalid(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
+    ASSERT_SUCCESS(aws_create_profile_file(file_path, s_invalid_token_json));
+    ASSERT_NULL(aws_sso_token_new_from_file(allocator, file_path));
+    ASSERT_INT_EQUALS(AWS_AUTH_SSO_TOKEN_INVALID, aws_last_error());
+    aws_string_destroy(file_path);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(parse_sso_token_invalid, s_parse_sso_token_invalid);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_missing_access_token_json,
+    "{\"expiresAt\": \"2019-11-14T04:05:45Z\",\"refreshToken\": \"string\",\"clientId\": "
+    "\"123321\",\"clientSecret\": \"ABCDE123\",\"registrationExpiresAt\": "
+    "\"2022-03-06T19:53:17Z\",\"region\": \"us-west-2\",\"startUrl\": \"https://d-abc123.awsapps.com/start\"}");
+static int s_parse_sso_token_invalid_missing_access_token(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
+    ASSERT_SUCCESS(aws_create_profile_file(file_path, s_missing_access_token_json));
+    ASSERT_NULL(aws_sso_token_new_from_file(allocator, file_path));
+    ASSERT_INT_EQUALS(AWS_AUTH_SSO_TOKEN_INVALID, aws_last_error());
+    aws_string_destroy(file_path);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(parse_sso_token_invalid_missing_access_token, s_parse_sso_token_invalid_missing_access_token);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_missing_expires_at_json,
+    "{\"accessToken\": \"string\",\"refreshToken\": \"string\",\"clientId\": "
+    "\"123321\",\"clientSecret\": \"ABCDE123\",\"registrationExpiresAt\": "
+    "\"2022-03-06T19:53:17Z\",\"region\": \"us-west-2\",\"startUrl\": \"https://d-abc123.awsapps.com/start\"}");
+static int s_parse_sso_token_missing_expires_at(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
+    ASSERT_SUCCESS(aws_create_profile_file(file_path, s_missing_expires_at_json));
+    ASSERT_NULL(aws_sso_token_new_from_file(allocator, file_path));
+    ASSERT_INT_EQUALS(AWS_AUTH_SSO_TOKEN_INVALID, aws_last_error());
+    aws_string_destroy(file_path);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(parse_sso_token_missing_expires_at, s_parse_sso_token_missing_expires_at);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_invalid_expires_at_json,
+    "{\"accessToken\": \"string\",\"expiresAt\": \"1234567\",\"refreshToken\": \"string\",\"clientId\": "
+    "\"123321\",\"clientSecret\": \"ABCDE123\",\"registrationExpiresAt\": "
+    "\"2022-03-06T19:53:17Z\",\"region\": \"us-west-2\",\"startUrl\": \"https://d-abc123.awsapps.com/start\"}");
+static int s_parse_sso_token_invalid_expires_at(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
+    ASSERT_SUCCESS(aws_create_profile_file(file_path, s_invalid_expires_at_json));
+    ASSERT_NULL(aws_sso_token_new_from_file(allocator, file_path));
+    ASSERT_INT_EQUALS(AWS_AUTH_SSO_TOKEN_INVALID, aws_last_error());
+    aws_string_destroy(file_path);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(parse_sso_token_invalid_expires_at, s_parse_sso_token_invalid_expires_at);
