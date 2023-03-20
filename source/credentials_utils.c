@@ -262,18 +262,7 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
         return NULL;
     }
-
-    struct aws_json_value *top_level_object = NULL;
-    if (options->top_level_object_name) {
-        top_level_object = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("roleCredentials"));
-        if (!top_level_object) {
-            AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
-        }
-    }
-
-    struct aws_credentials *credentials = aws_parse_credentials_from_aws_json_object(
-        allocator, top_level_object ? top_level_object : document_root, options);
-
+    struct aws_credentials *credentials = aws_parse_credentials_from_aws_json_object(allocator, document_root, options);
     aws_json_value_destroy(document_root);
     return credentials;
 }
