@@ -25,7 +25,7 @@ struct aws_token_identity {
     struct aws_string *token;
 };
 
-enum IdentityType {
+enum aws_identity_type {
     AWS_CREDENTIALS_IDENTITY,
     TOKEN_IDENTITY,
     ANONYMOUS_IDENTITY,
@@ -69,7 +69,7 @@ struct aws_credentials {
      */
     uint64_t expiration_timepoint_seconds;
 
-    enum IdentityType identity_type;
+    enum aws_identity_type identity_type;
     union {
         struct aws_credentials_identity credentials_identity;
         struct aws_token_identity token_identity;
@@ -168,7 +168,7 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
             aws_ecc_key_pair_release(credentials->identity.ecc_identity.ecc_key);
             break;
         case TOKEN_IDENTITY:
-            aws_string_destroy(credentials->identity.token_identity.token);
+            aws_string_destroy_secure(credentials->identity.token_identity.token);
             break;
         default:
             break;
@@ -380,8 +380,8 @@ struct aws_credentials *aws_credentials_new_token(
     credentials->allocator = allocator;
     aws_atomic_init_int(&credentials->ref_count, 1);
     credentials->identity_type = TOKEN_IDENTITY;
-    struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials_identity;
-    credentials_identity->access_key_id = aws_string_new_from_array(allocator, token.ptr, token.len);
+    struct aws_token_identity *token_identity = &credentials->identity.token_identity;
+    token_identity->token = aws_string_new_from_array(allocator, token.ptr, token.len);
     credentials->expiration_timepoint_seconds = expiration_timepoint_in_seconds;
     return credentials;
 }

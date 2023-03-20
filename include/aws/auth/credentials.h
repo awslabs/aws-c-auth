@@ -1145,6 +1145,7 @@ struct aws_credentials_provider *aws_token_provider_new_sso_profile(
 /**
  * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
  * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1 of session name>.json
+ * Note: Token refresh is not currently supported
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options

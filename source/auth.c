@@ -103,6 +103,7 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE,
         "Valid credentials could not be sourced by the sso credentials provider"),
+
 };
 /* clang-format on */
 
