@@ -65,7 +65,7 @@ static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
 }
 AWS_TEST_CASE(parse_sso_token_valid, s_parse_sso_token_valid);
 
-AWS_STATIC_STRING_FROM_LITERAL(s_invalid_token_json, "asdasdas");
+AWS_STATIC_STRING_FROM_LITERAL(s_invalid_token_json, "invalid json");
 static int s_parse_sso_token_invalid(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     aws_auth_library_init(allocator);

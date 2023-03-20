@@ -172,6 +172,20 @@ static int s_sso_token_provider_sso_session_invalid_config_test(struct aws_alloc
                                                           "1\nsso_start_url=url"),
         },
         {
+            .name = "sso_session with without sso_region",
+            .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[profile "
+                                                          "default]\naws_access_key_id=fake_access_key\naws_secret_"
+                                                          "access_key=fake_secret_key\nsso_session=dev\n[sso-session "
+                                                          "dev]\nsso_start_url=url"),
+        },
+        {
+            .name = "sso_session with without sso_start_url",
+            .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[profile "
+                                                          "default]\naws_access_key_id=fake_access_key\naws_secret_"
+                                                          "access_key=fake_secret_key\nsso_session=dev\n[sso-session "
+                                                          "dev]\nsso_region=us-east-1"),
+        },
+        {
             .name = "sso_session with different profile region",
             .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
                 "[profile "
@@ -232,21 +246,21 @@ static int s_sso_token_provider_sso_session_valid_config_test(struct aws_allocat
                                                           "1\nsso_start_url=url"),
         },
         {
-            .name = "with sso_region",
+            .name = "with profile sso_region",
             .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[default]\naws_access_key_id=fake_access_key\naws_secret_"
                                                           "access_key=fake_secret_key\nsso_region=us-east-1\nsso_"
                                                           "session=dev\n[sso-session dev]\nsso_region=us-east-"
                                                           "1\nsso_start_url=url"),
         },
         {
-            .name = "with sso_start_url",
+            .name = "with profile sso_start_url",
             .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("[default]\naws_access_key_id=fake_access_key\naws_secret_"
                                                           "access_key=fake_secret_key\nsso_start_url=url\nsso_"
                                                           "session=dev\n[sso-session dev]\nsso_region=us-east-"
                                                           "1\nsso_start_url=url"),
         },
         {
-            .name = "with profile",
+            .name = "with profile sso_region and sso_start_url",
             .text = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
                 "[default]\naws_access_key_id=fake_access_key\naws_secret_"
                 "access_key=fake_secret_key\nsso_region=us-east-1\nsso_start_url=url\nsso_"
@@ -330,9 +344,8 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
 
     struct aws_get_credentials_test_callback_result callback_results;
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
-    int get_async_result =
-        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
-    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+    ASSERT_SUCCESS(
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
     aws_wait_on_credentials_callback(&callback_results);
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_token(callback_results.credentials), s_good_token);
@@ -380,12 +393,9 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
 
     struct aws_get_credentials_test_callback_result callback_results;
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
-    int get_async_result =
-        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
-    ASSERT_FALSE(get_async_result == AWS_OP_SUCCESS);
-
-    ASSERT_INT_EQUALS(aws_last_error(), AWS_AUTH_SSO_TOKEN_EXPIRED);
-
+    ASSERT_ERROR(
+        AWS_AUTH_SSO_TOKEN_EXPIRED,
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
     aws_credentials_provider_release(provider);
 
     aws_string_destroy(token_path);
@@ -423,9 +433,8 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
 
     struct aws_get_credentials_test_callback_result callback_results;
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
-    int get_async_result =
-        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
-    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+    ASSERT_SUCCESS(
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
     aws_wait_on_credentials_callback(&callback_results);
 
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_token(callback_results.credentials), s_good_token);
@@ -472,11 +481,9 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
 
     struct aws_get_credentials_test_callback_result callback_results;
     aws_get_credentials_test_callback_result_init(&callback_results, 1);
-    int get_async_result =
-        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
-    ASSERT_FALSE(get_async_result == AWS_OP_SUCCESS);
-
-    ASSERT_INT_EQUALS(aws_last_error(), AWS_AUTH_SSO_TOKEN_EXPIRED);
+    ASSERT_ERROR(
+        AWS_AUTH_SSO_TOKEN_EXPIRED,
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
 
     aws_credentials_provider_release(provider);
 
