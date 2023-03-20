@@ -24,7 +24,6 @@
 #define SSO_RESPONSE_SIZE_INITIAL 2048
 #define SSO_RESPONSE_SIZE_LIMIT 10000
 #define SSO_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
-#define SSO_CREDS_DEFAULT_DURATION_SECONDS 900
 #define SSO_MAX_ATTEMPTS 3
 #define SSO_RETRY_TIMEOUT_MS 100
 
@@ -67,7 +66,7 @@ static void s_user_data_reset_request_and_response(struct sso_user_data *user_da
     user_data->request = NULL;
 
     aws_byte_buf_reset(&user_data->payload, true /* zero out */);
-    aws_string_destroy(user_data->token);
+    aws_string_destroy_secure(user_data->token);
     user_data->status_code = 0;
     user_data->error_code = AWS_OP_SUCCESS;
 }
@@ -472,7 +471,7 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
         s_finalize_get_credentials_query(sso_user_data);
         return;
     }
-    AWS_LOGF_ERROR(
+    AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): successfully acquired a retry token",
         (void *)sso_user_data->provider);
