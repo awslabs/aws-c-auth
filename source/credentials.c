@@ -170,7 +170,7 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
         case TOKEN_IDENTITY:
             aws_string_destroy_secure(credentials->identity.token_identity.token);
             break;
-        default:
+        case ANONYMOUS_IDENTITY:
             break;
     }
 
