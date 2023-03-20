@@ -90,8 +90,8 @@ struct aws_credentials_provider_environment_options {
 };
 
 /**
- * Configuration options for a provider that sources credentials from the aws profile and credentials files
- * (by default ~/.aws/profile and ~/.aws/credentials)
+ * Configuration options for a provider that sources credentials from the aws config and credentials files
+ * (by default ~/.aws/config and ~/.aws/credentials)
  */
 struct aws_credentials_provider_profile_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -114,7 +114,7 @@ struct aws_credentials_provider_profile_options {
     /**
      * (Optional)
      * Use a cached merged profile collection. A merge collection has both config file
-     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * (~/.aws/config) and credentials file based profile collection (~/.aws/credentials) using
      * `aws_profile_collection_new_from_merge`.
      * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
@@ -493,7 +493,7 @@ struct aws_credentials_provider_chain_default_options {
     /**
      * (Optional)
      * Use a cached merged profile collection. A merge collection has both config file
-     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * (~/.aws/config) and credentials file based profile collection (~/.aws/credentials) using
      * `aws_profile_collection_new_from_merge`.
      * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
@@ -587,7 +587,7 @@ struct aws_credentials_provider_cognito_options {
 
 /**
  * Configuration options for a provider that sources sso token information from the aws profile (by default
- * ~/.aws/profile) and token from ~/.aws/sso/cache/<sha1 of start url>.json.
+ * ~/.aws/config) and token from ~/.aws/sso/cache/<sha1 of start url>.json.
  */
 struct aws_token_provider_sso_profile_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -608,7 +608,7 @@ struct aws_token_provider_sso_profile_options {
 
 /**
  * Configuration options for a provider that sources sso token information from the aws profile (by default
- * ~/.aws/profile) and token from ~/.aws/sso/cache/<sha1 of session name>.json.
+ * ~/.aws/config) and token from ~/.aws/sso/cache/<sha1 of session name>.json.
  */
 struct aws_token_provider_sso_session_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
