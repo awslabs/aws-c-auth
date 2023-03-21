@@ -1930,18 +1930,22 @@ static int s_apply_existing_canonical_request(struct aws_signing_state_aws *stat
  */
 int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
+    AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) before time", (void *)state->signable);
     if (aws_date_time_to_utc_time_str(&state->config.date, AWS_DATE_FORMAT_ISO_8601_BASIC, &state->date)) {
         return AWS_OP_ERR;
     }
 
+    AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) before s_build_canonical_payload", (void *)state->signable);
     if (s_build_canonical_payload(state)) {
         return AWS_OP_ERR;
     }
 
+    AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) before s_build_credential_scope", (void *)state->signable);
     if (s_build_credential_scope(state)) {
         return AWS_OP_ERR;
     }
 
+    AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) before s_build_canonical_request_sigv4", (void *)state->signable);
     switch (state->config.signature_type) {
         case AWS_ST_HTTP_REQUEST_HEADERS:
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
