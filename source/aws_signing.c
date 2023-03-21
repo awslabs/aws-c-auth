@@ -1495,11 +1495,22 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     int result = AWS_OP_ERR;
     if (state->config.signed_body_value.len == 0) {
         /* No value provided by user, so we must calculate it */
+
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING,
+            "(id=%p) " PRInSTR " before aws_sha256_new",
+            (void *)state->signable,
+            AWS_BYTE_CURSOR_PRI(state->config.signed_body_value));
         hash = aws_sha256_new(allocator);
         if (hash == NULL) {
             return AWS_OP_ERR;
         }
 
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING,
+            "(id=%p) " PRInSTR " before aws_byte_buf_init",
+            (void *)state->signable,
+            AWS_BYTE_CURSOR_PRI(state->config.signed_body_value));
         if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
             aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
             goto on_cleanup;
@@ -1511,6 +1522,11 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
         }
 
         if (payload_stream != NULL) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_SIGNING,
+                "(id=%p) " PRInSTR " before aws_input_stream_seek",
+                (void *)state->signable,
+                AWS_BYTE_CURSOR_PRI(state->config.signed_body_value));
             if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
                 goto on_cleanup;
             }
@@ -1521,15 +1537,24 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             while (!payload_status.is_end_of_stream) {
                 /* reset the temporary body buffer; we can calculate the hash in window chunks */
                 body_buffer.len = 0;
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "(id=%p) " PRInSTR " before aws_input_stream_read",
+                    (void *)state->signable,
+                    AWS_BYTE_CURSOR_PRI(state->config.signed_body_value));
                 if (aws_input_stream_read(payload_stream, &body_buffer)) {
                     goto on_cleanup;
                 }
 
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "(id=%p) " PRInSTR " before aws_hash_update",
+                    (void *)state->signable,
+                    AWS_BYTE_CURSOR_PRI(state->config.signed_body_value));
                 if (body_buffer.len > 0) {
                     struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
                     aws_hash_update(hash, &body_cursor);
                 }
-
                 if (aws_input_stream_get_status(payload_stream, &payload_status)) {
                     goto on_cleanup;
                 }
@@ -1541,6 +1566,11 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
             }
         }
 
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING,
+            "(id=%p) " PRInSTR " before aws_hash_finalize",
+            (void *)state->signable,
+            AWS_BYTE_CURSOR_PRI(state->config.signed_body_value));
         if (aws_hash_finalize(hash, &digest_buffer, 0)) {
             goto on_cleanup;
         }
