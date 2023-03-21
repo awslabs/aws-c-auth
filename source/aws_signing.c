@@ -1690,10 +1690,20 @@ static int s_build_canonical_request_hash(struct aws_signing_state_aws *state) {
     }
 
     struct aws_byte_cursor canonical_request_cursor = aws_byte_cursor_from_buf(&state->canonical_request);
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_SIGNING,
+        "(id=%p) " PRInSTR " before sha256",
+        (void *)state->signable,
+        AWS_BYTE_CURSOR_PRI(canonical_request_cursor));
     if (aws_sha256_compute(allocator, &canonical_request_cursor, &digest_buffer, 0)) {
         goto cleanup;
     }
 
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_SIGNING,
+        "(id=%p) " PRInSTR " after sha256",
+        (void *)state->signable,
+        AWS_BYTE_CURSOR_PRI(canonical_request_cursor));
     struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
     if (aws_hex_encode_append_dynamic(&digest_cursor, dest)) {
         goto cleanup;
