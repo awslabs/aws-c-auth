@@ -46,11 +46,6 @@ static struct aws_http_header s_content_type_header = {
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
 };
 
-static struct aws_http_header s_api_version_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15"),
-};
-
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
@@ -65,18 +60,6 @@ static const int s_max_retries = 8;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
 
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close,
-};
-
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_string *assume_role_profile;
@@ -84,7 +67,7 @@ struct aws_credentials_provider_sts_impl {
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_retry_strategy *retry_strategy;
     aws_io_clock_fn *system_clock_fn;
 };
@@ -269,16 +252,6 @@ static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_x
     return true;
 }
 
-/* errors that mean something screwy was going on at the networking layer. */
-static inline bool s_is_transient_error(int error_code) {
-    return error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED || error_code == AWS_ERROR_HTTP_SERVER_CLOSED ||
-           error_code == AWS_IO_SOCKET_CLOSED || error_code == AWS_IO_SOCKET_CONNECT_ABORTED ||
-           error_code == AWS_IO_SOCKET_CONNECTION_REFUSED || error_code == AWS_IO_SOCKET_NETWORK_DOWN ||
-           error_code == AWS_IO_DNS_QUERY_FAILED || error_code == AWS_IO_DNS_NO_ADDRESS_FOR_HOST ||
-           error_code == AWS_IO_SOCKET_TIMEOUT || error_code == AWS_IO_TLS_NEGOTIATION_TIMEOUT ||
-           error_code == AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT;
-}
-
 static void s_start_make_request(
     struct aws_credentials_provider *provider,
     struct sts_creds_provider_user_data *provider_user_data);
@@ -328,19 +301,8 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         /* prevent connection reuse. */
         provider_impl->function_table->aws_http_connection_close(provider_user_data->connection);
 
-        enum aws_retry_error_type error_type = http_response_code >= 400 && http_response_code < 500
-                                                   ? AWS_RETRY_ERROR_TYPE_CLIENT_ERROR
-                                                   : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
-
-        if (s_is_transient_error(error_code)) {
-            error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
-        }
-
-        /* server throttling us is retryable */
-        if (http_response_code == AWS_HTTP_STATUS_CODE_429_TOO_MANY_REQUESTS) {
-            /* force a new connection on this. */
-            error_type = AWS_RETRY_ERROR_TYPE_THROTTLING;
-        }
+        enum aws_retry_error_type error_type =
+            aws_credentials_provider_compute_retry_error_type(http_response_code, error_code);
 
         s_reset_request_specific_data(provider_user_data);
 
@@ -516,10 +478,6 @@ static void s_start_make_request(
     }
 
     if (aws_http_message_add_header(provider_user_data->message, s_content_type_header)) {
-        goto error;
-    }
-
-    if (aws_http_message_add_header(provider_user_data->message, s_api_version_header)) {
         goto error;
     }
 
@@ -713,7 +671,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_sts_options *options) {
+    const struct aws_credentials_provider_sts_options *options) {
 
     if (!options->bootstrap) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for quering STS");
@@ -748,7 +706,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
-    impl->function_table = &s_default_function_table;
+    impl->function_table = g_aws_credentials_provider_http_function_table;
 
     if (options->function_table) {
         impl->function_table = options->function_table;
@@ -836,6 +794,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         .port = 443,
         .socket_options = &socket_options,
         .tls_connection_options = &tls_connection_options,
+        .proxy_options = options->http_proxy_options,
     };
 
     impl->connection_manager =

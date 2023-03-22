@@ -14,9 +14,10 @@
 
 struct aws_client_bootstrap;
 struct aws_auth_http_system_vtable;
-struct aws_string;
 struct aws_credentials;
 struct aws_credentials_provider;
+struct aws_ecc_key_pair;
+struct aws_string;
 
 extern const uint16_t aws_sts_assume_role_default_duration_secs;
 
@@ -109,6 +110,15 @@ struct aws_credentials_provider_profile_options {
      * Override path to the profile credentials file (~/.aws/credentials by default)
      */
     struct aws_byte_cursor credentials_file_name_override;
+
+    /**
+     * (Optional)
+     * Use a cached merged profile collection. A merge collection has both config file
+     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * `aws_profile_collection_new_from_merge`.
+     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
+     */
+    struct aws_profile_collection *profile_collection_cached;
 
     /*
      * Bootstrap to use for any network connections made while sourcing credentials (for example,
@@ -289,10 +299,7 @@ struct aws_credentials_provider_x509_options {
     struct aws_byte_cursor role_alias;
 
     /**
-     * AWS account specific endpoint that can be acquired using AWS CLI following instructions from the giving demo
-     * example: c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com
-     *
-     * This a different endpoint than the IoT data mqtt broker endpoint.
+     * Per-account X509 credentials sourcing endpoint.
      */
     struct aws_byte_cursor endpoint;
 
@@ -331,6 +338,12 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Connection bootstrap to use for any network connections made while sourcing credentials
      */
     struct aws_client_bootstrap *bootstrap;
+
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     */
+    struct aws_profile_collection *config_profile_collection_cached;
 
     /*
      * Client TLS context to use when querying STS web identity provider.
@@ -376,6 +389,11 @@ struct aws_credentials_provider_sts_options {
      * How long sourced credentials should remain valid for, in seconds.  900 is the minimum allowed value.
      */
     uint16_t duration_seconds;
+
+    /**
+     * (Optional) Http proxy configuration for the AssumeRole http request that fetches credentials
+     */
+    const struct aws_http_proxy_options *http_proxy_options;
 
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
@@ -435,6 +453,15 @@ struct aws_credentials_provider_chain_default_options {
      * Must be provided if using BYO_CRYPTO.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /**
+     * (Optional)
+     * Use a cached merged profile collection. A merge collection has both config file
+     * (~/.aws/profile) and credentials file based profile collection (~/.aws/credentials) using
+     * `aws_profile_collection_new_from_merge`.
+     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
+     */
+    struct aws_profile_collection *profile_collection_cached;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
@@ -457,6 +484,69 @@ struct aws_credentials_provider_delegate_options {
      * User data for delegated callbacks.
      */
     void *delegate_user_data;
+};
+
+/**
+ * A (string) pair defining an identity provider and a valid login token sourced from it.
+ */
+struct aws_cognito_identity_provider_token_pair {
+
+    /**
+     * Name of an identity provider
+     */
+    struct aws_byte_cursor identity_provider_name;
+
+    /**
+     * Valid login token source from the identity provider
+     */
+    struct aws_byte_cursor identity_provider_token;
+};
+
+/**
+ * Configuration options needed to create a Cognito-based Credentials Provider
+ */
+struct aws_credentials_provider_cognito_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /**
+     * Cognito service regional endpoint to source credentials from.
+     */
+    struct aws_byte_cursor endpoint;
+
+    /**
+     * Cognito identity to fetch credentials relative to.
+     */
+    struct aws_byte_cursor identity;
+
+    /**
+     * Optional set of identity provider token pairs to allow for authenticated identity access.
+     */
+    struct aws_cognito_identity_provider_token_pair *logins;
+    size_t login_count;
+
+    /**
+     * Optional ARN of the role to be assumed when multiple roles were received in the token from the identity provider.
+     */
+    struct aws_byte_cursor *custom_role_arn;
+
+    /*
+     * Connection bootstrap to use for network connections made while sourcing credentials
+     */
+    struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when querying cognito credentials.
+     * Required.
+     */
+    struct aws_tls_ctx *tls_ctx;
+
+    /**
+     * (Optional) Http proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_http_proxy_options *http_proxy_options;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_auth_http_system_vtable *function_table;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -489,6 +579,17 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 /**
+ * Creates a new set of aws anonymous credentials.
+ * Use Anonymous credentials, when you want to skip the signing process.
+ *
+ * @param allocator memory allocator to use
+ *
+ * @return a valid credentials object, or NULL
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_anonymous(struct aws_allocator *allocator);
+
+/**
  * Creates a new set of AWS credentials
  *
  * @param allocator memory allocator to use
@@ -507,6 +608,37 @@ struct aws_credentials *aws_credentials_new_from_string(
     const struct aws_string *secret_access_key,
     const struct aws_string *session_token,
     uint64_t expiration_timepoint_seconds);
+
+/**
+ * Creates a set of AWS credentials that includes an ECC key pair.  These credentials do not have a value for
+ * the secret access key; the ecc key takes over that field's role in sigv4a signing.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param access_key_id access key id for the credential set
+ * @param ecc_key ecc key to use during signing when using these credentials
+ * @param session_token (optional) session token associated with the credentials
+ * @param expiration_timepoint_in_seconds (optional) if session-based, time at which these credentials expire
+ * @return a new pair of AWS credentials, or NULL
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_ecc(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor access_key_id,
+    struct aws_ecc_key_pair *ecc_key,
+    struct aws_byte_cursor session_token,
+    uint64_t expiration_timepoint_in_seconds);
+
+/*
+ * Takes a pair of AWS credentials and performs the sigv4a key expansion algorithm to generate a unique
+ * ecc P256 key pair based on the credentials.  The ecc key is written to the buffer in DER format.
+ *
+ * Sigv4a signing takes the raw DER-encoded ecc key as an optional parameter in signing (if not present,
+ * key expansion will be done for the caller before signing).
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
+    struct aws_allocator *allocator,
+    const struct aws_credentials *credentials);
 
 /**
  * Add a reference to some credentials
@@ -570,6 +702,30 @@ uint64_t aws_credentials_get_expiration_timepoint_seconds(const struct aws_crede
 AWS_AUTH_API
 struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_credentials *credentials);
 
+/**
+ * If credentials are anonymous, then the signing process is skipped.
+ *
+ * @param credentials credentials to check
+ *
+ * @return true if the credentials are anonymous; false otherwise.
+ */
+AWS_AUTH_API
+bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
+
+/**
+ * Derives an ecc key pair (based on the nist P256 curve) from the access key id and secret access key components
+ * of a set of AWS credentials using an internal key derivation specification.  Used to perform sigv4a signing in
+ * the hybrid mode based on AWS credentials.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param credentials AWS credentials to derive the ECC key from using the AWS sigv4a key deriviation specification
+ * @return a new ecc key pair or NULL on failure
+ */
+AWS_AUTH_API
+struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
+    struct aws_allocator *allocator,
+    const struct aws_credentials *credentials);
+
 /*
  * Credentials provider APIs
  */
@@ -580,7 +736,7 @@ struct aws_ecc_key_pair *aws_credentials_get_ecc_key_pair(const struct aws_crede
  * @param provider provider to increment the ref count on
  */
 AWS_AUTH_API
-void aws_credentials_provider_release(struct aws_credentials_provider *provider);
+struct aws_credentials_provider *aws_credentials_provider_release(struct aws_credentials_provider *provider);
 
 /*
  * Add a reference to a credentials provider
@@ -588,7 +744,7 @@ void aws_credentials_provider_release(struct aws_credentials_provider *provider)
  * @param provider provider to decrement the ref count on
  */
 AWS_AUTH_API
-void aws_credentials_provider_acquire(struct aws_credentials_provider *provider);
+struct aws_credentials_provider *aws_credentials_provider_acquire(struct aws_credentials_provider *provider);
 
 /*
  * Async function for retrieving credentials from a provider
@@ -623,6 +779,20 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_static(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_static_options *options);
+
+/**
+ * Creates a simple anonymous credentials provider
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param shutdown_options an optional shutdown callback that gets
+ * invoked when the resources used by the provider are no longer in use.
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_anonymous(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_shutdown_options *shutdown_options);
 
 /**
  * Creates a provider that returns credentials sourced from the environment variables:
@@ -703,7 +873,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_sts_options *options);
+    const struct aws_credentials_provider_sts_options *options);
 
 /**
  * Creates a provider that sources credentials from an ordered sequence of providers, with the overall result
@@ -797,7 +967,34 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_delegate(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_delegate_options *options);
+    const struct aws_credentials_provider_delegate_options *options);
+
+/**
+ * Creates a provider that sources credentials from the Cognito-Identity service via an
+ * invocation of the GetCredentialsForIdentity API call.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_cognito(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_cognito_options *options);
+
+/**
+ * Creates a cognito-based provider that has a caching layer wrapped around it
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options cognito-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_cognito_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_cognito_options *options);
 
 /**
  * Creates the default provider chain used by most AWS SDKs.
@@ -823,30 +1020,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_chain_default_options *options);
 
-AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_ecc(
-    struct aws_allocator *allocator,
-    struct aws_byte_cursor access_key_id,
-    struct aws_ecc_key_pair *ecc_key,
-    struct aws_byte_cursor session_token,
-    uint64_t expiration_timepoint_in_seconds);
-
-/*
- * Takes a pair of AWS credentials and performs the sigv4a key expansion algorithm to generate a unique
- * ecc P256 key pair based on the credentials.  The ecc key is written to the buffer in DER format.
- *
- * Sigv4a signing takes the raw DER-encoded ecc key as an optional parameter in signing (if not present,
- * key expansion will be done for the caller before signing).
- */
-AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
-    struct aws_allocator *allocator,
-    const struct aws_credentials *credentials);
-
-AWS_AUTH_API
-struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credentials(
-    struct aws_allocator *allocator,
-    const struct aws_credentials *credentials);
+AWS_AUTH_API extern const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table;
 
 AWS_EXTERN_C_END
 

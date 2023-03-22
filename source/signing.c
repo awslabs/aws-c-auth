@@ -29,6 +29,11 @@ static void s_perform_signing(struct aws_signing_state_aws *state) {
         goto done;
     }
 
+    if (aws_credentials_is_anonymous(state->config.credentials)) {
+        result = &state->result;
+        goto done;
+    }
+
     if (aws_signing_build_canonical_request(state)) {
         state->error_code = s_aws_last_error_or_unknown();
         AWS_LOGF_ERROR(
@@ -103,7 +108,9 @@ static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials
 
         state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
     } else {
-        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
+            !aws_credentials_is_anonymous(credentials)) {
+
             state->config.credentials = aws_credentials_new_ecc_from_aws_credentials(state->allocator, credentials);
             if (state->config.credentials == NULL) {
                 state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
@@ -139,7 +146,8 @@ int aws_sign_request_aws(
     }
 
     if (signing_state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
-        if (signing_state->config.credentials != NULL) {
+        if (signing_state->config.credentials != NULL &&
+            !aws_credentials_is_anonymous(signing_state->config.credentials)) {
             /*
              * If these are regular credentials, try to derive ecc-based ones
              */

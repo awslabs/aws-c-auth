@@ -285,8 +285,8 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
                 *cursor = aws_byte_cursor_from_string(g_signature_type_sigv4a_http_request);
             }
             break;
-
         case AWS_ST_HTTP_REQUEST_CHUNK:
+        case AWS_ST_HTTP_REQUEST_EVENT:
             if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
             } else {
@@ -1707,6 +1707,123 @@ cleanup:
     return result;
 }
 
+/**
+ * Note that there is no canonical request for event signing.
+ * The string to sign for events is detailed here:
+ * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-http2.html
+ *
+ *      String stringToSign =
+ *      "AWS4-HMAC-SHA256" +
+ *      "\n" +
+ *      DateTime +
+ *      "\n" +
+ *      Keypath +
+ *      "\n" +
+ *      Hex(priorSignature) +
+ *      "\n" +
+ *      HexHash(nonSignatureHeaders) +
+ *      "\n" +
+ *      HexHash(payload);
+ *
+ * This function will build the string_to_sign_payload,
+ * aka "everything after the Keypath line in the string to sign".
+ */
+static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws *state) {
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf *dest = &state->string_to_sign_payload;
+
+    /*
+     * Hex(priorSignature) + "\n"
+     *
+     * Fortunately, the prior signature is already hex.
+     */
+    struct aws_byte_cursor prev_signature_cursor;
+    AWS_ZERO_STRUCT(prev_signature_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING, "(id=%p) Event signable missing previous signature property", (void *)state->signable);
+        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
+    }
+
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
+    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /*
+     * HexHash(nonSignatureHeaders) + "\n"
+     *
+     * nonSignatureHeaders is just the ":date" header.
+     * We need to encode these headers in event-stream format, as described here:
+     * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
+     *
+     * | Header Name Length | Header Name | Header Value Type | Header Value Length | Header Value |
+     * |       1 byte       |   N bytes   |       1 byte      |        2 bytes      |    N bytes   |
+     */
+    struct aws_byte_buf date_buffer;
+    AWS_ZERO_STRUCT(date_buffer);
+    struct aws_byte_buf digest_buffer;
+    AWS_ZERO_STRUCT(digest_buffer);
+
+    if (aws_byte_buf_init(&date_buffer, state->allocator, 15)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor header_name = aws_byte_cursor_from_c_str(":date");
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, (uint8_t)header_name.len));
+    if (aws_byte_buf_append_dynamic(&date_buffer, &header_name)) {
+        goto cleanup;
+    }
+
+    /* Type of timestamp header */
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, 8 /*AWS_EVENT_STREAM_HEADER_TIMESTAMP*/));
+    AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&state->config.date)));
+
+    /* calculate sha 256 of encoded buffer */
+    if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_buf(&date_buffer);
+    if (aws_sha256_compute(state->allocator, &date_cursor, &digest_buffer, 0)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
+    if (aws_hex_encode_append_dynamic(&digest_cursor, dest)) {
+        goto cleanup;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        goto cleanup;
+    }
+
+    /*
+     * HexHash(payload);
+     *
+     * The payload was already hashed in an earlier stage
+     */
+    struct aws_byte_cursor current_chunk_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
+    if (aws_byte_buf_append_dynamic(dest, &current_chunk_hash_cursor)) {
+        goto cleanup;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+    aws_byte_buf_clean_up(&date_buffer);
+    aws_byte_buf_clean_up(&digest_buffer);
+
+    return result;
+}
+
 static int s_build_canonical_request_body_chunk(struct aws_signing_state_aws *state) {
 
     struct aws_byte_buf *dest = &state->string_to_sign_payload;
@@ -1939,6 +2056,8 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             return s_build_canonical_request_body_chunk(state);
+        case AWS_ST_HTTP_REQUEST_EVENT:
+            return s_build_string_to_sign_payload_for_event(state);
 
         case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
             return s_build_canonical_request_trailing_headers(state);
@@ -2500,7 +2619,7 @@ int aws_verify_sigv4a_signing(
         aws_credentials_release(signing_state->config.credentials);
         signing_state->config.credentials = ecc_credentials;
         if (signing_state->config.credentials == NULL) {
-            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials")
+            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials");
             goto done;
         }
     }

@@ -85,6 +85,13 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE,
         "The supplied sigv4a signature was not a valid signature for the hashed string to sign"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_COGNITO_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the cognito provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_DELEGATE_FAILURE,
+        "Valid credentials could not be sourced by the delegate provider"),
+
 };
 /* clang-format on */
 

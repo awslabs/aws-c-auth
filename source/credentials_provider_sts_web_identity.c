@@ -40,23 +40,11 @@ static void s_on_connection_manager_shutdown(void *user_data);
 
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
     struct aws_string *token_file_path;
 };
-
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_connection = aws_http_stream_get_connection,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close};
 
 /*
  * Tracking structure for each outstanding async query to an sts_web_identity provider
@@ -243,7 +231,7 @@ static bool s_parse_retryable_error_from_response(struct aws_allocator *allocato
     if (xml_parser == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to init xml parser for sts web identity credentials provider to parse error information.")
+            "Failed to init xml parser for sts web identity credentials provider to parse error information.");
         return false;
     }
     bool get_retryable_error = false;
@@ -342,14 +330,14 @@ static struct aws_credentials *s_parse_credentials_from_response(
     if (xml_parser == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to init xml parser for sts web identity credentials provider to parse error information.")
+            "Failed to init xml parser for sts web identity credentials provider to parse error information.");
         return NULL;
     }
     uint64_t now = UINT64_MAX;
     if (aws_sys_clock_get_ticks(&now) != AWS_OP_SUCCESS) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to get sys clock for sts web identity credentials provider to parse error information.")
+            "Failed to get sys clock for sts web identity credentials provider to parse error information.");
         goto on_finish;
     }
     uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
@@ -969,7 +957,9 @@ static void s_parameters_destroy(struct sts_web_identity_parameters *parameters)
     aws_mem_release(parameters->allocator, parameters);
 }
 
-static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator *allocator) {
+static struct sts_web_identity_parameters *s_parameters_new(
+    struct aws_allocator *allocator,
+    struct aws_profile_collection *config_profile_collection_cached) {
 
     struct sts_web_identity_parameters *parameters =
         aws_mem_calloc(allocator, 1, sizeof(struct sts_web_identity_parameters));
@@ -1000,9 +990,19 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
     bool get_all_parameters =
         (region && region->len && role_arn && role_arn->len && token_file_path && token_file_path->len);
     if (!get_all_parameters) {
-        config_profile = s_load_profile(allocator);
+        if (config_profile_collection_cached) {
+            /* Use cached profile collection */
+            config_profile = aws_profile_collection_acquire(config_profile_collection_cached);
+        } else {
+            /* Load profile collection from files */
+            config_profile = s_load_profile(allocator);
+            if (!config_profile) {
+                goto on_finish;
+            }
+        }
+
         profile_name = aws_get_profile_name(allocator, &s_default_profile_name_cursor);
-        if (config_profile && profile_name) {
+        if (profile_name) {
             profile = aws_profile_collection_get_profile(config_profile, profile_name);
         }
 
@@ -1010,7 +1010,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "Failed to resolve either region, role arn or token file path during sts web identity provider "
-                "initialization.")
+                "initialization.");
             goto on_finish;
 
         } else {
@@ -1033,7 +1033,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
         aws_byte_buf_init_copy_from_cursor(&parameters->role_arn, allocator, aws_byte_cursor_from_string(role_arn))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve role arn during sts web identity provider initialization.")
+            "Failed to resolve role arn during sts web identity provider initialization.");
         goto on_finish;
     }
 
@@ -1043,7 +1043,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
             &parameters->token_file_path, allocator, aws_byte_cursor_from_string(token_file_path))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed to resolve token file path during sts web identity provider initialization.")
+            "Failed to resolve token file path during sts web identity provider initialization.");
         goto on_finish;
     }
 
@@ -1059,7 +1059,7 @@ static struct sts_web_identity_parameters *s_parameters_new(struct aws_allocator
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "Successfully loaded all required parameters for sts web identity credentials provider.")
+        "Successfully loaded all required parameters for sts web identity credentials provider.");
     success = true;
 
 on_finish:
@@ -1068,7 +1068,7 @@ on_finish:
     aws_string_destroy(role_session_name);
     aws_string_destroy(token_file_path);
     aws_string_destroy(profile_name);
-    aws_profile_collection_destroy(config_profile);
+    aws_profile_collection_release(config_profile);
     if (!success) {
         s_parameters_destroy(parameters);
         parameters = NULL;
@@ -1080,7 +1080,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_web_identity_options *options) {
 
-    struct sts_web_identity_parameters *parameters = s_parameters_new(allocator);
+    struct sts_web_identity_parameters *parameters =
+        s_parameters_new(allocator, options->config_profile_collection_cached);
     if (!parameters) {
         return NULL;
     }
@@ -1148,7 +1149,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
-        impl->function_table = &s_default_function_table;
+        impl->function_table = g_aws_credentials_provider_http_function_table;
     }
 
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
