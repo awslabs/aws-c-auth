@@ -549,58 +549,6 @@ struct aws_credentials_provider_cognito_options {
     struct aws_auth_http_system_vtable *function_table;
 };
 
-/**
- * Configuration options for a provider that sources sso token information from the aws profile (by default
- * ~/.aws/config) and token from ~/.aws/sso/cache/<sha1 of start url>.json.
- */
-struct aws_token_provider_sso_profile_options {
-    struct aws_credentials_provider_shutdown_options shutdown_options;
-
-    /*
-     * Override of what profile to use to source credentials from ('default' by default)
-     */
-    struct aws_byte_cursor profile_name_override;
-
-    /*
-     * Override path to the profile config file (~/.aws/config by default)
-     */
-    struct aws_byte_cursor config_file_name_override;
-
-    /* For mocking, leave NULL otherwise */
-    aws_io_clock_fn *system_clock_fn;
-};
-
-/**
- * Configuration options for a provider that sources sso token information from the aws profile (by default
- * ~/.aws/config) and token from ~/.aws/sso/cache/<sha1 of session name>.json.
- */
-struct aws_token_provider_sso_session_options {
-    struct aws_credentials_provider_shutdown_options shutdown_options;
-
-    /*
-     * Override of what profile to use to source credentials from ('default' by default)
-     */
-    struct aws_byte_cursor profile_name_override;
-
-    /*
-     * Override path to the profile config file (~/.aws/config by default)
-     */
-    struct aws_byte_cursor config_file_name_override;
-
-    /*
-     * Connection bootstrap to use for any network connections made
-     */
-    struct aws_client_bootstrap *bootstrap;
-
-    /*
-     * Client TLS context to use for any network connections made.
-     */
-    struct aws_tls_ctx *tls_ctx;
-
-    /* For mocking, leave NULL otherwise */
-    aws_io_clock_fn *system_clock_fn;
-};
-
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -1078,35 +1026,6 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_chain_default_options *options);
-
-/**
- * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
- * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1 of start url>.json
- *
- * @param allocator memory allocator to use for all memory allocation
- * @param options provider-specific configuration options
- *
- * @return the newly-constructed credentials provider, or NULL if an error occurred.
- */
-AWS_AUTH_API
-struct aws_credentials_provider *aws_token_provider_new_sso_profile(
-    struct aws_allocator *allocator,
-    const struct aws_token_provider_sso_profile_options *options);
-
-/**
- * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
- * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1 of session name>.json
- * Note: Token refresh is not currently supported
- *
- * @param allocator memory allocator to use for all memory allocation
- * @param options provider-specific configuration options
- *
- * @return the newly-constructed credentials provider, or NULL if an error occurred.
- */
-AWS_AUTH_API
-struct aws_credentials_provider *aws_token_provider_new_sso_session(
-    struct aws_allocator *allocator,
-    const struct aws_token_provider_sso_session_options *options);
 
 AWS_AUTH_API extern const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table;
 

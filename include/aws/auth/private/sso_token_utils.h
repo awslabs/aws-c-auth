@@ -32,4 +32,4 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
 
 AWS_EXTERN_C_END
 
-#endif /* AWS_AUTH_CREDENTIALS_PRIVATE_H */
+#endif /* AWS_AUTH_TOKEN_PRIVATE_H */
