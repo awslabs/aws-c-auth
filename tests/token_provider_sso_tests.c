@@ -5,6 +5,7 @@
 
 #include <aws/testing/aws_test_harness.h>
 
+#include <aws/auth/private/sso_token_providers.h>
 #include <aws/auth/private/sso_token_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/environment.h>
