@@ -380,6 +380,7 @@ static void s_query_credentials(struct sso_user_data *user_data) {
     return;
 
 on_error:
+    user_data->error_code = aws_last_error();
     impl->function_table->aws_http_stream_release(stream);
     s_finalize_get_credentials_query(user_data);
 }
@@ -575,7 +576,6 @@ static int s_construct_endpoint(
     struct aws_allocator *allocator,
     struct aws_byte_buf *endpoint,
     const struct aws_string *region) {
-    // TODO: confirm logic
     if (!allocator || !endpoint || !region) {
         return AWS_ERROR_INVALID_ARGUMENT;
     }
