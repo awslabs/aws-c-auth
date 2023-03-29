@@ -20,7 +20,7 @@
  * sso-session token provider implementation
  */
 struct aws_token_provider_sso_session_impl {
-    struct aws_string *token_file_path;
+    struct aws_string *sso_token_file_path;
     aws_io_clock_fn *system_clock_fn;
 };
 
@@ -34,7 +34,7 @@ static int s_token_provider_sso_session_get_token_async(
     struct aws_credentials *credentials = NULL;
     int result = AWS_OP_ERR;
 
-    sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
+    sso_token = aws_sso_token_new_from_file(provider->allocator, impl->sso_token_file_path);
     if (!sso_token) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", (void *)provider);
         goto done;
@@ -45,9 +45,8 @@ static int s_token_provider_sso_session_get_token_async(
     if (impl->system_clock_fn(&now_ns) != AWS_OP_SUCCESS) {
         goto done;
     }
-    uint64_t now_seconds = aws_timestamp_convert(now_ns, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
 
-    if (aws_date_time_as_epoch_secs(&sso_token->expiration) - now_seconds < 0) {
+    if (aws_date_time_as_nanos(&sso_token->expiration) <= now_ns) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", (void *)provider);
         aws_raise_error(AWS_AUTH_SSO_TOKEN_EXPIRED);
         goto done;
@@ -78,7 +77,7 @@ static void s_token_provider_sso_session_destroy(struct aws_credentials_provider
         return;
     }
 
-    aws_string_destroy(impl->token_file_path);
+    aws_string_destroy(impl->sso_token_file_path);
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
     aws_mem_release(provider->allocator, provider);
@@ -93,13 +92,24 @@ AWS_STRING_FROM_LITERAL(s_sso_session_name, "sso_session");
 AWS_STRING_FROM_LITERAL(s_sso_region_name, "sso_region");
 AWS_STRING_FROM_LITERAL(s_sso_start_url_name, "sso_start_url");
 
-static struct aws_string *s_verify_config_and_construct_token_path(
+/**
+ * Parses the config file to validate and construct a token path. A valid profile with sso session is as follow
+ * [profile sso-profile]
+ *   sso_session = dev
+ *   sso_account_id = 012345678901
+ *   sso_role_name = SampleRole
+ *
+ * [sso-session dev]
+ *   sso_region = us-east-1
+ *   sso_start_url = https://d-abc123.awsapps.com/start
+ */
+static struct aws_string *s_verify_config_and_construct_sso_token_path(
     struct aws_allocator *allocator,
     struct aws_byte_cursor profile_name_override,
     struct aws_byte_cursor config_file_name_override) {
     struct aws_profile_collection *config_collection = NULL;
     struct aws_string *profile_name = NULL;
-    struct aws_string *token_path = NULL;
+    struct aws_string *sso_token_path = NULL;
 
     profile_name = aws_get_profile_name(allocator, &profile_name_override);
     if (!profile_name) {
@@ -129,6 +139,8 @@ static struct aws_string *s_verify_config_and_construct_token_path(
         goto cleanup;
     }
     const struct aws_string *sso_session_name = aws_profile_property_get_value(sso_session_property);
+
+    /* parse sso_session */
     const struct aws_profile *session_profile =
         aws_profile_collection_get_section(config_collection, AWS_PROFILE_SECTION_TYPE_SSO_SESSION, sso_session_name);
     if (!session_profile) {
@@ -156,10 +168,10 @@ static struct aws_string *s_verify_config_and_construct_token_path(
         goto cleanup;
     }
 
+    /* Verify sso_region & start_url are the same in profile section if they exist */
     const struct aws_string *sso_region = aws_profile_property_get_value(sso_region_property);
     const struct aws_string *sso_start_url = aws_profile_property_get_value(sso_start_url_property);
 
-    /* Verify sso_region & start_url are the same in profile section if they exist */
     const struct aws_profile_property *profile_sso_region_property =
         aws_profile_get_property(profile, s_sso_region_name);
     const struct aws_profile_property *profile_sso_start_url_property =
@@ -182,12 +194,12 @@ static struct aws_string *s_verify_config_and_construct_token_path(
         goto cleanup;
     }
 
-    token_path = aws_construct_token_path(allocator, sso_session_name);
+    sso_token_path = aws_construct_sso_token_path(allocator, sso_session_name);
 
 cleanup:
     aws_string_destroy(profile_name);
     aws_profile_collection_release(config_collection);
-    return token_path;
+    return sso_token_path;
 }
 
 struct aws_credentials_provider *aws_token_provider_new_sso_session(
@@ -198,7 +210,7 @@ struct aws_credentials_provider *aws_token_provider_new_sso_session(
     AWS_ASSERT(options->bootstrap);
     AWS_ASSERT(options->tls_ctx);
 
-    struct aws_string *token_path = s_verify_config_and_construct_token_path(
+    struct aws_string *token_path = s_verify_config_and_construct_sso_token_path(
         allocator, options->profile_name_override, options->config_file_name_override);
     if (!token_path) {
         return NULL;
@@ -216,14 +228,12 @@ struct aws_credentials_provider *aws_token_provider_new_sso_session(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_sso_session_vtable, impl);
-    impl->token_file_path = aws_string_new_from_string(allocator, token_path);
+    impl->sso_token_file_path = token_path;
     provider->shutdown_options = options->shutdown_options;
     if (options->system_clock_fn) {
         impl->system_clock_fn = options->system_clock_fn;
     } else {
         impl->system_clock_fn = aws_sys_clock_get_ticks;
     }
-
-    aws_string_destroy(token_path);
     return provider;
 }

@@ -9,18 +9,21 @@
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 
+/* aws ecc identity which contains the data needed to sign a Sigv4a AWS request */
 struct aws_ecc_identity {
     struct aws_string *access_key_id;
     struct aws_string *session_token;
     struct aws_ecc_key_pair *ecc_key;
 };
 
+/* aws credentials identity which contains the data needed to sign an authenticated AWS request */
 struct aws_credentials_identity {
     struct aws_string *access_key_id;
     struct aws_string *secret_access_key;
     struct aws_string *session_token;
 };
 
+/* aws_token identity contains only a token to represent token only identities like a bearer token. */
 struct aws_token_identity {
     struct aws_string *token;
 };
@@ -33,7 +36,8 @@ enum aws_identity_type {
 };
 
 /*
- * A structure that wraps the public/private data needed to sign an authenticated AWS request
+ * A structure that wraps the different types of credentials that the customer can provider to establish their
+ * identity.
  */
 struct aws_credentials {
     struct aws_allocator *allocator;

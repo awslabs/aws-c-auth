@@ -20,12 +20,12 @@
  * sso-token profile provider implementation
  */
 struct aws_token_provider_profile_impl {
-    struct aws_string *token_file_path;
+    struct aws_string *sso_token_file_path;
 
     aws_io_clock_fn *system_clock_fn;
 };
 
-static int s_token_provider_profile_get_token_async(
+static int s_token_provider_profile_get_token(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
@@ -34,9 +34,9 @@ static int s_token_provider_profile_get_token_async(
     struct aws_sso_token *sso_token = NULL;
     struct aws_credentials *credentials = NULL;
     int result = AWS_OP_ERR;
-    sso_token = aws_sso_token_new_from_file(provider->allocator, impl->token_file_path);
+    sso_token = aws_sso_token_new_from_file(provider->allocator, impl->sso_token_file_path);
     if (!sso_token) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", (void *)provider);
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) failed to get sso token from file", (void *)provider);
         goto done;
     }
 
@@ -45,9 +45,8 @@ static int s_token_provider_profile_get_token_async(
     if (impl->system_clock_fn(&now_ns) != AWS_OP_SUCCESS) {
         goto done;
     }
-    uint64_t now_seconds = aws_timestamp_convert(now_ns, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
 
-    if (aws_date_time_as_epoch_secs(&sso_token->expiration) - now_seconds < 0) {
+    if (aws_date_time_as_nanos(&sso_token->expiration) <= now_ns) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) cached token is expired.", (void *)provider);
         aws_raise_error(AWS_AUTH_SSO_TOKEN_EXPIRED);
         goto done;
@@ -77,14 +76,14 @@ static void s_token_provider_profile_destroy(struct aws_credentials_provider *pr
         return;
     }
 
-    aws_string_destroy(impl->token_file_path);
+    aws_string_destroy(impl->sso_token_file_path);
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
     aws_mem_release(provider->allocator, provider);
 }
 
 static struct aws_credentials_provider_vtable s_aws_token_provider_profile_vtable = {
-    .get_credentials = s_token_provider_profile_get_token_async,
+    .get_credentials = s_token_provider_profile_get_token,
     .destroy = s_token_provider_profile_destroy,
 };
 
@@ -138,7 +137,7 @@ static struct aws_string *s_construct_profile_token_path(
         goto cleanup;
     }
 
-    token_path = aws_construct_token_path(allocator, aws_profile_property_get_value(sso_start_url_property));
+    token_path = aws_construct_sso_token_path(allocator, aws_profile_property_get_value(sso_start_url_property));
     if (!token_path) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to construct token path in profile");
@@ -172,13 +171,12 @@ struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_profile_vtable, impl);
-    impl->token_file_path = aws_string_new_from_string(allocator, token_path);
+    impl->sso_token_file_path = token_path;
     provider->shutdown_options = options->shutdown_options;
     if (options->system_clock_fn) {
         impl->system_clock_fn = options->system_clock_fn;
     } else {
         impl->system_clock_fn = aws_sys_clock_get_ticks;
     }
-    aws_string_destroy(token_path);
     return provider;
 }

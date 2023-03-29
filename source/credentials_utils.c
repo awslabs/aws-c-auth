@@ -308,7 +308,7 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to resolve config file path: %s",
             aws_error_str(aws_last_error()));
-        goto on_error;
+        return NULL;
     }
 
     config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
@@ -323,14 +323,8 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
             "Failed to build config profile collection from file at (%s) : %s",
             aws_string_c_str(config_file_path),
             aws_error_str(aws_last_error()));
-        goto on_error;
     }
 
     aws_string_destroy(config_file_path);
     return config_profiles;
-
-on_error:
-    aws_string_destroy(config_file_path);
-    aws_profile_collection_destroy(config_profiles);
-    return NULL;
 }

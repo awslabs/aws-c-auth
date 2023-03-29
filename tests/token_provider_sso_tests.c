@@ -325,7 +325,7 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
@@ -372,7 +372,7 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
@@ -380,7 +380,7 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     ASSERT_SUCCESS(aws_create_profile_file(config_file_str, s_sso_session_config_contents));
     uint64_t nano_expiration =
-        aws_timestamp_convert(s_token_expiration_s + 100, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+        aws_timestamp_convert(s_token_expiration_s + 1, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
     mock_aws_set_system_time(nano_expiration);
     struct aws_token_provider_sso_session_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
@@ -415,7 +415,7 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
@@ -461,7 +461,7 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));

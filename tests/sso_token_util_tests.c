@@ -12,7 +12,7 @@ static int s_parse_token_location_url_test(struct aws_allocator *allocator, void
     (void)ctx;
     aws_auth_library_init(allocator);
     struct aws_string *start_url = aws_string_new_from_c_str(allocator, "https://d-92671207e4.awsapps.com/start");
-    struct aws_string *token_path = aws_construct_token_path(allocator, start_url);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, start_url);
 
     struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(token_path);
     struct aws_byte_cursor expected_token_cursor =
@@ -31,7 +31,7 @@ static int s_parse_token_location_session_test(struct aws_allocator *allocator, 
     (void)ctx;
     aws_auth_library_init(allocator);
     struct aws_string *session = aws_string_new_from_c_str(allocator, "admin");
-    struct aws_string *token_path = aws_construct_token_path(allocator, session);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, session);
     struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(token_path);
     struct aws_byte_cursor expected_token_cursor =
         aws_byte_cursor_from_c_str("d033e22ae348aeb5660fc2140aec35850c4da997.json");
