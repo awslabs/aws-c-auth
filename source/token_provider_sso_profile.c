@@ -171,12 +171,14 @@ struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_profile_vtable, impl);
-    impl->sso_token_file_path = token_path;
+    impl->sso_token_file_path = aws_string_new_from_string(allocator, token_path);
     provider->shutdown_options = options->shutdown_options;
     if (options->system_clock_fn) {
         impl->system_clock_fn = options->system_clock_fn;
     } else {
         impl->system_clock_fn = aws_sys_clock_get_ticks;
     }
+
+    aws_string_destroy(token_path);
     return provider;
 }

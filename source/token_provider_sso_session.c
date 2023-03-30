@@ -36,7 +36,8 @@ static int s_token_provider_sso_session_get_token_async(
 
     sso_token = aws_sso_token_new_from_file(provider->allocator, impl->sso_token_file_path);
     if (!sso_token) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) unable to read file.", (void *)provider);
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) failed to get sso token from file.", (void *)provider);
         goto done;
     }
 
@@ -228,12 +229,14 @@ struct aws_credentials_provider *aws_token_provider_new_sso_session(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
     aws_credentials_provider_init_base(provider, allocator, &s_aws_token_provider_sso_session_vtable, impl);
-    impl->sso_token_file_path = token_path;
+    impl->sso_token_file_path = aws_string_new_from_string(allocator, token_path);
     provider->shutdown_options = options->shutdown_options;
     if (options->system_clock_fn) {
         impl->system_clock_fn = options->system_clock_fn;
     } else {
         impl->system_clock_fn = aws_sys_clock_get_ticks;
     }
+
+    aws_string_destroy(token_path);
     return provider;
 }
