@@ -89,14 +89,14 @@ static struct aws_credentials_provider_vtable s_aws_token_provider_profile_vtabl
 
 AWS_STRING_FROM_LITERAL(s_profile_sso_start_url_name, "sso_start_url");
 
-static struct aws_string *s_construct_profile_token_path(
+static struct aws_string *s_construct_profile_sso_token_path(
     struct aws_allocator *allocator,
     struct aws_byte_cursor profile_name_override,
     struct aws_byte_cursor config_file_name_override) {
 
     struct aws_profile_collection *config_collection = NULL;
     struct aws_string *profile_name = NULL;
-    struct aws_string *token_path = NULL;
+    struct aws_string *sso_token_path = NULL;
 
     profile_name = aws_get_profile_name(allocator, &profile_name_override);
     if (!profile_name) {
@@ -136,8 +136,8 @@ static struct aws_string *s_construct_profile_token_path(
         goto cleanup;
     }
 
-    token_path = aws_construct_sso_token_path(allocator, aws_profile_property_get_value(sso_start_url_property));
-    if (!token_path) {
+    sso_token_path = aws_construct_sso_token_path(allocator, aws_profile_property_get_value(sso_start_url_property));
+    if (!sso_token_path) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "token-provider-sso-profile: failed to construct token path");
         goto cleanup;
     }
@@ -145,14 +145,14 @@ static struct aws_string *s_construct_profile_token_path(
 cleanup:
     aws_string_destroy(profile_name);
     aws_profile_collection_release(config_collection);
-    return token_path;
+    return sso_token_path;
 }
 
 struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     struct aws_allocator *allocator,
     const struct aws_token_provider_sso_profile_options *options) {
-    struct aws_string *token_path =
-        s_construct_profile_token_path(allocator, options->profile_name_override, options->config_file_name_override);
+    struct aws_string *token_path = s_construct_profile_sso_token_path(
+        allocator, options->profile_name_override, options->config_file_name_override);
     if (!token_path) {
         return NULL;
     }
