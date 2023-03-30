@@ -83,6 +83,9 @@ void aws_wait_on_credentials_callback(struct aws_get_credentials_test_callback_r
     }
 }
 
+/*
+ * Mock provider
+ */
 struct aws_credentials_provider_mock_impl {
     struct aws_array_list results;
     size_t next_result;
