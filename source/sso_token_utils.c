@@ -13,8 +13,6 @@
 #    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
-AWS_STATIC_STRING_FROM_LITERAL(s_sso_cache_directory, "/.aws/sso/cache/");
-
 struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator, const struct aws_string *input) {
     AWS_PRECONDITION(input);
 
@@ -26,7 +24,6 @@ struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator,
     }
 
     struct aws_byte_cursor home_dir_cursor = aws_byte_cursor_from_string(home_directory);
-    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_string(s_sso_cache_directory);
     struct aws_byte_cursor input_cursor = aws_byte_cursor_from_string(input);
     struct aws_byte_cursor json_cursor = aws_byte_cursor_from_c_str(".json");
 
@@ -40,8 +37,20 @@ struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator,
         goto cleanup;
     }
 
+    /* append /.aws/sso/cache/ with platform specific directory separator */
+    const char local_platform_separator = aws_get_platform_directory_separator();
+    struct aws_byte_cursor aws_dir_cursor = aws_byte_cursor_from_c_str(".aws");
+    struct aws_byte_cursor sso_dir_cursor = aws_byte_cursor_from_c_str("sso");
+    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_c_str("cache");
+
     /* append sso cache directory */
-    if (aws_byte_buf_append_dynamic(&sso_token_path_buf, &cache_dir_cursor)) {
+    if (aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
+        aws_byte_buf_append_dynamic(&sso_token_path_buf, &aws_dir_cursor) ||
+        aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
+        aws_byte_buf_append_dynamic(&sso_token_path_buf, &sso_dir_cursor) ||
+        aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
+        aws_byte_buf_append_dynamic(&sso_token_path_buf, &cache_dir_cursor) ||
+        aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator)) {
         goto cleanup;
     }
 
@@ -58,14 +67,6 @@ struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator,
     /* append .json */
     if (aws_byte_buf_append_dynamic(&sso_token_path_buf, &json_cursor)) {
         goto cleanup;
-    }
-
-    // Use platform-specific directory separator.
-    const char local_platform_separator = aws_get_platform_directory_separator();
-    for (size_t i = 0; i < sso_token_path_buf.len; ++i) {
-        if (aws_is_any_directory_separator((char)sso_token_path_buf.buffer[i])) {
-            ((char *)sso_token_path_buf.buffer)[i] = local_platform_separator;
-        }
     }
 
     sso_token_path_str = aws_string_new_from_buf(allocator, &sso_token_path_buf);
