@@ -24,7 +24,7 @@ struct aws_token_provider_sso_session_impl {
     aws_io_clock_fn *system_clock_fn;
 };
 
-static int s_token_provider_sso_session_get_token_async(
+static int s_token_provider_sso_session_get_token(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
@@ -85,7 +85,7 @@ static void s_token_provider_sso_session_destroy(struct aws_credentials_provider
 }
 
 static struct aws_credentials_provider_vtable s_aws_token_provider_sso_session_vtable = {
-    .get_credentials = s_token_provider_sso_session_get_token_async,
+    .get_credentials = s_token_provider_sso_session_get_token,
     .destroy = s_token_provider_sso_session_destroy,
 };
 
