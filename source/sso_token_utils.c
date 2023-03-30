@@ -43,7 +43,6 @@ struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator,
     struct aws_byte_cursor sso_dir_cursor = aws_byte_cursor_from_c_str("sso");
     struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_c_str("cache");
 
-    /* append sso cache directory */
     if (aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
         aws_byte_buf_append_dynamic(&sso_token_path_buf, &aws_dir_cursor) ||
         aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
