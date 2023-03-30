@@ -13,7 +13,7 @@
 struct aws_sso_token {
     struct aws_allocator *allocator;
 
-    struct aws_string *token;
+    struct aws_string *access_token;
     struct aws_date_time expiration;
 };
 

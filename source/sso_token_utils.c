@@ -86,7 +86,7 @@ void aws_sso_token_destroy(struct aws_sso_token *sso_token) {
         return;
     }
 
-    aws_string_destroy(sso_token->token);
+    aws_string_destroy(sso_token->access_token);
     aws_mem_release(sso_token->allocator, sso_token);
 }
 
@@ -152,7 +152,7 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto cleanup;
     }
-    token->token = aws_string_new_from_cursor(allocator, &access_token_cursor);
+    token->access_token = aws_string_new_from_cursor(allocator, &access_token_cursor);
     token->expiration = expiration;
 
     success = true;

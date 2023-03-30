@@ -57,7 +57,7 @@ static int s_token_provider_sso_session_get_token(
 
     credentials = aws_credentials_new_token(
         provider->allocator,
-        aws_byte_cursor_from_string(sso_token->token),
+        aws_byte_cursor_from_string(sso_token->access_token),
         (uint64_t)aws_date_time_as_epoch_secs(&sso_token->expiration));
     if (!credentials) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) Unable to construct credentials.", (void *)provider);

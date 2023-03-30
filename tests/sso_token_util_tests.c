@@ -55,11 +55,11 @@ static int s_parse_sso_token_valid(struct aws_allocator *allocator, void *ctx) {
     aws_auth_library_init(allocator);
     struct aws_string *file_path = aws_create_process_unique_file_name(allocator);
     ASSERT_SUCCESS(aws_create_profile_file(file_path, s_valid_token_json));
-    struct aws_sso_token *token = aws_sso_token_new_from_file(allocator, file_path);
-    ASSERT_TRUE(aws_string_eq_c_str(token->token, "string"));
-    ASSERT_INT_EQUALS((uint64_t)aws_date_time_as_epoch_secs(&token->expiration), 1573704345);
+    struct aws_sso_token *sso_token = aws_sso_token_new_from_file(allocator, file_path);
+    ASSERT_TRUE(aws_string_eq_c_str(sso_token->access_token, "string"));
+    ASSERT_INT_EQUALS((uint64_t)aws_date_time_as_epoch_secs(&sso_token->expiration), 1573704345);
     aws_string_destroy(file_path);
-    aws_sso_token_destroy(token);
+    aws_sso_token_destroy(sso_token);
     aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;
 }
