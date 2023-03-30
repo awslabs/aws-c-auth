@@ -100,7 +100,7 @@ static struct aws_string *s_construct_profile_token_path(
 
     profile_name = aws_get_profile_name(allocator, &profile_name_override);
     if (!profile_name) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to resolve profile name");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "token-provider-sso-profile: failed to resolve profile name");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
@@ -109,7 +109,7 @@ static struct aws_string *s_construct_profile_token_path(
     if (!config_collection) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso-profile: token parser could not load or parse"
+            "token-provider-sso-profile: could not load or parse"
             " a config file.");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
@@ -120,7 +120,7 @@ static struct aws_string *s_construct_profile_token_path(
     if (!profile) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso-profile: token provider could not load"
+            "token-provider-sso-profile: could not load"
             " a profile at %s.",
             aws_string_c_str(profile_name));
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
@@ -131,16 +131,14 @@ static struct aws_string *s_construct_profile_token_path(
         aws_profile_get_property(profile, s_profile_sso_start_url_name);
 
     if (!sso_start_url_property) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to find sso_start_url in profile");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "token-provider-sso-profile: failed to find sso_start_url");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
 
     token_path = aws_construct_sso_token_path(allocator, aws_profile_property_get_value(sso_start_url_property));
     if (!token_path) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-profile: token parser failed to construct token path in profile");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "token-provider-sso-profile: failed to construct token path");
         goto cleanup;
     }
 
