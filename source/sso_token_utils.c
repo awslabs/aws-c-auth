@@ -37,19 +37,9 @@ struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator,
         goto cleanup;
     }
 
-    /* append /.aws/sso/cache/ with platform specific directory separator */
-    const char local_platform_separator = aws_get_platform_directory_separator();
-    struct aws_byte_cursor aws_dir_cursor = aws_byte_cursor_from_c_str(".aws");
-    struct aws_byte_cursor sso_dir_cursor = aws_byte_cursor_from_c_str("sso");
-    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_c_str("cache");
-
-    if (aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
-        aws_byte_buf_append_dynamic(&sso_token_path_buf, &aws_dir_cursor) ||
-        aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
-        aws_byte_buf_append_dynamic(&sso_token_path_buf, &sso_dir_cursor) ||
-        aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator) ||
-        aws_byte_buf_append_dynamic(&sso_token_path_buf, &cache_dir_cursor) ||
-        aws_byte_buf_append_byte_dynamic(&sso_token_path_buf, local_platform_separator)) {
+    /* append sso cache directory */
+    struct aws_byte_cursor sso_cache_dir_cursor = aws_byte_cursor_from_c_str("/.aws/sso/cache/");
+    if (aws_byte_buf_append_dynamic(&sso_token_path_buf, &sso_cache_dir_cursor)) {
         goto cleanup;
     }
 
@@ -67,6 +57,9 @@ struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator,
     if (aws_byte_buf_append_dynamic(&sso_token_path_buf, &json_cursor)) {
         goto cleanup;
     }
+
+    /* use platform-specific directory separator. */
+    aws_normalize_directory_separator(&sso_token_path_buf);
 
     sso_token_path_str = aws_string_new_from_buf(allocator, &sso_token_path_buf);
     AWS_LOGF_INFO(
