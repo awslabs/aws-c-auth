@@ -6,7 +6,6 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/sdkutils/aws_profile.h>
 
-#include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/json.h>
 #include <aws/common/string.h>
