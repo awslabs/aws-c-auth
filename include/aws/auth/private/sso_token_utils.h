@@ -7,7 +7,6 @@
  */
 
 #include <aws/auth/auth.h>
-#include <aws/auth/credentials.h>
 #include <aws/common/date_time.h>
 
 /* structure to represent a parsed sso token */
