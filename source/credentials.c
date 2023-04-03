@@ -5,6 +5,7 @@
 
 #include <aws/auth/credentials.h>
 
+#include <aws/auth/private/sso_token_utils.h>
 #include <aws/cal/ecc.h>
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
