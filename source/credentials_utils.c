@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
-#include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/sdkutils/aws_profile.h>
 
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
