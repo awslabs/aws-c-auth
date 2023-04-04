@@ -401,7 +401,7 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
@@ -464,7 +464,7 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
@@ -524,7 +524,7 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
@@ -588,7 +588,7 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
@@ -651,7 +651,7 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_session_name);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
     ASSERT_NOT_NULL(token_path);
 
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
@@ -715,7 +715,7 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     /* create token file */
-    struct aws_string *token_path = aws_construct_token_path(allocator, s_sso_profile_start_url);
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
     ASSERT_NOT_NULL(token_path);
 
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));

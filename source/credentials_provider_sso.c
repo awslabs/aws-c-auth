@@ -8,6 +8,8 @@
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/sso_token_providers.h>
+#include <aws/auth/private/sso_token_utils.h>
+
 #include <aws/common/clock.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>

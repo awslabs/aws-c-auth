@@ -4,8 +4,8 @@
  */
 
 #include <aws/auth/private/credentials_utils.h>
-#include <aws/sdkutils/aws_profile.h>
 
+#include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/json.h>
 #include <aws/common/string.h>
@@ -13,6 +13,7 @@
 #include <aws/http/connection.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
+#include <aws/sdkutils/aws_profile.h>
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4232)
