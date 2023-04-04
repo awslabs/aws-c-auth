@@ -60,7 +60,6 @@ struct sso_user_data {
 
     int status_code;
     int error_code;
-    int attempt_count;
 };
 
 /* called in between retries. */
@@ -68,7 +67,12 @@ static void s_user_data_reset_request_and_response(struct sso_user_data *user_da
     aws_http_message_release(user_data->request);
     user_data->request = NULL;
 
-    aws_byte_buf_reset(&user_data->payload, true /* zero out */);
+    if (user_data->connection) {
+        struct aws_credentials_provider_sso_impl *provider_impl = user_data->provider->impl;
+        provider_impl->function_table->aws_http_connection_manager_release_connection(
+            provider_impl->connection_manager, user_data->connection);
+        user_data->connection = NULL;
+    }
     aws_string_destroy_secure(user_data->token);
     user_data->status_code = 0;
     user_data->error_code = AWS_OP_SUCCESS;
@@ -80,14 +84,6 @@ static void s_user_data_destroy(struct sso_user_data *user_data) {
     }
 
     s_user_data_reset_request_and_response(user_data);
-
-    if (user_data->connection) {
-        struct aws_credentials_provider_sso_impl *impl = user_data->provider->impl;
-
-        impl->function_table->aws_http_connection_manager_release_connection(
-            impl->connection_manager, user_data->connection);
-    }
-
     aws_byte_buf_clean_up(&user_data->payload);
     aws_byte_buf_clean_up(&user_data->path_and_query);
     aws_credentials_provider_release(user_data->provider);
@@ -107,6 +103,7 @@ static struct sso_user_data *s_user_data_new(
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
+    /* construct path and query */
     struct aws_byte_cursor account_id_cursor = aws_byte_cursor_from_string(impl->sso_account_id);
     struct aws_byte_cursor role_name_cursor = aws_byte_cursor_from_string(impl->sso_role_name);
     struct aws_byte_cursor path_cursor = aws_byte_cursor_from_c_str("/federation/credentials?account_id=");
@@ -122,7 +119,7 @@ static struct sso_user_data *s_user_data_new(
     if (aws_byte_buf_init(&wrapped_user_data->payload, provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
         goto on_error;
     }
-
+    aws_byte_buf_reset(&wrapped_user_data->payload, true /* zero out */);
     return wrapped_user_data;
 
 on_error:
@@ -184,9 +181,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     }
 
     struct aws_credentials_provider_sso_impl *impl = user_data->provider->impl;
-    struct aws_http_connection *connection = impl->function_table->aws_http_stream_get_connection(stream);
     impl->function_table->aws_http_stream_release(stream);
-    impl->function_table->aws_http_connection_manager_release_connection(impl->connection_manager, connection);
 
     /*
      * On anything other than a 200, if we can retry the request based on
@@ -417,8 +412,6 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
     }
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): successfully accquired a token", (void *)sso_user_data->provider);
-    /* clear the result from previous attempt */
-    s_user_data_reset_request_and_response(sso_user_data);
 
     sso_user_data->token = aws_string_new_from_cursor(sso_user_data->allocator, &token);
     s_query_credentials(sso_user_data);
@@ -479,6 +472,10 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): successfully acquired a retry token",
         (void *)sso_user_data->provider);
+
+    /* clear the result from previous attempt */
+    s_user_data_reset_request_and_response(sso_user_data);
+
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_on_acquire_connection, sso_user_data);
 }
