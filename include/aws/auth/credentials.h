@@ -677,20 +677,6 @@ struct aws_credentials *aws_credentials_new_ecc_from_aws_credentials(
     const struct aws_credentials *credentials);
 
 /**
- * Creates a set of AWS credentials based on a token with expiration.
- *
- * @param allocator memory allocator to use for all memory allocation
- * @param token token for the credentials
- * @param expiration_timepoint_in_seconds time at which these credentials expire
- * @return a new pair of AWS credentials, or NULL
- */
-AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_token(
-    struct aws_allocator *allocator,
-    struct aws_byte_cursor token,
-    uint64_t expiration_timepoint_in_seconds);
-
-/**
  * Add a reference to some credentials
  *
  * @param credentials credentials to increment the ref count on
@@ -732,15 +718,6 @@ struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_cr
  */
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials);
-
-/**
- * Get the token from a set of AWS credentials
- *
- * @param credentials credentials to get the token from
- * @return a byte cursor to the token or an empty byte cursor if there is no token
- */
-AWS_AUTH_API
-struct aws_byte_cursor aws_credentials_get_token(const struct aws_credentials *credentials);
 
 /**
  * Get the expiration timepoint (in seconds since epoch) associated with a set of credentials

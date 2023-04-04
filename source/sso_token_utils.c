@@ -13,12 +13,10 @@
 #    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
-AWS_STATIC_STRING_FROM_LITERAL(s_sso_cache_directory, "/.aws/sso/cache/");
-
-struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, const struct aws_string *input) {
+struct aws_string *aws_construct_sso_token_path(struct aws_allocator *allocator, const struct aws_string *input) {
     AWS_PRECONDITION(input);
 
-    struct aws_string *token_path_str = NULL;
+    struct aws_string *sso_token_path_str = NULL;
 
     struct aws_string *home_directory = aws_get_home_directory(allocator);
     if (!home_directory) {
@@ -26,22 +24,22 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
     }
 
     struct aws_byte_cursor home_dir_cursor = aws_byte_cursor_from_string(home_directory);
-    struct aws_byte_cursor cache_dir_cursor = aws_byte_cursor_from_string(s_sso_cache_directory);
     struct aws_byte_cursor input_cursor = aws_byte_cursor_from_string(input);
     struct aws_byte_cursor json_cursor = aws_byte_cursor_from_c_str(".json");
 
-    struct aws_byte_buf token_path_buf;
-    AWS_ZERO_STRUCT(token_path_buf);
+    struct aws_byte_buf sso_token_path_buf;
+    AWS_ZERO_STRUCT(sso_token_path_buf);
     struct aws_byte_buf sha1_buf;
     AWS_ZERO_STRUCT(sha1_buf);
 
     /* append home directory */
-    if (aws_byte_buf_init_copy_from_cursor(&token_path_buf, allocator, home_dir_cursor)) {
+    if (aws_byte_buf_init_copy_from_cursor(&sso_token_path_buf, allocator, home_dir_cursor)) {
         goto cleanup;
     }
 
     /* append sso cache directory */
-    if (aws_byte_buf_append_dynamic(&token_path_buf, &cache_dir_cursor)) {
+    struct aws_byte_cursor sso_cache_dir_cursor = aws_byte_cursor_from_c_str("/.aws/sso/cache/");
+    if (aws_byte_buf_append_dynamic(&sso_token_path_buf, &sso_cache_dir_cursor)) {
         goto cleanup;
     }
 
@@ -51,31 +49,28 @@ struct aws_string *aws_construct_token_path(struct aws_allocator *allocator, con
         goto cleanup;
     }
     struct aws_byte_cursor sha1_cursor = aws_byte_cursor_from_buf(&sha1_buf);
-    if (aws_hex_encode_append_dynamic(&sha1_cursor, &token_path_buf)) {
+    if (aws_hex_encode_append_dynamic(&sha1_cursor, &sso_token_path_buf)) {
         goto cleanup;
     }
 
     /* append .json */
-    if (aws_byte_buf_append_dynamic(&token_path_buf, &json_cursor)) {
+    if (aws_byte_buf_append_dynamic(&sso_token_path_buf, &json_cursor)) {
         goto cleanup;
     }
 
-    // Use platform-specific directory separator.
-    const char local_platform_separator = aws_get_platform_directory_separator();
-    for (size_t i = 0; i < token_path_buf.len; ++i) {
-        if (aws_is_any_directory_separator((char)token_path_buf.buffer[i])) {
-            ((char *)token_path_buf.buffer)[i] = local_platform_separator;
-        }
-    }
+    /* use platform-specific directory separator. */
+    aws_normalize_directory_separator(&sso_token_path_buf);
 
-    token_path_str = aws_string_new_from_buf(allocator, &token_path_buf);
+    sso_token_path_str = aws_string_new_from_buf(allocator, &sso_token_path_buf);
     AWS_LOGF_INFO(
-        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "successfully constructed token path: %s", aws_string_c_str(token_path_str));
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "successfully constructed token path: %s",
+        aws_string_c_str(sso_token_path_str));
 cleanup:
-    aws_byte_buf_clean_up(&token_path_buf);
+    aws_byte_buf_clean_up(&sso_token_path_buf);
     aws_byte_buf_clean_up(&sha1_buf);
     aws_string_destroy(home_directory);
-    return token_path_str;
+    return sso_token_path_str;
 }
 
 void aws_sso_token_destroy(struct aws_sso_token *sso_token) {
@@ -83,7 +78,7 @@ void aws_sso_token_destroy(struct aws_sso_token *sso_token) {
         return;
     }
 
-    aws_string_destroy(sso_token->token);
+    aws_string_destroy(sso_token->access_token);
     aws_mem_release(sso_token->allocator, sso_token);
 }
 
@@ -110,7 +105,7 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
     if (document_root == NULL) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "sso token: failed to parse access token file %s",
+            "sso token: failed to parse sso token file %s",
             aws_string_c_str(file_path));
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto cleanup;
@@ -149,7 +144,7 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto cleanup;
     }
-    token->token = aws_string_new_from_cursor(allocator, &access_token_cursor);
+    token->access_token = aws_string_new_from_cursor(allocator, &access_token_cursor);
     token->expiration = expiration;
 
     success = true;

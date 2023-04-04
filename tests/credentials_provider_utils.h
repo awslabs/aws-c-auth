@@ -8,6 +8,7 @@
 
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
+
 #include <aws/common/condition_variable.h>
 #include <aws/common/mutex.h>
 #include <aws/http/connection_manager.h>

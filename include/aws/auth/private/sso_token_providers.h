@@ -66,6 +66,7 @@ AWS_EXTERN_C_BEGIN
 /**
  * Creates a provider that sources sso token based credentials from key-value profiles loaded from the aws
  * config("~/.aws/config" by default) and ~/.aws/sso/cache/<sha1 of start url>.json
+ * This is the legacy way which doesn't support refreshing credentials.
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options
