@@ -402,14 +402,6 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
     }
 
     struct aws_byte_cursor token = aws_credentials_get_token(credentials);
-    if (token.len == 0 || token.ptr == NULL) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: token is empty", (void *)sso_user_data->provider);
-        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
-        sso_user_data->error_code = AWS_AUTH_SSO_TOKEN_INVALID;
-        s_finalize_get_credentials_query(user_data);
-        return;
-    }
-
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): successfully accquired a token", (void *)sso_user_data->provider);
 
