@@ -134,9 +134,9 @@ on_error:
  * No matter the result, this always gets called assuming that user_data is successfully allocated
  */
 static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
-    /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials = NULL;
     if (user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK && user_data->error_code == AWS_OP_SUCCESS) {
+        /* parse credentials */
         struct aws_parse_credentials_from_json_doc_options parse_options = {
             .access_key_id_name = "accessKeyId",
             .secret_access_key_name = "secretAccessKey",
@@ -194,12 +194,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
         /* don't retry client errors at all. */
         if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
-
             if (aws_retry_strategy_schedule_retry(user_data->retry_token, error_type, s_on_retry_ready, user_data) ==
                 AWS_OP_SUCCESS) {
                 AWS_LOGF_INFO(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "(id=%p): successfully secheduled a retry",
+                    "(id=%p): successfully scheduled a retry",
                     (void *)user_data->provider);
                 return;
             }

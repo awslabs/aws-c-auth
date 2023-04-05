@@ -595,7 +595,7 @@ bool aws_credentials_provider_http_mock_has_received_shutdown_callback(void *use
     return credentials_provider_http_mock_tester.has_received_shutdown_callback;
 }
 
-void aws_credentials_provider_http_mock_wait_for_shutdown_callback() {
+void aws_credentials_provider_http_mock_wait_for_shutdown_callback(void) {
     aws_mutex_lock(&credentials_provider_http_mock_tester.lock);
     aws_condition_variable_wait_pred(
         &credentials_provider_http_mock_tester.signal,
