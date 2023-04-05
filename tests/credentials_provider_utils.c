@@ -732,7 +732,10 @@ int aws_credentials_provider_http_mock_stream_get_incoming_response_status(
     int *out_status_code) {
     (void)stream;
 
-    if (credentials_provider_http_mock_tester.response_code) {
+    if (credentials_provider_http_mock_tester.failure_count) {
+        credentials_provider_http_mock_tester.failure_count--;
+        *out_status_code = credentials_provider_http_mock_tester.failure_response_code;
+    } else if (credentials_provider_http_mock_tester.response_code) {
         *out_status_code = credentials_provider_http_mock_tester.response_code;
     } else {
         *out_status_code = AWS_HTTP_STATUS_CODE_200_OK;

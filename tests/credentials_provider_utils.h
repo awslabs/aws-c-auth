@@ -128,6 +128,8 @@ struct aws_credentials_provider_http_mock_tester {
     int attempts;
     int response_code;
     int error_code;
+    int failure_response_code;
+    int failure_count;
 };
 
 extern struct aws_credentials_provider_http_mock_tester credentials_provider_http_mock_tester;

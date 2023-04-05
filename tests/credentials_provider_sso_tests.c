@@ -53,6 +53,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "[sso-session session]\n"
     "sso_start_url = https://d-123.awsapps.com/start\n"
     "sso_region = us-west-2\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expected_sso_request_path,
+    "/federation/credentials?account_id=123&role_name=roleName");
 
 static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -247,10 +250,6 @@ static int s_credentials_provider_sso_create_destroy_valid_config(struct aws_all
 AWS_TEST_CASE(
     credentials_provider_sso_create_destroy_valid_config,
     s_credentials_provider_sso_create_destroy_valid_config);
-
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_expected_sso_request_path,
-    "/federation/credentials?account_id=123&role_name=roleName");
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_good_response,
@@ -829,3 +828,70 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_sso_basic_success_profile, s_credentials_provider_sso_basic_success_profile);
+
+static int s_credentials_provider_sso_basic_success_after_failure(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+    credentials_provider_http_mock_tester.failure_count = 2;
+    credentials_provider_http_mock_tester.failure_response_code = AWS_HTTP_STATUS_CODE_500_INTERNAL_SERVER_ERROR;
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+
+    /* create token file */
+    struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
+    ASSERT_NOT_NULL(token_path);
+
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    /* set the response */
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &good_response_cursor);
+
+    mock_aws_set_system_time(0);
+    struct aws_credentials_provider_sso_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, true /*get creds*/, 3 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    aws_credentials_provider_http_mock_tester_cleanup();
+
+    aws_string_destroy(token_path);
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sso_basic_success_after_failure,
+    s_credentials_provider_sso_basic_success_after_failure);
