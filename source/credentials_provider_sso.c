@@ -123,7 +123,6 @@ static struct sso_user_data *s_user_data_new(
     if (aws_byte_buf_init(&wrapped_user_data->payload, provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
         goto on_error;
     }
-    aws_byte_buf_reset(&wrapped_user_data->payload, true /* zero out */);
     return wrapped_user_data;
 
 on_error:
@@ -692,6 +691,7 @@ static struct sso_parameters *s_parameters_new(
     const struct aws_profile_property *sso_session_property = aws_profile_get_property(profile, s_sso_session);
     /* create the appropriate token provider based on sso_session property is available or not */
     if (sso_session_property) {
+        /* construct sso_session token provider */
         struct aws_token_provider_sso_session_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
             .profile_name_override = options->profile_name_override,
@@ -712,6 +712,7 @@ static struct sso_parameters *s_parameters_new(
                 aws_profile_property_get_value(sso_session_property)),
             s_sso_region);
     } else {
+        /* construct profile token provider */
         struct aws_token_provider_sso_profile_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
             .profile_name_override = options->profile_name_override,
