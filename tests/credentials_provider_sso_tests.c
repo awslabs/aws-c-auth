@@ -335,11 +335,17 @@ static int s_credentials_provider_sso_connect_failure(struct aws_allocator *allo
 }
 AWS_TEST_CASE(credentials_provider_sso_connect_failure, s_credentials_provider_sso_connect_failure);
 
+AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
+AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
+
 static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     aws_credentials_provider_http_mock_tester_init(allocator);
     credentials_provider_http_mock_tester.is_request_successful = false;
+
+    /* redirect $HOME */
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
     struct aws_byte_buf content_buf;
     struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
@@ -383,8 +389,6 @@ static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator
 }
 AWS_TEST_CASE(credentials_provider_sso_failure_token_missing, s_credentials_provider_sso_failure_token_missing);
 
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sso_token,
     "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2015-03-12T05:35:19Z\"}");
