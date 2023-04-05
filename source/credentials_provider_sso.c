@@ -41,7 +41,7 @@ struct aws_credentials_provider_sso_impl {
 };
 
 /**
- * sso_user_data - scratch data for each outstanding SSO query.
+ * sso_user_data - data for each outstanding SSO query.
  */
 struct sso_user_data {
     /* immutable post-creation */
@@ -63,17 +63,21 @@ struct sso_user_data {
 };
 
 /* called in between retries. */
-static void s_user_data_reset_request_and_response(struct sso_user_data *user_data) {
-    aws_http_message_release(user_data->request);
-    user_data->request = NULL;
-
+static void s_user_data_reset_request_specific_data(struct sso_user_data *user_data) {
+    if (user_data->request) {
+        aws_http_message_release(user_data->request);
+        user_data->request = NULL;
+    }
     if (user_data->connection) {
         struct aws_credentials_provider_sso_impl *provider_impl = user_data->provider->impl;
         provider_impl->function_table->aws_http_connection_manager_release_connection(
             provider_impl->connection_manager, user_data->connection);
         user_data->connection = NULL;
     }
-    aws_string_destroy_secure(user_data->token);
+    if (user_data->token) {
+        aws_string_destroy_secure(user_data->token);
+        user_data->token = NULL;
+    }
     user_data->status_code = 0;
     user_data->error_code = AWS_OP_SUCCESS;
 }
@@ -83,7 +87,7 @@ static void s_user_data_destroy(struct sso_user_data *user_data) {
         return;
     }
 
-    s_user_data_reset_request_and_response(user_data);
+    s_user_data_reset_request_specific_data(user_data);
     aws_byte_buf_clean_up(&user_data->payload);
     aws_byte_buf_clean_up(&user_data->path_and_query);
     aws_credentials_provider_release(user_data->provider);
@@ -134,7 +138,7 @@ on_error:
 static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
     /* Try to build credentials from whatever, if anything, was in the result */
     struct aws_credentials *credentials = NULL;
-    if (user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
+    if (user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK && user_data->error_code == AWS_OP_SUCCESS) {
         struct aws_parse_credentials_from_json_doc_options parse_options = {
             .access_key_id_name = "accessKeyId",
             .secret_access_key_name = "secretAccessKey",
@@ -147,7 +151,7 @@ static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
         };
 
         credentials = aws_parse_credentials_from_json_document(
-            user_data->allocator, (const char *)user_data->payload.buffer, &parse_options);
+            user_data->allocator, aws_byte_cursor_from_buf(&user_data->payload), &parse_options);
     }
 
     if (credentials) {
@@ -176,7 +180,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
     /* set error code */
     user_data->error_code = error_code;
-    if (!error_code && user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
+    if (error_code == AWS_OP_SUCCESS && user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
         user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
     }
 
@@ -184,10 +188,9 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     impl->function_table->aws_http_stream_release(stream);
 
     /*
-     * On anything other than a 200, if we can retry the request based on
-     * error response, retry it, otherwise, call the finalize function.
+     * If we can retry the request based on error response, retry it, otherwise, call the finalize function.
      */
-    if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code) {
+    if (user_data->error_code) {
         enum aws_retry_error_type error_type =
             aws_credentials_provider_compute_retry_error_type(user_data->status_code, error_code);
 
@@ -242,7 +245,7 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
         impl->function_table->aws_http_connection_close(sso_user_data->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) error appending payload: %s",
+            "(id=%p) error appending response payload: %s",
             (void *)sso_user_data->provider,
             aws_error_str(aws_last_error()));
 
@@ -267,7 +270,7 @@ static int s_on_incoming_headers_fn(
     }
 
     struct sso_user_data *sso_user_data = user_data;
-    if (header_block == AWS_HTTP_HEADER_BLOCK_MAIN && sso_user_data->status_code == 0) {
+    if (sso_user_data->status_code == 0) {
         struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
         if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &sso_user_data->status_code)) {
             AWS_LOGF_ERROR(
@@ -321,7 +324,7 @@ static void s_query_credentials(struct sso_user_data *user_data) {
         aws_http_message_add_header(user_data->request, user_agent_header)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) failed to add http headers with error: %s",
+            "(id=%p) failed to add http header with error: %s",
             (void *)user_data->provider,
             aws_error_debug_str(aws_last_error()));
         goto on_error;
@@ -399,14 +402,9 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
 
     struct aws_byte_cursor token = aws_credentials_get_token(credentials);
     if (token.len == 0 || token.ptr == NULL) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "id=%p: token is empty with error code %d(%s)",
-            (void *)sso_user_data->provider,
-            error_code,
-            aws_error_str(error_code));
-
-        sso_user_data->error_code = error_code;
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: token is empty", (void *)sso_user_data->provider);
+        aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
+        sso_user_data->error_code = AWS_AUTH_SSO_TOKEN_INVALID;
         s_finalize_get_credentials_query(user_data);
         return;
     }
@@ -474,7 +472,7 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
         (void *)sso_user_data->provider);
 
     /* clear the result from previous attempt */
-    s_user_data_reset_request_and_response(sso_user_data);
+    s_user_data_reset_request_specific_data(sso_user_data);
 
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_on_acquire_connection, sso_user_data);
@@ -640,7 +638,7 @@ static struct sso_parameters *s_parameters_new(
 
     profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
     if (!profile_name) {
-        AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to resolve profile name");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to resolve profile name");
         goto on_finish;
     }
 
@@ -651,7 +649,7 @@ static struct sso_parameters *s_parameters_new(
 
     const struct aws_profile *profile = aws_profile_collection_get_profile(config_profile, profile_name);
     if (!profile) {
-        AWS_LOGF_DEBUG(
+        AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to load \"%s\" profile", aws_string_c_str(profile_name));
         goto on_finish;
     }
@@ -672,7 +670,7 @@ static struct sso_parameters *s_parameters_new(
     }
 
     const struct aws_profile_property *sso_session_property = aws_profile_get_property(profile, s_sso_session);
-    /* read the approriate config based on sso_session property is available or not */
+    /* create the appropriate token provider based on sso_session property is available or not */
     if (sso_session_property) {
         struct aws_token_provider_sso_session_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
