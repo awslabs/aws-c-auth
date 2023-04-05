@@ -21,7 +21,6 @@
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
-#    pragma warning(disable : 4232)
 #endif /* _MSC_VER */
 
 #define SSO_RESPONSE_SIZE_INITIAL 2048
