@@ -252,11 +252,10 @@ done:
 
 struct aws_credentials *aws_parse_credentials_from_json_document(
     struct aws_allocator *allocator,
-    const char *document,
+    struct aws_byte_cursor document,
     const struct aws_parse_credentials_from_json_doc_options *options) {
 
-    struct aws_json_value *document_root =
-        aws_json_value_new_from_string(allocator, aws_byte_cursor_from_c_str(document));
+    struct aws_json_value *document_root = aws_json_value_new_from_string(allocator, document);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse document as Json document.");
         return NULL;
