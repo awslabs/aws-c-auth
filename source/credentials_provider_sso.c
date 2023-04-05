@@ -197,6 +197,10 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
             if (aws_retry_strategy_schedule_retry(user_data->retry_token, error_type, s_on_retry_ready, user_data) ==
                 AWS_OP_SUCCESS) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p): successfully secheduled a retry",
+                    (void *)user_data->provider);
                 return;
             }
             AWS_LOGF_ERROR(
@@ -268,7 +272,7 @@ static int s_on_incoming_headers_fn(
     }
 
     struct sso_user_data *sso_user_data = user_data;
-    if (sso_user_data->status_code == 0) {
+    if (sso_user_data->status_code == AWS_OP_SUCCESS) {
         struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
         if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &sso_user_data->status_code)) {
             AWS_LOGF_ERROR(
@@ -279,7 +283,7 @@ static int s_on_incoming_headers_fn(
 
             return AWS_OP_ERR;
         }
-        AWS_LOGF_DEBUG(
+        AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) received http status code %d",
             (void *)sso_user_data->provider,
@@ -406,6 +410,7 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
         s_finalize_get_credentials_query(user_data);
         return;
     }
+
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): successfully accquired a token", (void *)sso_user_data->provider);
 
@@ -457,17 +462,13 @@ static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void
     if (error_code) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): failed to acquire retry token: %s",
+            "(id=%p): failed to schedule retry with error: %s",
             (void *)sso_user_data->provider,
             aws_error_debug_str(error_code));
         sso_user_data->error_code = error_code;
         s_finalize_get_credentials_query(sso_user_data);
         return;
     }
-    AWS_LOGF_INFO(
-        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): successfully acquired a retry token",
-        (void *)sso_user_data->provider);
 
     /* clear the result from previous attempt */
     s_user_data_reset_request_specific_data(sso_user_data);
