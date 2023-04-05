@@ -625,6 +625,26 @@ static void s_parameters_destroy(struct sso_parameters *parameters) {
     aws_mem_release(parameters->allocator, parameters);
 }
 
+/**
+ * Read the config file and construct profile or sso_session token provider based on sso_session property.
+ *
+ * If the profile contains sso_session property, a valid config example is as follow.
+ * [profile sso-profile]
+ *   sso_session = dev
+ *   sso_account_id = 012345678901
+ *   sso_role_name = SampleRole
+ *
+ * [sso-session dev]
+ *   sso_region = us-east-1
+ *   sso_start_url = https://d-abc123.awsapps.com/start
+ *
+ * If the profile does't contains sso_session, the legacy valid config example is as follow.
+ * [profile sso-profile]
+ *  sso_account_id = 012345678901
+ *  sso_region = us-east-1
+ *  sso_role_name = SampleRole
+ *  sso_start_url = https://d-abc123.awsapps.com/start-beta
+ */
 static struct sso_parameters *s_parameters_new(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sso_options *options) {
