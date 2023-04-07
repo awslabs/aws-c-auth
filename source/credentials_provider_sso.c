@@ -40,9 +40,9 @@ struct aws_credentials_provider_sso_impl {
 };
 
 /**
- * sso_user_data - data for each outstanding SSO query.
+ * aws_sso_query_context - data for each outstanding SSO query.
  */
-struct sso_user_data {
+struct aws_sso_query_context {
     /* immutable post-creation */
     struct aws_allocator *allocator;
     struct aws_credentials_provider *provider;
@@ -62,49 +62,51 @@ struct sso_user_data {
 };
 
 /* called in between retries. */
-static void s_user_data_reset_request_specific_data(struct sso_user_data *user_data) {
-    if (user_data->request) {
-        aws_http_message_release(user_data->request);
-        user_data->request = NULL;
+static void s_sso_query_context_reset_request_specific_data(struct aws_sso_query_context *sso_query_context) {
+    if (sso_query_context->request) {
+        aws_http_message_release(sso_query_context->request);
+        sso_query_context->request = NULL;
     }
-    if (user_data->connection) {
-        struct aws_credentials_provider_sso_impl *provider_impl = user_data->provider->impl;
-        provider_impl->function_table->aws_http_connection_manager_release_connection(
-            provider_impl->connection_manager, user_data->connection);
-        user_data->connection = NULL;
+    if (sso_query_context->connection) {
+        struct aws_credentials_provider_sso_impl *provider_impl = sso_query_context->provider->impl;
+        int result = provider_impl->function_table->aws_http_connection_manager_release_connection(
+            provider_impl->connection_manager, sso_query_context->connection);
+        AWS_ASSERT(result == AWS_OP_SUCCESS);
+        sso_query_context->connection = NULL;
     }
-    if (user_data->token) {
-        aws_string_destroy_secure(user_data->token);
-        user_data->token = NULL;
+    if (sso_query_context->token) {
+        aws_string_destroy_secure(sso_query_context->token);
+        sso_query_context->token = NULL;
     }
-    user_data->status_code = 0;
-    user_data->error_code = AWS_OP_SUCCESS;
+    sso_query_context->status_code = 0;
+    sso_query_context->error_code = AWS_OP_SUCCESS;
 }
 
-static void s_user_data_destroy(struct sso_user_data *user_data) {
-    if (user_data == NULL) {
+static void s_sso_query_context_destroy(struct aws_sso_query_context *sso_query_context) {
+    if (sso_query_context == NULL) {
         return;
     }
 
-    s_user_data_reset_request_specific_data(user_data);
-    aws_byte_buf_clean_up(&user_data->payload);
-    aws_byte_buf_clean_up(&user_data->path_and_query);
-    aws_credentials_provider_release(user_data->provider);
-    aws_retry_token_release(user_data->retry_token);
-    aws_mem_release(user_data->allocator, user_data);
+    s_sso_query_context_reset_request_specific_data(sso_query_context);
+    aws_byte_buf_clean_up(&sso_query_context->payload);
+    aws_byte_buf_clean_up(&sso_query_context->path_and_query);
+    aws_credentials_provider_release(sso_query_context->provider);
+    aws_retry_token_release(sso_query_context->retry_token);
+    aws_mem_release(sso_query_context->allocator, sso_query_context);
 }
 
-static struct sso_user_data *s_user_data_new(
+static struct aws_sso_query_context *s_sso_query_context_new(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
     struct aws_credentials_provider_sso_impl *impl = provider->impl;
 
-    struct sso_user_data *wrapped_user_data = aws_mem_calloc(provider->allocator, 1, sizeof(struct sso_user_data));
-    wrapped_user_data->allocator = provider->allocator;
-    wrapped_user_data->provider = aws_credentials_provider_acquire(provider);
-    wrapped_user_data->original_user_data = user_data;
-    wrapped_user_data->original_callback = callback;
+    struct aws_sso_query_context *sso_query_context =
+        aws_mem_calloc(provider->allocator, 1, sizeof(struct aws_sso_query_context));
+    sso_query_context->allocator = provider->allocator;
+    sso_query_context->provider = aws_credentials_provider_acquire(provider);
+    sso_query_context->original_user_data = user_data;
+    sso_query_context->original_callback = callback;
 
     /* construct path and query */
     struct aws_byte_cursor account_id_cursor = aws_byte_cursor_from_string(impl->sso_account_id);
@@ -112,30 +114,31 @@ static struct sso_user_data *s_user_data_new(
     struct aws_byte_cursor path_cursor = aws_byte_cursor_from_c_str("/federation/credentials?account_id=");
     struct aws_byte_cursor role_name_param_cursor = aws_byte_cursor_from_c_str("&role_name=");
 
-    if (aws_byte_buf_init_copy_from_cursor(&wrapped_user_data->path_and_query, provider->allocator, path_cursor) ||
-        aws_byte_buf_append_encoding_uri_param(&wrapped_user_data->path_and_query, &account_id_cursor) ||
-        aws_byte_buf_append_dynamic(&wrapped_user_data->path_and_query, &role_name_param_cursor) ||
-        aws_byte_buf_append_encoding_uri_param(&wrapped_user_data->path_and_query, &role_name_cursor)) {
+    if (aws_byte_buf_init_copy_from_cursor(&sso_query_context->path_and_query, provider->allocator, path_cursor) ||
+        aws_byte_buf_append_encoding_uri_param(&sso_query_context->path_and_query, &account_id_cursor) ||
+        aws_byte_buf_append_dynamic(&sso_query_context->path_and_query, &role_name_param_cursor) ||
+        aws_byte_buf_append_encoding_uri_param(&sso_query_context->path_and_query, &role_name_cursor)) {
         goto on_error;
     }
 
-    if (aws_byte_buf_init(&wrapped_user_data->payload, provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
+    if (aws_byte_buf_init(&sso_query_context->payload, provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
         goto on_error;
     }
-    return wrapped_user_data;
+    return sso_query_context;
 
 on_error:
-    s_user_data_destroy(wrapped_user_data);
+    s_sso_query_context_destroy(sso_query_context);
 
     return NULL;
 }
 
 /*
- * No matter the result, this always gets called assuming that user_data is successfully allocated
+ * No matter the result, this always gets called assuming that sso_query_context is successfully allocated
  */
-static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
+static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_query_context) {
     struct aws_credentials *credentials = NULL;
-    if (user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK && user_data->error_code == AWS_OP_SUCCESS) {
+    if (sso_query_context->status_code == AWS_HTTP_STATUS_CODE_200_OK &&
+        sso_query_context->error_code == AWS_OP_SUCCESS) {
         /* parse credentials */
         struct aws_parse_credentials_from_json_doc_options parse_options = {
             .access_key_id_name = "accessKeyId",
@@ -149,144 +152,116 @@ static void s_finalize_get_credentials_query(struct sso_user_data *user_data) {
         };
 
         credentials = aws_parse_credentials_from_json_document(
-            user_data->allocator, aws_byte_cursor_from_buf(&user_data->payload), &parse_options);
+            sso_query_context->allocator, aws_byte_cursor_from_buf(&sso_query_context->payload), &parse_options);
     }
 
     if (credentials) {
         AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) successfully queried credentials", (void *)user_data->provider);
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) successfully queried credentials",
+            (void *)sso_query_context->provider);
     } else {
         AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p) failed to query credentials", (void *)user_data->provider);
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) failed to query credentials",
+            (void *)sso_query_context->provider);
 
-        if (user_data->error_code == AWS_ERROR_SUCCESS) {
-            user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
+        if (sso_query_context->error_code == AWS_ERROR_SUCCESS) {
+            sso_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
         }
     }
 
     /* pass the credentials back */
-    user_data->original_callback(credentials, user_data->error_code, user_data->original_user_data);
+    sso_query_context->original_callback(
+        credentials, sso_query_context->error_code, sso_query_context->original_user_data);
 
     /* clean up */
-    s_user_data_destroy(user_data);
+    s_sso_query_context_destroy(sso_query_context);
     aws_credentials_release(credentials);
 }
-static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *wrapped_user_data);
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data);
 
-static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *data) {
-    struct sso_user_data *user_data = data;
+static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data) {
+    struct aws_sso_query_context *sso_query_context = user_data;
 
-    /* set error code */
-    user_data->error_code = error_code;
-    if (error_code == AWS_OP_SUCCESS && user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
-        user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
-    }
-
-    struct aws_credentials_provider_sso_impl *impl = user_data->provider->impl;
+    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
     impl->function_table->aws_http_stream_release(stream);
 
+    /* set error code */
+    sso_query_context->error_code = error_code;
+    impl->function_table->aws_http_stream_get_incoming_response_status(stream, &sso_query_context->status_code);
+    if (error_code == AWS_OP_SUCCESS && sso_query_context->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        sso_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
+    }
+
     /*
-     * If we can retry the request based on error response, retry it, otherwise, call the finalize function.
+     * If we can retry the request based on error response or http status code failure, retry it, otherwise, call the
+     * finalize function.
      */
-    if (user_data->error_code) {
+    if (error_code || sso_query_context->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
         enum aws_retry_error_type error_type =
-            aws_credentials_provider_compute_retry_error_type(user_data->status_code, error_code);
+            aws_credentials_provider_compute_retry_error_type(sso_query_context->status_code, error_code);
 
         /* don't retry client errors at all. */
         if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
-            if (aws_retry_strategy_schedule_retry(user_data->retry_token, error_type, s_on_retry_ready, user_data) ==
+            if (aws_retry_strategy_schedule_retry(
+                    sso_query_context->retry_token, error_type, s_on_retry_ready, sso_query_context) ==
                 AWS_OP_SUCCESS) {
                 AWS_LOGF_INFO(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                     "(id=%p): successfully scheduled a retry",
-                    (void *)user_data->provider);
+                    (void *)sso_query_context->provider);
                 return;
             }
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): failed to schedule retry: %s",
-                (void *)user_data->provider,
+                (void *)sso_query_context->provider,
                 aws_error_str(aws_last_error()));
         }
-    } else if (aws_retry_token_record_success(user_data->retry_token)) {
+    } else if (aws_retry_token_record_success(sso_query_context->retry_token)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to register operation success: %s",
-            (void *)user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_str(aws_last_error()));
     }
 
-    s_finalize_get_credentials_query(user_data);
+    s_finalize_get_credentials_query(sso_query_context);
 }
 
 static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aws_byte_cursor *body, void *user_data) {
 
     (void)stream;
 
-    struct sso_user_data *sso_user_data = user_data;
-    struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
+    struct aws_sso_query_context *sso_query_context = user_data;
+    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
 
     AWS_LOGF_TRACE(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) received %zu response bytes",
-        (void *)sso_user_data->provider,
+        (void *)sso_query_context->provider,
         body->len);
 
-    if (body->len + sso_user_data->payload.len > SSO_RESPONSE_SIZE_LIMIT) {
-        impl->function_table->aws_http_connection_close(sso_user_data->connection);
+    if (body->len + sso_query_context->payload.len > SSO_RESPONSE_SIZE_LIMIT) {
+        impl->function_table->aws_http_connection_close(sso_query_context->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) response exceeded maximum allowed length",
-            (void *)sso_user_data->provider);
+            (void *)sso_query_context->provider);
 
         return aws_raise_error(AWS_ERROR_SHORT_BUFFER);
     }
 
-    if (aws_byte_buf_append_dynamic(&sso_user_data->payload, body)) {
-        impl->function_table->aws_http_connection_close(sso_user_data->connection);
+    if (aws_byte_buf_append_dynamic(&sso_query_context->payload, body)) {
+        impl->function_table->aws_http_connection_close(sso_query_context->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) error appending response payload: %s",
-            (void *)sso_user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_str(aws_last_error()));
 
         return AWS_OP_ERR;
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-static int s_on_incoming_headers_fn(
-    struct aws_http_stream *stream,
-    enum aws_http_header_block header_block,
-    const struct aws_http_header *header_array,
-    size_t num_headers,
-    void *user_data) {
-
-    (void)header_array;
-    (void)num_headers;
-
-    if (header_block != AWS_HTTP_HEADER_BLOCK_MAIN) {
-        return AWS_OP_SUCCESS;
-    }
-
-    struct sso_user_data *sso_user_data = user_data;
-    if (sso_user_data->status_code == AWS_OP_SUCCESS) {
-        struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
-        if (impl->function_table->aws_http_stream_get_incoming_response_status(stream, &sso_user_data->status_code)) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p) failed to get http status code: %s",
-                (void *)sso_user_data->provider,
-                aws_error_str(aws_last_error()));
-
-            return AWS_OP_ERR;
-        }
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) received http status code %d",
-            (void *)sso_user_data->provider,
-            sso_user_data->status_code);
     }
 
     return AWS_OP_SUCCESS;
@@ -297,19 +272,19 @@ AWS_STATIC_STRING_FROM_LITERAL(s_sso_token_header, "x-amz-sso_bearer_token");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header, "User-Agent");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header_value, "CRTAuthSSOCredentialsProvider");
 
-static void s_query_credentials(struct sso_user_data *user_data) {
-    AWS_FATAL_ASSERT(user_data->connection);
+static void s_query_credentials(struct aws_sso_query_context *sso_query_context) {
+    AWS_FATAL_ASSERT(sso_query_context->connection);
     struct aws_http_stream *stream = NULL;
-    struct aws_credentials_provider_sso_impl *impl = user_data->provider->impl;
+    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
 
-    user_data->request = aws_http_message_new_request(user_data->allocator);
-    if (user_data->request == NULL) {
+    sso_query_context->request = aws_http_message_new_request(sso_query_context->allocator);
+    if (sso_query_context->request == NULL) {
         goto on_error;
     }
 
     struct aws_http_header auth_header = {
         .name = aws_byte_cursor_from_string(s_sso_token_header),
-        .value = aws_byte_cursor_from_string(user_data->token),
+        .value = aws_byte_cursor_from_string(sso_query_context->token),
     };
     struct aws_http_header host_header = {
         .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Host"),
@@ -320,51 +295,52 @@ static void s_query_credentials(struct sso_user_data *user_data) {
         .value = aws_byte_cursor_from_string(s_sso_user_agent_header_value),
     };
 
-    if (aws_http_message_add_header(user_data->request, auth_header) ||
-        aws_http_message_add_header(user_data->request, host_header) ||
-        aws_http_message_add_header(user_data->request, user_agent_header)) {
+    if (aws_http_message_add_header(sso_query_context->request, auth_header) ||
+        aws_http_message_add_header(sso_query_context->request, host_header) ||
+        aws_http_message_add_header(sso_query_context->request, user_agent_header)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) failed to add http header with error: %s",
-            (void *)user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(aws_last_error()));
         goto on_error;
     }
 
-    if (aws_http_message_set_request_method(user_data->request, aws_http_method_get)) {
+    if (aws_http_message_set_request_method(sso_query_context->request, aws_http_method_get)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) failed to set request method with error: %s",
-            (void *)user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(aws_last_error()));
         goto on_error;
     }
 
-    if (aws_http_message_set_request_path(user_data->request, aws_byte_cursor_from_buf(&user_data->path_and_query))) {
+    if (aws_http_message_set_request_path(
+            sso_query_context->request, aws_byte_cursor_from_buf(&sso_query_context->path_and_query))) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) failed to set request path with error: %s",
-            (void *)user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(aws_last_error()));
         goto on_error;
     }
 
     struct aws_http_make_request_options request_options = {
         .self_size = sizeof(request_options),
-        .on_response_headers = s_on_incoming_headers_fn,
+        .on_response_headers = NULL,
         .on_response_header_block_done = NULL,
         .on_response_body = s_on_incoming_body_fn,
         .on_complete = s_on_stream_complete_fn,
-        .user_data = user_data,
-        .request = user_data->request,
+        .user_data = sso_query_context,
+        .request = sso_query_context->request,
     };
 
-    stream = impl->function_table->aws_http_connection_make_request(user_data->connection, &request_options);
+    stream = impl->function_table->aws_http_connection_make_request(sso_query_context->connection, &request_options);
     if (!stream) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) failed to make request with error: %s",
-            (void *)user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(aws_last_error()));
         goto on_error;
     }
@@ -373,7 +349,7 @@ static void s_query_credentials(struct sso_user_data *user_data) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) failed to activate the stream with error: %s",
-            (void *)user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(aws_last_error()));
         goto on_error;
     }
@@ -381,91 +357,93 @@ static void s_query_credentials(struct sso_user_data *user_data) {
     return;
 
 on_error:
-    user_data->error_code = aws_last_error();
+    sso_query_context->error_code = aws_last_error();
     impl->function_table->aws_http_stream_release(stream);
-    s_finalize_get_credentials_query(user_data);
+    s_finalize_get_credentials_query(sso_query_context);
 }
 
 static void s_on_get_token_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
-    struct sso_user_data *sso_user_data = user_data;
+    struct aws_sso_query_context *sso_query_context = user_data;
 
     if (error_code) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to acquire a token, error code %d(%s)",
-            (void *)sso_user_data->provider,
+            (void *)sso_query_context->provider,
             error_code,
             aws_error_str(error_code));
-        sso_user_data->error_code = error_code;
-        s_finalize_get_credentials_query(sso_user_data);
+        sso_query_context->error_code = error_code;
+        s_finalize_get_credentials_query(sso_query_context);
         return;
     }
 
     struct aws_byte_cursor token = aws_credentials_get_token(credentials);
     AWS_LOGF_INFO(
-        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): successfully accquired a token", (void *)sso_user_data->provider);
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): successfully accquired a token",
+        (void *)sso_query_context->provider);
 
-    sso_user_data->token = aws_string_new_from_cursor(sso_user_data->allocator, &token);
-    s_query_credentials(sso_user_data);
+    sso_query_context->token = aws_string_new_from_cursor(sso_query_context->allocator, &token);
+    s_query_credentials(sso_query_context);
 }
 
 static void s_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
-    struct sso_user_data *sso_user_data = user_data;
+    struct aws_sso_query_context *sso_query_context = user_data;
 
     if (error_code) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to acquire a connection, error code %d(%s)",
-            (void *)sso_user_data->provider,
+            (void *)sso_query_context->provider,
             error_code,
             aws_error_str(error_code));
-        sso_user_data->error_code = error_code;
-        s_finalize_get_credentials_query(user_data);
+        sso_query_context->error_code = error_code;
+        s_finalize_get_credentials_query(sso_query_context);
         return;
     }
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): successfully accquired a connection",
-        (void *)sso_user_data->provider);
-    sso_user_data->connection = connection;
+        (void *)sso_query_context->provider);
+    sso_query_context->connection = connection;
 
-    struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
+    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
     if (aws_credentials_provider_get_credentials(impl->token_provider, s_on_get_token_callback, user_data)) {
         int last_error_code = aws_last_error();
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: failed to get a token, error code %d(%s)",
-            (void *)sso_user_data->provider,
+            (void *)sso_query_context->provider,
             last_error_code,
             aws_error_str(last_error_code));
 
-        sso_user_data->error_code = last_error_code;
-        s_finalize_get_credentials_query(sso_user_data);
+        sso_query_context->error_code = last_error_code;
+        s_finalize_get_credentials_query(sso_query_context);
     }
 }
 
 /* called for each retry. */
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data) {
     (void)token;
-    struct sso_user_data *sso_user_data = user_data;
-    struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
+    struct aws_sso_query_context *sso_query_context = user_data;
+    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
 
     if (error_code) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to schedule retry with error: %s",
-            (void *)sso_user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(error_code));
-        sso_user_data->error_code = error_code;
-        s_finalize_get_credentials_query(sso_user_data);
+        sso_query_context->error_code = error_code;
+        s_finalize_get_credentials_query(sso_query_context);
         return;
     }
 
     /* clear the result from previous attempt */
-    s_user_data_reset_request_specific_data(sso_user_data);
+    s_sso_query_context_reset_request_specific_data(sso_query_context);
 
     impl->function_table->aws_http_connection_manager_acquire_connection(
-        impl->connection_manager, s_on_acquire_connection, sso_user_data);
+        impl->connection_manager, s_on_acquire_connection, sso_query_context);
 }
 
 static void s_on_retry_token_acquired(
@@ -473,40 +451,40 @@ static void s_on_retry_token_acquired(
     int error_code,
     struct aws_retry_token *token,
     void *user_data) {
-    struct sso_user_data *sso_user_data = user_data;
+    struct aws_sso_query_context *sso_query_context = user_data;
     (void)strategy;
 
     if (error_code) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to acquire retry token: %s",
-            (void *)sso_user_data->provider,
+            (void *)sso_query_context->provider,
             aws_error_debug_str(error_code));
-        sso_user_data->error_code = error_code;
-        s_finalize_get_credentials_query(sso_user_data);
+        sso_query_context->error_code = error_code;
+        s_finalize_get_credentials_query(sso_query_context);
         return;
     }
 
-    sso_user_data->retry_token = token;
-    struct aws_credentials_provider_sso_impl *impl = sso_user_data->provider->impl;
+    sso_query_context->retry_token = token;
+    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
     impl->function_table->aws_http_connection_manager_acquire_connection(
         impl->connection_manager, s_on_acquire_connection, user_data);
 }
 
-static int s_credentials_provider_sso_get_credentials_async(
+static int s_credentials_provider_sso_get_credentials(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
     struct aws_credentials_provider_sso_impl *impl = provider->impl;
 
-    struct sso_user_data *wrapped_user_data = s_user_data_new(provider, callback, user_data);
-    if (wrapped_user_data == NULL) {
+    struct aws_sso_query_context *sso_query_context = s_sso_query_context_new(provider, callback, user_data);
+    if (sso_query_context == NULL) {
         return AWS_OP_ERR;
     }
 
     if (aws_retry_strategy_acquire_retry_token(
-            impl->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, SSO_RETRY_TIMEOUT_MS)) {
+            impl->retry_strategy, NULL, s_on_retry_token_acquired, sso_query_context, SSO_RETRY_TIMEOUT_MS)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to acquire retry token: %s",
@@ -518,7 +496,7 @@ static int s_credentials_provider_sso_get_credentials_async(
     return AWS_OP_SUCCESS;
 
 on_error:
-    s_user_data_destroy(wrapped_user_data);
+    s_sso_query_context_destroy(sso_query_context);
     return AWS_OP_ERR;
 }
 
@@ -555,39 +533,42 @@ static void s_credentials_provider_sso_destroy(struct aws_credentials_provider *
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vtable = {
-    .get_credentials = s_credentials_provider_sso_get_credentials_async,
+    .get_credentials = s_credentials_provider_sso_get_credentials,
     .destroy = s_credentials_provider_sso_destroy,
 };
 
-static int s_construct_endpoint(
+static int s_construct_sso_portal_endpoint(
     struct aws_allocator *allocator,
-    struct aws_byte_buf *endpoint,
+    struct aws_byte_buf *out_endpoint,
     const struct aws_string *region) {
-    if (!allocator || !endpoint || !region) {
-        return AWS_ERROR_INVALID_ARGUMENT;
+    AWS_PRECONDITION(allocator);
+    AWS_PRECONDITION(out_endpoint);
+
+    if (!region) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
-    aws_byte_buf_clean_up(endpoint);
+    aws_byte_buf_clean_up(out_endpoint);
     struct aws_byte_cursor sso_prefix = aws_byte_cursor_from_c_str("portal.sso.");
     struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
     struct aws_byte_cursor amazonaws_cursor = aws_byte_cursor_from_c_str(".amazonaws.com");
     struct aws_byte_cursor cn_cursor = aws_byte_cursor_from_c_str(".cn");
 
-    if (aws_byte_buf_init_copy_from_cursor(endpoint, allocator, sso_prefix) ||
-        aws_byte_buf_append_dynamic(endpoint, &region_cursor) ||
-        aws_byte_buf_append_dynamic(endpoint, &amazonaws_cursor)) {
+    if (aws_byte_buf_init_copy_from_cursor(out_endpoint, allocator, sso_prefix) ||
+        aws_byte_buf_append_dynamic(out_endpoint, &region_cursor) ||
+        aws_byte_buf_append_dynamic(out_endpoint, &amazonaws_cursor)) {
         goto on_error;
     }
 
     if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
         aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(endpoint, &cn_cursor)) {
+        if (aws_byte_buf_append_dynamic(out_endpoint, &cn_cursor)) {
             goto on_error;
         }
     }
     return AWS_OP_SUCCESS;
 
 on_error:
-    aws_byte_buf_clean_up(endpoint);
+    aws_byte_buf_clean_up(out_endpoint);
     return AWS_OP_ERR;
 }
 
@@ -728,7 +709,7 @@ static struct sso_parameters *s_parameters_new(
     parameters->sso_account_id = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_account_id));
     parameters->sso_role_name = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
     /* determine endpoint */
-    if (s_construct_endpoint(allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region))) {
+    if (s_construct_sso_portal_endpoint(allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region))) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sso endpoint");
         goto on_finish;
     }
