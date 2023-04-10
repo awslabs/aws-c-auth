@@ -222,12 +222,10 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 aws_error_str(aws_last_error()));
             sso_query_context->error_code = aws_last_error();
         }
-    } else if (aws_retry_token_record_success(sso_query_context->retry_token)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): failed to register operation success: %s",
-            (void *)sso_query_context->provider,
-            aws_error_str(aws_last_error()));
+    } else {
+        int result = aws_retry_token_record_success(sso_query_context->retry_token);
+        (void)result;
+        AWS_ASSERT(result == AWS_ERROR_SUCCESS);
     }
 
     s_finalize_get_credentials_query(sso_query_context);
