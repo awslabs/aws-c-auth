@@ -245,7 +245,6 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
         body->len);
 
     if (body->len + sso_query_context->payload.len > SSO_RESPONSE_SIZE_LIMIT) {
-        impl->function_table->aws_http_connection_close(sso_query_context->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) response exceeded maximum allowed length",
@@ -255,7 +254,6 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
     }
 
     if (aws_byte_buf_append_dynamic(&sso_query_context->payload, body)) {
-        impl->function_table->aws_http_connection_close(sso_query_context->connection);
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) error appending response payload: %s",
