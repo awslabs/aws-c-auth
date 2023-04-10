@@ -294,16 +294,7 @@ static int s_credentials_provider_sso_connect_failure(struct aws_allocator *allo
     aws_credentials_provider_http_mock_tester_init(allocator);
     credentials_provider_http_mock_tester.is_connection_acquire_successful = false;
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -347,16 +338,7 @@ static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator
     /* redirect $HOME */
     ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -409,17 +391,7 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
-
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
     uint64_t nano_expiration =
         aws_timestamp_convert(s_sso_token_expiration_s + 100, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
     mock_aws_set_system_time(nano_expiration);
@@ -472,16 +444,7 @@ static int s_credentials_provider_sso_failure_token_empty(struct aws_allocator *
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_empty_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
     mock_aws_set_system_time(0);
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -532,16 +495,7 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     mock_aws_set_system_time(0);
     struct aws_credentials_provider_sso_options options = {
@@ -593,16 +547,7 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_byte_cursor bad_json_cursor = aws_byte_cursor_from_string(s_bad_json_response);
     aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &bad_json_cursor);
@@ -657,16 +602,7 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_byte_cursor bad_json_cursor = aws_byte_cursor_from_string(s_bad_json_response);
     aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &bad_json_cursor);
@@ -720,16 +656,7 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     /* set the response */
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
@@ -784,16 +711,7 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_profile_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_profile_config_contents);
 
     /* set the response */
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
@@ -849,16 +767,7 @@ static int s_credentials_provider_sso_basic_success_after_failure(struct aws_all
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_credentials_provider_sso_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     /* set the response */
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
