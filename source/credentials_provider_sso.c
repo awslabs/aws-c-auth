@@ -126,12 +126,6 @@ static struct aws_sso_query_context *s_sso_query_context_new(
         goto on_error;
     }
 
-    AWS_LOGF_DEBUG(
-        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p) successfully constructed sso_query_context with path & query =" PRInSTR,
-        (void *)provider,
-        AWS_BYTE_BUF_PRI(sso_query_context->path_and_query));
-
     return sso_query_context;
 
 on_error:
