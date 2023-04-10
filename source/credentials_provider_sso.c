@@ -236,7 +236,6 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
     (void)stream;
 
     struct aws_sso_query_context *sso_query_context = user_data;
-    struct aws_credentials_provider_sso_impl *impl = sso_query_context->provider->impl;
 
     AWS_LOGF_TRACE(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
