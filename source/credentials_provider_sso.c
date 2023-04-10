@@ -140,7 +140,7 @@ on_error:
 static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_query_context) {
     struct aws_credentials *credentials = NULL;
     if (sso_query_context->status_code == AWS_HTTP_STATUS_CODE_200_OK &&
-        sso_query_context->error_code == AWS_OP_SUCCESS) {
+        sso_query_context->error_code == AWS_ERROR_SUCCESS) {
         /* parse credentials */
         struct aws_parse_credentials_from_json_doc_options parse_options = {
             .access_key_id_name = "accessKeyId",
