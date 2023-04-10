@@ -125,6 +125,13 @@ static struct aws_sso_query_context *s_sso_query_context_new(
     if (aws_byte_buf_init(&sso_query_context->payload, provider->allocator, SSO_RESPONSE_SIZE_INITIAL)) {
         goto on_error;
     }
+
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p) successfully constructed sso_query_context with path & query =" PRInSTR,
+        (void *)provider,
+        AWS_BYTE_BUF_PRI(sso_query_context->path_and_query));
+
     return sso_query_context;
 
 on_error:
