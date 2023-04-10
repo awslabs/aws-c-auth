@@ -139,8 +139,8 @@ on_error:
  */
 static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_query_context) {
     struct aws_credentials *credentials = NULL;
-    if (sso_query_context->status_code == AWS_HTTP_STATUS_CODE_200_OK &&
-        sso_query_context->error_code == AWS_ERROR_SUCCESS) {
+
+    if (sso_query_context->error_code == AWS_ERROR_SUCCESS) {
         /* parse credentials */
         struct aws_parse_credentials_from_json_doc_options parse_options = {
             .access_key_id_name = "accessKeyId",
@@ -220,6 +220,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 "(id=%p): failed to schedule retry: %s",
                 (void *)sso_query_context->provider,
                 aws_error_str(aws_last_error()));
+            sso_query_context->error_code = aws_last_error();
         }
     } else if (aws_retry_token_record_success(sso_query_context->retry_token)) {
         AWS_LOGF_ERROR(
