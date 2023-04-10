@@ -621,7 +621,7 @@ static struct sso_parameters *s_parameters_new(
     struct sso_parameters *parameters = aws_mem_calloc(allocator, 1, sizeof(struct sso_parameters));
     parameters->allocator = allocator;
 
-    struct aws_profile_collection *config_profile = NULL;
+    struct aws_profile_collection *config_profile_collection = NULL;
     struct aws_string *profile_name = NULL;
     bool success = false;
 
@@ -630,13 +630,19 @@ static struct sso_parameters *s_parameters_new(
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to resolve profile name");
         goto on_finish;
     }
-
-    config_profile = aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
-    if (!config_profile) {
+    if (options->config_file_cached) {
+        /* Use cached config file */
+        config_profile_collection = aws_profile_collection_acquire(options->config_file_cached);
+    } else {
+        /* load config file */
+        config_profile_collection =
+            aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
+    }
+    if (!config_profile_collection) {
         goto on_finish;
     }
 
-    const struct aws_profile *profile = aws_profile_collection_get_profile(config_profile, profile_name);
+    const struct aws_profile *profile = aws_profile_collection_get_profile(config_profile_collection, profile_name);
     if (!profile) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso: failed to load \"%s\" profile", aws_string_c_str(profile_name));
@@ -664,6 +670,7 @@ static struct sso_parameters *s_parameters_new(
         /* construct sso_session token provider */
         struct aws_token_provider_sso_session_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
+            .config_file_cached = options->config_file_cached,
             .profile_name_override = options->profile_name_override,
             .bootstrap = options->bootstrap,
             .tls_ctx = options->tls_ctx,
@@ -677,7 +684,7 @@ static struct sso_parameters *s_parameters_new(
         }
         sso_region = aws_profile_get_property(
             aws_profile_collection_get_section(
-                config_profile,
+                config_profile_collection,
                 AWS_PROFILE_SECTION_TYPE_SSO_SESSION,
                 aws_profile_property_get_value(sso_session_property)),
             s_sso_region);
@@ -685,6 +692,7 @@ static struct sso_parameters *s_parameters_new(
         /* construct profile token provider */
         struct aws_token_provider_sso_profile_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
+            .config_file_cached = options->config_file_cached,
             .profile_name_override = options->profile_name_override,
             .system_clock_fn = options->system_clock_fn,
         };
@@ -721,7 +729,7 @@ on_finish:
         parameters = NULL;
     }
     aws_string_destroy(profile_name);
-    aws_profile_collection_release(config_profile);
+    aws_profile_collection_release(config_profile_collection);
 
     return parameters;
 }

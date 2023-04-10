@@ -374,6 +374,13 @@ struct aws_credentials_provider_sso_options {
      */
     struct aws_byte_cursor config_file_name_override;
 
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     * config_file_name_override will be ignored if this option is provided.
+     */
+    struct aws_profile_collection *config_file_cached;
+
     /*
      * Connection bootstrap to use for any network connections made while sourcing credentials
      * Required.

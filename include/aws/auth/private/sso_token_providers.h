@@ -26,6 +26,13 @@ struct aws_token_provider_sso_profile_options {
      */
     struct aws_byte_cursor config_file_name_override;
 
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     * config_file_name_override will be ignored if this option is provided.
+     */
+    struct aws_profile_collection *config_file_cached;
+
     /* For mocking, leave NULL otherwise */
     aws_io_clock_fn *system_clock_fn;
 };
@@ -46,6 +53,13 @@ struct aws_token_provider_sso_session_options {
      * Override path to the profile config file (~/.aws/config by default)
      */
     struct aws_byte_cursor config_file_name_override;
+
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     * config_file_name_override will be ignored if this option is provided.
+     */
+    struct aws_profile_collection *config_file_cached;
 
     /*
      * Connection bootstrap to use for any network connections made
