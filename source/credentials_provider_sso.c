@@ -80,7 +80,7 @@ static void s_sso_query_context_reset_request_specific_data(struct aws_sso_query
         sso_query_context->token = NULL;
     }
     sso_query_context->status_code = 0;
-    sso_query_context->error_code = AWS_OP_SUCCESS;
+    sso_query_context->error_code = 0;
 }
 
 static void s_sso_query_context_destroy(struct aws_sso_query_context *sso_query_context) {
