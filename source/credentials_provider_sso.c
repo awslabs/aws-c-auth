@@ -717,7 +717,6 @@ static struct sso_parameters *s_parameters_new(
     success = true;
 
 on_finish:
-
     if (!success) {
         s_parameters_destroy(parameters);
         parameters = NULL;
