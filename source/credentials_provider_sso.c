@@ -40,7 +40,7 @@ struct aws_credentials_provider_sso_impl {
 };
 
 /**
- * aws_sso_query_context - data for each outstanding SSO query.
+ * aws_sso_query_context - context for each outstanding SSO query.
  */
 struct aws_sso_query_context {
     /* immutable post-creation */
