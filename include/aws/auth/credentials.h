@@ -733,7 +733,7 @@ struct aws_ecc_key_pair *aws_ecc_key_pair_new_ecdsa_p256_key_from_aws_credential
 /**
  * Release a reference to a credentials provider
  *
- * @param provider provider to increment the ref count on
+ * @param provider provider to decrement the ref count on
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_release(struct aws_credentials_provider *provider);
@@ -741,7 +741,7 @@ struct aws_credentials_provider *aws_credentials_provider_release(struct aws_cre
 /*
  * Add a reference to a credentials provider
  *
- * @param provider provider to decrement the ref count on
+ * @param provider provider to increment the ref count on
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_acquire(struct aws_credentials_provider *provider);
