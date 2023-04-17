@@ -671,7 +671,7 @@ static struct sso_parameters *s_parameters_new(
         /* construct sso_session token provider */
         struct aws_token_provider_sso_session_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
-            .config_file_cached = options->config_file_cached,
+            .config_file_cached = config_profile_collection,
             .profile_name_override = options->profile_name_override,
             .bootstrap = options->bootstrap,
             .tls_ctx = options->tls_ctx,
@@ -693,7 +693,7 @@ static struct sso_parameters *s_parameters_new(
         /* construct profile token provider */
         struct aws_token_provider_sso_profile_options token_provider_options = {
             .config_file_name_override = options->config_file_name_override,
-            .config_file_cached = options->config_file_cached,
+            .config_file_cached = config_profile_collection,
             .profile_name_override = options->profile_name_override,
             .system_clock_fn = options->system_clock_fn,
         };
