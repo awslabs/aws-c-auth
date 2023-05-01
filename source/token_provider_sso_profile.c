@@ -91,20 +91,25 @@ AWS_STRING_FROM_LITERAL(s_profile_sso_start_url_name, "sso_start_url");
 
 static struct aws_string *s_construct_profile_sso_token_path(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor profile_name_override,
-    struct aws_byte_cursor config_file_name_override) {
+    const struct aws_token_provider_sso_profile_options *options) {
 
     struct aws_profile_collection *config_collection = NULL;
     struct aws_string *profile_name = NULL;
     struct aws_string *sso_token_path = NULL;
 
-    profile_name = aws_get_profile_name(allocator, &profile_name_override);
+    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
     if (!profile_name) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "token-provider-sso-profile: failed to resolve profile name");
         aws_raise_error(AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE);
         goto cleanup;
     }
-    config_collection = aws_load_profile_collection_from_config_file(allocator, config_file_name_override);
+    if (options->config_file_cached) {
+        /* Use cached config file */
+        config_collection = aws_profile_collection_acquire(options->config_file_cached);
+    } else {
+        /* load config file */
+        config_collection = aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
+    }
 
     if (!config_collection) {
         AWS_LOGF_ERROR(
@@ -151,8 +156,7 @@ cleanup:
 struct aws_credentials_provider *aws_token_provider_new_sso_profile(
     struct aws_allocator *allocator,
     const struct aws_token_provider_sso_profile_options *options) {
-    struct aws_string *token_path = s_construct_profile_sso_token_path(
-        allocator, options->profile_name_override, options->config_file_name_override);
+    struct aws_string *token_path = s_construct_profile_sso_token_path(allocator, options);
     if (!token_path) {
         return NULL;
     }
