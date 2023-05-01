@@ -268,7 +268,7 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
 /* Request headers. */
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_token_header, "x-amz-sso_bearer_token");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header, "User-Agent");
-AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header_value, "CRTAuthSSOCredentialsProvider");
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header_value, "aws-sdk-crt/sso-credentials-provider");
 
 static void s_query_credentials(struct aws_sso_query_context *sso_query_context) {
     AWS_FATAL_ASSERT(sso_query_context->connection);
