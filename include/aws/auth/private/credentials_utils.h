@@ -73,6 +73,7 @@ struct aws_auth_http_system_vtable {
 enum aws_parse_credentials_expiration_format {
     AWS_PCEF_STRING_ISO_8601_DATE,
     AWS_PCEF_NUMBER_UNIX_EPOCH,
+    AWS_PCEF_NUMBER_UNIX_EPOCH_MS,
 };
 
 struct aws_parse_credentials_from_json_doc_options {
@@ -80,6 +81,7 @@ struct aws_parse_credentials_from_json_doc_options {
     const char *secret_access_key_name;
     const char *token_name;
     const char *expiration_name;
+    const char *top_level_object_name;
     enum aws_parse_credentials_expiration_format expiration_format;
     bool token_required;
     bool expiration_required;

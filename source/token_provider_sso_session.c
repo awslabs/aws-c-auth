@@ -106,18 +106,26 @@ AWS_STRING_FROM_LITERAL(s_sso_start_url_name, "sso_start_url");
  */
 static struct aws_string *s_verify_config_and_construct_sso_token_path(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor profile_name_override,
-    struct aws_byte_cursor config_file_name_override) {
+    const struct aws_token_provider_sso_session_options *options) {
     struct aws_profile_collection *config_collection = NULL;
     struct aws_string *profile_name = NULL;
     struct aws_string *sso_token_path = NULL;
 
-    profile_name = aws_get_profile_name(allocator, &profile_name_override);
+    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
     if (!profile_name) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "sso-session: token provider failed to resolve profile name");
         goto cleanup;
     }
-    config_collection = aws_load_profile_collection_from_config_file(allocator, config_file_name_override);
+    if (options->config_file_cached) {
+        /* Use cached config file */
+        config_collection = aws_profile_collection_acquire(options->config_file_cached);
+    } else {
+        /* load config file */
+        config_collection = aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
+    }
+    if (!config_collection) {
+        goto cleanup;
+    }
 
     const struct aws_profile *profile = aws_profile_collection_get_profile(config_collection, profile_name);
 
@@ -213,8 +221,7 @@ struct aws_credentials_provider *aws_token_provider_new_sso_session(
     AWS_ASSERT(options->bootstrap);
     AWS_ASSERT(options->tls_ctx);
 
-    struct aws_string *token_path = s_verify_config_and_construct_sso_token_path(
-        allocator, options->profile_name_override, options->config_file_name_override);
+    struct aws_string *token_path = s_verify_config_and_construct_sso_token_path(allocator, options);
     if (!token_path) {
         return NULL;
     }

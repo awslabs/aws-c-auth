@@ -101,4 +101,75 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
  */
 int aws_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path);
 
+/**
+ * Mocked HTTP connection manager for tests
+ */
+struct aws_credentials_provider_http_mock_tester {
+    struct aws_tls_ctx *tls_ctx;
+    struct aws_event_loop_group *el_group;
+    struct aws_host_resolver *resolver;
+    struct aws_client_bootstrap *bootstrap;
+
+    struct aws_byte_buf request_path;
+    struct aws_byte_buf request_body;
+    struct aws_http_make_request_options request_options;
+
+    struct aws_array_list response_data_callbacks;
+    bool is_connection_acquire_successful;
+    bool is_request_successful;
+
+    struct aws_mutex lock;
+    struct aws_condition_variable signal;
+
+    struct aws_credentials *credentials;
+    bool has_received_credentials_callback;
+    bool has_received_shutdown_callback;
+
+    int attempts;
+    int response_code;
+    int error_code;
+    int failure_response_code;
+    int failure_count;
+};
+
+extern struct aws_credentials_provider_http_mock_tester credentials_provider_http_mock_tester;
+int aws_credentials_provider_http_mock_tester_init(struct aws_allocator *allocator);
+void aws_credentials_provider_http_mock_tester_cleanup(void);
+void aws_credentials_provider_http_mock_on_shutdown_complete(void *user_data);
+bool aws_credentials_provider_http_mock_has_received_shutdown_callback(void *user_data);
+void aws_credentials_provider_http_mock_wait_for_shutdown_callback(void);
+struct aws_http_connection_manager *aws_credentials_provider_http_mock_connection_manager_new(
+    struct aws_allocator *allocator,
+    const struct aws_http_connection_manager_options *options);
+void aws_credentials_provider_http_mock_connection_manager_release(struct aws_http_connection_manager *manager);
+void aws_credentials_provider_http_mock_connection_manager_acquire_connection(
+    struct aws_http_connection_manager *manager,
+    aws_http_connection_manager_on_connection_setup_fn *callback,
+    void *user_data);
+int aws_credentials_provider_http_mock_connection_manager_release_connection(
+    struct aws_http_connection_manager *manager,
+    struct aws_http_connection *connection);
+void aws_credentials_provider_http_mock_invoke_request_callbacks(
+    const struct aws_http_make_request_options *options,
+    struct aws_array_list *data_callbacks,
+    bool is_request_successful);
+struct aws_http_stream *aws_credentials_provider_http_mock_make_request(
+    struct aws_http_connection *client_connection,
+    const struct aws_http_make_request_options *options);
+int aws_credentials_provider_http_mock_stream_activate(struct aws_http_stream *stream);
+int aws_credentials_provider_http_mock_stream_get_incoming_response_status(
+    const struct aws_http_stream *stream,
+    int *out_status_code);
+void aws_credentials_provider_http_mock_stream_release(struct aws_http_stream *stream);
+void aws_credentials_provider_http_mock_connection_close(struct aws_http_connection *connection);
+struct aws_http_connection *aws_credentials_provider_http_mock_stream_get_connection(
+    const struct aws_http_stream *stream);
+bool aws_credentials_provider_http_mock_has_received_credentials_callback(void *user_data);
+void aws_credentials_provider_http_mock_wait_for_credentials_result(void);
+void aws_credentials_provider_http_mock_get_credentials_callback(
+    struct aws_credentials *credentials,
+    int error_code,
+    void *user_data);
+extern struct aws_auth_http_system_vtable aws_credentials_provider_http_mock_function_table;
+
 #endif /* AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H */
