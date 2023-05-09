@@ -12,6 +12,8 @@
 #include <aws/common/linked_list.h>
 #include <aws/io/io.h>
 
+AWS_PUSH_SANE_WARNING_LEVEL
+
 struct aws_client_bootstrap;
 struct aws_auth_http_system_vtable;
 struct aws_credentials;
@@ -1007,5 +1009,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 AWS_AUTH_API extern const struct aws_auth_http_system_vtable *g_aws_credentials_provider_http_function_table;
 
 AWS_EXTERN_C_END
+AWS_POP_SANE_WARNING_LEVEL
 
 #endif /* AWS_AUTH_CREDENTIALS_H */
