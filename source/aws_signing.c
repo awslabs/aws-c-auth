@@ -17,6 +17,7 @@
 #include <aws/common/string.h>
 #include <aws/io/stream.h>
 #include <aws/io/uri.h>
+
 #include <ctype.h>
 #include <inttypes.h>
 
