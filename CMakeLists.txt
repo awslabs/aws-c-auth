@@ -75,7 +75,7 @@ file(GLOB AUTH_SRC
 add_library(${PROJECT_NAME} ${LIBTYPE} ${AUTH_HEADERS} ${AUTH_SRC})
 aws_set_common_properties(${PROJECT_NAME})
 aws_prepare_symbol_visibility_args(${PROJECT_NAME} "AWS_AUTH")
-aws_check_headers(${PROJECT_NAME} ${AUTH_HEADERS})
+aws_check_headers(${PROJECT_NAME} ${AWS_AUTH_ROOT_HEADERS})
 
 aws_add_sanitizers(${PROJECT_NAME})
 

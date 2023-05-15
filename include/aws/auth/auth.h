@@ -11,6 +11,8 @@
 #include <aws/io/logging.h>
 #include <aws/sdkutils/sdkutils.h>
 
+AWS_PUSH_SANE_WARNING_LEVEL
+
 #define AWS_C_AUTH_PACKAGE_ID 6
 
 /**
@@ -83,5 +85,6 @@ AWS_AUTH_API
 void aws_auth_library_clean_up(void);
 
 AWS_EXTERN_C_END
+AWS_POP_SANE_WARNING_LEVEL
 
 #endif /* AWS_AUTH_AUTH_H */

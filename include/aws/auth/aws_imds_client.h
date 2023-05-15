@@ -12,6 +12,8 @@
 #include <aws/http/connection_manager.h>
 #include <aws/io/retry_strategy.h>
 
+AWS_PUSH_SANE_WARNING_LEVEL
+
 typedef void(aws_imds_client_shutdown_completed_fn)(void *user_data);
 
 /**
@@ -477,5 +479,6 @@ int aws_imds_client_get_instance_info(
     void *user_data);
 
 AWS_EXTERN_C_END
+AWS_POP_SANE_WARNING_LEVEL
 
 #endif /* AWS_AUTH_IMDS_CLIENT_H */
