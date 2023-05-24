@@ -61,11 +61,10 @@ struct aws_credentials_provider_shutdown_options {
  * Ref-counted.  Thread-safe.
  */
 struct aws_credentials_provider {
+    struct aws_identity_provider provider_base;
     struct aws_credentials_provider_vtable *vtable;
-    struct aws_allocator *allocator;
     struct aws_credentials_provider_shutdown_options shutdown_options;
     void *impl;
-    struct aws_atomic_var ref_count;
 };
 
 /*
