@@ -846,7 +846,6 @@ on_error:
     return NULL;
 }
 
-static struct aws_byte_cursor s_default_profile_name_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("default");
 static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
 static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
 static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
@@ -1001,7 +1000,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
             }
         }
 
-        profile_name = aws_get_profile_name(allocator, &s_default_profile_name_cursor);
+        profile_name = aws_get_profile_name(allocator, NULL);
         if (profile_name) {
             profile = aws_profile_collection_get_profile(config_profile, profile_name);
         }
