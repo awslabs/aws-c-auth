@@ -100,7 +100,6 @@ static void s_credentials_provider_process_destroy(struct aws_credentials_provid
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_credentials_process, "credential_process");
-static struct aws_byte_cursor s_default_profile_name_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("default");
 
 static struct aws_profile_collection *s_load_profile(struct aws_allocator *allocator) {
 
@@ -167,7 +166,7 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
 
     config_profiles = s_load_profile(allocator);
     if (profile_cursor.len == 0) {
-        profile_name = aws_get_profile_name(allocator, &s_default_profile_name_cursor);
+        profile_name = aws_get_profile_name(allocator, NULL);
     } else {
         profile_name = aws_string_new_from_array(allocator, profile_cursor.ptr, profile_cursor.len);
     }
