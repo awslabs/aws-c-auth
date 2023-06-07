@@ -7,6 +7,7 @@
  */
 
 #include <aws/auth/auth.h>
+#include <aws/auth/identity.h>
 #include <aws/common/array_list.h>
 #include <aws/common/atomics.h>
 #include <aws/common/linked_list.h>
@@ -14,8 +15,6 @@
 
 struct aws_client_bootstrap;
 struct aws_auth_http_system_vtable;
-struct aws_credentials;
-struct aws_credentials_provider;
 struct aws_ecc_key_pair;
 struct aws_string;
 
@@ -62,6 +61,7 @@ struct aws_credentials_provider_shutdown_options {
  */
 struct aws_credentials_provider {
     struct aws_identity_provider provider_base;
+    struct aws_allocator *allocator;
     struct aws_credentials_provider_vtable *vtable;
     struct aws_credentials_provider_shutdown_options shutdown_options;
     void *impl;

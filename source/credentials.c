@@ -29,7 +29,7 @@ struct aws_token_identity {
     struct aws_string *token;
 };
 
-enum aws_identity_type {
+enum aws_credentials_type {
     AWS_CREDENTIALS_IDENTITY,
     TOKEN_IDENTITY,
     ANONYMOUS_IDENTITY,
@@ -74,7 +74,7 @@ struct aws_credentials {
      */
     uint64_t expiration_timepoint_seconds;
 
-    enum aws_identity_type identity_type;
+    enum aws_credentials_type identity_type;
     union {
         struct aws_credentials_identity credentials_identity;
         struct aws_token_identity token_identity;
@@ -406,7 +406,7 @@ struct aws_credentials_provider *aws_credentials_provider_release(struct aws_cre
         return NULL;
     }
 
-    size_t old_value = aws_atomic_fetch_sub(&provider->ref_count, 1);
+    size_t old_value = aws_atomic_fetch_sub(&provider->provider_base.ref_count, 1);
     if (old_value == 1) {
         aws_credentials_provider_destroy(provider);
     }
@@ -419,7 +419,7 @@ struct aws_credentials_provider *aws_credentials_provider_acquire(struct aws_cre
         return NULL;
     }
 
-    aws_atomic_fetch_add(&provider->ref_count, 1);
+    aws_atomic_fetch_add(&provider->provider_base.ref_count, 1);
 
     return provider;
 }

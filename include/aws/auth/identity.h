@@ -7,45 +7,35 @@
  */
 
 #include <aws/auth/auth.h>
-#include <aws/auth/credentials.h>
 #include <aws/common/date_time.h>
 
+struct aws_credentials;
+struct aws_credentials_provider;
+
 enum aws_identity_type {
-    AWS_CREDENTIALS_IDENTITY,
-    TOKEN_IDENTITY,
-    ANONYMOUS_IDENTITY,
+    IDENTITY_AWS_CREDENTIALS,
+    IDENTITY_TOKEN,
+    IDENTITY_ANONYMOUS,
 };
 
-/*************************************** Private, move to .c later ***************************************/
-struct aws_identity_base {
-    enum aws_identity_type identity_type;
-
-    struct aws_allocator *allocator;
-
-    struct aws_atomic_var ref_count;
-
-    /* Optional */
-    struct aws_date_time *expiration;
-};
-struct aws_identity_credentials {
-    struct aws_identity_base identity_base;
-    struct aws_credentials *credentials;
-};
-struct aws_identity_token {
-    struct aws_identity_base identity_base;
-    struct aws_string *token;
-};
-
-/*************************************** END Private ***************************************/
-
+/* Use data_time? Or  */
 struct aws_identity_base *aws_identity_new_credentials(
     struct aws_allocator *allocator,
-    struct aws_credentials *credentials);
-struct aws_identity_base *aws_identity_new_token(struct aws_allocator *allocator, struct aws_byte_cursor token);
+    struct aws_credentials *credentials,
+    uint64_t expiration_timepoint_secs);
+struct aws_identity_base *aws_identity_new_token(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor token,
+    uint64_t expiration_timepoint_secs);
 
-enum aws_identity_type aws_identity_get_type(struct aws_identity_base *identity_base);
+enum aws_identity_type aws_identity_get_type(const struct aws_identity_base *identity_base);
 struct aws_identity_base *aws_identity_acquire(struct aws_identity_base *identity_base);
 struct aws_identity_base *aws_identity_release(struct aws_identity_base *identity_base);
+
+/* Return null if failed */
+const struct aws_credentials *aws_identity_credentials_get_credentials(const struct aws_identity_base *identity_base);
+/* Return null if failed. aws_string* or byte_cursor? */
+const struct aws_string *aws_identity_token_get_token(const struct aws_identity_base *identity_base);
 
 /************   Identity provider    ****************/
 
