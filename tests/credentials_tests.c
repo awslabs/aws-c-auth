@@ -206,6 +206,10 @@ static int s_anonymous_credentials_provider_basic_test(struct aws_allocator *all
 
     s_aws_credentials_shutdown_checker_clean_up();
 
+    /* Check that NULL works for the optional shutdown options */
+    provider = aws_credentials_provider_new_anonymous(allocator, NULL);
+    aws_credentials_provider_release(provider);
+
     return 0;
 }
 
