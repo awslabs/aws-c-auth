@@ -30,6 +30,8 @@
 #define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 #define IMDS_DEFAULT_RETRIES 1
 
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_host, "169.254.169.254");
+
 enum imds_token_state {
     AWS_IMDS_TS_INVALID,
     AWS_IMDS_TS_VALID,
@@ -157,7 +159,7 @@ struct aws_imds_client *aws_imds_client_new(
     manager_options.initial_window_size = IMDS_RESPONSE_SIZE_LIMIT;
     manager_options.socket_options = &socket_options;
     manager_options.tls_connection_options = NULL;
-    manager_options.host = aws_byte_cursor_from_c_str("169.254.169.254");
+    manager_options.host = aws_byte_cursor_from_string(s_imds_host);
     manager_options.port = 80;
     manager_options.max_connections = 10;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
@@ -384,6 +386,7 @@ static int s_on_incoming_headers_fn(
     return AWS_OP_SUCCESS;
 }
 
+AWS_STATIC_STRING_FROM_LITERAL(s_imds_host_header, "Host");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_accept_header, "Accept");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_accept_header_value, "*/*");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_user_agent_header, "User-Agent");
@@ -414,6 +417,14 @@ static int s_make_imds_http_query(
     }
 
     if (headers && aws_http_message_add_header_array(request, headers, header_count)) {
+        goto on_error;
+    }
+
+    struct aws_http_header host_header = {
+        .name = aws_byte_cursor_from_string(s_imds_host_header),
+        .value = aws_byte_cursor_from_string(s_imds_host),
+    };
+    if (aws_http_message_add_header(request, host_header)) {
         goto on_error;
     }
 
