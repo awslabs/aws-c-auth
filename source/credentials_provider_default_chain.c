@@ -337,7 +337,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     AWS_ZERO_STRUCT(process_options);
     process_options.shutdown_options = sub_provider_shutdown_options;
     process_options.config_profile_collection_cached = options->profile_collection_cached;
-    process_provider = aws_credentials_provider_new_process(allocator, &options);
+    process_provider = aws_credentials_provider_new_process(allocator, &process_options);
     if (process_provider != NULL) {
         providers[index++] = process_provider;
         /* 1 shutdown call from the process provider's shutdown */
