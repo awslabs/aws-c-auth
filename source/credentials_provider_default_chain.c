@@ -273,6 +273,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_tls_ctx *tls_ctx = NULL;
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
+    struct aws_credentials_provider *process_provider = NULL;
     struct aws_credentials_provider *sts_provider = NULL;
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
@@ -305,10 +306,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 #endif /* BYO_CRYPTO */
     }
 
-    enum { providers_size = 4 };
+    enum { providers_size = 5 };
     struct aws_credentials_provider *providers[providers_size];
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
+
+    /* Providers that touch fast local resources... */
 
     struct aws_credentials_provider_environment_options environment_options;
     AWS_ZERO_STRUCT(environment_options);
@@ -318,6 +321,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     }
 
     providers[index++] = environment_provider;
+
+    /* Providers that will make a network call only if the relevant configuration is present... */
 
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
@@ -345,6 +350,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
+    struct aws_credentials_provider_process_options process_options;
+    AWS_ZERO_STRUCT(process_options);
+    process_options.shutdown_options = sub_provider_shutdown_options;
+    process_options.config_profile_collection_cached = options->profile_collection_cached;
+    process_provider = aws_credentials_provider_new_process(allocator, &process_options);
+    if (process_provider != NULL) {
+        providers[index++] = process_provider;
+        /* 1 shutdown call from the process provider's shutdown */
+        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+    }
+
+    /* Providers that will always make a network call unless explicitly disabled... */
+
     ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
         allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx);
     if (ecs_or_imds_provider != NULL) {
@@ -370,6 +388,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
+    aws_credentials_provider_release(process_provider);
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(ecs_or_imds_provider);
 
@@ -411,6 +430,7 @@ on_error:
     } else {
         aws_credentials_provider_release(ecs_or_imds_provider);
         aws_credentials_provider_release(profile_provider);
+        aws_credentials_provider_release(process_provider);
         aws_credentials_provider_release(sts_provider);
         aws_credentials_provider_release(environment_provider);
     }

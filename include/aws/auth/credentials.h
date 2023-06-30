@@ -476,6 +476,12 @@ struct aws_credentials_provider_process_options {
      * if not provided, we will try environment variable: AWS_PROFILE.
      */
     struct aws_byte_cursor profile_to_use;
+
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     */
+    struct aws_profile_collection *config_profile_collection_cached;
 };
 
 /**

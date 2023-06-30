@@ -155,7 +155,9 @@ static void s_check_or_get_with_profile_config(
 }
 
 static struct aws_byte_cursor s_stderr_redirect_to_stdout = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(" 2>&1");
-static struct aws_string *s_get_command(struct aws_allocator *allocator, struct aws_byte_cursor profile_cursor) {
+static struct aws_string *s_get_command(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_process_options *options) {
 
     struct aws_byte_buf command_buf;
     AWS_ZERO_STRUCT(command_buf);
@@ -163,12 +165,15 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
     struct aws_profile_collection *config_profiles = NULL;
     struct aws_string *profile_name = NULL;
     const struct aws_profile *profile = NULL;
-
-    config_profiles = s_load_profile(allocator);
-    if (profile_cursor.len == 0) {
+    if (options->config_profile_collection_cached) {
+        config_profiles = aws_profile_collection_acquire(options->config_profile_collection_cached);
+    } else {
+        config_profiles = s_load_profile(allocator);
+    }
+    if (options->profile_to_use.len == 0) {
         profile_name = aws_get_profile_name(allocator, NULL);
     } else {
-        profile_name = aws_string_new_from_array(allocator, profile_cursor.ptr, profile_cursor.len);
+        profile_name = aws_string_new_from_array(allocator, options->profile_to_use.ptr, options->profile_to_use.len);
     }
     if (config_profiles && profile_name) {
         profile = aws_profile_collection_get_profile(config_profiles, profile_name);
@@ -205,7 +210,7 @@ static struct aws_string *s_get_command(struct aws_allocator *allocator, struct 
 
 on_finish:
     aws_string_destroy(profile_name);
-    aws_profile_collection_destroy(config_profiles);
+    aws_profile_collection_release(config_profiles);
     aws_byte_buf_clean_up_secure(&command_buf);
     return command;
 }
@@ -237,7 +242,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
-    impl->command = s_get_command(allocator, options->profile_to_use);
+    impl->command = s_get_command(allocator, options);
     if (!impl->command) {
         goto on_error;
     }
