@@ -311,6 +311,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
 
+    /* Providers that touch fast local resources */
     struct aws_credentials_provider_environment_options environment_options;
     AWS_ZERO_STRUCT(environment_options);
     environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
@@ -320,6 +321,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     providers[index++] = environment_provider;
 
+    /* Providers that will make a network call only if the relevant configuration is present. */
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
     profile_options.bootstrap = options->bootstrap;
@@ -330,17 +332,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     if (profile_provider != NULL) {
         providers[index++] = profile_provider;
         /* 1 shutdown call from the profile provider's shutdown */
-        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
-    }
-
-    struct aws_credentials_provider_process_options process_options;
-    AWS_ZERO_STRUCT(process_options);
-    process_options.shutdown_options = sub_provider_shutdown_options;
-    process_options.config_profile_collection_cached = options->profile_collection_cached;
-    process_provider = aws_credentials_provider_new_process(allocator, &process_options);
-    if (process_provider != NULL) {
-        providers[index++] = process_provider;
-        /* 1 shutdown call from the process provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
@@ -357,6 +348,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
+    struct aws_credentials_provider_process_options process_options;
+    AWS_ZERO_STRUCT(process_options);
+    process_options.shutdown_options = sub_provider_shutdown_options;
+    process_options.config_profile_collection_cached = options->profile_collection_cached;
+    process_provider = aws_credentials_provider_new_process(allocator, &process_options);
+    if (process_provider != NULL) {
+        providers[index++] = process_provider;
+        /* 1 shutdown call from the process provider's shutdown */
+        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+    }
+
+    /* Providers that will always make a network call unless explicitly disabled. */
     ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
         allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx);
     if (ecs_or_imds_provider != NULL) {
