@@ -14,6 +14,7 @@
 #include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/io/logging.h>
+#include <aws/sdkutils/aws_profile.h>
 
 static struct aws_mock_process_tester {
     struct aws_mutex lock;
@@ -409,3 +410,80 @@ static int s_credentials_provider_process_basic_success(struct aws_allocator *al
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_process_basic_success, s_credentials_provider_process_basic_success);
+
+static int s_credentials_provider_process_basic_success_cached(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_process_tester_init(allocator);
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_test_command);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_process_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_profile_collection *profile_collection = NULL;
+    struct aws_string *config_file_path;
+    aws_get_environment_value(allocator, s_default_config_path_env_variable_name, &config_file_path);
+    profile_collection = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
+
+    /* Update profile and config file */
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    cursor = aws_byte_cursor_from_string(s_bad_test_command);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+
+    config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+
+    if (aws_create_profile_file(config_file_path, config_file_contents)) {
+        return AWS_OP_ERR;
+    }
+    aws_string_destroy(config_file_contents);
+    aws_byte_buf_clean_up(&content_buf);
+
+    /* provider should used the cached credentials */
+    struct aws_credentials_provider_process_options options = {
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),
+        .config_profile_collection_cached = profile_collection,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    // aws_credentials_release(s_tester.credentials);
+
+    // aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    // s_aws_wait_for_credentials_result();
+
+    // ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    // ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    aws_string_destroy(config_file_path);
+    aws_profile_collection_release(profile_collection);
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_process_tester_cleanup();
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_process_basic_success_cached, s_credentials_provider_process_basic_success_cached);
