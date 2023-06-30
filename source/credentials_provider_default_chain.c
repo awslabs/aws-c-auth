@@ -361,7 +361,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
-    /* Providers that will always make a network call unless explicitly disabled. */
+    /* Providers that will always make a network call unless explicitly disabled... */
+    
     ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
         allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx);
     if (ecs_or_imds_provider != NULL) {
