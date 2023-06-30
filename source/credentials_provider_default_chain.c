@@ -312,7 +312,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     size_t index = 0;
 
     /* Providers that touch fast local resources... */
-    
+
     struct aws_credentials_provider_environment_options environment_options;
     AWS_ZERO_STRUCT(environment_options);
     environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
@@ -323,7 +323,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     providers[index++] = environment_provider;
 
     /* Providers that will make a network call only if the relevant configuration is present... */
-    
+
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
     profile_options.bootstrap = options->bootstrap;
@@ -362,7 +362,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     }
 
     /* Providers that will always make a network call unless explicitly disabled... */
-    
+
     ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
         allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx);
     if (ecs_or_imds_provider != NULL) {
