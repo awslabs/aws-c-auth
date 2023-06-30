@@ -322,7 +322,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 
     providers[index++] = environment_provider;
 
-    /* Providers that will make a network call only if the relevant configuration is present. */
+    /* Providers that will make a network call only if the relevant configuration is present... */
+    
     struct aws_credentials_provider_profile_options profile_options;
     AWS_ZERO_STRUCT(profile_options);
     profile_options.bootstrap = options->bootstrap;
