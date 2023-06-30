@@ -471,14 +471,7 @@ static int s_credentials_provider_process_basic_success_cached(struct aws_alloca
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
-    // aws_credentials_release(s_tester.credentials);
 
-    // aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    // s_aws_wait_for_credentials_result();
-
-    // ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    // ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
     aws_string_destroy(config_file_path);
     aws_profile_collection_release(profile_collection);
     aws_credentials_provider_release(provider);
