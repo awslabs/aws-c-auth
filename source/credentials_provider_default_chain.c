@@ -311,7 +311,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
 
-    /* Providers that touch fast local resources */
+    /* Providers that touch fast local resources... */
+    
     struct aws_credentials_provider_environment_options environment_options;
     AWS_ZERO_STRUCT(environment_options);
     environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
