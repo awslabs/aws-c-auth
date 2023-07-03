@@ -120,13 +120,13 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, int 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_test_command,
     "echo {\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
-    "\"SecretAccessKey\": \"SecretAccessKey321\", \"Token\":\"TokenSuccess\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
     "\"Expiration\":\"2020-02-25T06:03:31Z\"}");
 #else
 AWS_STATIC_STRING_FROM_LITERAL(
     s_test_command,
     "echo '{\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
-    "\"SecretAccessKey\": \"SecretAccessKey321\", \"Token\":\"TokenSuccess\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
     "\"Expiration\":\"2020-02-25T06:03:31Z\"}'");
 #endif
 
