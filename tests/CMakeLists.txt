@@ -11,6 +11,7 @@ add_test_case(anonymous_credentials_create_destroy_test)
 add_test_case(static_credentials_provider_basic_test)
 add_test_case(anonymous_credentials_provider_basic_test)
 add_test_case(environment_credentials_provider_basic_test)
+add_test_case(environment_credentials_provider_empty_env_test)
 add_test_case(environment_credentials_provider_negative_test)
 add_test_case(cached_credentials_provider_elapsed_test)
 add_test_case(cached_credentials_provider_expired_test)
@@ -38,6 +39,7 @@ add_test_case(credentials_provider_imds_insecure_then_secure_success)
 add_test_case(credentials_provider_imds_success_multi_part_role_name)
 add_test_case(credentials_provider_imds_success_multi_part_doc)
 add_test_case(credentials_provider_imds_real_new_destroy)
+
 if(AWS_BUILDING_ON_EC2)
     add_test_case(credentials_provider_imds_real_success)
 endif()
@@ -50,6 +52,7 @@ add_test_case(credentials_provider_ecs_basic_success)
 add_test_case(credentials_provider_ecs_no_auth_token_success)
 add_test_case(credentials_provider_ecs_success_multi_part_doc)
 add_test_case(credentials_provider_ecs_real_new_destroy)
+
 if(AWS_BUILDING_ON_ECS)
     add_test_case(credentials_provider_ecs_real_success)
 endif()
@@ -100,7 +103,8 @@ add_net_test_case(credentials_provider_cognito_failure_request)
 add_net_test_case(credentials_provider_cognito_failure_bad_document)
 add_net_test_case(credentials_provider_cognito_success)
 add_net_test_case(credentials_provider_cognito_success_after_retry)
-if (AWS_HAS_CI_ENVIRONMENT)
+
+if(AWS_HAS_CI_ENVIRONMENT)
     add_net_test_case(credentials_provider_cognito_success_unauthenticated)
 endif()
 
@@ -272,10 +276,9 @@ set(TEST_BINARY_NAME ${PROJECT_NAME}-tests)
 generate_test_driver(${TEST_BINARY_NAME})
 
 # sigv4 test suite files
-
 add_custom_command(TARGET ${TEST_BINARY_NAME} PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/aws-signing-test-suite $<TARGET_FILE_DIR:${TEST_BINARY_NAME}>)
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/aws-signing-test-suite $<TARGET_FILE_DIR:${TEST_BINARY_NAME}>)
 
 file(GLOB FUZZ_TESTS "fuzz/*.c")
 aws_add_fuzz_tests("${FUZZ_TESTS}" "" "${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus")
