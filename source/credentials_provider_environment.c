@@ -30,7 +30,7 @@ static int s_credentials_provider_environment_get_credentials_async(
     aws_get_environment_value(allocator, s_secret_access_key_env_var, &secret_access_key);
     aws_get_environment_value(allocator, s_session_token_env_var, &session_token);
 
-    if (access_key_id != NULL && secret_access_key != NULL) {
+    if (access_key_id != NULL && access_key_id->len && secret_access_key != NULL && secret_access_key->len) {
         credentials =
             aws_credentials_new_from_string(allocator, access_key_id, secret_access_key, session_token, UINT64_MAX);
         if (credentials == NULL) {
