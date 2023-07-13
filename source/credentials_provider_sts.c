@@ -36,9 +36,9 @@
 #    pragma warning(disable : 4232)
 #endif
 
-static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *, bool *, void *);
-static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *, bool *, void *);
-static int s_sts_xml_on_Credentials_child(struct aws_xml_node *, bool *, void *);
+static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *, void *);
+static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *, void *);
+static int s_sts_xml_on_Credentials_child(struct aws_xml_node *, void *);
 
 static struct aws_http_header s_host_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
@@ -198,8 +198,7 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
       </AssumeRoleResult>
 </AssumeRoleResponse>
  */
-static int s_sts_xml_on_root(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_sts_xml_on_root(struct aws_xml_node *node, void *user_data) {
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleResponse")) {
         return aws_xml_node_traverse(node, s_sts_xml_on_AssumeRoleResponse_child, user_data);
@@ -207,8 +206,7 @@ static int s_sts_xml_on_root(struct aws_xml_node *node, bool *stop_parsing, void
     return AWS_OP_SUCCESS;
 }
 
-static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *node, void *user_data) {
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleResult")) {
         return aws_xml_node_traverse(node, s_sts_xml_on_AssumeRoleResult_child, user_data);
@@ -216,8 +214,7 @@ static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *node, bool
     return AWS_OP_SUCCESS;
 }
 
-static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *node, void *user_data) {
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
         return aws_xml_node_traverse(node, s_sts_xml_on_Credentials_child, user_data);
@@ -225,8 +222,7 @@ static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *node, bool *
     return AWS_OP_SUCCESS;
 }
 
-static int s_sts_xml_on_Credentials_child(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_sts_xml_on_Credentials_child(struct aws_xml_node *node, void *user_data) {
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     struct aws_byte_cursor credential_data;

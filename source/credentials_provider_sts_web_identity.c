@@ -37,10 +37,10 @@
 #define STS_WEB_IDENTITY_MAX_ATTEMPTS 3
 
 static void s_on_connection_manager_shutdown(void *user_data);
-static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *, bool *, void *);
-static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(struct aws_xml_node *, bool *, void *);
-static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(struct aws_xml_node *, bool *, void *);
-static int s_stswebid_200_xml_on_Credentials_child(struct aws_xml_node *, bool *, void *);
+static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *, void *);
+static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(struct aws_xml_node *, void *);
+static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(struct aws_xml_node *, void *);
+static int s_stswebid_200_xml_on_Credentials_child(struct aws_xml_node *, void *);
 
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
@@ -191,9 +191,7 @@ Error Response looks like:
 </Error>
 */
 
-static int s_stswebid_error_xml_on_root(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
-
+static int s_stswebid_error_xml_on_root(struct aws_xml_node *node, void *user_data) {
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Error")) {
         return aws_xml_node_traverse(node, s_stswebid_error_xml_on_Error_child, user_data);
@@ -202,8 +200,7 @@ static int s_stswebid_error_xml_on_root(struct aws_xml_node *node, bool *stop_pa
     return AWS_OP_SUCCESS;
 }
 
-static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *node, void *user_data) {
     bool *get_retryable_error = user_data;
 
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
@@ -243,8 +240,7 @@ static bool s_parse_retryable_error_from_response(struct aws_allocator *allocato
     return get_retryable_error;
 }
 
-static int s_stswebid_200_xml_on_root(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_stswebid_200_xml_on_root(struct aws_xml_node *node, void *user_data) {
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleWithWebIdentityResponse")) {
         return aws_xml_node_traverse(node, s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child, user_data);
@@ -254,10 +250,9 @@ static int s_stswebid_200_xml_on_root(struct aws_xml_node *node, bool *stop_pars
 
 static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(
     struct aws_xml_node *node,
-    bool *stop_parsing,
+
     void *user_data) {
 
-    (void)stop_parsing;
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleWithWebIdentityResult")) {
         return aws_xml_node_traverse(node, s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child, user_data);
@@ -267,10 +262,9 @@ static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(
 
 static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(
     struct aws_xml_node *node,
-    bool *stop_parsing,
+
     void *user_data) {
 
-    (void)stop_parsing;
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
         return aws_xml_node_traverse(node, s_stswebid_200_xml_on_Credentials_child, user_data);
@@ -278,8 +272,7 @@ static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(
     return AWS_OP_SUCCESS;
 }
 
-static int s_stswebid_200_xml_on_Credentials_child(struct aws_xml_node *node, bool *stop_parsing, void *user_data) {
-    (void)stop_parsing;
+static int s_stswebid_200_xml_on_Credentials_child(struct aws_xml_node *node, void *user_data) {
     struct sts_web_identity_user_data *query_user_data = user_data;
 
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
