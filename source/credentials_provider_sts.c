@@ -254,7 +254,7 @@ static int s_sts_xml_on_Credentials_child(struct aws_xml_node *node, void *user_
         provider_user_data->session_token = aws_string_new_from_cursor(provider_user_data->allocator, &credential_data);
     }
 
-    return true;
+    return AWS_OP_SUCCESS;
 }
 
 static void s_start_make_request(
