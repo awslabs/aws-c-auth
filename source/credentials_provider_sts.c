@@ -356,6 +356,8 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 "(id=%p): credentials parsing failed with error %s",
                 (void *)provider_user_data->credentials,
                 aws_error_debug_str(provider_user_data->error_code));
+
+            provider_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE;
             goto finish;
         }
 

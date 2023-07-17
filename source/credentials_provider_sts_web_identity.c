@@ -329,11 +329,11 @@ static struct aws_credentials *s_parse_credentials_from_response(
     struct sts_web_identity_user_data *query_user_data,
     struct aws_byte_buf *response) {
 
-    if (!response || response->len == 0) {
-        return NULL;
-    }
-
     struct aws_credentials *credentials = NULL;
+
+    if (!response || response->len == 0) {
+        goto on_finish;
+    }
 
     uint64_t now = UINT64_MAX;
     if (aws_sys_clock_get_ticks(&now) != AWS_OP_SUCCESS) {
@@ -360,7 +360,6 @@ static struct aws_credentials *s_parse_credentials_from_response(
 
     if (!query_user_data->access_key_id || !query_user_data->secret_access_key) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "STS web identity not found in XML response.");
-        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE);
         goto on_finish;
     }
 
@@ -371,10 +370,16 @@ static struct aws_credentials *s_parse_credentials_from_response(
         aws_byte_cursor_from_string(query_user_data->session_token),
         query_user_data->expiration_timepoint_in_seconds);
 
+    if (credentials == NULL) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to create credentials for sts web identity");
+        goto on_finish;
+    }
+
 on_finish:
 
     if (credentials == NULL) {
-        query_user_data->error_code = aws_last_error();
+        /* Give a useful error (aws_last_error() might be AWS_ERROR_INVALID_ARGUMENT, which isn't too helpful) */
+        query_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE;
     }
 
     return credentials;
