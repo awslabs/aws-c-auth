@@ -357,7 +357,8 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_auth_http_system_vtable *function_table;
 
     /*
-     * Override of what profile to use ('default' by default)
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
      */
     struct aws_byte_cursor profile_name_override;
 };
