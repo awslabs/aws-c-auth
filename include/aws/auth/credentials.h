@@ -520,7 +520,8 @@ struct aws_credentials_provider_chain_default_options {
     struct aws_profile_collection *profile_collection_cached;
 
     /*
-     * Override of what profile to use ('default' by default)
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
      */
     struct aws_byte_cursor profile_name_override;
 };
