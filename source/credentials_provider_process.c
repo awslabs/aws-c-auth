@@ -170,11 +170,8 @@ static struct aws_string *s_get_command(
     } else {
         config_profiles = s_load_profile(allocator);
     }
-    if (options->profile_to_use.len == 0) {
-        profile_name = aws_get_profile_name(allocator, NULL);
-    } else {
-        profile_name = aws_string_new_from_array(allocator, options->profile_to_use.ptr, options->profile_to_use.len);
-    }
+    profile_name = aws_get_profile_name(allocator, &options->profile_to_use);
+
     if (config_profiles && profile_name) {
         profile = aws_profile_collection_get_profile(config_profiles, profile_name);
     }

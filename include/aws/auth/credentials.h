@@ -355,6 +355,11 @@ struct aws_credentials_provider_sts_web_identity_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /*
+     * Override of what profile to use ('default' by default)
+     */
+    struct aws_byte_cursor profile_name_override;
 };
 
 /*
@@ -513,6 +518,11 @@ struct aws_credentials_provider_chain_default_options {
      * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
+
+    /*
+     * Override of what profile to use ('default' by default)
+     */
+    struct aws_byte_cursor profile_name_override;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(

@@ -967,7 +967,8 @@ static void s_parameters_destroy(struct sts_web_identity_parameters *parameters)
 
 static struct sts_web_identity_parameters *s_parameters_new(
     struct aws_allocator *allocator,
-    struct aws_profile_collection *config_profile_collection_cached) {
+    struct aws_profile_collection *config_profile_collection_cached,
+    struct aws_byte_cursor profile_name_override) {
 
     struct sts_web_identity_parameters *parameters =
         aws_mem_calloc(allocator, 1, sizeof(struct sts_web_identity_parameters));
@@ -1009,7 +1010,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
             }
         }
 
-        profile_name = aws_get_profile_name(allocator, NULL);
+        profile_name = aws_get_profile_name(allocator, &profile_name_override);
         if (profile_name) {
             profile = aws_profile_collection_get_profile(config_profile, profile_name);
         }
@@ -1089,7 +1090,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     const struct aws_credentials_provider_sts_web_identity_options *options) {
 
     struct sts_web_identity_parameters *parameters =
-        s_parameters_new(allocator, options->config_profile_collection_cached);
+        s_parameters_new(allocator, options->config_profile_collection_cached, options->profile_name_override);
     if (!parameters) {
         return NULL;
     }
