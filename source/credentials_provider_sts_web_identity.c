@@ -1010,7 +1010,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
             }
         }
 
-        profile_name = aws_get_profile_name(allocator, NULL);
+        profile_name = aws_get_profile_name(allocator, &profile_name_override);
         profile = aws_profile_collection_get_profile(config_profile, profile_name);
 
         if (!profile) {
