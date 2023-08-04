@@ -473,7 +473,6 @@ struct aws_credentials_provider_sts_options {
     "Expiration": "2019-05-29T00:21:43Z"
    }
  * Version here identifies the command output format version.
- * This provider is not part of the default provider chain.
  */
 struct aws_credentials_provider_process_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
