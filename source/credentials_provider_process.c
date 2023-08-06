@@ -72,6 +72,8 @@ static int s_get_credentials_from_process(
         (void *)provider);
 
 on_finish:
+
+    ;
     int error_code = AWS_ERROR_SUCCESS;
     if (credentials == NULL) {
         error_code = aws_last_error();
