@@ -32,7 +32,6 @@ static int s_get_credentials_from_process(
     };
 
     struct aws_run_command_result result;
-    int ret = AWS_OP_ERR;
     if (aws_run_command_result_init(provider->allocator, &result)) {
         goto on_finish;
     }
@@ -71,11 +70,8 @@ static int s_get_credentials_from_process(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) Process credentials provider successfully sourced credentials.",
         (void *)provider);
-    ret = AWS_OP_SUCCESS;
 
 on_finish:
-
-    ;
     int error_code = AWS_ERROR_SUCCESS;
     if (credentials == NULL) {
         error_code = aws_last_error();
@@ -87,7 +83,7 @@ on_finish:
     callback(credentials, error_code, user_data);
     aws_run_command_result_cleanup(&result);
     aws_credentials_release(credentials);
-    return ret;
+    return AWS_OP_SUCCESS;
 }
 
 static void s_credentials_provider_process_destroy(struct aws_credentials_provider *provider) {
