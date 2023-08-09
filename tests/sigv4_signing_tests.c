@@ -6,7 +6,6 @@
 #include <aws/testing/aws_test_harness.h>
 
 #include <aws/auth/credentials.h>
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_signing.h>
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
@@ -15,6 +14,7 @@
 #include <aws/common/condition_variable.h>
 #include <aws/common/encoding.h>
 #include <aws/common/environment.h>
+#include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
 #include <aws/io/file_utils.h>
@@ -270,7 +270,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_omit_token_name, "omit_session_token");
 
 static int s_v4_test_context_parse_context_file(struct v4_test_context *context) {
     struct aws_byte_buf *document = &context->test_case_data.context;
-    cJSON *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
     int result = AWS_OP_ERR;
 
     struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
@@ -278,38 +278,42 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
         goto done;
     }
 
-    document_root = cJSON_Parse((const char *)document->buffer);
+    struct aws_byte_cursor document_buffer_cursor = aws_byte_cursor_from_buf(document);
+    document_root = aws_json_value_new_from_string(aws_default_allocator(), document_buffer_cursor);
     if (document_root == NULL) {
         goto done;
     }
 
-    cJSON *credentials_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_credentials_name));
+    struct aws_json_value *credentials_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_credentials_name));
     AWS_FATAL_ASSERT(credentials_node != NULL);
 
     /*
      * Pull out the three credentials components
      */
-    cJSON *access_key_id = cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_access_key_id_name));
-    cJSON *secret_access_key =
-        cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_secret_access_key_name));
-    cJSON *session_token = cJSON_GetObjectItemCaseSensitive(credentials_node, aws_string_c_str(s_session_token_name));
+    struct aws_json_value *access_key_id =
+        aws_json_value_get_from_object(credentials_node, aws_byte_cursor_from_string(s_access_key_id_name));
+    struct aws_json_value *secret_access_key =
+        aws_json_value_get_from_object(credentials_node, aws_byte_cursor_from_string(s_secret_access_key_name));
+    struct aws_json_value *session_token =
+        aws_json_value_get_from_object(credentials_node, aws_byte_cursor_from_string(s_session_token_name));
 
-    if (!cJSON_IsString(access_key_id) || (access_key_id->valuestring == NULL)) {
+    struct aws_byte_cursor access_key_id_cursor;
+    if (!aws_json_value_is_string(access_key_id) ||
+        aws_json_value_get_string(access_key_id, &access_key_id_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
-    struct aws_byte_cursor access_key_id_cursor = aws_byte_cursor_from_c_str(access_key_id->valuestring);
     struct aws_byte_cursor secret_access_key_cursor;
     AWS_ZERO_STRUCT(secret_access_key_cursor);
     struct aws_byte_cursor session_token_cursor;
     AWS_ZERO_STRUCT(session_token_cursor);
 
-    if (cJSON_IsString(session_token) && session_token->valuestring != NULL) {
-        session_token_cursor = aws_byte_cursor_from_c_str(session_token->valuestring);
+    if (aws_json_value_is_string(session_token)) {
+        aws_json_value_get_string(session_token, &session_token_cursor);
     }
-
-    if (cJSON_IsString(secret_access_key) && secret_access_key->valuestring != NULL) {
-        secret_access_key_cursor = aws_byte_cursor_from_c_str(secret_access_key->valuestring);
+    if (aws_json_value_is_string(secret_access_key)) {
+        aws_json_value_get_string(secret_access_key, &secret_access_key_cursor);
     }
 
     if (context->signing_key == NULL) {
@@ -326,60 +330,75 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 
     AWS_FATAL_ASSERT(context->credentials != NULL);
 
-    cJSON *region_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_region_name));
-    if (region_node == NULL || !cJSON_IsString(region_node) || (region_node->valuestring == NULL)) {
+    struct aws_json_value *region_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_region_name));
+    struct aws_byte_cursor region_node_cursor;
+    if (region_node == NULL || !aws_json_value_is_string(region_node) ||
+        aws_json_value_get_string(region_node, &region_node_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
-    context->region_config = aws_string_new_from_c_str(context->allocator, region_node->valuestring);
+    context->region_config = aws_string_new_from_cursor(context->allocator, &region_node_cursor);
     if (context->region_config == NULL) {
         goto done;
     }
 
-    cJSON *service_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_service_name));
-    if (service_node == NULL || !cJSON_IsString(service_node) || (service_node->valuestring == NULL)) {
+    struct aws_json_value *service_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_service_name));
+    struct aws_byte_cursor service_node_cursor;
+    if (service_node == NULL || !aws_json_value_is_string(service_node) ||
+        aws_json_value_get_string(service_node, &service_node_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
-    context->service = aws_string_new_from_c_str(context->allocator, service_node->valuestring);
+    context->service = aws_string_new_from_cursor(context->allocator, &service_node_cursor);
     if (context->service == NULL) {
         goto done;
     }
 
-    cJSON *timestamp_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_timestamp_name));
-    if (timestamp_node == NULL || !cJSON_IsString(timestamp_node) || (timestamp_node->valuestring == NULL)) {
+    struct aws_json_value *timestamp_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_timestamp_name));
+    struct aws_byte_cursor timestamp_node_cursor;
+    if (timestamp_node == NULL || !aws_json_value_is_string(timestamp_node) ||
+        aws_json_value_get_string(timestamp_node, &timestamp_node_cursor) == AWS_OP_ERR) {
         goto done;
     }
 
-    context->timestamp = aws_string_new_from_c_str(context->allocator, timestamp_node->valuestring);
+    context->timestamp = aws_string_new_from_cursor(context->allocator, &timestamp_node_cursor);
     if (context->timestamp == NULL) {
         goto done;
     }
 
-    cJSON *normalize_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_normalize_name));
-    if (normalize_node == NULL || !cJSON_IsBool(normalize_node)) {
+    struct aws_json_value *normalize_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_normalize_name));
+    if (normalize_node == NULL || !aws_json_value_is_boolean(normalize_node)) {
         goto done;
     }
 
-    context->should_normalize = cJSON_IsTrue(normalize_node);
+    aws_json_value_get_boolean(normalize_node, &context->should_normalize);
 
-    cJSON *body_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_body_name));
-    if (body_node == NULL || !cJSON_IsBool(body_node)) {
+    struct aws_json_value *body_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_body_name));
+    if (body_node == NULL || !aws_json_value_is_boolean(body_node)) {
         goto done;
     }
 
-    context->should_sign_body = cJSON_IsTrue(body_node);
+    aws_json_value_get_boolean(body_node, &context->should_sign_body);
 
-    cJSON *expiration_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_expiration_name));
-    if (expiration_node == NULL || !cJSON_IsNumber(expiration_node)) {
+    struct aws_json_value *expiration_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_expiration_name));
+    if (expiration_node == NULL || !aws_json_value_is_number(expiration_node)) {
         goto done;
     }
 
-    context->expiration_in_seconds = expiration_node->valueint;
+    double expiration_in_seconds_double = 0;
+    aws_json_value_get_number(expiration_node, &expiration_in_seconds_double);
+    context->expiration_in_seconds = (uint64_t)expiration_in_seconds_double;
 
-    cJSON *omit_token_node = cJSON_GetObjectItemCaseSensitive(document_root, aws_string_c_str(s_omit_token_name));
-    if (omit_token_node != NULL && cJSON_IsBool(omit_token_node)) {
-        context->omit_session_token = cJSON_IsTrue(omit_token_node);
+    struct aws_json_value *omit_token_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_omit_token_name));
+    if (omit_token_node != NULL && aws_json_value_is_boolean(omit_token_node)) {
+        aws_json_value_get_boolean(omit_token_node, &context->omit_session_token);
     }
 
     result = AWS_OP_SUCCESS;
@@ -387,7 +406,7 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
 done:
 
     if (document_root != NULL) {
-        cJSON_Delete(document_root);
+        aws_json_value_destroy(document_root);
     }
 
     return result;
@@ -601,7 +620,7 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
     AWS_ZERO_STRUCT(pub_y_buffer);
 
     struct aws_byte_buf *document = &context->test_case_data.public_key;
-    cJSON *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
     int result = AWS_OP_ERR;
 
     struct aws_byte_cursor null_terminator_cursor = aws_byte_cursor_from_string(s_empty_empty_string);
@@ -609,7 +628,8 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
         goto done;
     }
 
-    document_root = cJSON_Parse((const char *)document->buffer);
+    struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
+    document_root = aws_json_value_new_from_string(aws_default_allocator(), document_cursor);
     if (document_root == NULL) {
         goto done;
     }
@@ -617,14 +637,16 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
     /*
      * Pull out the three credentials components
      */
-    cJSON *pub_x = cJSON_GetObjectItemCaseSensitive(document_root, "X");
-    cJSON *pub_y = cJSON_GetObjectItemCaseSensitive(document_root, "Y");
-    if (!cJSON_IsString(pub_x) || !cJSON_IsString(pub_y)) {
+    struct aws_json_value *pub_x = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("X"));
+    struct aws_json_value *pub_y = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("Y"));
+    if (!aws_json_value_is_string(pub_x) || !aws_json_value_is_string(pub_y)) {
         goto done;
     }
 
-    struct aws_byte_cursor pub_x_hex_cursor = aws_byte_cursor_from_c_str(pub_x->valuestring);
-    struct aws_byte_cursor pub_y_hex_cursor = aws_byte_cursor_from_c_str(pub_y->valuestring);
+    struct aws_byte_cursor pub_x_hex_cursor;
+    struct aws_byte_cursor pub_y_hex_cursor;
+    aws_json_value_get_string(pub_x, &pub_x_hex_cursor);
+    aws_json_value_get_string(pub_y, &pub_y_hex_cursor);
 
     size_t pub_x_length = 0;
     size_t pub_y_length = 0;
@@ -655,7 +677,7 @@ static int s_v4_test_context_parse_verification_key(struct v4_test_context *cont
 done:
 
     if (document_root) {
-        cJSON_Delete(document_root);
+        aws_json_value_destroy(document_root);
     }
 
     aws_byte_buf_clean_up(&pub_x_buffer);
@@ -1811,3 +1833,97 @@ static int s_signer_null_credentials_test(struct aws_allocator *allocator, void 
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(signer_null_credentials_test, s_signer_null_credentials_test);
+
+static void s_anonymous_credentials_on_signing_complete(
+    struct aws_signing_result *result,
+    int error_code,
+    void *userdata) {
+
+    struct null_credentials_state *state = userdata;
+    state->result = result;
+    state->error_code = error_code;
+    AWS_FATAL_ASSERT(result->properties.p_impl != NULL);
+    AWS_FATAL_ASSERT(result->property_lists.p_impl != NULL);
+}
+
+static int s_signer_anonymous_credentials_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator);
+    ASSERT_NOT_NULL(credentials);
+
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
+
+    struct aws_signing_config_aws config = {
+        .config_type = AWS_SIGNING_CONFIG_AWS,
+        .algorithm = AWS_SIGNING_ALGORITHM_V4,
+        .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
+        .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
+        .credentials = credentials,
+    };
+
+    struct null_credentials_state state;
+    AWS_ZERO_STRUCT(state);
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        signable,
+        (struct aws_signing_config_base *)&config,
+        s_anonymous_credentials_on_signing_complete,
+        &state));
+
+    ASSERT_INT_EQUALS(AWS_ERROR_SUCCESS, state.error_code);
+    ASSERT_NOT_NULL(state.result);
+
+    aws_credentials_release(credentials);
+    aws_signable_destroy(signable);
+    aws_http_message_release(request);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(signer_anonymous_credentials_test, s_signer_anonymous_credentials_test);
+
+static int s_signer_anonymous_credentials_provider_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct get_credentials_mock_result mock_result = {
+        .credentials = aws_credentials_new_anonymous(allocator),
+        .error_code = AWS_ERROR_SUCCESS,
+    };
+
+    struct aws_http_message *request = aws_http_message_new_request(allocator);
+    struct aws_signable *signable = aws_signable_new_http_request(allocator, request);
+
+    struct aws_signing_config_aws config = {
+        .config_type = AWS_SIGNING_CONFIG_AWS,
+        .algorithm = AWS_SIGNING_ALGORITHM_V4,
+        .signature_type = AWS_ST_HTTP_REQUEST_HEADERS,
+        .region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1"),
+        .service = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("elasticdohickeyservice"),
+    };
+
+    config.credentials_provider = aws_credentials_provider_new_mock(allocator, &mock_result, 1, NULL);
+
+    struct null_credentials_state state;
+    AWS_ZERO_STRUCT(state);
+
+    ASSERT_SUCCESS(aws_sign_request_aws(
+        allocator,
+        signable,
+        (struct aws_signing_config_base *)&config,
+        s_anonymous_credentials_on_signing_complete,
+        &state));
+
+    ASSERT_INT_EQUALS(AWS_ERROR_SUCCESS, state.error_code);
+    ASSERT_NOT_NULL(state.result);
+
+    aws_credentials_release(mock_result.credentials);
+    aws_credentials_provider_release(config.credentials_provider);
+    aws_signable_destroy(signable);
+    aws_http_message_release(request);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(signer_anonymous_credentials_provider_test, s_signer_anonymous_credentials_provider_test);

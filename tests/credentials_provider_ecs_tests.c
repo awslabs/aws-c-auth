@@ -63,7 +63,7 @@ static void s_aws_wait_for_provider_shutdown_callback(void) {
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
     (void)options;
@@ -212,6 +212,8 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    aws_auth_library_init(allocator);
+
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
     s_tester.is_request_successful = true;
@@ -225,6 +227,7 @@ static void s_aws_ecs_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
+    aws_auth_library_clean_up();
 }
 
 static bool s_has_tester_received_credentials_callback(void *user_data) {

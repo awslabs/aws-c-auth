@@ -5,7 +5,6 @@
 
 #include <aws/auth/credentials.h>
 
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
@@ -19,6 +18,8 @@
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
 
+#include <aws/common/json.h>
+
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
 #    pragma warning(disable : 4232)
@@ -31,23 +32,12 @@
 
 struct aws_credentials_provider_x509_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_byte_buf thing_name;
     struct aws_byte_buf role_alias_path;
     struct aws_byte_buf endpoint;
     struct aws_tls_connection_options tls_connection_options;
 };
-
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close};
 
 /*
  * Tracking structure for each outstanding async query to an x509 provider
@@ -146,13 +136,14 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     struct aws_byte_buf *document) {
 
     struct aws_credentials *credentials = NULL;
-    cJSON *document_root = NULL;
+    struct aws_json_value *document_root = NULL;
 
     if (aws_byte_buf_append_null_terminator(document)) {
         goto done;
     }
 
-    document_root = cJSON_Parse((const char *)document->buffer);
+    struct aws_byte_cursor document_cursor = aws_byte_cursor_from_buf(document);
+    document_root = aws_json_value_new_from_string(allocator, document_cursor);
     if (document_root == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse IoT Core response as Json document.");
         goto done;
@@ -161,22 +152,24 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
     /*
      * pull out the root "Credentials" components
      */
-    cJSON *creds = cJSON_GetObjectItem(document_root, "credentials");
-    if (!cJSON_IsObject(creds)) {
+    struct aws_json_value *creds =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str("credentials"));
+    if (!aws_json_value_is_object(creds)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse credentials from IoT Core response.");
         goto done;
     }
 
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "accessKeyId",
-        .secrete_access_key_name = "secretAccessKey",
+        .secret_access_key_name = "secretAccessKey",
         .token_name = "sessionToken",
         .expiration_name = "expiration",
+        .expiration_format = AWS_PCEF_STRING_ISO_8601_DATE,
         .token_required = true,
         .expiration_required = false,
     };
 
-    credentials = aws_parse_credentials_from_cjson_object(allocator, creds, &parse_options);
+    credentials = aws_parse_credentials_from_aws_json_object(allocator, creds, &parse_options);
     if (!credentials) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "X509 credentials provider failed to parse credentials");
     }
@@ -184,7 +177,7 @@ static struct aws_credentials *s_parse_credentials_from_iot_core_document(
 done:
 
     if (document_root != NULL) {
-        cJSON_Delete(document_root);
+        aws_json_value_destroy(document_root);
     }
 
     return credentials;
@@ -536,7 +529,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "To create an X.509 creds provider, a tls_connection_options, an IoT thing name and an IAM role alias are "
-            "required.")
+            "required.");
         goto on_error;
     }
 
@@ -593,7 +586,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_x509(
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
-        impl->function_table = &s_default_function_table;
+        impl->function_table = g_aws_credentials_provider_http_function_table;
     }
 
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);

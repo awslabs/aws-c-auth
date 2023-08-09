@@ -58,3 +58,14 @@ git clone git@github.com:awslabs/aws-c-auth.git
 cmake -S aws-c-auth -B aws-c-auth/build -DCMAKE_INSTALL_PREFIX=<install-path> -DCMAKE_PREFIX_PATH=<install-path>
 cmake --build aws-c-auth/build --target install
 ```
+
+### Testing
+Certain tests require a specific environment setup in order to run successfully.  This may be a specific execution
+environment (EC2, ECS, etc...) or it may require certain environment variables to be set that configure properties
+(often sensitive materials, like keys).  Whether or not these tests are enabled is controlled by certain CMAKE 
+properties:
+* AWS_BUILDING_ON_EC2 - indicates real IMDS credentials provider test(s) should run
+* AWS_BUILDING_ON_ECS - indciates real ECS credentials provider tests(s) should run
+* AWS_HAS_CI_ENVIRONMENT - indicates that all tests that require environmentally injected secrets/properties should run
+
+Environment properties are injected by CRT builder process via the custom builder step defined in `./.builder/action/aws-c-auth-test.py`

@@ -36,6 +36,7 @@ struct aws_credentials_provider_profile_file_impl {
     struct aws_string *config_file_path;
     struct aws_string *credentials_file_path;
     struct aws_string *profile_name;
+    struct aws_profile_collection *profile_collection_cached;
 };
 
 static int s_profile_file_credentials_provider_get_credentials_async(
@@ -45,52 +46,63 @@ static int s_profile_file_credentials_provider_get_credentials_async(
 
     struct aws_credentials_provider_profile_file_impl *impl = provider->impl;
     struct aws_credentials *credentials = NULL;
+    struct aws_profile_collection *merged_profiles = NULL;
 
-    /*
-     * Parse config file, if it exists
-     */
-    struct aws_profile_collection *config_profiles =
-        aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
-
-    if (config_profiles != NULL) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Profile credentials provider successfully built config profile collection from file at (%s)",
-            (void *)provider,
-            aws_string_c_str(impl->config_file_path));
+    if (impl->profile_collection_cached) {
+        /* Use cached profile collection */
+        merged_profiles = aws_profile_collection_acquire(impl->profile_collection_cached);
     } else {
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Profile credentials provider failed to build config profile collection from file at (%s)",
-            (void *)provider,
-            aws_string_c_str(impl->config_file_path));
+        /*
+         * Parse config file from file, if it exists
+         */
+        struct aws_profile_collection *config_profiles =
+            aws_profile_collection_new_from_file(provider->allocator, impl->config_file_path, AWS_PST_CONFIG);
+
+        if (config_profiles != NULL) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Profile credentials provider successfully built config profile collection from file at (%s)",
+                (void *)provider,
+                aws_string_c_str(impl->config_file_path));
+        } else {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Profile credentials provider failed to build config profile collection from file at (%s)",
+                (void *)provider,
+                aws_string_c_str(impl->config_file_path));
+        }
+
+        /*
+         * Parse credentials file, if it exists
+         */
+        struct aws_profile_collection *credentials_profiles =
+            aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
+
+        if (credentials_profiles != NULL) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Profile credentials provider successfully built credentials profile collection from file at "
+                "(%s)",
+                (void *)provider,
+                aws_string_c_str(impl->credentials_file_path));
+        } else {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Profile credentials provider failed to build credentials profile collection from file at (%s)",
+                (void *)provider,
+                aws_string_c_str(impl->credentials_file_path));
+        }
+
+        /*
+         * Merge the (up to) two sources into a single unified profile
+         */
+        merged_profiles =
+            aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
+
+        aws_profile_collection_release(config_profiles);
+        aws_profile_collection_release(credentials_profiles);
     }
 
-    /*
-     * Parse credentials file, if it exists
-     */
-    struct aws_profile_collection *credentials_profiles =
-        aws_profile_collection_new_from_file(provider->allocator, impl->credentials_file_path, AWS_PST_CREDENTIALS);
-
-    if (credentials_profiles != NULL) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Profile credentials provider successfully built credentials profile collection from file at (%s)",
-            (void *)provider,
-            aws_string_c_str(impl->credentials_file_path));
-    } else {
-        AWS_LOGF_DEBUG(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Profile credentials provider failed to build credentials profile collection from file at (%s)",
-            (void *)provider,
-            aws_string_c_str(impl->credentials_file_path));
-    }
-
-    /*
-     * Merge the (up to) two sources into a single unified profile
-     */
-    struct aws_profile_collection *merged_profiles =
-        aws_profile_collection_new_from_merge(provider->allocator, config_profiles, credentials_profiles);
     if (merged_profiles != NULL) {
         const struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, impl->profile_name);
         if (profile != NULL) {
@@ -128,9 +140,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
      * clean up
      */
     aws_credentials_release(credentials);
-    aws_profile_collection_destroy(merged_profiles);
-    aws_profile_collection_destroy(config_profiles);
-    aws_profile_collection_destroy(credentials_profiles);
+    aws_profile_collection_release(merged_profiles);
 
     return AWS_OP_SUCCESS;
 }
@@ -144,7 +154,7 @@ static void s_profile_file_credentials_provider_destroy(struct aws_credentials_p
     aws_string_destroy(impl->config_file_path);
     aws_string_destroy(impl->credentials_file_path);
     aws_string_destroy(impl->profile_name);
-
+    aws_profile_collection_release(impl->profile_collection_cached);
     aws_credentials_provider_invoke_shutdown_callback(provider);
 
     aws_mem_release(provider->allocator, provider);
@@ -160,7 +170,8 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     struct aws_allocator *allocator,
     struct aws_string *credentials_file_path,
     struct aws_string *config_file_path,
-    const struct aws_string *profile_name) {
+    const struct aws_string *profile_name,
+    struct aws_profile_collection *profile_collection_cached) {
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_profile_file_impl *impl = NULL;
@@ -181,10 +192,14 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_profile_file_vtable, impl);
-    impl->credentials_file_path = aws_string_clone_or_reuse(allocator, credentials_file_path);
-    impl->config_file_path = aws_string_clone_or_reuse(allocator, config_file_path);
+    if (credentials_file_path) {
+        impl->credentials_file_path = aws_string_clone_or_reuse(allocator, credentials_file_path);
+    }
+    if (config_file_path) {
+        impl->config_file_path = aws_string_clone_or_reuse(allocator, config_file_path);
+    }
     impl->profile_name = aws_string_clone_or_reuse(allocator, profile_name);
-
+    impl->profile_collection_cached = aws_profile_collection_acquire(profile_collection_cached);
     return provider;
 }
 
@@ -280,7 +295,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             allocator,
             credentials_file_path,
             config_file_path,
-            aws_profile_property_get_value(source_profile_property));
+            aws_profile_property_get_value(source_profile_property),
+            options->profile_collection_cached);
 
         if (!sts_options.creds_provider) {
             goto done;
@@ -359,40 +375,48 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
     struct aws_string *config_file_path = NULL;
     struct aws_string *profile_name = NULL;
 
-    credentials_file_path = aws_get_credentials_file_path(allocator, &options->credentials_file_name_override);
-    if (!credentials_file_path) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "static: Profile credentials parser failed resolve credentials file path");
-        goto on_finished;
-    }
-
-    config_file_path = aws_get_config_file_path(allocator, &options->config_file_name_override);
-    if (!config_file_path) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed resolve config file path");
-        goto on_finished;
-    }
-
     profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
     if (!profile_name) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed to resolve profile name");
         goto on_finished;
     }
-    config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
-    credentials_profiles = aws_profile_collection_new_from_file(allocator, credentials_file_path, AWS_PST_CREDENTIALS);
 
-    if (!(config_profiles || credentials_profiles)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "static: Profile credentials parser could not load or parse"
-            " a credentials or config file.");
-        goto on_finished;
+    if (options->profile_collection_cached) {
+        /* Use cached profile collection */
+        merged_profiles = aws_profile_collection_acquire(options->profile_collection_cached);
+    } else {
+        /* Load profile collection from files */
+
+        credentials_file_path = aws_get_credentials_file_path(allocator, &options->credentials_file_name_override);
+        if (!credentials_file_path) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "static: Profile credentials parser failed resolve credentials file path");
+            goto on_finished;
+        }
+
+        config_file_path = aws_get_config_file_path(allocator, &options->config_file_name_override);
+        if (!config_file_path) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed resolve config file path");
+            goto on_finished;
+        }
+
+        config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
+        credentials_profiles =
+            aws_profile_collection_new_from_file(allocator, credentials_file_path, AWS_PST_CREDENTIALS);
+
+        if (!(config_profiles || credentials_profiles)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "static: Profile credentials parser could not load or parse"
+                " a credentials or config file.");
+            goto on_finished;
+        }
+
+        merged_profiles = aws_profile_collection_new_from_merge(allocator, config_profiles, credentials_profiles);
     }
-
-    merged_profiles = aws_profile_collection_new_from_merge(allocator, config_profiles, credentials_profiles);
-
     const struct aws_profile *profile = aws_profile_collection_get_profile(merged_profiles, profile_name);
 
     if (!profile) {
@@ -409,21 +433,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_profile(
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, credentials_file_path, config_file_path, options);
     } else {
-        provider = s_create_profile_based_provider(allocator, credentials_file_path, config_file_path, profile_name);
+        provider = s_create_profile_based_provider(
+            allocator, credentials_file_path, config_file_path, profile_name, options->profile_collection_cached);
     }
 
 on_finished:
-    if (config_profiles) {
-        aws_profile_collection_destroy(config_profiles);
-    }
-
-    if (credentials_profiles) {
-        aws_profile_collection_destroy(credentials_profiles);
-    }
-
-    if (merged_profiles) {
-        aws_profile_collection_destroy(merged_profiles);
-    }
+    aws_profile_collection_release(config_profiles);
+    aws_profile_collection_release(credentials_profiles);
+    aws_profile_collection_release(merged_profiles);
 
     aws_string_destroy(credentials_file_path);
     aws_string_destroy(config_file_path);

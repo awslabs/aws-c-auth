@@ -4,14 +4,16 @@
  */
 #include <aws/auth/auth.h>
 
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/aws_signing.h>
 
 #include <aws/cal/cal.h>
 
 #include <aws/http/http.h>
 
+#include <aws/sdkutils/sdkutils.h>
+
 #include <aws/common/error.h>
+#include <aws/common/json.h>
 
 #define AWS_DEFINE_ERROR_INFO_AUTH(CODE, STR) AWS_DEFINE_ERROR_INFO(CODE, STR, "aws-c-auth")
 
@@ -83,6 +85,25 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE,
         "The supplied sigv4a signature was not a valid signature for the hashed string to sign"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_COGNITO_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the cognito provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_DELEGATE_FAILURE,
+        "Valid credentials could not be sourced by the delegate provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE,
+        "Valid token could not be sourced by the sso token provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SSO_TOKEN_INVALID,
+        "Token sourced by the sso token provider is invalid."),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SSO_TOKEN_EXPIRED,
+        "Token sourced by the sso token provider is expired."),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the sso credentials provider"),
+
 };
 /* clang-format on */
 
@@ -112,14 +133,6 @@ static struct aws_log_subject_info_list s_auth_log_subject_list = {
 static bool s_library_initialized = false;
 static struct aws_allocator *s_library_allocator = NULL;
 
-static void *s_cJSONAlloc(size_t sz) {
-    return aws_mem_acquire(s_library_allocator, sz);
-}
-
-static void s_cJSONFree(void *ptr) {
-    aws_mem_release(s_library_allocator, ptr);
-}
-
 void aws_auth_library_init(struct aws_allocator *allocator) {
     if (s_library_initialized) {
         return;
@@ -131,6 +144,7 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
         s_library_allocator = aws_default_allocator();
     }
 
+    aws_sdkutils_library_init(s_library_allocator);
     aws_cal_library_init(s_library_allocator);
     aws_http_library_init(s_library_allocator);
 
@@ -138,11 +152,6 @@ void aws_auth_library_init(struct aws_allocator *allocator) {
     aws_register_log_subject_info_list(&s_auth_log_subject_list);
 
     AWS_FATAL_ASSERT(aws_signing_init_signing_tables(allocator) == AWS_OP_SUCCESS);
-
-    struct cJSON_Hooks allocation_hooks = {.malloc_fn = s_cJSONAlloc, .free_fn = s_cJSONFree};
-
-    cJSON_InitHooks(&allocation_hooks);
-
     s_library_initialized = true;
 }
 
@@ -158,5 +167,6 @@ void aws_auth_library_clean_up(void) {
     aws_unregister_error_info(&s_error_list);
     aws_http_library_clean_up();
     aws_cal_library_clean_up();
+    aws_sdkutils_library_clean_up();
     s_library_allocator = NULL;
 }

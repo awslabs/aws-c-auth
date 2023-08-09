@@ -79,7 +79,7 @@ static void s_aws_wait_for_imds_client_shutdown_callback(void) {
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
     (void)options;
@@ -276,6 +276,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     if (aws_byte_buf_init(&s_tester.resource, allocator, 256)) {
         return AWS_OP_ERR;
     }
+
     return AWS_OP_SUCCESS;
 }
 

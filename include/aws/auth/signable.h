@@ -3,6 +3,8 @@
 
 #include <aws/auth/auth.h>
 
+AWS_PUSH_SANE_WARNING_LEVEL
+
 struct aws_http_message;
 struct aws_http_headers;
 struct aws_input_stream;
@@ -187,6 +189,7 @@ struct aws_signable *aws_signable_new_http_request(struct aws_allocator *allocat
 
 /**
  * Creates a signable that represents a unit of chunked encoding within an http request.
+ * This can also be used for Transcribe event signing with encoded payload as chunk_data.
  *
  * @param allocator memory allocator use to create the signable
  * @param chunk_data stream representing the data in the chunk; it should be in its final, encoded form
@@ -229,5 +232,6 @@ struct aws_signable *aws_signable_new_canonical_request(
     struct aws_byte_cursor canonical_request);
 
 AWS_EXTERN_C_END
+AWS_POP_SANE_WARNING_LEVEL
 
 #endif /* AWS_AUTH_SIGNABLE_H */

@@ -8,13 +8,14 @@
 
 #include <aws/auth/auth.h>
 #include <aws/auth/credentials.h>
-#include <aws/auth/external/cJSON.h>
 #include <aws/http/connection_manager.h>
+#include <aws/io/retry_strategy.h>
 
 struct aws_http_connection;
 struct aws_http_connection_manager;
 struct aws_http_make_request_options;
 struct aws_http_stream;
+struct aws_json_value;
 
 /*
  * Internal struct tracking an asynchronous credentials query.
@@ -30,7 +31,7 @@ struct aws_credentials_query {
 
 typedef struct aws_http_connection_manager *(aws_http_connection_manager_new_fn)(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options);
+    const struct aws_http_connection_manager_options *options);
 typedef void(aws_http_connection_manager_release_fn)(struct aws_http_connection_manager *manager);
 typedef void(aws_http_connection_manager_acquire_connection_fn)(
     struct aws_http_connection_manager *manager,
@@ -69,6 +70,23 @@ struct aws_auth_http_system_vtable {
     aws_http_connection_close_fn *aws_http_connection_close;
 };
 
+enum aws_parse_credentials_expiration_format {
+    AWS_PCEF_STRING_ISO_8601_DATE,
+    AWS_PCEF_NUMBER_UNIX_EPOCH,
+    AWS_PCEF_NUMBER_UNIX_EPOCH_MS,
+};
+
+struct aws_parse_credentials_from_json_doc_options {
+    const char *access_key_id_name;
+    const char *secret_access_key_name;
+    const char *token_name;
+    const char *expiration_name;
+    const char *top_level_object_name;
+    enum aws_parse_credentials_expiration_format expiration_format;
+    bool token_required;
+    bool expiration_required;
+};
+
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -98,15 +116,6 @@ void aws_credentials_provider_destroy(struct aws_credentials_provider *provider)
 AWS_AUTH_API
 void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_provider *provider);
 
-struct aws_parse_credentials_from_json_doc_options {
-    const char *access_key_id_name;
-    const char *secrete_access_key_name;
-    const char *token_name;
-    const char *expiration_name;
-    bool token_required;
-    bool expiration_required;
-};
-
 /**
  * This API is used internally to parse credentials from json document.
  * It _ONLY_ parses the first level of json structure. json document like
@@ -135,20 +144,31 @@ struct aws_parse_credentials_from_json_doc_options {
  * performe a case insensitive search.
  */
 AWS_AUTH_API
-struct aws_credentials *aws_parse_credentials_from_cjson_object(
+struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     struct aws_allocator *allocator,
-    struct cJSON *document_root,
+    struct aws_json_value *document_root,
     const struct aws_parse_credentials_from_json_doc_options *options);
 
 /**
- * This API is similar to aws_parse_credentials_from_cjson_object,
+ * This API is similar to aws_parse_credentials_from_aws_json_object,
  * except it accpets a char buffer json document as it's input.
  */
 AWS_AUTH_API
 struct aws_credentials *aws_parse_credentials_from_json_document(
     struct aws_allocator *allocator,
-    const char *json_document,
+    struct aws_byte_cursor json_document,
     const struct aws_parse_credentials_from_json_doc_options *options);
+
+AWS_AUTH_API
+enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
+
+/*
+ * Loads an aws config profile collection
+ */
+AWS_AUTH_API
+struct aws_profile_collection *aws_load_profile_collection_from_config_file(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor config_file_name_override);
 
 AWS_EXTERN_C_END
 

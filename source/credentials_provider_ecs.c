@@ -5,7 +5,6 @@
 
 #include <aws/auth/credentials.h>
 
-#include <aws/auth/external/cJSON.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
@@ -33,22 +32,11 @@ static void s_on_connection_manager_shutdown(void *user_data);
 
 struct aws_credentials_provider_ecs_impl {
     struct aws_http_connection_manager *connection_manager;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_string *host;
     struct aws_string *path_and_query;
     struct aws_string *auth_token;
 };
-
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close};
 
 /*
  * Tracking structure for each outstanding async query to an ecs provider
@@ -149,7 +137,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
     struct aws_credentials *credentials = NULL;
     struct aws_parse_credentials_from_json_doc_options parse_options = {
         .access_key_id_name = "AccessKeyId",
-        .secrete_access_key_name = "SecretAccessKey",
+        .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
         .expiration_name = "Expiration",
         .token_required = true,
@@ -157,7 +145,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
     };
     if (aws_byte_buf_append_null_terminator(&ecs_user_data->current_result) == AWS_OP_SUCCESS) {
         credentials = aws_parse_credentials_from_json_document(
-            ecs_user_data->allocator, (const char *)ecs_user_data->current_result.buffer, &parse_options);
+            ecs_user_data->allocator, aws_byte_cursor_from_buf(&ecs_user_data->current_result), &parse_options);
     } else {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -564,7 +552,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
-        impl->function_table = &s_default_function_table;
+        impl->function_table = g_aws_credentials_provider_http_function_table;
     }
 
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
