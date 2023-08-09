@@ -355,6 +355,12 @@ struct aws_credentials_provider_sts_web_identity_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /*
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
+     */
+    struct aws_byte_cursor profile_name_override;
 };
 
 /*
@@ -467,7 +473,6 @@ struct aws_credentials_provider_sts_options {
     "Expiration": "2019-05-29T00:21:43Z"
    }
  * Version here identifies the command output format version.
- * This provider is not part of the default provider chain.
  */
 struct aws_credentials_provider_process_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -476,6 +481,12 @@ struct aws_credentials_provider_process_options {
      * if not provided, we will try environment variable: AWS_PROFILE.
      */
     struct aws_byte_cursor profile_to_use;
+
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     */
+    struct aws_profile_collection *config_profile_collection_cached;
 };
 
 /**
@@ -507,6 +518,12 @@ struct aws_credentials_provider_chain_default_options {
      * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
+
+    /*
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
+     */
+    struct aws_byte_cursor profile_name_override;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(

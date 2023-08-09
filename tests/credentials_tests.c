@@ -206,6 +206,10 @@ static int s_anonymous_credentials_provider_basic_test(struct aws_allocator *all
 
     s_aws_credentials_shutdown_checker_clean_up();
 
+    /* Check that NULL works for the optional shutdown options */
+    provider = aws_credentials_provider_new_anonymous(allocator, NULL);
+    aws_credentials_provider_release(provider);
+
     return 0;
 }
 
@@ -245,6 +249,39 @@ static int s_environment_credentials_provider_basic_test(struct aws_allocator *a
 }
 
 AWS_TEST_CASE(environment_credentials_provider_basic_test, s_environment_credentials_provider_basic_test);
+
+static int s_environment_credentials_provider_empty_env_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_credentials_shutdown_checker_init();
+    struct aws_string *empty = aws_string_new_from_c_str(allocator, "");
+
+    aws_set_environment_value(s_access_key_id_env_var, empty);
+    aws_set_environment_value(s_secret_access_key_env_var, empty);
+    aws_set_environment_value(s_session_token_env_var, empty);
+
+    struct aws_credentials_provider_environment_options options = {
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_environment(allocator, &options);
+    /* Instead of getting an empty credentials, should just fail to fetch credentials */
+    ASSERT_TRUE(s_do_basic_provider_test(provider, 1, NULL, NULL, NULL) == AWS_OP_SUCCESS);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_string_destroy(empty);
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(environment_credentials_provider_empty_env_test, s_environment_credentials_provider_empty_env_test);
 
 static int s_do_environment_credentials_provider_failure(struct aws_allocator *allocator) {
     s_aws_credentials_shutdown_checker_init();
