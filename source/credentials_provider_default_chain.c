@@ -345,6 +345,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sts_options.shutdown_options = sub_provider_shutdown_options;
     sts_options.config_profile_collection_cached = options->profile_collection_cached;
     sts_options.profile_name_override = options->profile_name_override;
+    sts_options.downgrade_error_logging = true;
     sts_provider = aws_credentials_provider_new_sts_web_identity(allocator, &sts_options);
     if (sts_provider != NULL) {
         providers[index++] = sts_provider;

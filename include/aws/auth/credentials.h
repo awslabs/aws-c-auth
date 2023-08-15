@@ -361,6 +361,13 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Override of what profile to use, if not set, 'default' will be used.
      */
     struct aws_byte_cursor profile_name_override;
+
+    /**
+     * (Optional)
+     * If true, problems are logged at DEBUG level, instead of ERROR.
+     * Used by the default credential chain, which doesn't expect every provider to succeed.
+     */
+    bool downgrade_error_logging;
 };
 
 /*
