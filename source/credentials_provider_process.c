@@ -32,7 +32,6 @@ static int s_get_credentials_from_process(
     };
 
     struct aws_run_command_result result;
-    int ret = AWS_OP_ERR;
     if (aws_run_command_result_init(provider->allocator, &result)) {
         goto on_finish;
     }
@@ -71,7 +70,6 @@ static int s_get_credentials_from_process(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p) Process credentials provider successfully sourced credentials.",
         (void *)provider);
-    ret = AWS_OP_SUCCESS;
 
 on_finish:
 
@@ -87,7 +85,7 @@ on_finish:
     callback(credentials, error_code, user_data);
     aws_run_command_result_cleanup(&result);
     aws_credentials_release(credentials);
-    return ret;
+    return AWS_OP_SUCCESS;
 }
 
 static void s_credentials_provider_process_destroy(struct aws_credentials_provider *provider) {
@@ -170,11 +168,8 @@ static struct aws_string *s_get_command(
     } else {
         config_profiles = s_load_profile(allocator);
     }
-    if (options->profile_to_use.len == 0) {
-        profile_name = aws_get_profile_name(allocator, NULL);
-    } else {
-        profile_name = aws_string_new_from_array(allocator, options->profile_to_use.ptr, options->profile_to_use.len);
-    }
+    profile_name = aws_get_profile_name(allocator, &options->profile_to_use);
+
     if (config_profiles && profile_name) {
         profile = aws_profile_collection_get_profile(config_profiles, profile_name);
     }
