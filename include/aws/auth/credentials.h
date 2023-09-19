@@ -332,6 +332,10 @@ struct aws_credentials_provider_x509_options {
  | role_session_name   | AWS_ROLE_SESSION_NAME        | role_session_name         |
  | token_file_path     | AWS_WEB_IDENTITY_TOKEN_FILE  | web_identity_token_file   |
  |--------------------------------------------------------------------------------|
+ * The order of resolution is the following
+ * 1. Parameters
+ * 2. Environment Variables
+ * 3. Config File
  */
 struct aws_credentials_provider_sts_web_identity_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
