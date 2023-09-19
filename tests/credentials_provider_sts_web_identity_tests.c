@@ -379,10 +379,10 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_parameters(
         .role_session_name = aws_byte_cursor_from_c_str("9876543210"),
         .token_file_path = aws_byte_cursor_from_string(token_file_path_str),
     };
-    aws_string_destroy(token_file_path_str);
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
     ASSERT_NOT_NULL(provider);
+    aws_string_destroy(token_file_path_str);
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
