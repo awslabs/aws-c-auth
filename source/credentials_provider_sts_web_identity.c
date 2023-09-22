@@ -940,7 +940,7 @@ static struct aws_string *s_check_or_get_with_env(
     struct aws_byte_cursor option) {
 
     AWS_ASSERT(allocator);
-    struct string *out = NULL;
+    struct aws_string *out = NULL;
 
     if (option.len) {
         out = aws_string_new_from_cursor(allocator, &option);
