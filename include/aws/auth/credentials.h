@@ -323,7 +323,7 @@ struct aws_credentials_provider_x509_options {
  * identity provider like Elastic Kubernetes Service
  * https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html
  * The required parameters used in the request (region, roleArn, sessionName, tokenFilePath) are automatically resolved
- * by SDK from envrionment variables or config file.
+ * by SDK from envrionment variables or config file if not set.
  ---------------------------------------------------------------------------------
  | Parameter           | Environment Variable Name    | Config File Property Name |
  ----------------------------------------------------------------------------------
@@ -332,6 +332,10 @@ struct aws_credentials_provider_x509_options {
  | role_session_name   | AWS_ROLE_SESSION_NAME        | role_session_name         |
  | token_file_path     | AWS_WEB_IDENTITY_TOKEN_FILE  | web_identity_token_file   |
  |--------------------------------------------------------------------------------|
+ * The order of resolution is the following
+ * 1. Parameters
+ * 2. Environment Variables
+ * 3. Config File
  */
 struct aws_credentials_provider_sts_web_identity_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -361,6 +365,27 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Override of what profile to use, if not set, 'default' will be used.
      */
     struct aws_byte_cursor profile_name_override;
+
+    /*
+     * (Optional)
+     * Override of region, if not set, it will be resolved from env or profile.
+     */
+    struct aws_byte_cursor region;
+    /*
+     * (Optional)
+     * Override of role_arn, if not set, it will be resolved from env or profile.
+     */
+    struct aws_byte_cursor role_arn;
+    /*
+     * (Optional)
+     * Override of role_session_name, if not set, it will be resolved from env or profile.
+     */
+    struct aws_byte_cursor role_session_name;
+    /*
+     * (Optional)
+     * Override of token_file_path, if not set, it will be resolved from env or profile.
+     */
+    struct aws_byte_cursor token_file_path;
 };
 
 /*

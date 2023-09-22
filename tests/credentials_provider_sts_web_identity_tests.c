@@ -352,6 +352,49 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, int 
     aws_mutex_unlock(&s_tester.lock);
 }
 
+static int s_credentials_provider_sts_web_identity_new_destroy_from_parameters(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(token_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .region = aws_byte_cursor_from_c_str("us-east-1"),
+        .role_arn = aws_byte_cursor_from_c_str("arn:aws:iam::1234567890:role/test-arn"),
+        .role_session_name = aws_byte_cursor_from_c_str("9876543210"),
+        .token_file_path = aws_byte_cursor_from_string(token_file_path_str),
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+    aws_string_destroy(token_file_path_str);
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_sts_web_identity_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_new_destroy_from_parameters,
+    s_credentials_provider_sts_web_identity_new_destroy_from_parameters);
+
 static int s_credentials_provider_sts_web_identity_new_destroy_from_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
