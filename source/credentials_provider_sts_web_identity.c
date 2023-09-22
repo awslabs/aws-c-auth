@@ -934,18 +934,21 @@ static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_by
     return AWS_OP_SUCCESS;
 }
 
-static void s_check_or_get_with_env(
+static struct aws_string *s_check_or_get_with_env(
     struct aws_allocator *allocator,
     const struct aws_string *env_key,
-    struct aws_byte_cursor option,
-    struct aws_string **out) {
+    struct aws_byte_cursor option) {
 
     AWS_ASSERT(allocator);
+    struct string *out = NULL;
+
     if (option.len) {
-        *out = aws_string_new_from_cursor(allocator, &option);
+        out = aws_string_new_from_cursor(allocator, &option);
     } else {
-        aws_get_environment_value(allocator, env_key, out);
+        aws_get_environment_value(allocator, env_key, &out);
     }
+
+    return out;
 }
 
 static void s_check_or_get_with_profile_config(
@@ -991,16 +994,13 @@ static struct sts_web_identity_parameters *s_parameters_new(
     parameters->allocator = allocator;
 
     bool success = false;
-    struct aws_string *region = NULL;
-    struct aws_string *role_arn = NULL;
-    struct aws_string *role_session_name = NULL;
-    struct aws_string *token_file_path = NULL;
-
-    /* check environment variables */
-    s_check_or_get_with_env(allocator, s_region_env, options->region, &region);
-    s_check_or_get_with_env(allocator, s_role_arn_env, options->role_arn, &role_arn);
-    s_check_or_get_with_env(allocator, s_role_session_name_env, options->role_session_name, &role_session_name);
-    s_check_or_get_with_env(allocator, s_token_file_path_env, options->token_file_path, &token_file_path);
+    struct aws_string *region = s_check_or_get_with_env(allocator, s_region_env, options->region);
+    struct aws_string *role_arn = s_check_or_get_with_env(allocator, s_role_arn_env, options->role_arn);
+    struct aws_string *role_session_name =
+        s_check_or_get_with_env(allocator, s_role_session_name_env, options->role_session_name);
+    struct aws_string *token_file_path =
+        s_check_or_get_with_env(allocator, s_token_file_path_env, options->token_file_path);
+    ;
 
     /**
      * check config profile if either region, role_arn or token_file_path or role_session_name is not resolved from
