@@ -54,13 +54,6 @@ if (WIN32)
         source_group("Header Files\\aws\\auth" FILES ${AWS_AUTH_HEADERS})
         source_group("Source Files" FILES ${AWS_AUTH_SRC})
     endif ()
-    set(PLATFORM_LIBS "")
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(PLATFORM_LIBS "")
-elseif (APPLE)
-    set(PLATFORM_LIBS "")
-elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
-    set(PLATFORM_LIBS "")
 endif()
 
 file(GLOB AUTH_HEADERS
@@ -96,7 +89,7 @@ aws_use_package(aws-c-sdkutils)
 aws_use_package(aws-c-cal)
 aws_use_package(aws-c-http)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC ${DEP_AWS_LIBS} ${PLATFORM_LIBS})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${DEP_AWS_LIBS})
 
 aws_prepare_shared_lib_exports(${PROJECT_NAME})
 
