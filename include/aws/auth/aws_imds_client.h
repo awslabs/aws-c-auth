@@ -25,7 +25,18 @@ struct aws_imds_client_shutdown_options {
 };
 
 /**
- * Configuration options when creating an imds client
+ * Configuration options when creating an EC2 Instance Metadata Service (IMDS) client
+ * https://docs.aws.amazon.com/sdkref/latest/guide/feature-ec2-instance-metadata.html
+ *
+ ---------------------------------------------------------------------
+ | Environment Variable Name         | Config File Property Name     |
+ ---------------------------------------------------------------------
+ | AWS_METADATA_SERVICE_NUM_ATTEMPTS | metadata_service_num_attempts |
+ | AWS_METADATA_SERVICE_TIMEOUT      | metadata_service_timeout      |
+ |-------------------------------------------------------------------|
+ * The order of resolution is the following
+ * 1. Environment Variables
+ * 2. Config File
  */
 struct aws_imds_client_options {
     /*
@@ -49,6 +60,22 @@ struct aws_imds_client_options {
      * Defaults to IMDS_PROTOCOL_V2
      */
     enum aws_imds_protocol_version imds_version;
+
+    /* TODO: add num_attempts and timeout_secs parameters to options-struct too? or only support env-vars and config?
+    /* TODO: config_file_name_override? credentials_file_name_override? */
+
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     */
+    struct aws_profile_collection *config_profile_collection_cached;
+    /* TODO: name??? config_file_cached or profile_collection_cached or config_profile_collection_cached ? */
+
+    /*
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
+     */
+    struct aws_byte_cursor profile_name_override;
 
     /*
      * Table holding all cross-system functional dependencies for an imds client.

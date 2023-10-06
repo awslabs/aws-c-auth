@@ -27,7 +27,10 @@
 #define IMDS_RESPONSE_SIZE_INITIAL 2048
 #define IMDS_RESPONSE_TOKEN_SIZE_INITIAL 64
 #define IMDS_RESPONSE_SIZE_LIMIT 65535
-#define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
+/* TODO: docs say 1sec should be default:
+ * https://docs.aws.amazon.com/sdkref/latest/guide/feature-ec2-instance-metadata.html
+ * Also: let's use float instead of integers, so someone can go less than the default. */
+#define IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 1.0
 #define IMDS_DEFAULT_RETRIES 1
 
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_host, "169.254.169.254");

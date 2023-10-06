@@ -201,7 +201,18 @@ enum aws_imds_protocol_version {
 };
 
 /**
- * Configuration options for the provider that sources credentials from ec2 instance metadata
+ * Configuration options for the provider that sources credentials from EC2 Instance Metadata Service.
+ * https://docs.aws.amazon.com/sdkref/latest/guide/feature-ec2-instance-metadata.html
+ *
+ ---------------------------------------------------------------------
+ | Environment Variable Name         | Config File Property Name     |
+ ---------------------------------------------------------------------
+ | AWS_METADATA_SERVICE_NUM_ATTEMPTS | metadata_service_num_attempts |
+ | AWS_METADATA_SERVICE_TIMEOUT      | metadata_service_timeout      |
+ |-------------------------------------------------------------------|
+ * The order of resolution is the following
+ * 1. Environment Variables
+ * 2. Config File
  */
 struct aws_credentials_provider_imds_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
@@ -215,6 +226,20 @@ struct aws_credentials_provider_imds_options {
      * Which version of the imds query protocol to use.
      */
     enum aws_imds_protocol_version imds_version;
+
+    /* TODO: mirror all new options from aws_imds_client.h? */
+
+    /**
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     */
+    struct aws_profile_collection *config_profile_collection_cached; /* TODO: name??? */
+
+    /*
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
+     */
+    struct aws_byte_cursor profile_name_override;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
