@@ -1527,6 +1527,9 @@ static int s_do_header_skip_test(
     ASSERT_SUCCESS(s_parse_request(allocator, aws_byte_cursor_from_string(request_contents), &message, &body_stream));
     struct aws_signable *signable = aws_signable_new_http_request(allocator, message);
 
+    /* release reference to message early, to ensure signable keeps it alive */
+    aws_http_message_release(message);
+
     struct aws_signing_state_aws *signing_state = aws_signing_state_new(allocator, &config, signable, NULL, NULL);
     ASSERT_NOT_NULL(signing_state);
 
@@ -1539,7 +1542,6 @@ static int s_do_header_skip_test(
         signing_state->canonical_request.len);
 
     aws_input_stream_destroy(body_stream);
-    aws_http_message_release(message);
     aws_signing_state_destroy(signing_state);
     aws_credentials_release(credentials);
     aws_signable_destroy(signable);
