@@ -233,6 +233,10 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
+static int s_aws_high_res_clock_get_ticks_mock(uint64_t *timestamp) {
+    return aws_high_res_clock_get_ticks(timestamp);
+}
+
 static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
@@ -244,7 +248,7 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
     .aws_http_connection_close = s_aws_http_connection_close_mock,
-    .aws_high_res_clock_get_ticks = aws_high_res_clock_get_ticks,
+    .aws_high_res_clock_get_ticks = s_aws_high_res_clock_get_ticks_mock,
 };
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {

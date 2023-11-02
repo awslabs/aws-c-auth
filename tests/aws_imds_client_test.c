@@ -815,9 +815,9 @@ static int s_aws_http_stream_get_multiple_incoming_response_status_mock(
     int *out_status_code) {
 
     (void)stream;
-    /* randomly return 400/401/200 */
+    /* randomly return 403/200 */
     uint32_t rand_output;
-    int ret[2] = {AWS_HTTP_STATUS_CODE_200_OK, AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED};
+    int ret[2] = {AWS_HTTP_STATUS_CODE_200_OK, AWS_HTTP_STATUS_CODE_403_FORBIDDEN};
     aws_device_random_u32(&rand_output);
     *out_status_code = ret[rand_output % 2];
     return AWS_OP_SUCCESS;
