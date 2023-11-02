@@ -24,7 +24,7 @@
 #    pragma warning(disable : 4244)
 #endif /* _MSC_VER */
 
-#define IMDS_CLIENT_MAX_REQUESTS 3
+#define IMDS_CLIENT_MAX_REQUESTS 15
 struct aws_mock_imds_client_tester {
     struct aws_byte_buf request_uris[IMDS_CLIENT_MAX_REQUESTS];
     struct aws_array_list response_data_callbacks[IMDS_CLIENT_MAX_REQUESTS];
@@ -32,7 +32,9 @@ struct aws_mock_imds_client_tester {
     int current_request;
     int token_response_code;
     int token_request_idx;
-    bool insecure_then_secure_attempt;
+    bool insecure_failure;
+    int error_code;
+    uint64_t timestamp;
     bool is_connection_acquire_successful;
 
     struct aws_mutex lock;
@@ -201,7 +203,7 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
     (void)stream;
     if (s_tester.token_request_idx == s_tester.current_request - 1 && s_tester.token_response_code != 0) {
         *out_status_code = s_tester.token_response_code;
-    } else if (s_tester.current_request == 1 && s_tester.insecure_then_secure_attempt) {
+    } else if (s_tester.insecure_failure) {
         /* for testing insecure then switch to secure way */
         *out_status_code = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
     } else {
@@ -219,6 +221,11 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
+static int s_aws_high_res_clock_get_ticks_mock(uint64_t *timestamp) {
+    *timestamp = s_tester.timestamp;
+    return AWS_OP_SUCCESS;
+}
+
 static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
@@ -229,7 +236,9 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_stream_get_connection = s_aws_http_stream_get_connection_mock,
     .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
-    .aws_http_connection_close = s_aws_http_connection_close_mock};
+    .aws_http_connection_close = s_aws_http_connection_close_mock,
+    .aws_high_res_clock_get_ticks = s_aws_high_res_clock_get_ticks_mock,
+};
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
@@ -248,7 +257,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
     s_tester.token_response_code = 0;
     s_tester.token_request_idx = 0;
-    s_tester.insecure_then_secure_attempt = false;
+
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
@@ -312,9 +321,9 @@ static void s_aws_wait_for_resource_result(void) {
 
 static void s_get_resource_callback(const struct aws_byte_buf *resource, int error_code, void *user_data) {
     (void)user_data;
-    (void)error_code;
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_resource_callback = true;
+    s_tester.error_code = error_code;
     if (resource && resource->len) {
         struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(resource);
         aws_byte_buf_append_dynamic(&s_tester.resource, &cursor);
@@ -558,6 +567,55 @@ static int s_imds_client_token_request_failure(struct aws_allocator *allocator, 
 
 AWS_TEST_CASE(imds_client_token_request_failure, s_imds_client_token_request_failure);
 
+static int s_imds_client_insecure_fallback_request_failure(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+    /* secure data flow is not supported, fallback to insecurity */
+    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
+    /* Insecurity fails as well */
+    s_tester.insecure_failure = true;
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+
+    aws_imds_client_get_resource_async(
+        client, aws_byte_cursor_from_string(s_expected_imds_resource_uri), s_get_resource_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_tester.has_received_resource_callback == true);
+    ASSERT_TRUE(s_tester.resource.len == 0);
+
+    ASSERT_TRUE(s_validate_uri_path_and_resource(2, false /*no resource*/) == 0);
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_IMDS_CLIENT_TOKEN_INVALID);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(imds_client_insecure_fallback_request_failure, s_imds_client_insecure_fallback_request_failure);
+
 static int s_imds_client_resource_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -712,19 +770,11 @@ static int s_imds_client_insecure_resource_request_success(struct aws_allocator 
 
 AWS_TEST_CASE(imds_client_insecure_resource_request_success, s_imds_client_insecure_resource_request_success);
 
-static int s_imds_client_insecure_then_secure_resource_request_success(struct aws_allocator *allocator, void *ctx) {
+static int s_imds_client_insecure_resource_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.insecure_then_secure_attempt = true;
-    s_tester.token_request_idx = 1;
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_200_OK;
-
-    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_token_cursor);
-
-    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
+    s_tester.insecure_failure = true;
 
     struct aws_imds_client_options options = {
         .bootstrap = s_tester.bootstrap,
@@ -742,20 +792,10 @@ static int s_imds_client_insecure_then_secure_resource_request_success(struct aw
         client, aws_byte_cursor_from_string(s_expected_imds_resource_uri), s_get_resource_callback, NULL);
     s_aws_wait_for_resource_result();
 
-    ASSERT_TRUE(s_validate_uri_path_and_resource(3, true /*no creds*/) == 0);
-
+    ASSERT_TRUE(s_tester.has_received_resource_callback == true);
     ASSERT_FALSE(s_tester.token_ttl_header_exist[0]);
     ASSERT_FALSE(s_tester.token_header_exist[0]);
-
-    ASSERT_TRUE(s_tester.token_ttl_header_exist[1]);
-    ASSERT_TRUE(s_tester.token_ttl_header_expected[1]);
-    ASSERT_FALSE(s_tester.token_header_exist[1]);
-
-    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
-    ASSERT_TRUE(s_tester.token_header_exist[2]);
-    ASSERT_TRUE(s_tester.token_header_expected[2]);
-
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_good_response);
+    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_IMDS_CLIENT_TOKEN_REQUIRED);
 
     aws_imds_client_release(client);
 
@@ -768,9 +808,7 @@ static int s_imds_client_insecure_then_secure_resource_request_success(struct aw
 
     return 0;
 }
-AWS_TEST_CASE(
-    imds_client_insecure_then_secure_resource_request_success,
-    s_imds_client_insecure_then_secure_resource_request_success);
+AWS_TEST_CASE(imds_client_insecure_resource_request_failure, s_imds_client_insecure_resource_request_failure);
 
 static int s_aws_http_stream_get_multiple_incoming_response_status_mock(
     const struct aws_http_stream *stream,
@@ -1385,3 +1423,67 @@ static int s_imds_client_get_credentials_success(struct aws_allocator *allocator
     return 0;
 }
 AWS_TEST_CASE(imds_client_get_credentials_success, s_imds_client_get_credentials_success);
+
+static int s_imds_client_cache_token_refresh(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    s_tester.timestamp = 0;
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[3], &test_token_cursor);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[4], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    /* 1. request a resource */
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    s_aws_wait_for_resource_result();
+    /* Currently have 2 requests, one to get the token, the other to fetch resource */
+    ASSERT_UINT_EQUALS(2, s_tester.current_request);
+    ASSERT_UINT_EQUALS(AWS_ERROR_SUCCESS, s_tester.error_code);
+
+    /* 2. Request another resource without change the timestamp. So that the cached token should be used */
+    s_tester.has_received_resource_callback = false;
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    s_aws_wait_for_resource_result();
+    /* Currently have 3 requests, only one more to fetch the resource as the cached token being used. */
+    ASSERT_UINT_EQUALS(3, s_tester.current_request);
+    ASSERT_UINT_EQUALS(AWS_ERROR_SUCCESS, s_tester.error_code);
+
+    /* 3. Update the time to expired time. Request another resource without change the timestamp. So that the cached
+     * token should be expired, and will fetch another token. */
+    s_tester.has_received_resource_callback = false;
+    s_tester.timestamp = aws_timestamp_convert(21600, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    s_aws_wait_for_resource_result();
+    /* Currently have 3 requests, only one more to fetch the resource as the cached token being used. */
+    ASSERT_UINT_EQUALS(5, s_tester.current_request);
+    ASSERT_UINT_EQUALS(AWS_ERROR_SUCCESS, s_tester.error_code);
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+AWS_TEST_CASE(imds_client_cache_token_refresh, s_imds_client_cache_token_refresh);

@@ -42,7 +42,7 @@ struct aws_mock_imds_tester {
     int current_request;
     int token_response_code;
     int token_request_idx;
-    bool insecure_then_secure_attempt;
+    bool insecure_failure;
     bool is_connection_acquire_successful;
 
     struct aws_mutex lock;
@@ -215,7 +215,7 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
     (void)stream;
     if (s_tester.token_request_idx == s_tester.current_request - 1 && s_tester.token_response_code != 0) {
         *out_status_code = s_tester.token_response_code;
-    } else if (s_tester.current_request == 1 && s_tester.insecure_then_secure_attempt) {
+    } else if (s_tester.insecure_failure) {
         /* for testing insecure then switch to secure way */
         *out_status_code = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
     } else {
@@ -261,7 +261,7 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     s_tester.allocator = allocator;
     s_tester.token_response_code = 0;
     s_tester.token_request_idx = 0;
-    s_tester.insecure_then_secure_attempt = false;
+    s_tester.insecure_failure = false;
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
@@ -878,22 +878,11 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
 
 AWS_TEST_CASE(credentials_provider_imds_insecure_success, s_credentials_provider_imds_insecure_success);
 
-static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_imds_insecure_resource_request_failures(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.insecure_then_secure_attempt = true;
-    s_tester.token_request_idx = 1;
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_200_OK;
-
-    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_token_cursor);
-
-    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &test_role_cursor);
-
-    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[3], &good_response_cursor);
+    s_tester.insecure_failure = true;
 
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = s_tester.bootstrap,
@@ -911,24 +900,10 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
     s_aws_wait_for_credentials_result();
-    ASSERT_TRUE(s_validate_uri_path_and_creds(4, true /*no creds*/) == 0);
 
     ASSERT_FALSE(s_tester.token_ttl_header_exist[0]);
     ASSERT_FALSE(s_tester.token_header_exist[0]);
-
-    ASSERT_TRUE(s_tester.token_ttl_header_exist[1]);
-    ASSERT_TRUE(s_tester.token_ttl_header_expected[1]);
-    ASSERT_FALSE(s_tester.token_header_exist[1]);
-
-    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
-    ASSERT_TRUE(s_tester.token_header_exist[2]);
-    ASSERT_TRUE(s_tester.token_header_expected[2]);
-
-    ASSERT_FALSE(s_tester.token_ttl_header_exist[3]);
-    ASSERT_TRUE(s_tester.token_header_exist[3]);
-    ASSERT_TRUE(s_tester.token_header_expected[3]);
-
-    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE);
 
     aws_credentials_provider_release(provider);
 
@@ -945,8 +920,8 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
 }
 
 AWS_TEST_CASE(
-    credentials_provider_imds_insecure_then_secure_success,
-    s_credentials_provider_imds_insecure_then_secure_success);
+    credentials_provider_imds_insecure_resource_request_failures,
+    s_credentials_provider_imds_insecure_resource_request_failures);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_test_role_response_first_half, "test-");
 AWS_STATIC_STRING_FROM_LITERAL(s_test_role_response_second_half, "role");
