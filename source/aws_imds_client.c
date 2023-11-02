@@ -167,12 +167,6 @@ struct aws_imds_client *aws_imds_client_new(
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = client;
 
-    struct aws_http_connection_monitoring_options monitor_options;
-    AWS_ZERO_STRUCT(monitor_options);
-    monitor_options.allowable_throughput_failure_interval_seconds = 1;
-    monitor_options.minimum_throughput_bytes_per_second = 1;
-    manager_options.monitoring_options = &monitor_options;
-
     client->connection_manager = client->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (!client->connection_manager) {
         goto on_error;
@@ -394,7 +388,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_ttl_header, "x-aws-ec2-metadata-toke
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_header, "x-aws-ec2-metadata-token");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_token_ttl_default_value, "21600");
 /* s_imds_token_ttl_default_value - 5secs for refreshing the cached token */
-const static uint64_t s_imds_token_ttl_secs = 21595;
+static const uint64_t s_imds_token_ttl_secs = 21595;
 
 static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *user_data);
 
@@ -466,6 +460,7 @@ static int s_make_imds_http_query(
         .on_response_header_block_done = NULL,
         .on_response_body = s_on_incoming_body_fn,
         .on_complete = s_on_stream_complete_fn,
+        .response_first_byte_timeout_ms = 1000,
         .user_data = user_data,
         .request = request,
     };

@@ -243,7 +243,9 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_stream_get_connection = s_aws_http_stream_get_connection_mock,
     .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
-    .aws_http_connection_close = s_aws_http_connection_close_mock};
+    .aws_http_connection_close = s_aws_http_connection_close_mock,
+    .aws_high_res_clock_get_ticks = aws_high_res_clock_get_ticks,
+};
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
