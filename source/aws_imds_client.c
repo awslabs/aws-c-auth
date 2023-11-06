@@ -512,7 +512,7 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
     if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || user_data->current_result.len == 0) {
         AWS_LOGF_DEBUG(
             AWS_LS_IMDS_CLIENT,
-            "(id=%p) IMDS client failed to fetch token for requester %p, fall back to insecure path for the same "
+            "(id=%p) IMDS client failed to fetch token for requester %p, fall back to v1 for the same "
             "requester. Received response status code: %d",
             (void *)user_data->client,
             (void *)user_data,
@@ -647,11 +647,16 @@ static void s_query_complete(struct imds_user_data *user_data) {
                 /* V2 request, but failed to fetch token and fallback failed */
                 AWS_LOGF_ERROR(
                     AWS_LS_IMDS_CLIENT,
-                    "(id=%p) IMDS client failed to fetch resource through fallback to insecure path. requester %p.",
+                    "(id=%p) IMDS client failed to fetch resource through fallback to v1. requester %p.",
                     (void *)user_data->client,
                     (void *)user_data);
                 user_data->error_code = AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE;
             } else {
+                AWS_LOGF_DEBUG(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client failed to fetch resource via V1, try to use V2. requester %p.",
+                    (void *)user_data->client,
+                    (void *)user_data);
                 /* V1 request, fallback to V2 and try again. */
                 s_reset_scratch_user_data(user_data);
                 user_data->is_fallback = true;
@@ -824,6 +829,11 @@ static void s_complete_pending_queries(
                 requester->error_code = AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE;
                 should_continue = false;
             } else {
+                AWS_LOGF_DEBUG(
+                    AWS_LS_IMDS_CLIENT,
+                    "(id=%p) IMDS client failed to fetch token, fallback to v1. requester %p.",
+                    (void *)requester->client,
+                    (void *)requester);
                 requester->is_fallback = true;
             }
         }
