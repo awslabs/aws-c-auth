@@ -30,9 +30,8 @@ struct aws_mock_imds_client_tester {
     struct aws_array_list response_data_callbacks[IMDS_CLIENT_MAX_REQUESTS];
     struct aws_allocator *allocator;
     int current_request;
-    int token_response_code;
+    int response_code[IMDS_CLIENT_MAX_REQUESTS];
     int token_request_idx;
-    bool insecure_failure;
     int error_code;
     uint64_t timestamp;
     bool is_connection_acquire_successful;
@@ -201,11 +200,8 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
     const struct aws_http_stream *stream,
     int *out_status_code) {
     (void)stream;
-    if (s_tester.token_request_idx == s_tester.current_request - 1 && s_tester.token_response_code != 0) {
-        *out_status_code = s_tester.token_response_code;
-    } else if (s_tester.insecure_failure) {
-        /* for testing insecure then switch to secure way */
-        *out_status_code = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
+    if (s_tester.response_code[s_tester.current_request - 1] != 0) {
+        *out_status_code = s_tester.response_code[s_tester.current_request - 1];
     } else {
         *out_status_code = AWS_HTTP_STATUS_CODE_200_OK;
     }
@@ -244,6 +240,8 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
     aws_auth_library_init(allocator);
 
+    AWS_ZERO_STRUCT(s_tester);
+
     s_tester.allocator = allocator;
     for (size_t i = 0; i < IMDS_CLIENT_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
@@ -255,9 +253,6 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
         }
     }
 
-    s_tester.token_response_code = 0;
-    s_tester.token_request_idx = 0;
-
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
@@ -265,8 +260,6 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
     if (aws_condition_variable_init(&s_tester.signal)) {
         return AWS_OP_ERR;
     }
-
-    s_tester.current_request = 0;
 
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
@@ -527,7 +520,7 @@ static int s_imds_client_token_request_failure(struct aws_allocator *allocator, 
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     struct aws_imds_client_options options = {
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
@@ -572,9 +565,9 @@ static int s_imds_client_insecure_fallback_request_failure(struct aws_allocator 
 
     s_aws_imds_tester_init(allocator);
     /* secure data flow is not supported, fallback to insecurity */
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
     /* Insecurity fails as well */
-    s_tester.insecure_failure = true;
+    s_tester.response_code[1] = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
     struct aws_imds_client_options options = {
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
@@ -600,7 +593,7 @@ static int s_imds_client_insecure_fallback_request_failure(struct aws_allocator 
     ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
     ASSERT_FALSE(s_tester.token_header_exist[0]);
 
-    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_IMDS_CLIENT_TOKEN_INVALID);
+    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE);
 
     aws_imds_client_release(client);
 
@@ -728,7 +721,7 @@ static int s_imds_client_insecure_resource_request_success(struct aws_allocator 
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
 
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
@@ -770,11 +763,17 @@ static int s_imds_client_insecure_resource_request_success(struct aws_allocator 
 
 AWS_TEST_CASE(imds_client_insecure_resource_request_success, s_imds_client_insecure_resource_request_success);
 
-static int s_imds_client_insecure_resource_request_failure(struct aws_allocator *allocator, void *ctx) {
+static int s_imds_client_insecure_then_secure_resource_request_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.insecure_failure = true;
+    s_tester.token_request_idx = 1;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_imds_client_options options = {
         .bootstrap = s_tester.bootstrap,
@@ -793,9 +792,20 @@ static int s_imds_client_insecure_resource_request_failure(struct aws_allocator 
     s_aws_wait_for_resource_result();
 
     ASSERT_TRUE(s_tester.has_received_resource_callback == true);
+    ASSERT_TRUE(s_validate_uri_path_and_resource(3, true /*no creds*/) == 0);
+
     ASSERT_FALSE(s_tester.token_ttl_header_exist[0]);
     ASSERT_FALSE(s_tester.token_header_exist[0]);
-    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_IMDS_CLIENT_TOKEN_REQUIRED);
+
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[1]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[1]);
+    ASSERT_FALSE(s_tester.token_header_exist[1]);
+
+    ASSERT_FALSE(s_tester.token_ttl_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_exist[2]);
+    ASSERT_TRUE(s_tester.token_header_expected[2]);
+
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_good_response);
 
     aws_imds_client_release(client);
 
@@ -808,7 +818,9 @@ static int s_imds_client_insecure_resource_request_failure(struct aws_allocator 
 
     return 0;
 }
-AWS_TEST_CASE(imds_client_insecure_resource_request_failure, s_imds_client_insecure_resource_request_failure);
+AWS_TEST_CASE(
+    imds_client_insecure_then_secure_resource_request_success,
+    s_imds_client_insecure_then_secure_resource_request_success);
 
 static int s_aws_http_stream_get_multiple_incoming_response_status_mock(
     const struct aws_http_stream *stream,
