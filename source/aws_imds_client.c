@@ -218,7 +218,7 @@ struct imds_user_data {
      */
     bool imds_token_required;
     /* Indicate the request is a fallback from a failure call. */
-    bool is_fallback;
+    bool is_fallback_request;
     bool is_imds_token_request;
     int status_code;
     int error_code;
@@ -642,37 +642,26 @@ static void s_query_complete(struct imds_user_data *user_data) {
         client->token_required = true;
         aws_mutex_unlock(&client->token_lock);
 
-        if (!user_data->imds_token_required) {
-            if (user_data->is_fallback) {
-                /* V2 request, but failed to fetch token and fallback failed */
-                AWS_LOGF_ERROR(
-                    AWS_LS_IMDS_CLIENT,
-                    "(id=%p) IMDS client failed to fetch resource through fallback to v1. requester %p.",
-                    (void *)user_data->client,
-                    (void *)user_data);
-                user_data->error_code = AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE;
-            } else {
-                AWS_LOGF_DEBUG(
-                    AWS_LS_IMDS_CLIENT,
-                    "(id=%p) IMDS client failed to fetch resource via V1, try to use V2. requester %p.",
-                    (void *)user_data->client,
-                    (void *)user_data);
-                /* V1 request, fallback to V2 and try again. */
-                s_reset_scratch_user_data(user_data);
-                user_data->is_fallback = true;
-                aws_retry_token_release(user_data->retry_token);
-                /* Try V2 now. */
-                if (s_get_resource_async_with_imds_token(user_data)) {
-                    s_user_data_release(user_data);
-                }
-                return;
+        if (!user_data->imds_token_required && !user_data->is_fallback_request) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_IMDS_CLIENT,
+                "(id=%p) IMDS client failed to fetch resource via V1, try to use V2. requester %p.",
+                (void *)user_data->client,
+                (void *)user_data);
+            /* V1 request, fallback to V2 and try again. */
+            s_reset_scratch_user_data(user_data);
+            user_data->is_fallback_request = true;
+            aws_retry_token_release(user_data->retry_token);
+            /* Try V2 now. */
+            if (s_get_resource_async_with_imds_token(user_data)) {
+                s_user_data_release(user_data);
             }
+            return;
         } else {
-            /* Not expected, the token was told as invalid from server */
+            /* Not retirable error. */
             AWS_LOGF_ERROR(
                 AWS_LS_IMDS_CLIENT,
-                "(id=%p) IMDS client failed to fetch resource. Server response 401 UNAUTHORIZED indicates invalid "
-                "token. requester %p.",
+                "(id=%p) IMDS client failed to fetch resource. Server response 401 UNAUTHORIZED. requester %p.",
                 (void *)user_data->client,
                 (void *)user_data);
             user_data->error_code = AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE;
@@ -819,7 +808,7 @@ static void s_complete_pending_queries(
 
         bool should_continue = true;
         if (requester->imds_token_required && !token_required) {
-            if (requester->is_fallback) {
+            if (requester->is_fallback_request) {
                 AWS_LOGF_ERROR(
                     AWS_LS_IMDS_CLIENT,
                     "(id=%p) IMDS client failed to fetch resource without token, and also failed to fetch token. "
@@ -834,7 +823,7 @@ static void s_complete_pending_queries(
                     "(id=%p) IMDS client failed to fetch token, fallback to v1. requester %p.",
                     (void *)requester->client,
                     (void *)requester);
-                requester->is_fallback = true;
+                requester->is_fallback_request = true;
             }
         }
         requester->imds_token_required = token_required;
