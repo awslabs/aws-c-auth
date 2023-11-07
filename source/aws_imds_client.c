@@ -634,11 +634,11 @@ static void s_query_complete(struct imds_user_data *user_data) {
             client->token_state = AWS_IMDS_TS_INVALID;
             AWS_LOGF_DEBUG(
                 AWS_LS_IMDS_CLIENT,
-                "(id=%p) IMDS client's cached token is set to be invalid by requester %p.",
+                "(id=%p) IMDS client's cached token is invalidated by requester %p.",
                 (void *)client,
                 (void *)user_data);
         }
-        /* Flip the flag to let following requests use token as it's required. */
+        /* let following requests use token as it's required. */
         client->token_required = true;
         aws_mutex_unlock(&client->token_lock);
 
