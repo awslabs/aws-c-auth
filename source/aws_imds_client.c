@@ -68,6 +68,7 @@ struct aws_imds_client {
     struct aws_mutex token_lock;
     struct aws_condition_variable token_signal;
     bool ec2_metadata_v1_disabled;
+
     struct aws_atomic_var ref_count;
 };
 
