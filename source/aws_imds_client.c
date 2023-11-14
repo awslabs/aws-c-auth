@@ -508,22 +508,10 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
         s_update_token_safely(user_data->client, NULL, true, 0 /*expire_timestamp*/);
         return;
     }
-    /*
-     * Other than that, if meets any error, then token is not required,
-     * we should fall back to insecure request. Otherwise, we should use
-     * token in following requests.
-     */
-    if (!user_data->ec2_metadata_v1_disabled &&
-        (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || user_data->current_result.len == 0)) {
-        AWS_LOGF_DEBUG(
-            AWS_LS_IMDS_CLIENT,
-            "(id=%p) IMDS client failed to fetch token for requester %p, fall back to v1 for the same "
-            "requester. Received response status code: %d",
-            (void *)user_data->client,
-            (void *)user_data,
-            user_data->status_code);
-        s_update_token_safely(user_data->client, NULL, false, 0 /*expire_timestamp*/);
-    } else {
+
+    if (user_data->status_code == AWS_HTTP_STATUS_CODE_200_OK && user_data->current_result.len != 0) {
+        AWS_LOGF_DEBUG(AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client has fetched the token", (void *)user_data->client);
+
         struct aws_byte_cursor cursor = aws_byte_cursor_from_buf(&(user_data->current_result));
         aws_byte_cursor_trim_pred(&cursor, aws_char_is_space);
         aws_byte_buf_reset(&user_data->imds_token, true /*zero contents*/);
@@ -537,11 +525,28 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
         user_data->client->function_table->aws_high_res_clock_get_ticks(&current);
         uint64_t expire_timestamp = aws_add_u64_saturating(
             current, aws_timestamp_convert(s_imds_token_ttl_secs, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL));
-        s_update_token_safely(
-            user_data->client,
-            cursor.len == 0 ? NULL : &user_data->imds_token,
-            cursor.len != 0 || user_data->ec2_metadata_v1_disabled,
-            expire_timestamp);
+
+        AWS_ASSERT(cursor.len != 0);
+        s_update_token_safely(user_data->client, &user_data->imds_token, true, expire_timestamp);
+    } else if (user_data->ec2_metadata_v1_disabled) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT,
+            "(id=%p) IMDS client failed to fetch token for requester %p, and fall back to v1 is disabled."
+            "Received response status code: %d",
+            (void *)user_data->client,
+            (void *)user_data,
+            user_data->status_code);
+        s_update_token_safely(user_data->client, NULL, true /* token required */, 0 /*expire_timestamp*/);
+    } else {
+        /* Token is not required, we should fall back to insecure request */
+        AWS_LOGF_DEBUG(
+            AWS_LS_IMDS_CLIENT,
+            "(id=%p) IMDS client failed to fetch token for requester %p, fall back to v1 for the same "
+            "requester. Received response status code: %d",
+            (void *)user_data->client,
+            (void *)user_data,
+            user_data->status_code);
+        s_update_token_safely(user_data->client, NULL, false /* token not required */, 0 /*expire_timestamp*/);
     }
 }
 
