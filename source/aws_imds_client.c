@@ -516,7 +516,7 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
         aws_byte_cursor_trim_pred(&cursor, aws_char_is_space);
         aws_byte_buf_reset(&user_data->imds_token, true /*zero contents*/);
         if (aws_byte_buf_append_and_update(&user_data->imds_token, &cursor)) {
-            s_update_token_safely(user_data->client, NULL /*token*/ , true /*token_required*/, 0 /*expire_timestamp*/);
+            s_update_token_safely(user_data->client, NULL /*token*/, true /*token_required*/, 0 /*expire_timestamp*/);
             return;
         }
         /* The token was ALWAYS last for 6 hours, 21600 secs. Use current timestamp plus 21595 secs as the expiration
@@ -536,7 +536,7 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
             (void *)user_data->client,
             (void *)user_data,
             user_data->status_code);
-        s_update_token_safely(user_data->client, NULL/*token*/, true /*token_required*/, 0 /*expire_timestamp*/);
+        s_update_token_safely(user_data->client, NULL /*token*/, true /*token_required*/, 0 /*expire_timestamp*/);
     } else {
         /* Request failed; falling back to insecure request.
          * TODO: The retryable error (503 throttle) will also fall back to v1. Instead, we should just resend the token
