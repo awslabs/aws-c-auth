@@ -549,7 +549,7 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
             (void *)user_data->client,
             (void *)user_data,
             user_data->status_code);
-        s_update_token_safely(user_data->client, NULL, false /* token not required */, 0 /*expire_timestamp*/);
+        s_update_token_safely(user_data->client, NULL /*token*/, false /* token_required*/, 0 /*expire_timestamp*/);
     }
 }
 
