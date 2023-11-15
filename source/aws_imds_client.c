@@ -527,7 +527,7 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
             current, aws_timestamp_convert(s_imds_token_ttl_secs, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL));
 
         AWS_ASSERT(cursor.len != 0);
-        s_update_token_safely(user_data->client, &user_data->imds_token, true /* token required */, expire_timestamp);
+        s_update_token_safely(user_data->client, &user_data->imds_token, true /*token_required*/, expire_timestamp);
     } else if (user_data->ec2_metadata_v1_disabled) {
         AWS_LOGF_DEBUG(
             AWS_LS_IMDS_CLIENT,
