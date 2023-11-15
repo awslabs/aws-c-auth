@@ -536,7 +536,7 @@ static void s_client_on_token_response(struct imds_user_data *user_data) {
             (void *)user_data->client,
             (void *)user_data,
             user_data->status_code);
-        s_update_token_safely(user_data->client, NULL, true /* token required */, 0 /*expire_timestamp*/);
+        s_update_token_safely(user_data->client, NULL/*token*/, true /*token_required*/, 0 /*expire_timestamp*/);
     } else {
         /* Request failed; falling back to insecure request.
          * TODO: The retryable error (503 throttle) will also fall back to v1. Instead, we should just resend the token
