@@ -216,6 +216,11 @@ struct aws_credentials_provider_imds_options {
      */
     enum aws_imds_protocol_version imds_version;
 
+    /*
+     * If true, fallback from v2 to v1 will be disabled for all cases
+     */
+    bool ec2_metadata_v1_disabled;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };

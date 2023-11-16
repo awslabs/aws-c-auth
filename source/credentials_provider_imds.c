@@ -84,6 +84,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
         .bootstrap = options->bootstrap,
         .function_table = options->function_table,
         .imds_version = options->imds_version,
+        .ec2_metadata_v1_disabled = options->ec2_metadata_v1_disabled,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_imds_client_shutdown,

@@ -609,6 +609,67 @@ static int s_imds_client_insecure_fallback_request_failure(struct aws_allocator 
 
 AWS_TEST_CASE(imds_client_insecure_fallback_request_failure, s_imds_client_insecure_fallback_request_failure);
 
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_good_response,
+    "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
+    "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
+AWS_STATIC_STRING_FROM_LITERAL(s_access_key, "SuccessfulAccessKey");
+AWS_STATIC_STRING_FROM_LITERAL(s_secret_key, "SuccessfulSecret");
+AWS_STATIC_STRING_FROM_LITERAL(s_token, "TokenSuccess");
+AWS_STATIC_STRING_FROM_LITERAL(s_expiration, "2020-02-25T06:03:31Z");
+
+static int s_imds_client_v1_fallback_disabled_failure(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+    /* secure data flow is not supported */
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
+    /* v1 would have worked if fallback was not disabled */
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .ec2_metadata_v1_disabled = true,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+
+    aws_imds_client_get_resource_async(
+        client, aws_byte_cursor_from_string(s_expected_imds_resource_uri), s_get_resource_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_tester.has_received_resource_callback == true);
+    ASSERT_TRUE(s_tester.resource.len == 0);
+    /* There was no fallback so we didn't get any resource */
+    ASSERT_TRUE(s_validate_uri_path_and_resource(1, false /*no resource*/) == 0);
+    ASSERT_TRUE(s_tester.token_ttl_header_exist[0]);
+    ASSERT_TRUE(s_tester.token_ttl_header_expected[0]);
+    ASSERT_FALSE(s_tester.token_header_exist[0]);
+
+    ASSERT_UINT_EQUALS(s_tester.error_code, AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE);
+
+    aws_imds_client_release(client);
+
+    s_aws_wait_for_imds_client_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(allocator, client);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(imds_client_v1_fallback_disabled_failure, s_imds_client_v1_fallback_disabled_failure);
+
 static int s_imds_client_resource_request_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -654,15 +715,6 @@ static int s_imds_client_resource_request_failure(struct aws_allocator *allocato
 }
 
 AWS_TEST_CASE(imds_client_resource_request_failure, s_imds_client_resource_request_failure);
-
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_good_response,
-    "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
-    "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
-AWS_STATIC_STRING_FROM_LITERAL(s_access_key, "SuccessfulAccessKey");
-AWS_STATIC_STRING_FROM_LITERAL(s_secret_key, "SuccessfulSecret");
-AWS_STATIC_STRING_FROM_LITERAL(s_token, "TokenSuccess");
-AWS_STATIC_STRING_FROM_LITERAL(s_expiration, "2020-02-25T06:03:31Z");
 
 static int s_imds_client_resource_request_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
