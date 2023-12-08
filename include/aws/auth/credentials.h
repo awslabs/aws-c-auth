@@ -277,7 +277,7 @@ struct aws_credentials_provider_ecs_options {
     /*
      * Port to query credentials from.  If zero, 80/443 will be used based on whether or not tls is enabled.
      */
-    uint16_t port;
+    uint32_t port;
 };
 
 /**
