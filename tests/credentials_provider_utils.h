@@ -102,6 +102,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
 int aws_create_directory_components(struct aws_allocator *allocator, const struct aws_string *path);
 
 /**
+ * Create a new directory (under current working dir) and set $HOME env variable.
+ */
+int aws_create_random_home_directory(struct aws_allocator *allocator, struct aws_string **out_path);
+
+/**
  * Mocked HTTP connection manager for tests
  */
 struct aws_credentials_provider_http_mock_tester {
