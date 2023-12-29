@@ -8,8 +8,10 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/common/task_scheduler.h>
+#include <aws/common/uuid.h>
 #include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
@@ -18,6 +20,8 @@
 #include <aws/io/tls_channel_handler.h>
 
 #include <errno.h>
+
+AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
 
 /*
  * Support for async get testing
@@ -488,6 +492,29 @@ int aws_create_directory_components(struct aws_allocator *allocator, const struc
             }
         }
     }
+    return AWS_OP_SUCCESS;
+}
+
+int aws_create_random_home_directory(struct aws_allocator *allocator, struct aws_string **out_path) {
+    struct aws_byte_buf path_buf;
+    ASSERT_SUCCESS(aws_byte_buf_init(&path_buf, allocator, 256));
+
+    struct aws_byte_cursor prefix = aws_byte_cursor_from_c_str("./home-");
+    ASSERT_SUCCESS(aws_byte_buf_append(&path_buf, &prefix));
+
+    struct aws_uuid uuid;
+    ASSERT_SUCCESS(aws_uuid_init(&uuid));
+    ASSERT_SUCCESS(aws_uuid_to_str(&uuid, &path_buf));
+
+    ASSERT_SUCCESS(aws_byte_buf_append_byte_dynamic(&path_buf, '/'));
+
+    struct aws_string *path_str = aws_string_new_from_buf(allocator, &path_buf);
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, path_str));
+
+    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, path_str));
+
+    aws_byte_buf_clean_up(&path_buf);
+    *out_path = path_str;
     return AWS_OP_SUCCESS;
 }
 

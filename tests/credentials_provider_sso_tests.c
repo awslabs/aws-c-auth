@@ -326,9 +326,6 @@ static int s_credentials_provider_sso_connect_failure(struct aws_allocator *allo
 }
 AWS_TEST_CASE(credentials_provider_sso_connect_failure, s_credentials_provider_sso_connect_failure);
 
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
-
 static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -336,7 +333,8 @@ static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator
     credentials_provider_http_mock_tester.is_request_successful = false;
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
@@ -366,6 +364,8 @@ static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator
     aws_credentials_provider_http_mock_wait_for_shutdown_callback();
 
     aws_credentials_provider_http_mock_tester_cleanup();
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
 
     return 0;
 }
@@ -383,7 +383,8 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     credentials_provider_http_mock_tester.is_request_successful = false;
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -423,6 +424,8 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     aws_credentials_provider_http_mock_wait_for_shutdown_callback();
 
     aws_credentials_provider_http_mock_tester_cleanup();
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -436,7 +439,8 @@ static int s_credentials_provider_sso_failure_token_empty(struct aws_allocator *
     credentials_provider_http_mock_tester.is_request_successful = false;
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -474,6 +478,8 @@ static int s_credentials_provider_sso_failure_token_empty(struct aws_allocator *
     aws_credentials_provider_http_mock_wait_for_shutdown_callback();
 
     aws_credentials_provider_http_mock_tester_cleanup();
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -487,7 +493,8 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     credentials_provider_http_mock_tester.response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -526,6 +533,8 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -538,7 +547,8 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
     aws_credentials_provider_http_mock_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -581,6 +591,8 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -593,7 +605,8 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
     credentials_provider_http_mock_tester.response_code = AWS_HTTP_STATUS_CODE_500_INTERNAL_SERVER_ERROR;
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -636,6 +649,8 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -647,7 +662,8 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     aws_credentials_provider_http_mock_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -691,6 +707,8 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -702,7 +720,8 @@ static int s_credentials_provider_sso_basic_success_cached_config_file(struct aw
     aws_credentials_provider_http_mock_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -751,6 +770,8 @@ static int s_credentials_provider_sso_basic_success_cached_config_file(struct aw
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_profile_collection_release(config_collection);
 
@@ -766,7 +787,8 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     aws_credentials_provider_http_mock_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
@@ -810,6 +832,8 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }
@@ -823,7 +847,8 @@ static int s_credentials_provider_sso_basic_success_profile_cached_config_file(
     aws_credentials_provider_http_mock_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
@@ -870,6 +895,8 @@ static int s_credentials_provider_sso_basic_success_profile_cached_config_file(
     aws_credentials_provider_http_mock_wait_for_shutdown_callback();
     aws_credentials_provider_http_mock_tester_cleanup();
     aws_profile_collection_release(config_collection);
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
 
     return 0;
@@ -885,7 +912,8 @@ static int s_credentials_provider_sso_basic_success_after_failure(struct aws_all
     credentials_provider_http_mock_tester.failure_count = 2;
     credentials_provider_http_mock_tester.failure_response_code = AWS_HTTP_STATUS_CODE_500_INTERNAL_SERVER_ERROR;
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -929,6 +957,8 @@ static int s_credentials_provider_sso_basic_success_after_failure(struct aws_all
 
     aws_credentials_provider_http_mock_tester_cleanup();
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     return 0;
 }

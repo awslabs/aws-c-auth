@@ -9,6 +9,7 @@
 #include <aws/auth/private/sso_token_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/environment.h>
+#include <aws/common/file.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/tls_channel_handler.h>
@@ -315,8 +316,6 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "{\"accessToken\": \"ValidAccessToken\",\"expiresAt\": \"2015-03-12T05:35:19Z\"}");
 AWS_STATIC_STRING_FROM_LITERAL(s_invalid_config, "invalid config");
 
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_var, "HOME");
-AWS_STATIC_STRING_FROM_LITERAL(s_home_env_current_directory, ".");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_token, "ValidAccessToken");
 static uint64_t s_token_expiration_s = 1426138519;
 static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *allocator, void *ctx) {
@@ -324,7 +323,8 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -358,6 +358,8 @@ static int s_sso_token_provider_sso_session_basic_success(struct aws_allocator *
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
@@ -371,7 +373,8 @@ static int s_sso_token_provider_sso_session_config_file_cached(struct aws_alloca
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -411,6 +414,8 @@ static int s_sso_token_provider_sso_session_config_file_cached(struct aws_alloca
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
@@ -425,7 +430,8 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_session_name);
@@ -455,6 +461,8 @@ static int s_sso_token_provider_sso_session_expired_token(struct aws_allocator *
         aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
     aws_credentials_provider_release(provider);
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
@@ -468,7 +476,8 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
@@ -501,6 +510,8 @@ static int s_sso_token_provider_profile_basic_success(struct aws_allocator *allo
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
@@ -513,7 +524,8 @@ static int s_sso_token_provider_profile_cached_config_file(struct aws_allocator 
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
@@ -552,6 +564,8 @@ static int s_sso_token_provider_profile_cached_config_file(struct aws_allocator 
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
     aws_credentials_provider_release(provider);
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
@@ -566,7 +580,8 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
     s_aws_mock_token_provider_sso_tester_init(allocator);
 
     /* redirect $HOME */
-    ASSERT_SUCCESS(aws_set_environment_value(s_home_env_var, s_home_env_current_directory));
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
     /* create token file */
     struct aws_string *token_path = aws_construct_sso_token_path(allocator, s_sso_profile_start_url);
@@ -596,6 +611,8 @@ static int s_sso_token_provider_profile_expired_token(struct aws_allocator *allo
 
     aws_credentials_provider_release(provider);
 
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
     aws_string_destroy(token_path);
     aws_string_destroy(config_file_str);
     s_aws_mock_token_provider_sso_tester_cleanup();
