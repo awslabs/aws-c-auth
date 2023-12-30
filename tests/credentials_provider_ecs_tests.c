@@ -32,7 +32,7 @@ struct aws_mock_ecs_tester {
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
     bool has_received_shutdown_callback;
-    uint16_t selected_port;
+    uint32_t selected_port;
 
     int error_code;
 };
