@@ -1413,7 +1413,7 @@ static int s_credentials_provider_default_chain_disable_environment_test(struct 
 
     struct aws_byte_buf config_profile_collection_buf;
     AWS_ZERO_STRUCT(config_profile_collection_buf);
-    /* override profile with empty buffer so that we don't valid source credentials from profile */
+    /* Override profile with an empty buffer to prevent sourcing valid credentials from the profile */
     struct aws_profile_collection *config_profile_collection =
         aws_profile_collection_new_from_buffer(allocator, &config_profile_collection_buf, AWS_PST_CONFIG);
     ASSERT_NOT_NULL(config_profile_collection);
@@ -1439,7 +1439,7 @@ static int s_credentials_provider_default_chain_disable_environment_test(struct 
     ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
 
     aws_wait_on_credentials_callback(&callback_results);
-    /* Assert that we didn't source any credentials from environment*/
+    /* Assert that no credentials were sourced from the environment */
     ASSERT_NULL(callback_results.credentials);
     ASSERT_TRUE(callback_results.last_error != AWS_OP_SUCCESS);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
