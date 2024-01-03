@@ -554,6 +554,12 @@ struct aws_credentials_provider_chain_default_options {
      * Override of what profile to use, if not set, 'default' will be used.
      */
     struct aws_byte_cursor profile_name_override;
+
+    /*
+     * (Optional)
+     * If enabled, the Environment Credentials Provider is not added to the chain.
+     */
+    bool disable_environment_credentials_provider;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(

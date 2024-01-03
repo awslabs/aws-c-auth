@@ -1378,3 +1378,85 @@ static int s_credentials_provider_default_manual_tls_test(struct aws_allocator *
     return s_credentials_provider_default_test(allocator, true /*manual_tls*/);
 }
 AWS_TEST_CASE(credentials_provider_default_manual_tls_test, s_credentials_provider_default_manual_tls_test);
+
+static int s_credentials_provider_default_chain_disable_environment_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+
+    s_aws_credentials_shutdown_checker_init();
+    /*
+     * Set the environment variable values, but make sure they are not used when environment credentials provider is
+     * disabled.
+     */
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
+
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = el_group,
+        .max_entries = 4,
+    };
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .host_resolver = resolver,
+        .on_shutdown_complete = NULL,
+        .host_resolution_config = NULL,
+        .user_data = NULL,
+        .event_loop_group = el_group,
+    };
+
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+    ASSERT_NOT_NULL(bootstrap);
+
+    struct aws_byte_buf config_profile_collection_buf;
+    AWS_ZERO_STRUCT(config_profile_collection_buf);
+    /* override profile with empty buffer so that we don't valid source credentials from profile */
+    struct aws_profile_collection *config_profile_collection =
+        aws_profile_collection_new_from_buffer(allocator, &config_profile_collection_buf, AWS_PST_CONFIG);
+    ASSERT_NOT_NULL(config_profile_collection);
+
+    struct aws_credentials_provider_chain_default_options options = {
+        .bootstrap = bootstrap,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .disable_environment_credentials_provider = true,
+        .profile_collection_cached = config_profile_collection,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_chain_default(allocator, &options);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+
+    aws_wait_on_credentials_callback(&callback_results);
+    /* Assert that we didn't source any credentials from environment*/
+    ASSERT_NULL(callback_results.credentials);
+    ASSERT_TRUE(callback_results.last_error != AWS_OP_SUCCESS);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_credentials_shutdown_checker_clean_up();
+    aws_client_bootstrap_release(bootstrap);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+    aws_profile_collection_release(config_profile_collection);
+    aws_auth_library_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_default_chain_disable_environment_test,
+    s_credentials_provider_default_chain_disable_environment_test);

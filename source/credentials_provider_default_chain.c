@@ -312,15 +312,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     size_t index = 0;
 
     /* Providers that touch fast local resources... */
-
-    struct aws_credentials_provider_environment_options environment_options;
-    AWS_ZERO_STRUCT(environment_options);
-    environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
-    if (environment_provider == NULL) {
-        goto on_error;
+    if (!options->disable_environment_credentials_provider) {
+        struct aws_credentials_provider_environment_options environment_options;
+        AWS_ZERO_STRUCT(environment_options);
+        environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);
+        if (environment_provider == NULL) {
+            goto on_error;
+        }
+        providers[index++] = environment_provider;
     }
-
-    providers[index++] = environment_provider;
 
     /* Providers that will make a network call only if the relevant configuration is present... */
 
