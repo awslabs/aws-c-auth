@@ -312,7 +312,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     size_t index = 0;
 
     /* Providers that touch fast local resources... */
-    if (!options->disable_environment_credentials_provider) {
+    if (!options->skip_environment_credentials_provider) {
         struct aws_credentials_provider_environment_options environment_options;
         AWS_ZERO_STRUCT(environment_options);
         environment_provider = aws_credentials_provider_new_environment(allocator, &environment_options);

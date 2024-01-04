@@ -1425,7 +1425,7 @@ static int s_credentials_provider_default_chain_disable_environment_test(struct 
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .disable_environment_credentials_provider = true,
+        .skip_environment_credentials_provider = true,
         .profile_collection_cached = config_profile_collection,
     };
 

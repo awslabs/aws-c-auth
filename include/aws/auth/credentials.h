@@ -559,7 +559,7 @@ struct aws_credentials_provider_chain_default_options {
      * (Optional)
      * If enabled, the Environment Credentials Provider is not added to the chain.
      */
-    bool disable_environment_credentials_provider;
+    bool skip_environment_credentials_provider;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
