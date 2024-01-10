@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
+#include "aws/sdkutils/aws_profile.h"
 #include <aws/auth/credentials.h>
 
 #include <aws/auth/private/aws_profile.h>
@@ -291,13 +292,11 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             "static: source_profile set to %s",
             aws_string_c_str(aws_profile_property_get_value(source_profile_property)));
 
-        sts_options.creds_provider = s_create_profile_based_provider(
-            allocator,
-            credentials_file_path,
-            config_file_path,
-            aws_profile_property_get_value(source_profile_property),
-            options->profile_collection_cached);
+        struct aws_credentials_provider_profile_options profile_provider_options = *options;
+        profile_provider_options.profile_name_override =
+            aws_byte_cursor_from_string(aws_profile_property_get_value(source_profile_property));
 
+        sts_options.creds_provider = aws_credentials_provider_new_profile(allocator, &profile_provider_options);
         if (!sts_options.creds_provider) {
             goto done;
         }
