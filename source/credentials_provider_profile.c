@@ -373,7 +373,7 @@ done:
 
 static struct aws_credentials_provider *s_credentials_provider_new_profile_internal(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_profile_options *options,
+    const struct aws_credentials_provider_profile_options *options,
     struct aws_hash_table *source_profile_table) {
 
     struct aws_credentials_provider *provider = NULL;
