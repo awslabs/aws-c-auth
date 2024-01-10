@@ -105,7 +105,10 @@ static struct aws_error_info s_errors[] = {
         "Valid credentials could not be sourced by the sso credentials provider"),
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE,
-        "Failed to source the IMDS resource")
+        "Failed to source the IMDS resource"),
+            AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE,
+        "Failed to resolve credentials because the profile contains a cycle of assumeRole chain")
 };
 /* clang-format on */
 
