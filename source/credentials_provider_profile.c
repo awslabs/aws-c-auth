@@ -215,9 +215,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     struct aws_allocator *allocator,
     const struct aws_profile_property *role_arn_property,
     const struct aws_profile *profile,
-    struct aws_string *credentials_file_path,
-    struct aws_string *config_file_path,
     const struct aws_credentials_provider_profile_options *options,
+    struct aws_profile_collection *merged_profiles,
     struct aws_hash_table *source_profile_table) {
     struct aws_credentials_provider *provider = NULL;
 
@@ -302,6 +301,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         struct aws_credentials_provider_profile_options profile_provider_options = *options;
         profile_provider_options.profile_name_override =
             aws_byte_cursor_from_string(aws_profile_property_get_value(source_profile_property));
+        /* reuse profile collection instead of reading it again */
+        profile_provider_options.profile_collection_cached = merged_profiles;
         sts_options.creds_provider =
             s_credentials_provider_new_profile_internal(allocator, &profile_provider_options, source_profile_table);
 
@@ -372,7 +373,7 @@ done:
 
 static struct aws_credentials_provider *s_credentials_provider_new_profile_internal(
     struct aws_allocator *allocator,
-    const struct aws_credentials_provider_profile_options *options,
+    struct aws_credentials_provider_profile_options *options,
     struct aws_hash_table *source_profile_table) {
 
     struct aws_credentials_provider *provider = NULL;
@@ -473,13 +474,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     }
     if (role_arn_property && !profile_contains_static_cred) {
         provider = s_create_sts_based_provider(
-            allocator,
-            role_arn_property,
-            profile,
-            credentials_file_path,
-            config_file_path,
-            options,
-            source_profile_table);
+            allocator, role_arn_property, profile, options, merged_profiles, source_profile_table);
     } else {
         provider = s_create_profile_based_provider(
             allocator, credentials_file_path, config_file_path, profile_name, options->profile_collection_cached);
