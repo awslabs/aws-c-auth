@@ -302,15 +302,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         struct aws_credentials_provider_profile_options profile_provider_options = *options;
         profile_provider_options.profile_name_override =
             aws_byte_cursor_from_string(aws_profile_property_get_value(source_profile_property));
-        // TODO: add profile to hashmap to detect recursion
         sts_options.creds_provider =
             s_credentials_provider_new_profile_internal(allocator, &profile_provider_options, source_profile_table);
-        // sts_options.creds_provider = s_create_profile_based_provider(
-        //     allocator,
-        //     credentials_file_path,
-        //     config_file_path,
-        //     aws_profile_property_get_value(source_profile_property),
-        //     options->profile_collection_cached);
 
         if (!sts_options.creds_provider) {
             goto done;
@@ -472,8 +465,13 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         goto on_finished;
     }
     const struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
-
-    if (role_arn_property) {
+    bool profile_contains_static_cred = false;
+    if (!cleanup_source_profile_table) {
+        struct aws_credentials *credentials = aws_credentials_new_from_profile(allocator, profile);
+        profile_contains_static_cred = credentials != NULL;
+        aws_credentials_release(credentials);
+    }
+    if (role_arn_property && !profile_contains_static_cred) {
         provider = s_create_sts_based_provider(
             allocator,
             role_arn_property,
