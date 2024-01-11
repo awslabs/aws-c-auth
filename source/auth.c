@@ -107,7 +107,7 @@ static struct aws_error_info s_errors[] = {
         AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE,
         "Failed to source the IMDS resource"),
             AWS_DEFINE_ERROR_INFO_AUTH(
-    AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE,
+    AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE,
         "Failed to resolve credentials because the profile contains a cycle in the assumeRole chain.")
 };
 /* clang-format on */

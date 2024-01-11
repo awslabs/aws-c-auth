@@ -1056,7 +1056,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn(
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NULL(provider);
-    ASSERT_INT_EQUALS(AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE, aws_last_error());
+    ASSERT_INT_EQUALS(AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE, aws_last_error());
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
     aws_string_destroy(config_file_str);
@@ -1117,7 +1117,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_and_s
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NULL(provider);
-    ASSERT_INT_EQUALS(AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE, aws_last_error());
+    ASSERT_INT_EQUALS(AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE, aws_last_error());
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
     aws_string_destroy(config_file_str);
