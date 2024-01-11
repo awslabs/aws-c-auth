@@ -465,10 +465,13 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "hash_table_find failed");
         goto on_finished;
     }
-    if (element != NULL && !profile_contains_static_cred) {
-        // recursion
-        aws_raise_error(AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE);
-        goto on_finished;
+    if (element != NULL) {
+        /* profiles can contain self reference but no circular chain */
+        if (!profile_contains_static_cred || aws_hash_table_get_entry_count(source_profile_table) > 1) {
+            AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "assumeRole chain contains a circular reference");
+            aws_raise_error(AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE);
+            goto on_finished;
+        }
     }
 
     aws_hash_table_put(source_profile_table, (void *)&profile_name_cursor, NULL, 0);
