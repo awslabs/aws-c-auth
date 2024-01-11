@@ -455,9 +455,8 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     const struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
     bool profile_contains_static_cred = false;
     if (!cleanup_source_profiles_table) {
-        struct aws_credentials *credentials = aws_credentials_new_from_profile(allocator, profile);
-        profile_contains_static_cred = credentials != NULL;
-        aws_credentials_release(credentials);
+        profile_contains_static_cred = s_profile_get_property_value(profile, "aws_access_key_id") ||
+                                       s_profile_get_property_value(profile, "aws_secret_access_key");
     }
 
     struct aws_hash_element *element = NULL;
