@@ -407,18 +407,6 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         goto on_finished;
     }
     struct aws_byte_cursor profile_name_cursor = aws_byte_cursor_from_string(profile_name);
-    struct aws_hash_element *element = NULL;
-    if (aws_hash_table_find(source_profile_table, (void *)&profile_name_cursor, &element) == AWS_OP_ERR) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "hash_table_find failed");
-        goto on_finished;
-    }
-    if (element != NULL) {
-        // recursion
-        aws_raise_error(AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE);
-        goto on_finished;
-    }
-
-    aws_hash_table_put(source_profile_table, (void *)&profile_name_cursor, NULL, 0);
 
     if (options->profile_collection_cached) {
         /* Use cached profile collection */
@@ -472,6 +460,20 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         profile_contains_static_cred = credentials != NULL;
         aws_credentials_release(credentials);
     }
+
+    struct aws_hash_element *element = NULL;
+    if (aws_hash_table_find(source_profile_table, (void *)&profile_name_cursor, &element) == AWS_OP_ERR) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "hash_table_find failed");
+        goto on_finished;
+    }
+    if (element != NULL && !profile_contains_static_cred) {
+        // recursion
+        aws_raise_error(AWS_AUTH_PROFILE_CREDENTIALS_PROVIDER_CYCLE_FAILURE);
+        goto on_finished;
+    }
+
+    aws_hash_table_put(source_profile_table, (void *)&profile_name_cursor, NULL, 0);
+
     if (role_arn_property && !profile_contains_static_cred) {
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profile_table);
