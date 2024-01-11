@@ -3,12 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
-#include "aws/sdkutils/aws_profile.h"
 #include <aws/auth/credentials.h>
-#include <aws/common/hash_table.h>
 
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/hash_table.h>
 #include <aws/common/process.h>
 #include <aws/common/string.h>
 #include <aws/io/tls_channel_handler.h>
@@ -216,8 +215,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     const struct aws_profile_property *role_arn_property,
     const struct aws_profile *profile,
     const struct aws_credentials_provider_profile_options *options,
-    struct aws_profile_collection *merged_profiles,
-    struct aws_hash_table *source_profile_table) {
+    const struct aws_profile_collection *merged_profiles,
+    const struct aws_hash_table *source_profile_table) {
     struct aws_credentials_provider *provider = NULL;
 
     AWS_LOGF_INFO(
