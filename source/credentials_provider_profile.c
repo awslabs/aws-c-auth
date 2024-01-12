@@ -456,7 +456,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     }
     const struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
     bool profile_contains_access_key = aws_profile_get_property(profile, s_access_key_id_profile_var);
-    bool profile_contains_secret_access_key = aws_profile_contains_secret_access_key(s_secret_access_key_profile_var);
+    bool profile_contains_secret_access_key = aws_profile_get_property(profile, s_secret_access_key_profile_var);
     bool profile_contains_credentials = profile_contains_access_key || profile_contains_secret_access_key;
 
     struct aws_hash_element *element = NULL;
