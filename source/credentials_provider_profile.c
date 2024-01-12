@@ -465,7 +465,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         goto on_finished;
     }
     if (element != NULL) {
-        /* profile can contain a self-reference with static credentials but no circular chain. */
+        /* self-reference chain of length 1 is allowed with static credentials */
         if (aws_hash_table_get_entry_count(source_profiles_table) > 1 || !profile_contains_credentials) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "assumeRole chain contains a circular reference");
             aws_raise_error(AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE);
