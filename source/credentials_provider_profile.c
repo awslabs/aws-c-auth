@@ -25,6 +25,8 @@ AWS_STRING_FROM_LITERAL(s_role_arn_name, "role_arn");
 AWS_STRING_FROM_LITERAL(s_role_session_name_name, "role_session_name");
 AWS_STRING_FROM_LITERAL(s_credential_source_name, "credential_source");
 AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
+AWS_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
+AWS_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "aws_secret_access_key");
 
 static struct aws_byte_cursor s_default_session_name_pfx =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime-profile-config");
@@ -382,10 +384,10 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     struct aws_string *credentials_file_path = NULL;
     struct aws_string *config_file_path = NULL;
     struct aws_string *profile_name = NULL;
-    bool cleanup_source_profiles_table = false;
+    bool first_profile_in_chain = false;
     if (source_profiles_table == NULL) {
         source_profiles_table = aws_mem_calloc(allocator, 1, sizeof(struct aws_hash_table));
-        cleanup_source_profiles_table = true;
+        first_profile_in_chain = true;
         if (aws_hash_table_init(
                 source_profiles_table,
                 allocator,
@@ -453,11 +455,9 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         goto on_finished;
     }
     const struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
-    bool profile_contains_static_cred = false;
-    if (!cleanup_source_profiles_table) {
-        profile_contains_static_cred = s_profile_get_property_value(profile, "aws_access_key_id") ||
-                                       s_profile_get_property_value(profile, "aws_secret_access_key");
-    }
+    bool profile_contains_access_key = aws_profile_get_property(profile, s_access_key_id_profile_var);
+    bool profile_contains_secret_access_key = aws_profile_contains_secret_access_key(s_secret_access_key_profile_var);
+    bool profile_contains_credentials = profile_contains_access_key || profile_contains_secret_access_key;
 
     struct aws_hash_element *element = NULL;
     if (aws_hash_table_find(source_profiles_table, (void *)&profile_name_cursor, &element) == AWS_OP_ERR) {
@@ -466,7 +466,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     }
     if (element != NULL) {
         /* profile can contain a self-reference with static credentials but no circular chain. */
-        if (!profile_contains_static_cred || aws_hash_table_get_entry_count(source_profiles_table) > 1) {
+        if (aws_hash_table_get_entry_count(source_profiles_table) > 1 || !profile_contains_credentials) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "assumeRole chain contains a circular reference");
             aws_raise_error(AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE);
             goto on_finished;
@@ -474,11 +474,16 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     }
 
     aws_hash_table_put(source_profiles_table, (void *)&profile_name_cursor, NULL, 0);
-
-    if (role_arn_property && !profile_contains_static_cred) {
+    if (role_arn_property && (first_profile_in_chain || !profile_contains_credentials)) {
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profiles_table);
     } else {
+        /* fail at creation time */
+        if (!profile_contains_access_key || !profile_contains_secret_access_key) {
+            AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Profile contains partial credentials");
+            aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE);
+            goto on_finished;
+        }
         provider = s_create_profile_based_provider(
             allocator, credentials_file_path, config_file_path, profile_name, options->profile_collection_cached);
     }
@@ -491,7 +496,7 @@ on_finished:
     aws_string_destroy(credentials_file_path);
     aws_string_destroy(config_file_path);
     aws_string_destroy(profile_name);
-    if (cleanup_source_profiles_table) {
+    if (first_profile_in_chain) {
         aws_hash_table_clean_up(source_profiles_table);
         aws_mem_release(allocator, source_profiles_table);
     }
