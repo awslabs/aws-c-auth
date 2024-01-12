@@ -478,7 +478,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profiles_table);
     } else {
-        /* fail at creation time */
+        /* fail at creation time if profile contains partial creds */
         if (!profile_contains_access_key || !profile_contains_secret_access_key) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Profile contains partial credentials");
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE);
