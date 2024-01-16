@@ -730,85 +730,73 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
 
     s_aws_sts_tester_init(allocator);
 
-    // struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_chain_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_chain_config_file);
 
-    // struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
-    // struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
 
-    // ASSERT_SUCCESS(aws_create_profile_file(creds_file_str, config_contents));
-    // aws_string_destroy(config_contents);
+    ASSERT_SUCCESS(aws_create_profile_file(creds_file_str, config_contents));
+    aws_string_destroy(config_contents);
 
     struct aws_credentials_provider_profile_options options = {
-        //    .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
-        //    .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
-        //    TODO: if profile doesn't exist, why the success error?
-        .profile_name_override = aws_byte_cursor_from_c_str("userA"),
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = s_tester.bootstrap,
-        //    .function_table = &s_mock_function_table,
+        .function_table = &s_mock_function_table,
     };
 
     s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
-    // ASSERT_NOT_NULL(provider);
-    if (!provider) {
-        printf("waahm7 provider error:%d", aws_last_error());
-    } else {
-        // aws_string_destroy(config_file_str);
-        // aws_string_destroy(creds_file_str);
+    ASSERT_NOT_NULL(provider);
 
-        aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
 
-        s_aws_wait_for_credentials_result();
-        if (s_tester.credentials) {
-            printf(
-                "waahm7 credentials:" PRInSTR "," PRInSTR "," PRInSTR ";\n",
-                AWS_BYTE_CURSOR_PRI(aws_credentials_get_access_key_id(s_tester.credentials)),
-                AWS_BYTE_CURSOR_PRI(aws_credentials_get_secret_access_key(s_tester.credentials)),
-                AWS_BYTE_CURSOR_PRI(aws_credentials_get_session_token(s_tester.credentials)));
-        } else {
-            printf("waahm7 error:%d",s_tester.error_code);
-        }
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    ASSERT_INT_EQUALS(3, s_tester.num_request);
+    static struct aws_byte_cursor s_expected_request_body[] = {
+        AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67897%"
+                                              "3Arole%2Ftest_role&RoleSessionName=test_session3&DurationSeconds=900"),
+        AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67896%"
+                                              "3Arole%2Ftest_role&RoleSessionName=test_session2&DurationSeconds=900"),
+        AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%"
+                                              "3Arole%2Ftest_role&RoleSessionName=test_session&DurationSeconds=900"),
+    };
+    const char *expected_method = "POST";
+    const char *expected_path = "/";
+    const char *expected_host_header = "sts.amazonaws.com";
+
+    for (int i = 0; i < s_tester.num_request; i++) {
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_method,
+            strlen(expected_method),
+            s_tester.mocked_requests[i].method.buffer,
+            s_tester.mocked_requests[i].method.len);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_path,
+            strlen(expected_path),
+            s_tester.mocked_requests[i].path.buffer,
+            s_tester.mocked_requests[i].path.len);
+        ASSERT_TRUE(s_tester.mocked_requests[i].had_auth_header);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_host_header,
+            strlen(expected_host_header),
+            s_tester.mocked_requests[i].host_header.buffer,
+            s_tester.mocked_requests[i].host_header.len);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            s_expected_request_body[i].ptr,
+            s_expected_request_body[i].len,
+            s_tester.mocked_requests[i].body.buffer,
+            s_tester.mocked_requests[i].body.len);
     }
-    // ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
-
-    // ASSERT_INT_EQUALS(3, s_tester.num_request);
-    // static struct aws_byte_cursor s_expected_request_body[] = {
-    //     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67897%"
-    //                                           "3Arole%2Ftest_role&RoleSessionName=test_session3&DurationSeconds=900"),
-    //     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67896%"
-    //                                           "3Arole%2Ftest_role&RoleSessionName=test_session2&DurationSeconds=900"),
-    //     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%"
-    //                                           "3Arole%2Ftest_role&RoleSessionName=test_session&DurationSeconds=900"),
-    // };
-    // const char *expected_method = "POST";
-    // const char *expected_path = "/";
-    // const char *expected_host_header = "sts.amazonaws.com";
-
-    // for (int i = 0; i < s_tester.num_request; i++) {
-    //     ASSERT_BIN_ARRAYS_EQUALS(
-    //         expected_method,
-    //         strlen(expected_method),
-    //         s_tester.mocked_requests[i].method.buffer,
-    //         s_tester.mocked_requests[i].method.len);
-    //     ASSERT_BIN_ARRAYS_EQUALS(
-    //         expected_path,
-    //         strlen(expected_path),
-    //         s_tester.mocked_requests[i].path.buffer,
-    //         s_tester.mocked_requests[i].path.len);
-    //     ASSERT_TRUE(s_tester.mocked_requests[i].had_auth_header);
-    //     ASSERT_BIN_ARRAYS_EQUALS(
-    //         expected_host_header,
-    //         strlen(expected_host_header),
-    //         s_tester.mocked_requests[i].host_header.buffer,
-    //         s_tester.mocked_requests[i].host_header.len);
-    //     ASSERT_BIN_ARRAYS_EQUALS(
-    //         s_expected_request_body[i].ptr,
-    //         s_expected_request_body[i].len,
-    //         s_tester.mocked_requests[i].body.buffer,
-    //         s_tester.mocked_requests[i].body.len);
-    // }
 
     aws_credentials_provider_release(provider);
 
