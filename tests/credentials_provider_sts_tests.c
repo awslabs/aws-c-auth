@@ -741,7 +741,8 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
     struct aws_credentials_provider_profile_options options = {
         //    .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
         //    .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
-        .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
+        //    TODO: if profile doesn't exist, why the success error?
+        .profile_name_override = aws_byte_cursor_from_c_str("userA"),
         .bootstrap = s_tester.bootstrap,
         //    .function_table = &s_mock_function_table,
     };
@@ -767,7 +768,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
                 AWS_BYTE_CURSOR_PRI(aws_credentials_get_secret_access_key(s_tester.credentials)),
                 AWS_BYTE_CURSOR_PRI(aws_credentials_get_session_token(s_tester.credentials)));
         } else {
-            printf("waahm7 error:%d", s_tester.error_code);
+            printf("waahm7 error:%d",s_tester.error_code);
         }
     }
     // ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
