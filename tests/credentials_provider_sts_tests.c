@@ -752,7 +752,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     // ASSERT_NOT_NULL(provider);
     if (!provider) {
-        printf("waahm7 error:%d", aws_last_error());
+        printf("waahm7 provider error:%d", aws_last_error());
     } else {
         // aws_string_destroy(config_file_str);
         // aws_string_destroy(creds_file_str);
