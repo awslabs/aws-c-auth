@@ -1,5 +1,3 @@
-/**
- * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0.
  */
 
@@ -393,8 +391,8 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
                 source_profiles_table,
                 allocator,
                 3,
-                aws_hash_byte_cursor_ptr,
-                (aws_hash_callback_eq_fn *)aws_byte_cursor_eq,
+                aws_hash_c_string,
+                aws_hash_callback_c_str_eq,
                 NULL,
                 NULL)) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "hash_table_init failed");
@@ -408,7 +406,6 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: Profile credentials parser failed to resolve profile name");
         goto on_finished;
     }
-    struct aws_byte_cursor profile_name_cursor = aws_byte_cursor_from_string(profile_name);
 
     if (options->profile_collection_cached) {
         /* Use cached profile collection */
@@ -461,7 +458,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     bool profile_contains_credentials = profile_contains_access_key || profile_contains_secret_access_key;
 
     struct aws_hash_element *element = NULL;
-    if (aws_hash_table_find(source_profiles_table, (void *)&profile_name_cursor, &element) == AWS_OP_ERR) {
+    if (aws_hash_table_find(source_profiles_table, (void *)aws_string_c_str(profile_name), &element) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "hash_table_find failed");
         goto on_finished;
     }
@@ -474,7 +471,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         }
     }
 
-    aws_hash_table_put(source_profiles_table, (void *)&profile_name_cursor, NULL, 0);
+    aws_hash_table_put(source_profiles_table, (void *)aws_string_c_str(profile_name), NULL, 0);
     if (role_arn_property && (first_profile_in_chain || !profile_contains_credentials)) {
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profiles_table);
