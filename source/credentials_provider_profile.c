@@ -1,3 +1,6 @@
+/**
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
  * SPDX-License-Identifier: Apache-2.0.
  */
 
@@ -388,13 +391,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         first_profile_in_chain = true;
         /* source_profiles_table is an hashtable of (aws_byte_cursor *) -> NULL to detect recursion loop */
         if (aws_hash_table_init(
-                source_profiles_table,
-                allocator,
-                3,
-                aws_hash_c_string,
-                aws_hash_callback_c_str_eq,
-                NULL,
-                NULL)) {
+                source_profiles_table, allocator, 3, aws_hash_c_string, aws_hash_callback_c_str_eq, NULL, NULL)) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "hash_table_init failed");
             goto on_finished;
         }
