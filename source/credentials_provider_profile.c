@@ -388,6 +388,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     if (source_profiles_table == NULL) {
         source_profiles_table = aws_mem_calloc(allocator, 1, sizeof(struct aws_hash_table));
         first_profile_in_chain = true;
+        /* source_profiles_table is an hashtable of (aws_byte_cursor *) -> NULL to detect recursion loop */
         if (aws_hash_table_init(
                 source_profiles_table,
                 allocator,
