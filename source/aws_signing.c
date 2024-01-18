@@ -161,8 +161,8 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             &s_forbidden_headers,
             allocator,
             10,
-            aws_hash_byte_cursor_ptr,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq,
+            aws_hash_byte_cursor_ptr_ignore_case,
+            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
