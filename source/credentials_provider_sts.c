@@ -446,6 +446,7 @@ void s_on_signing_complete(struct aws_signing_result *result, int error_code, vo
         error_code);
 
     if (error_code) {
+        provider_user_data->error_code = error_code;
         aws_raise_error(error_code);
         goto error;
     }
