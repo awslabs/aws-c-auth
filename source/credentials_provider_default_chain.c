@@ -86,11 +86,16 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
             goto clean_up;
         }
 
+        struct aws_byte_cursor path_and_query = uri.path_and_query;
+        if (path_and_query.len == 0) {
+            path_and_query = aws_byte_cursor_from_c_str("/");
+        }
+
         struct aws_credentials_provider_ecs_options ecs_options = {
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
             .host = uri.host_name,
-            .path_and_query = uri.path_and_query,
+            .path_and_query = path_and_query,
             .tls_ctx = aws_byte_cursor_eq_c_str_ignore_case(&(uri.scheme), "HTTPS") ? tls_ctx : NULL,
             .auth_token = auth_token_cursor,
             .port = uri.port,
