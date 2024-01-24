@@ -964,12 +964,17 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
-    ASSERT_NULL(provider);
-    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE, aws_last_error());
+    ASSERT_NOT_NULL(provider);
 
     aws_string_destroy(config_file_str);
     aws_string_destroy(creds_file_str);
 
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_NULL(s_tester.credentials);
+    ASSERT_INT_EQUALS(s_tester.error_code, AWS_AUTH_SIGNING_NO_CREDENTIALS);
     aws_credentials_provider_release(provider);
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
