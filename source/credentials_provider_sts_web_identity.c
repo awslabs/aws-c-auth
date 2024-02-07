@@ -867,7 +867,7 @@ static int s_construct_endpoint(
     const struct aws_string *service_name) {
 
     if (!allocator || !endpoint || !region || !service_name) {
-        return AWS_ERROR_INVALID_ARGUMENT;
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
     aws_byte_buf_clean_up(endpoint);
 
@@ -906,7 +906,7 @@ on_error:
 static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_byte_buf *dst) {
 
     if (!allocator || !dst) {
-        return AWS_ERROR_INVALID_ARGUMENT;
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
 
     struct aws_uuid uuid;
