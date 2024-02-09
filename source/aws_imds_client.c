@@ -342,7 +342,7 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
         AWS_LOGF_ERROR(
             AWS_LS_IMDS_CLIENT, "(id=%p) IMDS client query response exceeded maximum allowed length", (void *)client);
 
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE);
     }
 
     if (aws_byte_buf_append_dynamic(&imds_user_data->current_result, data)) {

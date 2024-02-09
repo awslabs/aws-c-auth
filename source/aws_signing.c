@@ -2088,7 +2088,7 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
             return s_apply_existing_canonical_request(state);
 
         default:
-            return AWS_OP_ERR;
+            return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_SIGNATURE_TYPE);
     }
 }
 
