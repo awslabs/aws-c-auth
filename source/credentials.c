@@ -103,9 +103,6 @@ struct aws_credentials *aws_credentials_new(
     }
 
     struct aws_credentials *credentials = aws_mem_acquire(allocator, sizeof(struct aws_credentials));
-    if (credentials == NULL) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*credentials);
 
@@ -316,9 +313,6 @@ struct aws_credentials *aws_credentials_new_ecc(
     }
 
     struct aws_credentials *credentials = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials));
-    if (credentials == NULL) {
-        return NULL;
-    }
 
     credentials->allocator = allocator;
     credentials->expiration_timepoint_seconds = expiration_timepoint_in_seconds;

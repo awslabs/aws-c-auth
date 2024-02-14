@@ -124,10 +124,6 @@ struct aws_imds_client *aws_imds_client_new(
     }
 
     struct aws_imds_client *client = aws_mem_calloc(allocator, 1, sizeof(struct aws_imds_client));
-    if (!client) {
-        return NULL;
-    }
-
     if (aws_mutex_init(&client->token_lock)) {
         goto on_error;
     }

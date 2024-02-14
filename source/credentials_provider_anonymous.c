@@ -42,9 +42,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_anonymous(
     struct aws_credentials_provider *provider = aws_mem_calloc(allocator, 1, sizeof(struct aws_credentials_provider));
 
     struct aws_credentials *credentials = aws_credentials_new_anonymous(allocator);
-    if (credentials == NULL) {
-        goto on_new_credentials_failure;
-    }
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_anonymous_vtable, credentials);
 
@@ -53,10 +50,4 @@ struct aws_credentials_provider *aws_credentials_provider_new_anonymous(
     }
 
     return provider;
-
-on_new_credentials_failure:
-
-    aws_mem_release(allocator, provider);
-
-    return NULL;
 }

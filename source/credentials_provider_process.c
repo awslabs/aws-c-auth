@@ -230,10 +230,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_process(
         &impl,
         sizeof(struct aws_credentials_provider_process_impl));
 
-    if (!provider) {
-        goto on_error;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 

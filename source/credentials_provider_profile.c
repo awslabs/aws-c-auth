@@ -187,10 +187,6 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
         &impl,
         sizeof(struct aws_credentials_provider_profile_file_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 

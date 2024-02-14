@@ -134,9 +134,7 @@ static struct default_chain_callback_data *s_create_callback_data(
     void *user_data) {
     struct default_chain_callback_data *callback_data =
         aws_mem_calloc(provider->allocator, 1, sizeof(struct default_chain_callback_data));
-    if (callback_data == NULL) {
-        return NULL;
-    }
+
     callback_data->allocator = provider->allocator;
     callback_data->default_chain_provider = provider;
     callback_data->original_callback = callback;
@@ -256,10 +254,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
         sizeof(struct aws_credentials_provider),
         &impl,
         sizeof(struct aws_credentials_provider_default_chain_impl));
-
-    if (!provider) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
