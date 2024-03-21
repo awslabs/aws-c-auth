@@ -748,6 +748,11 @@ static int s_credentials_provider_sts_web_identity_get_credentials_async(
 
     struct aws_credentials_provider_sts_web_identity_impl *impl = provider->impl;
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "id=%p: STS_WEB_IDENTITY provider trying to load credentials",
+        (void *)provider);
+
     struct sts_web_identity_user_data *wrapped_user_data = s_user_data_new(provider, callback, user_data);
     if (wrapped_user_data == NULL) {
         goto error;

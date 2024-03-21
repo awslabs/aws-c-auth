@@ -190,6 +190,9 @@ static int s_credentials_provider_imds_get_credentials_async(
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: IMDS provider trying to load credentials", (void *)provider);
+
     struct aws_credentials_provider_imds_impl *impl = provider->impl;
 
     struct imds_provider_user_data *wrapped_user_data = s_imds_provider_user_data_new(provider, callback, user_data);
@@ -201,9 +204,17 @@ static int s_credentials_provider_imds_get_credentials_async(
         goto error;
     }
 
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: IMDS provider successfully retrieved credentials", (void *)provider);
+
     return AWS_OP_SUCCESS;
 
 error:
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "id=%p: IMDS provider failed to retrieve credentials: %s",
+        (void *)provider,
+        aws_error_str(aws_last_error()));
     s_imds_provider_user_data_destroy(wrapped_user_data);
     return AWS_OP_ERR;
 }
