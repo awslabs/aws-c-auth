@@ -161,7 +161,7 @@ static void s_on_get_credentials(const struct aws_credentials *credentials, int 
             "id=%p: IMDS provider successfully retrieved credentials",
             (void *)wrapped_user_data->imds_provider);
     } else {
-        AWS_LOGF_ERROR(
+        AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: IMDS provider failed to retrieve credentials: %s",
             (void *)wrapped_user_data->imds_provider,
@@ -192,7 +192,7 @@ static void s_on_get_role(const struct aws_byte_buf *role, int error_code, void 
     return;
 
 on_error:
-    AWS_LOGF_ERROR(
+    AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "id=%p: IMDS provider failed to retrieve role: %s",
         (void *)wrapped_user_data->imds_provider,
