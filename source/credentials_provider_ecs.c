@@ -431,6 +431,9 @@ static int s_credentials_provider_ecs_get_credentials_async(
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
 
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: ECS provider trying to load credentials", (void *)provider);
+
     struct aws_credentials_provider_ecs_impl *impl = provider->impl;
 
     struct aws_credentials_provider_ecs_user_data *wrapped_user_data =

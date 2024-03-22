@@ -69,6 +69,10 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
      * to try and use the ecs provider anywhere outside the default chain.
      */
     if (ecs_relative_uri && ecs_relative_uri->len) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "default chain: ECS credentials provider with relative URI %s will be used to retrieve credentials",
+            aws_string_c_str(ecs_relative_uri));
         struct aws_credentials_provider_ecs_options ecs_options = {
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
@@ -83,8 +87,18 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
         struct aws_uri uri;
         struct aws_byte_cursor uri_cstr = aws_byte_cursor_from_string(ecs_full_uri);
         if (AWS_OP_ERR == aws_uri_init_parse(&uri, allocator, &uri_cstr)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "default chain: failed to parse URI %s during default credentials provider chain initialization: %s",
+                aws_string_c_str(ecs_full_uri),
+                aws_error_str(aws_last_error()));
             goto clean_up;
         }
+
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "default chain: ECS credentials provider with full URI %s will be used to retrieve credentials",
+            aws_string_c_str(ecs_full_uri));
 
         struct aws_byte_cursor path_and_query = uri.path_and_query;
         if (path_and_query.len == 0) {
@@ -104,6 +118,9 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
         ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
         aws_uri_clean_up(&uri);
     } else if (ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false")) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "default chain: IMDS credentials provider will be used to retrieve credentials");
         struct aws_credentials_provider_imds_options imds_options = {
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
@@ -112,6 +129,11 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     }
 
 clean_up:
+    if (ecs_or_imds_provider == NULL) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "default chain: neither ECS nor IMDS will be used to retrieve credentials");
+    }
 
     aws_string_destroy(ecs_relative_uri);
     aws_string_destroy(ecs_full_uri);

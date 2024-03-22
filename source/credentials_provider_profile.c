@@ -137,6 +137,15 @@ static int s_profile_file_credentials_provider_get_credentials_async(
         }
     }
 
+    if (error_code == AWS_ERROR_SUCCESS) {
+        AWS_LOGF_INFO(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Loaded credentials from profile provider");
+    } else {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Failed to load credentials from profile provider: %s",
+            aws_error_str(error_code));
+    }
+
     callback(credentials, error_code, user_data);
 
     /*
@@ -175,9 +184,13 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     struct aws_string *config_file_path,
     const struct aws_string *profile_name,
     struct aws_profile_collection *profile_collection_cached) {
-
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_profile_file_impl *impl = NULL;
+
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "static: profile %s attempting to create profile-based credentials provider",
+        aws_string_c_str(profile_name));
 
     aws_mem_acquire_many(
         allocator,

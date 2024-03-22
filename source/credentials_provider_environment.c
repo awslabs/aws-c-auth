@@ -40,6 +40,17 @@ static int s_credentials_provider_environment_get_credentials_async(
         error_code = AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT;
     }
 
+    if (error_code == AWS_ERROR_SUCCESS) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: Loaded credentials from environment variables", (void *)provider);
+    } else {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: Failed to load credentials from environment variables: %s",
+            (void *)provider,
+            aws_error_str(error_code));
+    }
+
     callback(credentials, error_code, user_data);
 
     aws_credentials_release(credentials);
