@@ -155,6 +155,18 @@ on_error:
 static void s_on_get_credentials(const struct aws_credentials *credentials, int error_code, void *user_data) {
     (void)error_code;
     struct imds_provider_user_data *wrapped_user_data = user_data;
+    if (error_code == AWS_OP_SUCCESS) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: IMDS provider successfully retrieved credentials",
+            (void *)wrapped_user_data->imds_provider);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: IMDS provider failed to retrieve credentials: %s",
+            (void *)wrapped_user_data->imds_provider,
+            aws_error_str(error_code));
+    }
     wrapped_user_data->original_callback(
         (struct aws_credentials *)credentials, error_code, wrapped_user_data->original_user_data);
     s_imds_provider_user_data_destroy(wrapped_user_data);
@@ -180,6 +192,11 @@ static void s_on_get_role(const struct aws_byte_buf *role, int error_code, void 
     return;
 
 on_error:
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "id=%p: IMDS provider failed to retrieve role: %s",
+        (void *)wrapped_user_data->imds_provider,
+        aws_error_str(error_code));
     wrapped_user_data->original_callback(
         NULL, AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, wrapped_user_data->original_user_data);
     s_imds_provider_user_data_destroy(wrapped_user_data);
@@ -204,15 +221,12 @@ static int s_credentials_provider_imds_get_credentials_async(
         goto error;
     }
 
-    AWS_LOGF_INFO(
-        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: IMDS provider successfully retrieved credentials", (void *)provider);
-
     return AWS_OP_SUCCESS;
 
 error:
     AWS_LOGF_ERROR(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "id=%p: IMDS provider failed to retrieve credentials: %s",
+        "id=%p: IMDS provider failed to request credentials: %s",
         (void *)provider,
         aws_error_str(aws_last_error()));
     s_imds_provider_user_data_destroy(wrapped_user_data);
