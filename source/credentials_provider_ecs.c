@@ -41,6 +41,7 @@ struct aws_credentials_provider_ecs_impl {
     const struct aws_auth_http_system_vtable *function_table;
     struct aws_string *host;
     struct aws_string *path_and_query;
+    struct aws_string *auth_token_file_path;
     struct aws_string *auth_token;
 };
 
@@ -89,10 +90,6 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
     struct aws_credentials_provider *ecs_provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
-
-    int result = AWS_OP_ERR;
-    struct aws_string *ecs_env_token_file_path = NULL;
-    struct aws_string *ecs_env_token = NULL;
 
     struct aws_credentials_provider_ecs_user_data *wrapped_user_data =
         aws_mem_calloc(ecs_provider->allocator, 1, sizeof(struct aws_credentials_provider_ecs_user_data));
@@ -590,7 +587,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         if (impl->auth_token == NULL) {
             goto on_error;
         }
+    } else {
+        /* read the environment variables */
+        struct aws_string *ecs_env_token_file_path = NULL;
+        struct aws_string *ecs_env_token = NULL;
+        if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path)) {
+            goto on_error;
+        }
+        if (aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
+            goto on_error;
+        }
+        impl->auth_token_file_path = ecs_env_token_file_path;
+        impl->auth_token = ecs_env_token;
     }
+
     impl->path_and_query = aws_string_new_from_cursor(allocator, &options->path_and_query);
     if (impl->path_and_query == NULL) {
         goto on_error;
