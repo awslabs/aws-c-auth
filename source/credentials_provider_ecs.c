@@ -89,7 +89,7 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
     struct aws_credentials_provider *ecs_provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
-    
+
     int result = AWS_OP_ERR;
     struct aws_string *ecs_env_token_file_path = NULL;
     struct aws_string *ecs_env_token = NULL;
@@ -109,8 +109,10 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_provider->impl;
     if (impl->auth_token) {
-        if(aws_byte_buf_init_copy_from_cursor(
-            &wrapped_user_data->auth_token, ecs_provider->allocator, aws_byte_cursor_from_string(impl->auth_token))){
+        if (aws_byte_buf_init_copy_from_cursor(
+                &wrapped_user_data->auth_token,
+                ecs_provider->allocator,
+                aws_byte_cursor_from_string(impl->auth_token))) {
             goto on_done;
         }
     } else {
@@ -127,18 +129,20 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
             }
             if (ecs_env_token && ecs_env_token->len) {
                 aws_byte_buf_init_copy_from_cursor(
-                    &wrapped_user_data->auth_token, ecs_provider->allocator, aws_byte_cursor_from_string(ecs_env_token));
+                    &wrapped_user_data->auth_token,
+                    ecs_provider->allocator,
+                    aws_byte_cursor_from_string(ecs_env_token));
             }
         }
     }
-    
+
     result = AWS_OP_SUCCESS;
 
 on_done:
     aws_string_destroy(ecs_env_token_file_path);
     aws_string_destroy(ecs_env_token);
-    
-    if(result != AWS_OP_SUCCESS){
+
+    if (result != AWS_OP_SUCCESS) {
         s_aws_credentials_provider_ecs_user_data_destroy(wrapped_user_data);
         return NULL;
     }
