@@ -161,6 +161,7 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
 
     aws_byte_buf_append_dynamic(&s_tester.request_uri, &path);
     struct aws_byte_cursor authorization_header_value;
+    AWS_ZERO_STRUCT(authorization_header_value);
     aws_http_headers_get(
         aws_http_message_get_headers(options->request),
         aws_byte_cursor_from_c_str("Authorization"),
