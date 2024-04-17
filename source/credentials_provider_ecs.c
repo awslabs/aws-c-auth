@@ -591,10 +591,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         /* read the environment variables */
         struct aws_string *ecs_env_token_file_path = NULL;
         struct aws_string *ecs_env_token = NULL;
-        if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path)) {
-            goto on_error;
-        }
-        if (aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
+        if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) ||
+            aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
             goto on_error;
         }
         impl->auth_token_file_path = ecs_env_token_file_path;
