@@ -104,53 +104,30 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
     wrapped_user_data->original_callback = callback;
 
     if (aws_byte_buf_init(&wrapped_user_data->current_result, ecs_provider->allocator, ECS_RESPONSE_SIZE_INITIAL)) {
-        goto on_done;
+        goto on_error;
     }
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_provider->impl;
-    if (impl->auth_token) {
+    if (impl->auth_token_file_path) {
+        if (aws_byte_buf_init_from_file(
+                &wrapped_user_data->auth_token,
+                ecs_provider->allocator,
+                aws_string_c_str(impl->auth_token_file_path))) {
+            goto on_error;
+        }
+    } else if (impl->auth_token) {
         if (aws_byte_buf_init_copy_from_cursor(
                 &wrapped_user_data->auth_token,
                 ecs_provider->allocator,
                 aws_byte_cursor_from_string(impl->auth_token))) {
-            goto on_done;
+            goto on_error;
         }
-    } else {
-        if (aws_get_environment_value(ecs_provider->allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path)) {
-            goto on_done;
-        }
-        if (ecs_env_token_file_path && ecs_env_token_file_path->len) {
-            if (aws_byte_buf_init_from_file(
-                    &wrapped_user_data->auth_token,
-                    ecs_provider->allocator,
-                    aws_string_c_str(ecs_env_token_file_path))) {
-                goto on_done;
-            }
-        } else {
-            if (aws_get_environment_value(ecs_provider->allocator, s_ecs_creds_env_token, &ecs_env_token)) {
-                goto on_done;
-            }
-            if (ecs_env_token && ecs_env_token->len) {
-                aws_byte_buf_init_copy_from_cursor(
-                    &wrapped_user_data->auth_token,
-                    ecs_provider->allocator,
-                    aws_byte_cursor_from_string(ecs_env_token));
-            }
-        }
-    }
-
-    result = AWS_OP_SUCCESS;
-
-on_done:
-    aws_string_destroy(ecs_env_token_file_path);
-    aws_string_destroy(ecs_env_token);
-
-    if (result != AWS_OP_SUCCESS) {
-        s_aws_credentials_provider_ecs_user_data_destroy(wrapped_user_data);
-        return NULL;
     }
 
     return wrapped_user_data;
+on_error:
+    s_aws_credentials_provider_ecs_user_data_destroy(wrapped_user_data);
+    return NULL;
 }
 
 static void s_aws_credentials_provider_ecs_user_data_reset_response(
