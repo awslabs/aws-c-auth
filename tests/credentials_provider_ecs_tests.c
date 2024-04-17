@@ -576,9 +576,27 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
         auth_token_cursor.ptr,
         auth_token_cursor.len);
 
+    /* update the file with updated token */
+    struct aws_string *auth_token2 = aws_string_new_from_c_str(allocator, "test-token2-4321-qwer");
+    struct aws_byte_cursor auth_token2_cursor = aws_byte_cursor_from_string(auth_token2);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path, auth_token2) == AWS_OP_SUCCESS);
+
+    /* reset tester */
+    s_aws_ecs_tester_cleanup();
+    s_aws_ecs_tester_init(allocator);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    ASSERT_SUCCESS(s_do_ecs_success_test(allocator, &options));
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_tester.request_authorization_header.buffer,
+        s_tester.request_authorization_header.len,
+        auth_token2_cursor.ptr,
+        auth_token2_cursor.len);
+
     s_aws_ecs_tester_cleanup();
     aws_file_delete(token_file_path);
     aws_string_destroy(auth_token);
+    aws_string_destroy(auth_token2);
     aws_string_destroy(token_file_path);
     aws_string_destroy(bad_auth_token);
     return 0;
