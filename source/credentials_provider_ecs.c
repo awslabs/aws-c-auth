@@ -4,7 +4,6 @@
  */
 
 #include "aws/common/byte_buf.h"
-#include "aws/common/error.h"
 #include <aws/auth/credentials.h>
 
 #include <aws/auth/private/credentials_utils.h>

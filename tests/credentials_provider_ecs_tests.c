@@ -754,7 +754,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
 
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
-
+    ASSERT_TRUE(s_tester.request_authorization_header.len == 0);
     s_aws_ecs_tester_cleanup();
 
     return 0;
