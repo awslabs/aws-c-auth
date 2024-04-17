@@ -548,14 +548,12 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     struct aws_string *token_file_path = aws_create_process_unique_file_name(allocator);
     ASSERT_NOT_NULL(token_file_path);
     ASSERT_TRUE(aws_create_profile_file(token_file_path, auth_token) == AWS_OP_SUCCESS);
-    ASSERT_TRUE(
-        aws_set_environment_value(s_ecs_creds_env_token_file, token_file_path) == AWS_OP_SUCCESS);
-    
+    ASSERT_TRUE(aws_set_environment_value(s_ecs_creds_env_token_file, token_file_path) == AWS_OP_SUCCESS);
+
     /* test that static auth token is not preferred over file token */
     struct aws_string *bad_auth_token = aws_string_new_from_c_str(allocator, "badtoken");
-    ASSERT_TRUE(
-        aws_set_environment_value(s_ecs_creds_env_token, bad_auth_token) == AWS_OP_SUCCESS);
-    
+    ASSERT_TRUE(aws_set_environment_value(s_ecs_creds_env_token, bad_auth_token) == AWS_OP_SUCCESS);
+
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
     struct aws_credentials_provider_ecs_options options = {
@@ -581,7 +579,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     aws_file_delete(token_file_path);
     aws_string_destroy(auth_token);
     aws_string_destroy(token_file_path);
-    aws_string_destroy(bad_auth_token); 
+    aws_string_destroy(bad_auth_token);
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_ecs_basic_success_token_file, s_credentials_provider_ecs_basic_success_token_file);
