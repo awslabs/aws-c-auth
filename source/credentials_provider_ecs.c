@@ -120,7 +120,10 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
             goto on_done;
         }
         if (ecs_env_token_file_path && ecs_env_token_file_path->len) {
-            if(aws_byte_buf_init_from_file(&wrapped_user_data->auth_token, ecs_provider->allocator, aws_string_c_str(ecs_env_token_file_path))){
+            if (aws_byte_buf_init_from_file(
+                    &wrapped_user_data->auth_token,
+                    ecs_provider->allocator,
+                    aws_string_c_str(ecs_env_token_file_path))) {
                 goto on_done;
             }
         } else {
