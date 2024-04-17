@@ -482,6 +482,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
 
     aws_string_destroy(impl->path_and_query);
     aws_string_destroy(impl->auth_token);
+    aws_string_destroy(impl->auth_token_file_path);
     aws_string_destroy(impl->host);
 
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
