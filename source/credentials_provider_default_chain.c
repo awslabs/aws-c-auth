@@ -127,7 +127,6 @@ clean_up:
     aws_string_destroy(ecs_relative_uri);
     aws_string_destroy(ecs_full_uri);
     aws_string_destroy(ec2_imds_disable);
-    aws_string_destroy(ecs_token);
 
     return ecs_or_imds_provider;
 }
