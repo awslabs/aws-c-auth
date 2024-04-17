@@ -69,7 +69,6 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
             .host = aws_byte_cursor_from_string(s_ecs_host),
             .path_and_query = aws_byte_cursor_from_string(ecs_relative_uri),
             .tls_ctx = NULL,
-            .auth_token = auth_token_cursor,
         };
         ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
 
