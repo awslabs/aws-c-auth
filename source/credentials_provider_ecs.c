@@ -112,8 +112,8 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p) ECS credentials provider failed to read token from the path: %s with error: %d",
-                aws_string_c_str(impl->auth_token_file_path),
                 (void *)ecs_provider,
+                aws_string_c_str(impl->auth_token_file_path),
                 aws_last_error());
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_TOKEN_FILE_PATH);
             goto on_error;
