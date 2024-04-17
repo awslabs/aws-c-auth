@@ -3,11 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0.
  */
 
+#include "aws/common/byte_buf.h"
+#include "aws/common/error.h"
 #include <aws/auth/credentials.h>
 
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
@@ -28,6 +31,9 @@
 #define ECS_RESPONSE_SIZE_LIMIT 10000
 #define ECS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token_file, "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token, "AWS_CONTAINER_AUTHORIZATION_TOKEN");
+
 static void s_on_connection_manager_shutdown(void *user_data);
 
 struct aws_credentials_provider_ecs_impl {
@@ -47,6 +53,7 @@ struct aws_credentials_provider_ecs_user_data {
     struct aws_credentials_provider *ecs_provider;
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
+    struct aws_byte_buf auth_token;
 
     /* mutable */
     struct aws_http_connection *connection;
@@ -68,6 +75,7 @@ static void s_aws_credentials_provider_ecs_user_data_destroy(struct aws_credenti
             impl->connection_manager, user_data->connection);
     }
 
+    aws_byte_buf_clean_up(&user_data->auth_token);
     aws_byte_buf_clean_up(&user_data->current_result);
 
     if (user_data->request) {
@@ -81,12 +89,13 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
     struct aws_credentials_provider *ecs_provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data) {
+    
+    int result = AWS_OP_ERR;
+    struct aws_string *ecs_env_token_file_path = NULL;
+    struct aws_string *ecs_env_token = NULL;
 
     struct aws_credentials_provider_ecs_user_data *wrapped_user_data =
         aws_mem_calloc(ecs_provider->allocator, 1, sizeof(struct aws_credentials_provider_ecs_user_data));
-    if (wrapped_user_data == NULL) {
-        goto on_error;
-    }
 
     wrapped_user_data->allocator = ecs_provider->allocator;
     wrapped_user_data->ecs_provider = ecs_provider;
@@ -95,16 +104,46 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
     wrapped_user_data->original_callback = callback;
 
     if (aws_byte_buf_init(&wrapped_user_data->current_result, ecs_provider->allocator, ECS_RESPONSE_SIZE_INITIAL)) {
-        goto on_error;
+        goto on_done;
+    }
+
+    struct aws_credentials_provider_ecs_impl *impl = ecs_provider->impl;
+    if (impl->auth_token) {
+        if(aws_byte_buf_init_copy_from_cursor(
+            &wrapped_user_data->auth_token, ecs_provider->allocator, aws_byte_cursor_from_string(impl->auth_token))){
+            goto on_done;
+        }
+    } else {
+        if (aws_get_environment_value(ecs_provider->allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path)) {
+            goto on_done;
+        }
+        if (ecs_env_token_file_path && ecs_env_token_file_path->len) {
+            if(aws_byte_buf_init_from_file(&wrapped_user_data->auth_token, ecs_provider->allocator, aws_string_c_str(ecs_env_token_file_path))){
+                goto on_done;
+            }
+        } else {
+            if (aws_get_environment_value(ecs_provider->allocator, s_ecs_creds_env_token, &ecs_env_token)) {
+                goto on_done;
+            }
+            if (ecs_env_token && ecs_env_token->len) {
+                aws_byte_buf_init_copy_from_cursor(
+                    &wrapped_user_data->auth_token, ecs_provider->allocator, aws_byte_cursor_from_string(ecs_env_token));
+            }
+        }
+    }
+    
+    result = AWS_OP_SUCCESS;
+
+on_done:
+    aws_string_destroy(ecs_env_token_file_path);
+    aws_string_destroy(ecs_env_token);
+    
+    if(result != AWS_OP_SUCCESS){
+        s_aws_credentials_provider_ecs_user_data_destroy(wrapped_user_data);
+        return NULL;
     }
 
     return wrapped_user_data;
-
-on_error:
-
-    s_aws_credentials_provider_ecs_user_data_destroy(wrapped_user_data);
-
-    return NULL;
 }
 
 static void s_aws_credentials_provider_ecs_user_data_reset_response(
@@ -318,10 +357,10 @@ static int s_make_ecs_http_query(
         goto on_error;
     }
 
-    if (impl->auth_token != NULL) {
+    if (ecs_user_data->auth_token.len) {
         struct aws_http_header auth_header = {
             .name = aws_byte_cursor_from_string(s_ecs_authorization_header),
-            .value = aws_byte_cursor_from_string(impl->auth_token),
+            .value = aws_byte_cursor_from_buf(&ecs_user_data->auth_token),
         };
         if (aws_http_message_add_header(request, auth_header)) {
             goto on_error;
