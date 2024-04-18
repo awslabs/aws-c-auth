@@ -104,7 +104,7 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
     }
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_provider->impl;
-    if (impl->auth_token_file_path) {
+    if (impl->auth_token_file_path != NULL && impl->auth_token_file_path->len > 0) {
         if (aws_byte_buf_init_from_file(
                 &wrapped_user_data->auth_token,
                 ecs_provider->allocator,
@@ -118,7 +118,7 @@ static struct aws_credentials_provider_ecs_user_data *s_aws_credentials_provider
             aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_TOKEN_FILE_PATH);
             goto on_error;
         }
-    } else if (impl->auth_token) {
+    } else if (impl->auth_token != NULL && impl->auth_token->len > 0) {
         if (aws_byte_buf_init_copy_from_cursor(
                 &wrapped_user_data->auth_token,
                 ecs_provider->allocator,
