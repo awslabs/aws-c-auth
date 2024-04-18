@@ -108,7 +108,10 @@ static struct aws_error_info s_errors[] = {
         "Failed to source the IMDS resource"),
             AWS_DEFINE_ERROR_INFO_AUTH(
     AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE,
-        "Failed to resolve credentials because the profile contains a cycle in the assumeRole chain.")
+        "Failed to resolve credentials because the profile contains a cycle in the assumeRole chain."),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_TOKEN_FILE_PATH,
+        "Failed to read the ECS token file specified in the AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE environment variable."),
 };
 /* clang-format on */
 

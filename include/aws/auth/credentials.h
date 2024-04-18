@@ -233,10 +233,20 @@ struct aws_credentials_provider_imds_options {
  * or via a full uri specified by environment variables:
  * AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
  * AWS_CONTAINER_CREDENTIALS_FULL_URI
- * AWS_CONTAINER_AUTHORIZATION_TOKEN
+ *
  * If both relative uri and absolute uri are set, relative uri
- * has higher priority. Token is used in auth header but only for
- * absolute uri.
+ * has higher priority.
+ *
+ * Currently, the ECS creds provider doesn't read those environment variables and requires host & path_and_query
+ * TODO: Support AWS_CONTAINER_CREDENTIALS_RELATIVE_URI and AWS_CONTAINER_CREDENTIALS_FULL_URI
+ * parameters.
+ *
+ * For the Authorization token, there are three ways (in order of priority).
+ * 1. auth_token parameter
+ * 2. AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE (env var which contains absolute path to the token file. The file will be
+ * re-read for each call to get credentials.)
+ * 3. AWS_CONTAINER_AUTHORIZATION_TOKEN (env var which contains static auth token)
+ *
  * While above information is used in request only, endpoint info
  * is needed when creating ecs provider to initiate the connection
  * manager, more specifically, host and http scheme (tls or not)
