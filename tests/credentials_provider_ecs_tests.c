@@ -536,6 +536,124 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
 
 AWS_TEST_CASE(credentials_provider_ecs_basic_success, s_credentials_provider_ecs_basic_success);
 
+static int s_credentials_provider_ecs_mocked_server_basic_ipv6_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = el_group,
+        .max_entries = 8,
+    };
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = bootstrap,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1"),
+        .port = 8080,
+        .path_and_query = aws_byte_cursor_from_c_str("/credentials_provider_ecs_success_response"),
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+    s_aws_wait_for_credentials_result();
+    ASSERT_NOT_NULL(s_tester.credentials);
+    ASSERT_TRUE(s_tester.error_code == AWS_OP_SUCCESS);
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_client_bootstrap_release(bootstrap);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+
+    s_aws_ecs_tester_cleanup();
+
+    aws_auth_library_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_ecs_mocked_server_basic_ipv6_success,
+    s_credentials_provider_ecs_mocked_server_basic_ipv6_success);
+
+static int s_credentials_provider_ecs_mocked_server_basic_ipv4_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = el_group,
+        .max_entries = 8,
+    };
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = el_group,
+        .host_resolver = resolver,
+    };
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = bootstrap,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("127.0.0.1"),
+        .port = 8080,
+        .path_and_query = aws_byte_cursor_from_c_str("/credentials_provider_ecs_success_response"),
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+    s_aws_wait_for_credentials_result();
+    ASSERT_NOT_NULL(s_tester.credentials);
+    ASSERT_TRUE(s_tester.error_code == AWS_OP_SUCCESS);
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_client_bootstrap_release(bootstrap);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+
+    s_aws_ecs_tester_cleanup();
+
+    aws_auth_library_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_ecs_mocked_server_basic_ipv4_success,
+    s_credentials_provider_ecs_mocked_server_basic_ipv4_success);
+
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token_file, "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token, "AWS_CONTAINER_AUTHORIZATION_TOKEN");
 

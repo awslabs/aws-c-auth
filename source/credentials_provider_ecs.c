@@ -10,6 +10,7 @@
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/environment.h>
+#include <aws/common/host_utils.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
@@ -42,6 +43,7 @@ struct aws_credentials_provider_ecs_impl {
     struct aws_string *path_and_query;
     struct aws_string *auth_token_file_path;
     struct aws_string *auth_token;
+    bool is_https;
 };
 
 /*
@@ -431,6 +433,39 @@ static void s_ecs_query_task_role_credentials(struct aws_credentials_provider_ec
     }
 }
 
+static bool s_is_valid_remote_host_ip(
+    struct aws_credentials_provider_ecs_user_data *ecs_user_data,
+    struct aws_http_connection *connection) {
+    struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
+
+    if (impl->is_https) {
+        return true;
+    }
+
+    bool result = false;
+
+    const struct aws_byte_cursor address =
+        aws_byte_cursor_from_c_str(aws_http_connection_get_remote_endpoint(connection)->address);
+    if (aws_is_ipv4(address)) {
+        const struct aws_byte_cursor ipv4_loopback_address_prefix = aws_byte_cursor_from_c_str("127.");
+        const struct aws_byte_cursor ecs_container_host_address = aws_byte_cursor_from_c_str("169.254.170.2");
+        const struct aws_byte_cursor eks_container_host_address = aws_byte_cursor_from_c_str("169.254.170.23");
+
+        result |= aws_byte_cursor_starts_with(&address, &ipv4_loopback_address_prefix);
+        result |= aws_byte_cursor_eq(&address, &ecs_container_host_address);
+        result |= aws_byte_cursor_eq(&address, &eks_container_host_address);
+    } else {
+        // TODO: is this the correct way to compare ip v6 address?
+        const struct aws_byte_cursor ipv6_loopback_address = aws_byte_cursor_from_c_str("::1");
+        const struct aws_byte_cursor eks_container_host_ipv6_address = aws_byte_cursor_from_c_str("fd00:ec2::23");
+
+        result |= aws_byte_cursor_eq(&address, &ipv6_loopback_address);
+        result |= aws_byte_cursor_eq(&address, &eks_container_host_ipv6_address);
+    }
+
+    return result;
+}
+
 static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct aws_credentials_provider_ecs_user_data *ecs_user_data = user_data;
 
@@ -443,6 +478,19 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
             aws_error_str(error_code));
 
         ecs_user_data->error_code = error_code;
+        s_ecs_finalize_get_credentials_query(ecs_user_data);
+        return;
+    }
+
+    if (!s_is_valid_remote_host_ip(ecs_user_data, connection)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: ECS provider failed to establish connection to a valid remote with error %d(%s)",
+            (void *)ecs_user_data->ecs_provider,
+            AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST,
+            aws_error_str(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST));
+
+        ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST;
         s_ecs_finalize_get_credentials_query(ecs_user_data);
         return;
     }
@@ -555,6 +603,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
                 aws_error_debug_str(aws_last_error()));
             goto on_error;
         }
+        impl->is_https = true;
     }
 
     struct aws_socket_options socket_options;

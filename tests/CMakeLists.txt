@@ -57,6 +57,11 @@ add_test_case(credentials_provider_ecs_no_auth_token_success)
 add_test_case(credentials_provider_ecs_success_multi_part_doc)
 add_test_case(credentials_provider_ecs_real_new_destroy)
 
+if(ENABLE_MOCK_SERVER_TESTS)
+    add_test_case(credentials_provider_ecs_mocked_server_basic_ipv4_success)
+    add_test_case(credentials_provider_ecs_mocked_server_basic_ipv6_success)
+endif()
+
 if(AWS_BUILDING_ON_ECS)
     add_test_case(credentials_provider_ecs_real_success)
 endif()

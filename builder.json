@@ -20,5 +20,8 @@
     "test_steps": [
         "auth-ci-prep",
         "test"
+    ],
+    "pre_build_steps": [
+        "mock-server-setup"
     ]
 }
