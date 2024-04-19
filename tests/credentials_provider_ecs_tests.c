@@ -39,6 +39,10 @@ struct aws_mock_ecs_tester {
     uint32_t selected_port;
 
     int error_code;
+
+    struct aws_event_loop_group *el_group;
+    struct aws_host_resolver *host_resolver;
+    struct aws_client_bootstrap *bootstrap;
 };
 
 static struct aws_mock_ecs_tester s_tester;
@@ -233,6 +237,20 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
     s_tester.is_connection_acquire_successful = true;
     s_tester.is_request_successful = true;
 
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = s_tester.el_group,
+        .max_entries = 8,
+    };
+    s_tester.host_resolver = aws_host_resolver_new_default(allocator, &resolver_options);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = s_tester.el_group,
+        .host_resolver = s_tester.host_resolver,
+    };
+    s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+
     return AWS_OP_SUCCESS;
 }
 
@@ -243,6 +261,9 @@ static void s_aws_ecs_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
+    aws_client_bootstrap_release(s_tester.bootstrap);
+    aws_host_resolver_release(s_tester.host_resolver);
+    aws_event_loop_group_release(s_tester.el_group);
     aws_auth_library_clean_up();
 }
 
@@ -277,7 +298,7 @@ static int s_credentials_provider_ecs_new_destroy(struct aws_allocator *allocato
     s_aws_ecs_tester_init(allocator);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -311,7 +332,7 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
     s_tester.is_connection_acquire_successful = false;
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -358,7 +379,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     s_tester.is_request_successful = false;
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -412,7 +433,7 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
     aws_array_list_push_back(&s_tester.response_data_callbacks, &bad_document_cursor);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -515,7 +536,7 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -544,22 +565,8 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv4_invalid(struct aw
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
-    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
-
-    struct aws_host_resolver_default_options resolver_options = {
-        .el_group = el_group,
-        .max_entries = 8,
-    };
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = el_group,
-        .host_resolver = resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
-
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -578,10 +585,6 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv4_invalid(struct aw
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
-
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_release(resolver);
-    aws_event_loop_group_release(el_group);
 
     s_aws_ecs_tester_cleanup();
 
@@ -602,22 +605,8 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv4_success(struct aw
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
-    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
-
-    struct aws_host_resolver_default_options resolver_options = {
-        .el_group = el_group,
-        .max_entries = 8,
-    };
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = el_group,
-        .host_resolver = resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
-
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -637,10 +626,6 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv4_success(struct aw
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
-
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_release(resolver);
-    aws_event_loop_group_release(el_group);
 
     s_aws_ecs_tester_cleanup();
 
@@ -675,7 +660,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -731,7 +716,7 @@ static int s_credentials_provider_ecs_basic_success_token_env(struct aws_allocat
     struct aws_byte_cursor auth_token_cursor = aws_byte_cursor_from_string(auth_token);
     aws_set_environment_value(s_ecs_creds_env_token, auth_token);
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -771,7 +756,7 @@ static int s_credentials_provider_ecs_basic_success_token_env_with_parameter_tok
     struct aws_byte_cursor expected_token_cursor = aws_byte_cursor_from_c_str("t-token-4321-xyz");
     struct aws_credentials_provider_ecs_options options = {
 
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -807,7 +792,7 @@ static int s_credentials_provider_ecs_no_auth_token_success(struct aws_allocator
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -845,7 +830,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor3);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -904,22 +889,8 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
 
     s_aws_ecs_tester_init(allocator);
 
-    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
-
-    struct aws_host_resolver_default_options resolver_options = {
-        .el_group = el_group,
-        .max_entries = 8,
-    };
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = el_group,
-        .host_resolver = resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
-
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -940,10 +911,6 @@ static int s_credentials_provider_ecs_real_new_destroy(struct aws_allocator *all
 
     s_aws_wait_for_provider_shutdown_callback();
 
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_release(resolver);
-    aws_event_loop_group_release(el_group);
-
     s_aws_ecs_tester_cleanup();
 
     aws_auth_library_clean_up();
@@ -960,22 +927,8 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
 
     s_aws_ecs_tester_init(allocator);
 
-    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
-
-    struct aws_host_resolver_default_options resolver_options = {
-        .el_group = el_group,
-        .max_entries = 8,
-    };
-    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
-
-    struct aws_client_bootstrap_options bootstrap_options = {
-        .event_loop_group = el_group,
-        .host_resolver = resolver,
-    };
-    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
-
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = bootstrap,
+        .bootstrap = s_tester.bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
@@ -1001,10 +954,6 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
     s_aws_wait_for_provider_shutdown_callback();
 
     s_aws_ecs_tester_cleanup();
-
-    aws_client_bootstrap_release(bootstrap);
-    aws_host_resolver_release(resolver);
-    aws_event_loop_group_release(el_group);
 
     aws_auth_library_clean_up();
 

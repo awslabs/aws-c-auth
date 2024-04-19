@@ -454,13 +454,17 @@ static bool s_is_valid_remote_host_ip(
         result |= aws_byte_cursor_starts_with(&address, &ipv4_loopback_address_prefix);
         result |= aws_byte_cursor_eq(&address, &ecs_container_host_address);
         result |= aws_byte_cursor_eq(&address, &eks_container_host_address);
-    } else {
-        // TODO: is this the correct way to compare ip v6 address?
+    } else if (aws_is_ipv6) {
         const struct aws_byte_cursor ipv6_loopback_address = aws_byte_cursor_from_c_str("::1");
+        const struct aws_byte_cursor ipv6_loopback_address_verbose = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1");
         const struct aws_byte_cursor eks_container_host_ipv6_address = aws_byte_cursor_from_c_str("fd00:ec2::23");
+        const struct aws_byte_cursor eks_container_host_ipv6_address_verbose =
+            aws_byte_cursor_from_c_str("fd00:ec2:0:0:0:0:0:23");
 
         result |= aws_byte_cursor_eq(&address, &ipv6_loopback_address);
+        result |= aws_byte_cursor_eq(&address, &ipv6_loopback_address_verbose);
         result |= aws_byte_cursor_eq(&address, &eks_container_host_ipv6_address);
+        result |= aws_byte_cursor_eq(&address, &eks_container_host_ipv6_address_verbose);
     }
 
     return result;
@@ -570,6 +574,12 @@ static void s_on_connection_manager_shutdown(void *user_data) {
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options) {
+
+    if (!options->bootstrap) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a bootstrap instance must be provided");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_ecs_impl *impl = NULL;
