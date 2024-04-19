@@ -565,9 +565,8 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv4_invalid(struct aw
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("10.6.129.5"),
-        .port = 8080,
-        .path_and_query = aws_byte_cursor_from_c_str("/credentials_provider_ecs_success_response"),
+        .host = aws_byte_cursor_from_c_str("google.com"),
+        .port = 80,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
