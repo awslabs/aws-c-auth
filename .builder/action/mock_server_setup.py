@@ -24,12 +24,6 @@ class MockServerSetup(Builder.Action):
 
         self.env = env
         python_path = sys.executable
-        # # install dependency for mock server
-        # self.env.shell.exec(python_path,
-        #                     '-m', 'pip', 'install', 'h11', 'trio', 'proxy.py', check=True)
-        # # check the deps can be import correctly
-        # self.env.shell.exec(python_path,
-        #                     '-c', 'import h11, trio', check=True)
 
         # set cmake flag so mock server tests are enabled
         env.project.config['cmake_args'].extend(
