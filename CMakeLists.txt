@@ -36,6 +36,8 @@ include(AwsFindPackage)
 option(BUILD_RELOCATABLE_BINARIES
         "Build Relocatable Binaries, this will turn off features that will fail on older kernels than used for the build."
         OFF)
+option(ENABLE_AUTH_MOCK_SERVER_TESTS "Whether to run the integration tests that rely on pre-configured mock server" OFF)
+
 
 file(GLOB AWS_AUTH_ROOT_HEADERS
         "include/aws/auth/*.h"

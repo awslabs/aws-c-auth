@@ -33,7 +33,7 @@ class MockServerSetup(Builder.Action):
 
         # set cmake flag so mock server tests are enabled
         env.project.config['cmake_args'].extend(
-            ['-DENABLE_MOCK_SERVER_TESTS=ON', '-DASSERT_LOCK_HELD=ON'])
+            ['-DENABLE_AUTH_MOCK_SERVER_TESTS=ON', '-DASSERT_LOCK_HELD=ON'])
 
         base_dir = os.path.dirname(os.path.realpath(__file__))
         dir = os.path.join(base_dir, "..", "..", "tests", "mock_server")
