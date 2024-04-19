@@ -446,7 +446,7 @@ static bool s_is_valid_remote_host_ip(
 
     const struct aws_byte_cursor address =
         aws_byte_cursor_from_c_str(aws_http_connection_get_remote_endpoint(connection)->address);
-    if (aws_is_ipv4(address)) {
+    if (aws_host_utils_is_ipv4(address)) {
         const struct aws_byte_cursor ipv4_loopback_address_prefix = aws_byte_cursor_from_c_str("127.");
         const struct aws_byte_cursor ecs_container_host_address = aws_byte_cursor_from_c_str("169.254.170.2");
         const struct aws_byte_cursor eks_container_host_address = aws_byte_cursor_from_c_str("169.254.170.23");
@@ -454,7 +454,7 @@ static bool s_is_valid_remote_host_ip(
         result |= aws_byte_cursor_starts_with(&address, &ipv4_loopback_address_prefix);
         result |= aws_byte_cursor_eq(&address, &ecs_container_host_address);
         result |= aws_byte_cursor_eq(&address, &eks_container_host_address);
-    } else if (aws_is_ipv6) {
+    } else if (aws_host_utils_is_ipv6) {
         const struct aws_byte_cursor ipv6_loopback_address = aws_byte_cursor_from_c_str("::1");
         const struct aws_byte_cursor ipv6_loopback_address_verbose = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1");
         const struct aws_byte_cursor eks_container_host_ipv6_address = aws_byte_cursor_from_c_str("fd00:ec2::23");
