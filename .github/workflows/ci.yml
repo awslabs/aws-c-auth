@@ -20,6 +20,7 @@ jobs:
   linux-compat:
     runs-on: ubuntu-20.04 # latest
     strategy:
+    fail-fast: false
       matrix:
         image:
           - manylinux1-x64
@@ -40,6 +41,7 @@ jobs:
   linux-compiler-compat:
     runs-on: ubuntu-20.04 # latest
     strategy:
+    fail-fast: false
       matrix:
         compiler:
           - clang-3
@@ -80,6 +82,7 @@ jobs:
   windows-vc14:
     runs-on: windows-2019 # windows-2019 is last env with Visual Studio 2015 (v14.0)
     strategy:
+    fail-fast: false
       matrix:
         arch: [x86, x64]
     steps:
