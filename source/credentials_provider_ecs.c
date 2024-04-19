@@ -468,6 +468,7 @@ static bool s_is_valid_remote_host_ip(
 
 static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *user_data) {
     struct aws_credentials_provider_ecs_user_data *ecs_user_data = user_data;
+    struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
 
     if (connection == NULL) {
         AWS_LOGF_WARN(
@@ -482,7 +483,8 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
         return;
     }
 
-    if (!s_is_valid_remote_host_ip(ecs_user_data, connection)) {
+    if (impl->function_table == g_aws_credentials_provider_http_function_table &&
+        !s_is_valid_remote_host_ip(ecs_user_data, connection)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "id=%p: ECS provider failed to establish connection to a valid remote with error %d(%s)",
