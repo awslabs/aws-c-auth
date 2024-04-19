@@ -613,7 +613,7 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv4_success(struct aw
                 .shutdown_user_data = NULL,
             },
         .host = aws_byte_cursor_from_c_str("127.0.0.1"),
-        .port = 8080,
+        .port = 7070,
         .path_and_query = aws_byte_cursor_from_c_str("/credentials_provider_ecs_success_response"),
     };
 
