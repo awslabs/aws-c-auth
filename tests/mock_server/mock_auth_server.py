@@ -33,11 +33,11 @@ class MyHandler(SimpleHTTPRequestHandler):
 
 # Creating an ipv6 server listens to both ipv4 and ipv6 addresses
 class HTTPServerV6(HTTPServer):
-    address_family = socket.AF_INET6
+    address_family = socket.AF_INET
 
 
 def main():
-    server = HTTPServerV6(('::', 8080), MyHandler)
+    server = HTTPServerV6(('0.0.0.0', 8080), MyHandler)
     server.serve_forever()
 
 

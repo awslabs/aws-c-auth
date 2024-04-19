@@ -536,7 +536,7 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
 
 AWS_TEST_CASE(credentials_provider_ecs_basic_success, s_credentials_provider_ecs_basic_success);
 
-static int s_credentials_provider_ecs_mocked_server_basic_ipv6_success(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_ecs_mocked_server_basic_ipv4_invalid(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     s_aws_ecs_tester_init(allocator);
@@ -565,7 +565,7 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv6_success(struct aw
                 .shutdown_callback = s_on_shutdown_complete,
                 .shutdown_user_data = NULL,
             },
-        .host = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1"),
+        .host = aws_byte_cursor_from_c_str("10.6.129.5"),
         .port = 8080,
         .path_and_query = aws_byte_cursor_from_c_str("/credentials_provider_ecs_success_response"),
     };
@@ -574,8 +574,8 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv6_success(struct aw
 
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
     s_aws_wait_for_credentials_result();
-    ASSERT_NOT_NULL(s_tester.credentials);
-    ASSERT_TRUE(s_tester.error_code == AWS_OP_SUCCESS);
+    ASSERT_NULL(s_tester.credentials);
+    ASSERT_TRUE(s_tester.error_code == AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST);
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
@@ -592,8 +592,8 @@ static int s_credentials_provider_ecs_mocked_server_basic_ipv6_success(struct aw
 }
 
 AWS_TEST_CASE(
-    credentials_provider_ecs_mocked_server_basic_ipv6_success,
-    s_credentials_provider_ecs_mocked_server_basic_ipv6_success);
+    credentials_provider_ecs_mocked_server_basic_ipv4_invalid,
+    s_credentials_provider_ecs_mocked_server_basic_ipv4_invalid);
 
 static int s_credentials_provider_ecs_mocked_server_basic_ipv4_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;

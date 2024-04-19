@@ -482,6 +482,7 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
         s_ecs_finalize_get_credentials_query(ecs_user_data);
         return;
     }
+    ecs_user_data->connection = connection;
 
     if (impl->function_table == g_aws_credentials_provider_http_function_table &&
         !s_is_valid_remote_host_ip(ecs_user_data, connection)) {
@@ -496,8 +497,6 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
         s_ecs_finalize_get_credentials_query(ecs_user_data);
         return;
     }
-
-    ecs_user_data->connection = connection;
 
     s_ecs_query_task_role_credentials(ecs_user_data);
 }
