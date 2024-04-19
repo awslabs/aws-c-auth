@@ -37,7 +37,7 @@ class HTTPServerV6(HTTPServer):
 
 
 def main():
-    server = HTTPServerV6(('0.0.0.0', 8080), MyHandler)
+    server = HTTPServerV6(('0.0.0.0', 7070), MyHandler)
     server.serve_forever()
 
 
