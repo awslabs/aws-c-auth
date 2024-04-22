@@ -451,6 +451,11 @@ static bool s_is_valid_remote_host_ip(
 
     const struct aws_byte_cursor address =
         aws_byte_cursor_from_c_str(aws_http_connection_get_remote_endpoint(connection)->address);
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "id=%p: the ip address of connected remove endpoint is " PRInSTR "",
+        (void *)ecs_user_data->ecs_provider,
+        AWS_BYTE_CURSOR_PRI(address));
     if (aws_host_utils_is_ipv4(address)) {
         const struct aws_byte_cursor ipv4_loopback_address_prefix = aws_byte_cursor_from_c_str("127.");
         const struct aws_byte_cursor ecs_container_host_address = aws_byte_cursor_from_c_str("169.254.170.2");
