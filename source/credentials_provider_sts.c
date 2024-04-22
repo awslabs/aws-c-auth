@@ -470,7 +470,7 @@ static void s_start_make_request(
     if (!provider_user_data) {
         goto error;
     }
-    
+
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
 
     if (!provider_user_data->message) {
