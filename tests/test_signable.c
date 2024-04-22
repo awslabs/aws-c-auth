@@ -29,7 +29,7 @@ static int s_aws_signable_test_get_property(
     } else if (aws_string_eq(name, g_aws_http_method_property_name)) {
         *out_value = impl->method;
     } else {
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
 
     return AWS_OP_SUCCESS;
@@ -47,7 +47,7 @@ static int s_aws_signable_test_get_property_list(
     if (aws_string_eq(name, g_aws_http_headers_property_list_name)) {
         *out_list = &impl->headers;
     } else {
-        return AWS_OP_ERR;
+        return aws_raise_error(AWS_ERROR_UNSUPPORTED_OPERATION);
     }
 
     return AWS_OP_SUCCESS;

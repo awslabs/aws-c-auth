@@ -237,6 +237,26 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_chunked_test_ecc_pub_y,
     "fa36b35e4fe67e3112261d2e17a956ef85b06e44712d2850bcd3c2161e9993f2");
 
+static struct aws_http_headers *s_trailing_headers_new(struct aws_allocator *allocator) {
+    struct aws_http_headers *trailing_headers = aws_http_headers_new(allocator);
+    const struct aws_http_header trailer1 = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("first"),
+        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("1st"),
+    };
+    const struct aws_http_header trailer2 = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("second"),
+        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2nd"),
+    };
+    const struct aws_http_header trailer3 = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("third"),
+        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("3rd"),
+    };
+    aws_http_headers_add_header(trailing_headers, &trailer1);
+    aws_http_headers_add_header(trailing_headers, &trailer2);
+    aws_http_headers_add_header(trailing_headers, &trailer3);
+    return trailing_headers;
+}
+
 static int s_chunked_signing_tester_init(struct aws_allocator *allocator, struct chunked_signing_tester *tester) {
     tester->credentials = aws_credentials_new_from_string(
         allocator, s_chunked_access_key_id, s_chunked_secret_access_key, NULL, UINT64_MAX);
@@ -273,23 +293,7 @@ static int s_chunked_signing_tester_init(struct aws_allocator *allocator, struct
     ASSERT_SUCCESS(aws_byte_buf_init(&tester->integration_chunk, allocator, 1));
     ASSERT_TRUE(aws_byte_buf_write_u8_n(&tester->integration_chunk, 'a', 1));
 
-    tester->trailing_headers = aws_http_headers_new(allocator);
-    const struct aws_http_header trailer = {
-        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("first"),
-        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("1st"),
-    };
-    const struct aws_http_header trailer1 = {
-        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("second"),
-        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2nd"),
-    };
-    const struct aws_http_header trailer2 = {
-        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("third"),
-        .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("3rd"),
-    };
-    aws_http_headers_add_header(tester->trailing_headers, &trailer);
-    aws_http_headers_add_header(tester->trailing_headers, &trailer1);
-    aws_http_headers_add_header(tester->trailing_headers, &trailer2);
-
+    tester->trailing_headers = s_trailing_headers_new(allocator);
     tester->integration_trailing_headers = aws_http_headers_new(allocator);
     const struct aws_http_header checksum = {
         .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-checksum-crc32c"),
@@ -589,8 +593,11 @@ static int s_sigv4_trailing_headers_signing_test(struct aws_allocator *allocator
     aws_signable_destroy(final_chunk_signable);
 
     /* Make and sign the trailing headers */
+    struct aws_http_headers *trailing_headers = s_trailing_headers_new(allocator);
     struct aws_signable *trailing_headers_signable = aws_signable_new_trailing_headers(
-        allocator, tester.trailing_headers, aws_byte_cursor_from_buf(&tester.last_signature));
+        allocator, trailing_headers, aws_byte_cursor_from_buf(&tester.last_signature));
+    /* test aws_signable_new_trailing_headers properly acquires trailing_headers */
+    aws_http_headers_release(trailing_headers);
     ASSERT_SUCCESS(aws_sign_request_aws(
         allocator,
         trailing_headers_signable,

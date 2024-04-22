@@ -59,6 +59,7 @@ AWS_STRING_FROM_LITERAL(g_aws_signing_credential_query_param_name, "X-Amz-Creden
 AWS_STRING_FROM_LITERAL(g_aws_signing_date_name, "X-Amz-Date");
 AWS_STRING_FROM_LITERAL(g_aws_signing_signed_headers_query_param_name, "X-Amz-SignedHeaders");
 AWS_STRING_FROM_LITERAL(g_aws_signing_security_token_name, "X-Amz-Security-Token");
+AWS_STRING_FROM_LITERAL(g_aws_signing_s3session_token_name, "X-Amz-S3session-Token");
 AWS_STRING_FROM_LITERAL(g_aws_signing_expires_query_param_name, "X-Amz-Expires");
 AWS_STRING_FROM_LITERAL(g_aws_signing_region_set_name, "X-Amz-Region-Set");
 
@@ -87,6 +88,7 @@ static struct aws_byte_cursor s_amz_date_header_name;
 static struct aws_byte_cursor s_authorization_header_name;
 static struct aws_byte_cursor s_region_set_header_name;
 static struct aws_byte_cursor s_amz_security_token_header_name;
+static struct aws_byte_cursor s_amz_s3session_token_header_name;
 
 static struct aws_byte_cursor s_amz_signature_param_name;
 static struct aws_byte_cursor s_amz_date_param_name;
@@ -191,6 +193,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    s_amz_s3session_token_header_name = aws_byte_cursor_from_string(g_aws_signing_s3session_token_name);
+    if (aws_hash_table_put(&s_forbidden_headers, &s_amz_s3session_token_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
     if (aws_hash_table_init(
             &s_forbidden_params,
             allocator,
@@ -279,25 +286,25 @@ static int s_get_signature_type_cursor(struct aws_signing_state_aws *state, stru
         case AWS_ST_HTTP_REQUEST_QUERY_PARAMS:
         case AWS_ST_CANONICAL_REQUEST_HEADERS:
         case AWS_ST_CANONICAL_REQUEST_QUERY_PARAMS:
-            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
-                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
-            } else {
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
                 *cursor = aws_byte_cursor_from_string(g_signature_type_sigv4a_http_request);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_http_request);
             }
             break;
-
         case AWS_ST_HTTP_REQUEST_CHUNK:
-            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
-                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
-            } else {
+        case AWS_ST_HTTP_REQUEST_EVENT:
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_s3_chunked_payload);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_payload);
             }
             break;
         case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
-            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4) {
-                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_trailer_payload);
-            } else {
+            if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC) {
                 *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4a_s3_chunked_trailer_payload);
+            } else {
+                *cursor = aws_byte_cursor_from_string(s_signature_type_sigv4_s3_chunked_trailer_payload);
             }
             break;
 
@@ -841,12 +848,20 @@ static int s_add_authorization_query_params(
         }
     }
 
-    /* X-Amz-Security-token */
-    struct aws_byte_cursor security_token_name_cur = aws_byte_cursor_from_string(g_aws_signing_security_token_name);
+    /* X-Amz-*-token */
+    /* We have different token between S3Express and other signing, which needs different token header name */
+    struct aws_byte_cursor token_header_name;
+    if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_S3EXPRESS) {
+        /* X-Amz-S3session-Token */
+        token_header_name = s_amz_s3session_token_header_name;
+    } else {
+        /* X-Amz-Security-Token */
+        token_header_name = s_amz_security_token_header_name;
+    }
     struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
     if (session_token_cursor.len > 0) {
         struct aws_uri_param security_token_param = {
-            .key = security_token_name_cur,
+            .key = token_header_name,
             .value = session_token_cursor,
         };
 
@@ -1262,8 +1277,17 @@ static int s_build_canonical_stable_header_list(
     if (state->config.signature_type == AWS_ST_HTTP_REQUEST_HEADERS) {
 
         /*
-         * X-Amz-Security-Token
+         * X-Amz-*-Token
          */
+        /* We have different token between S3Express and other signing, which needs different token header name */
+        struct aws_byte_cursor token_header_name;
+        if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_S3EXPRESS) {
+            /* X-Amz-S3session-Token */
+            token_header_name = s_amz_s3session_token_header_name;
+        } else {
+            /* X-Amz-Security-Token */
+            token_header_name = s_amz_security_token_header_name;
+        }
         struct aws_byte_cursor session_token_cursor = aws_credentials_get_session_token(state->config.credentials);
         if (session_token_cursor.len > 0) {
             /* Note that if omit_session_token is true, it is added to final
@@ -1272,17 +1296,13 @@ static int s_build_canonical_stable_header_list(
                 if (aws_signing_result_append_property_list(
                         &state->result,
                         g_aws_http_headers_property_list_name,
-                        &s_amz_security_token_header_name,
+                        &token_header_name,
                         &session_token_cursor)) {
                     return AWS_OP_ERR;
                 }
             } else {
                 if (s_add_authorization_header(
-                        state,
-                        stable_header_list,
-                        out_required_capacity,
-                        s_amz_security_token_header_name,
-                        session_token_cursor)) {
+                        state, stable_header_list, out_required_capacity, token_header_name, session_token_cursor)) {
                     return AWS_OP_ERR;
                 }
             }
@@ -1597,6 +1617,7 @@ static int s_append_credential_scope_terminator(enum aws_signing_algorithm algor
 
     switch (algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
+        case AWS_SIGNING_ALGORITHM_V4_S3EXPRESS:
         case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
             terminator_cursor = aws_byte_cursor_from_string(s_credential_scope_sigv4_terminator);
             break;
@@ -1702,6 +1723,123 @@ static int s_build_canonical_request_hash(struct aws_signing_state_aws *state) {
     result = AWS_OP_SUCCESS;
 
 cleanup:
+    aws_byte_buf_clean_up(&digest_buffer);
+
+    return result;
+}
+
+/**
+ * Note that there is no canonical request for event signing.
+ * The string to sign for events is detailed here:
+ * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-http2.html
+ *
+ *      String stringToSign =
+ *      "AWS4-HMAC-SHA256" +
+ *      "\n" +
+ *      DateTime +
+ *      "\n" +
+ *      Keypath +
+ *      "\n" +
+ *      Hex(priorSignature) +
+ *      "\n" +
+ *      HexHash(nonSignatureHeaders) +
+ *      "\n" +
+ *      HexHash(payload);
+ *
+ * This function will build the string_to_sign_payload,
+ * aka "everything after the Keypath line in the string to sign".
+ */
+static int s_build_string_to_sign_payload_for_event(struct aws_signing_state_aws *state) {
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf *dest = &state->string_to_sign_payload;
+
+    /*
+     * Hex(priorSignature) + "\n"
+     *
+     * Fortunately, the prior signature is already hex.
+     */
+    struct aws_byte_cursor prev_signature_cursor;
+    AWS_ZERO_STRUCT(prev_signature_cursor);
+    if (aws_signable_get_property(state->signable, g_aws_previous_signature_property_name, &prev_signature_cursor)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_SIGNING, "(id=%p) Event signable missing previous signature property", (void *)state->signable);
+        return aws_raise_error(AWS_AUTH_SIGNING_MISSING_PREVIOUS_SIGNATURE);
+    }
+
+    /* strip any padding (AWS_SIGV4A_SIGNATURE_PADDING_BYTE) from the previous signature */
+    prev_signature_cursor = aws_trim_padded_sigv4a_signature(prev_signature_cursor);
+
+    if (aws_byte_buf_append_dynamic(dest, &prev_signature_cursor)) {
+        return AWS_OP_ERR;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        return AWS_OP_ERR;
+    }
+
+    /*
+     * HexHash(nonSignatureHeaders) + "\n"
+     *
+     * nonSignatureHeaders is just the ":date" header.
+     * We need to encode these headers in event-stream format, as described here:
+     * https://docs.aws.amazon.com/transcribe/latest/dg/streaming-setting-up.html
+     *
+     * | Header Name Length | Header Name | Header Value Type | Header Value Length | Header Value |
+     * |       1 byte       |   N bytes   |       1 byte      |        2 bytes      |    N bytes   |
+     */
+    struct aws_byte_buf date_buffer;
+    AWS_ZERO_STRUCT(date_buffer);
+    struct aws_byte_buf digest_buffer;
+    AWS_ZERO_STRUCT(digest_buffer);
+
+    if (aws_byte_buf_init(&date_buffer, state->allocator, 15)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor header_name = aws_byte_cursor_from_c_str(":date");
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, (uint8_t)header_name.len));
+    if (aws_byte_buf_append_dynamic(&date_buffer, &header_name)) {
+        goto cleanup;
+    }
+
+    /* Type of timestamp header */
+    AWS_FATAL_ASSERT(aws_byte_buf_write_u8(&date_buffer, 8 /*AWS_EVENT_STREAM_HEADER_TIMESTAMP*/));
+    AWS_FATAL_ASSERT(aws_byte_buf_write_be64(&date_buffer, (int64_t)aws_date_time_as_millis(&state->config.date)));
+
+    /* calculate sha 256 of encoded buffer */
+    if (aws_byte_buf_init(&digest_buffer, state->allocator, AWS_SHA256_LEN)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_buf(&date_buffer);
+    if (aws_sha256_compute(state->allocator, &date_cursor, &digest_buffer, 0)) {
+        goto cleanup;
+    }
+
+    struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
+    if (aws_hex_encode_append_dynamic(&digest_cursor, dest)) {
+        goto cleanup;
+    }
+
+    if (aws_byte_buf_append_byte_dynamic(dest, '\n')) {
+        goto cleanup;
+    }
+
+    /*
+     * HexHash(payload);
+     *
+     * The payload was already hashed in an earlier stage
+     */
+    struct aws_byte_cursor current_chunk_hash_cursor = aws_byte_cursor_from_buf(&state->payload_hash);
+    if (aws_byte_buf_append_dynamic(dest, &current_chunk_hash_cursor)) {
+        goto cleanup;
+    }
+
+    result = AWS_OP_SUCCESS;
+
+cleanup:
+    aws_byte_buf_clean_up(&date_buffer);
     aws_byte_buf_clean_up(&digest_buffer);
 
     return result;
@@ -1939,6 +2077,8 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
 
         case AWS_ST_HTTP_REQUEST_CHUNK:
             return s_build_canonical_request_body_chunk(state);
+        case AWS_ST_HTTP_REQUEST_EVENT:
+            return s_build_string_to_sign_payload_for_event(state);
 
         case AWS_ST_HTTP_REQUEST_TRAILING_HEADERS:
             return s_build_canonical_request_trailing_headers(state);
@@ -1948,7 +2088,7 @@ int aws_signing_build_canonical_request(struct aws_signing_state_aws *state) {
             return s_apply_existing_canonical_request(state);
 
         default:
-            return AWS_OP_ERR;
+            return aws_raise_error(AWS_AUTH_SIGNING_UNSUPPORTED_SIGNATURE_TYPE);
     }
 }
 
@@ -2185,6 +2325,7 @@ cleanup:
 int s_calculate_signature_value(struct aws_signing_state_aws *state) {
     switch (state->config.algorithm) {
         case AWS_SIGNING_ALGORITHM_V4:
+        case AWS_SIGNING_ALGORITHM_V4_S3EXPRESS:
             return s_calculate_sigv4_signature_value(state);
 
         case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
@@ -2500,7 +2641,7 @@ int aws_verify_sigv4a_signing(
         aws_credentials_release(signing_state->config.credentials);
         signing_state->config.credentials = ecc_credentials;
         if (signing_state->config.credentials == NULL) {
-            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials")
+            AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "Unable to create ECC from provided credentials");
             goto done;
         }
     }

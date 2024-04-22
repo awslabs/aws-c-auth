@@ -40,9 +40,9 @@ struct aws_mock_imds_tester {
     struct aws_array_list response_data_callbacks[IMDS_MAX_REQUESTS];
 
     int current_request;
-    int token_response_code;
+    int response_code[IMDS_MAX_REQUESTS];
     int token_request_idx;
-    bool insecure_then_secure_attempt;
+
     bool is_connection_acquire_successful;
 
     struct aws_mutex lock;
@@ -93,7 +93,7 @@ static void s_aws_wait_for_provider_shutdown_callback(void) {
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
     (void)options;
@@ -213,11 +213,8 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
     const struct aws_http_stream *stream,
     int *out_status_code) {
     (void)stream;
-    if (s_tester.token_request_idx == s_tester.current_request - 1 && s_tester.token_response_code != 0) {
-        *out_status_code = s_tester.token_response_code;
-    } else if (s_tester.current_request == 1 && s_tester.insecure_then_secure_attempt) {
-        /* for testing insecure then switch to secure way */
-        *out_status_code = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
+    if (s_tester.response_code[s_tester.current_request - 1] != 0) {
+        *out_status_code = s_tester.response_code[s_tester.current_request - 1];
     } else {
         *out_status_code = AWS_HTTP_STATUS_CODE_200_OK;
     }
@@ -233,6 +230,10 @@ static void s_aws_http_connection_close_mock(struct aws_http_connection *connect
     (void)connection;
 }
 
+static int s_aws_high_res_clock_get_ticks_mock(uint64_t *timestamp) {
+    return aws_high_res_clock_get_ticks(timestamp);
+}
+
 static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_manager_new = s_aws_http_connection_manager_new_mock,
     .aws_http_connection_manager_release = s_aws_http_connection_manager_release_mock,
@@ -243,11 +244,14 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_stream_get_connection = s_aws_http_stream_get_connection_mock,
     .aws_http_stream_get_incoming_response_status = s_aws_http_stream_get_incoming_response_status_mock,
     .aws_http_stream_release = s_aws_http_stream_release_mock,
-    .aws_http_connection_close = s_aws_http_connection_close_mock};
+    .aws_http_connection_close = s_aws_http_connection_close_mock,
+    .aws_high_res_clock_get_ticks = s_aws_high_res_clock_get_ticks_mock,
+};
 
 static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
 
     aws_auth_library_init(allocator);
+    AWS_ZERO_STRUCT(s_tester);
 
     for (size_t i = 0; i < IMDS_MAX_REQUESTS; i++) {
         if (aws_array_list_init_dynamic(
@@ -258,10 +262,8 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
             return AWS_OP_ERR;
         }
     }
+
     s_tester.allocator = allocator;
-    s_tester.token_response_code = 0;
-    s_tester.token_request_idx = 0;
-    s_tester.insecure_then_secure_attempt = false;
     if (aws_mutex_init(&s_tester.lock)) {
         return AWS_OP_ERR;
     }
@@ -270,11 +272,8 @@ static int s_aws_imds_tester_init(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    s_tester.current_request = 0;
-
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
-    s_tester.error_code = AWS_ERROR_SUCCESS;
 
     s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
     struct aws_client_bootstrap_options bootstrap_options = {
@@ -491,7 +490,7 @@ static int s_credentials_provider_imds_token_request_failure(struct aws_allocato
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
@@ -824,7 +823,7 @@ static int s_credentials_provider_imds_insecure_success(struct aws_allocator *al
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_403_FORBIDDEN;
 
     struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
@@ -882,9 +881,8 @@ static int s_credentials_provider_imds_insecure_then_secure_success(struct aws_a
     (void)ctx;
 
     s_aws_imds_tester_init(allocator);
-    s_tester.insecure_then_secure_attempt = true;
     s_tester.token_request_idx = 1;
-    s_tester.token_response_code = AWS_HTTP_STATUS_CODE_200_OK;
+    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED;
 
     struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
     aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_token_cursor);

@@ -36,6 +36,10 @@
 #    pragma warning(disable : 4232)
 #endif
 
+static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *, void *);
+static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *, void *);
+static int s_sts_xml_on_Credentials_child(struct aws_xml_node *, void *);
+
 static struct aws_http_header s_host_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
@@ -46,36 +50,13 @@ static struct aws_http_header s_content_type_header = {
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
 };
 
-static struct aws_http_header s_api_version_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("x-amz-api-version"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("2011-06-15"),
-};
-
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
 static struct aws_byte_cursor s_service_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts");
-static struct aws_byte_cursor s_assume_role_root_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AssumeRoleResponse");
-static struct aws_byte_cursor s_assume_role_result_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AssumeRoleResult");
-static struct aws_byte_cursor s_assume_role_credentials_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Credentials");
-static struct aws_byte_cursor s_assume_role_session_token_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SessionToken");
-static struct aws_byte_cursor s_assume_role_secret_key_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("SecretAccessKey");
-static struct aws_byte_cursor s_assume_role_access_key_id_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("AccessKeyId");
 static const int s_max_retries = 8;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
-
-static struct aws_auth_http_system_vtable s_default_function_table = {
-    .aws_http_connection_manager_new = aws_http_connection_manager_new,
-    .aws_http_connection_manager_release = aws_http_connection_manager_release,
-    .aws_http_connection_manager_acquire_connection = aws_http_connection_manager_acquire_connection,
-    .aws_http_connection_manager_release_connection = aws_http_connection_manager_release_connection,
-    .aws_http_connection_make_request = aws_http_connection_make_request,
-    .aws_http_stream_activate = aws_http_stream_activate,
-    .aws_http_stream_get_incoming_response_status = aws_http_stream_get_incoming_response_status,
-    .aws_http_stream_release = aws_http_stream_release,
-    .aws_http_connection_close = aws_http_connection_close,
-};
 
 struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
@@ -84,7 +65,7 @@ struct aws_credentials_provider_sts_impl {
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
-    struct aws_auth_http_system_vtable *function_table;
+    const struct aws_auth_http_system_vtable *function_table;
     struct aws_retry_strategy *retry_strategy;
     aws_io_clock_fn *system_clock_fn;
 };
@@ -207,7 +188,7 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
      <AssumeRoleResult>
           <Credentials>
              <AccessKeyId>accessKeyId</AccessKeyId>
-             <SecretKey>secretKey</SecretKey>
+             <SecretAccessKey>secretKey</SecretAccessKey>
              <SessionToken>sessionToken</SessionToken>
           </Credentials>
          <AssumedRoleUser>
@@ -217,66 +198,63 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
       </AssumeRoleResult>
 </AssumeRoleResponse>
  */
-static bool s_on_node_encountered_fn(struct aws_xml_parser *parser, struct aws_xml_node *node, void *user_data) {
-
-    struct aws_byte_cursor node_name;
-    AWS_ZERO_STRUCT(node_name);
-
-    if (aws_xml_node_get_name(node, &node_name)) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): While parsing credentials xml response for sts credentials provider, could not get xml node name "
-            "for function s_on_node_encountered_fn.",
-            user_data);
-        return false;
+static int s_sts_xml_on_root(struct aws_xml_node *node, void *user_data) {
+    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleResponse")) {
+        return aws_xml_node_traverse(node, s_sts_xml_on_AssumeRoleResponse_child, user_data);
     }
-
-    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_root_name) ||
-        aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_result_name) ||
-        aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_credentials_name)) {
-        return aws_xml_node_traverse(parser, node, s_on_node_encountered_fn, user_data);
-    }
-
-    struct sts_creds_provider_user_data *provider_user_data = user_data;
-    struct aws_byte_cursor credential_data;
-    AWS_ZERO_STRUCT(credential_data);
-    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_access_key_id_name)) {
-        aws_xml_node_as_body(parser, node, &credential_data);
-        provider_user_data->access_key_id =
-            aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
-
-        if (provider_user_data->access_key_id) {
-            AWS_LOGF_DEBUG(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p): Read AccessKeyId %s",
-                (void *)provider_user_data->provider,
-                aws_string_c_str(provider_user_data->access_key_id));
-        }
-    }
-
-    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_secret_key_name)) {
-        aws_xml_node_as_body(parser, node, &credential_data);
-        provider_user_data->secret_access_key =
-            aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
-    }
-
-    if (aws_byte_cursor_eq_ignore_case(&node_name, &s_assume_role_session_token_name)) {
-        aws_xml_node_as_body(parser, node, &credential_data);
-        provider_user_data->session_token =
-            aws_string_new_from_array(provider_user_data->allocator, credential_data.ptr, credential_data.len);
-    }
-
-    return true;
+    return AWS_OP_SUCCESS;
 }
 
-/* errors that mean something screwy was going on at the networking layer. */
-static inline bool s_is_transient_error(int error_code) {
-    return error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED || error_code == AWS_ERROR_HTTP_SERVER_CLOSED ||
-           error_code == AWS_IO_SOCKET_CLOSED || error_code == AWS_IO_SOCKET_CONNECT_ABORTED ||
-           error_code == AWS_IO_SOCKET_CONNECTION_REFUSED || error_code == AWS_IO_SOCKET_NETWORK_DOWN ||
-           error_code == AWS_IO_DNS_QUERY_FAILED || error_code == AWS_IO_DNS_NO_ADDRESS_FOR_HOST ||
-           error_code == AWS_IO_SOCKET_TIMEOUT || error_code == AWS_IO_TLS_NEGOTIATION_TIMEOUT ||
-           error_code == AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT;
+static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *node, void *user_data) {
+    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumeRoleResult")) {
+        return aws_xml_node_traverse(node, s_sts_xml_on_AssumeRoleResult_child, user_data);
+    }
+    return AWS_OP_SUCCESS;
+}
+
+static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *node, void *user_data) {
+    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
+        return aws_xml_node_traverse(node, s_sts_xml_on_Credentials_child, user_data);
+    }
+    return AWS_OP_SUCCESS;
+}
+
+static int s_sts_xml_on_Credentials_child(struct aws_xml_node *node, void *user_data) {
+    struct sts_creds_provider_user_data *provider_user_data = user_data;
+    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
+    struct aws_byte_cursor credential_data;
+    AWS_ZERO_STRUCT(credential_data);
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AccessKeyId")) {
+        if (aws_xml_node_as_body(node, &credential_data)) {
+            return AWS_OP_ERR;
+        }
+        provider_user_data->access_key_id = aws_string_new_from_cursor(provider_user_data->allocator, &credential_data);
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Read AccessKeyId %s",
+            (void *)provider_user_data->provider,
+            aws_string_c_str(provider_user_data->access_key_id));
+    }
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "SecretAccessKey")) {
+        if (aws_xml_node_as_body(node, &credential_data)) {
+            return AWS_OP_ERR;
+        }
+        provider_user_data->secret_access_key =
+            aws_string_new_from_cursor(provider_user_data->allocator, &credential_data);
+    }
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "SessionToken")) {
+        if (aws_xml_node_as_body(node, &credential_data)) {
+            return AWS_OP_ERR;
+        }
+        provider_user_data->session_token = aws_string_new_from_cursor(provider_user_data->allocator, &credential_data);
+    }
+
+    return AWS_OP_SUCCESS;
 }
 
 static void s_start_make_request(
@@ -304,7 +282,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     int http_response_code = 0;
     struct sts_creds_provider_user_data *provider_user_data = user_data;
     struct aws_credentials_provider_sts_impl *provider_impl = provider_user_data->provider->impl;
-    struct aws_xml_parser *xml_parser = NULL;
 
     provider_user_data->error_code = error_code;
 
@@ -328,19 +305,8 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         /* prevent connection reuse. */
         provider_impl->function_table->aws_http_connection_close(provider_user_data->connection);
 
-        enum aws_retry_error_type error_type = http_response_code >= 400 && http_response_code < 500
-                                                   ? AWS_RETRY_ERROR_TYPE_CLIENT_ERROR
-                                                   : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
-
-        if (s_is_transient_error(error_code)) {
-            error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
-        }
-
-        /* server throttling us is retryable */
-        if (http_response_code == AWS_HTTP_STATUS_CODE_429_TOO_MANY_REQUESTS) {
-            /* force a new connection on this. */
-            error_type = AWS_RETRY_ERROR_TYPE_THROTTLING;
-        }
+        enum aws_retry_error_type error_type =
+            aws_credentials_provider_compute_retry_error_type(http_response_code, error_code);
 
         s_reset_request_specific_data(provider_user_data);
 
@@ -371,16 +337,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
             goto finish;
         }
 
-        struct aws_xml_parser_options options;
-        AWS_ZERO_STRUCT(options);
-        options.doc = aws_byte_cursor_from_buf(&provider_user_data->output_buf);
-
-        xml_parser = aws_xml_parser_new(provider_user_data->provider->allocator, &options);
-
-        if (xml_parser == NULL) {
-            goto finish;
-        }
-
         uint64_t now = UINT64_MAX;
         if (provider_impl->system_clock_fn(&now) != AWS_OP_SUCCESS) {
             goto finish;
@@ -388,13 +344,20 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
         uint64_t now_seconds = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
 
-        if (aws_xml_parser_parse(xml_parser, s_on_node_encountered_fn, provider_user_data)) {
+        struct aws_xml_parser_options options = {
+            .doc = aws_byte_cursor_from_buf(&provider_user_data->output_buf),
+            .on_root_encountered = s_sts_xml_on_root,
+            .user_data = provider_user_data,
+        };
+        if (aws_xml_parse(provider_user_data->provider->allocator, &options)) {
             provider_user_data->error_code = aws_last_error();
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): credentials parsing failed with error %s",
                 (void *)provider_user_data->credentials,
                 aws_error_debug_str(provider_user_data->error_code));
+
+            provider_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE;
             goto finish;
         }
 
@@ -407,7 +370,10 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
                 provider_user_data->secret_access_key,
                 provider_user_data->session_token,
                 now_seconds + provider_impl->duration_seconds);
-        } else {
+        }
+
+        if (provider_user_data->credentials == NULL) {
+            provider_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE;
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): credentials document was corrupted, treating as an error.",
@@ -416,11 +382,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     }
 
 finish:
-
-    if (xml_parser != NULL) {
-        aws_xml_parser_destroy(xml_parser);
-        xml_parser = NULL;
-    }
 
     s_clean_up_user_data(provider_user_data);
 }
@@ -485,6 +446,7 @@ void s_on_signing_complete(struct aws_signing_result *result, int error_code, vo
         error_code);
 
     if (error_code) {
+        provider_user_data->error_code = error_code;
         aws_raise_error(error_code);
         goto error;
     }
@@ -520,10 +482,6 @@ static void s_start_make_request(
     }
 
     if (aws_http_message_add_header(provider_user_data->message, s_content_type_header)) {
-        goto error;
-    }
-
-    if (aws_http_message_add_header(provider_user_data->message, s_api_version_header)) {
         goto error;
     }
 
@@ -715,7 +673,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
-    struct aws_credentials_provider_sts_options *options) {
+    const struct aws_credentials_provider_sts_options *options) {
 
     if (!options->bootstrap) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for quering STS");
@@ -750,7 +708,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_vtable, impl);
 
-    impl->function_table = &s_default_function_table;
+    impl->function_table = g_aws_credentials_provider_http_function_table;
 
     if (options->function_table) {
         impl->function_table = options->function_table;
@@ -838,6 +796,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         .port = 443,
         .socket_options = &socket_options,
         .tls_connection_options = &tls_connection_options,
+        .proxy_options = options->http_proxy_options,
     };
 
     impl->connection_manager =

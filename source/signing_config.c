@@ -36,6 +36,9 @@ const char *aws_signing_algorithm_to_string(enum aws_signing_algorithm algorithm
         case AWS_SIGNING_ALGORITHM_V4:
             return "SigV4";
 
+        case AWS_SIGNING_ALGORITHM_V4_S3EXPRESS:
+            return "SigV4S3Express";
+
         case AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC:
             return "SigV4Asymmetric";
 
@@ -52,14 +55,14 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
-    if (config->signature_type == AWS_ST_HTTP_REQUEST_EVENT) {
+    if (config->signature_type == AWS_ST_HTTP_REQUEST_EVENT && config->algorithm != AWS_SIGNING_ALGORITHM_V4) {
         /*
          * Not supported yet.
          *
-         * Need to determine how the (header) properties on the event signable precisely factor into the
-         * string-to-sign.  Transcribe's examples are insufficient.
+         * Need to determine if the Transcribe service supports Sigv4a and how to test it.
+         * Transcribe's examples are insufficient.
          */
-        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Event signing is not yet supported", (void *)config);
+        AWS_LOGF_ERROR(AWS_LS_AUTH_SIGNING, "(id=%p) Event signing is only supported for Sigv4 yet", (void *)config);
         return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
     }
 
@@ -109,6 +112,28 @@ int aws_validate_aws_signing_config_aws(const struct aws_signing_config_aws *con
                     AWS_LOGF_ERROR(
                         AWS_LS_AUTH_SIGNING,
                         "(id=%p) Sigv4 signing configured with invalid credentials",
+                        (void *)config);
+                    return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CREDENTIALS);
+                }
+            }
+            break;
+        case AWS_SIGNING_ALGORITHM_V4_S3EXPRESS:
+            if (config->credentials == NULL && config->credentials_provider == NULL) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "(id=%p) Sigv4 S3 Express signing config is missing a credentials provider or credentials",
+                    (void *)config);
+                return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CONFIGURATION);
+            }
+
+            if (config->credentials != NULL) {
+                if (aws_credentials_is_anonymous(config->credentials) ||
+                    aws_credentials_get_access_key_id(config->credentials).len == 0 ||
+                    aws_credentials_get_secret_access_key(config->credentials).len == 0 ||
+                    aws_credentials_get_session_token(config->credentials).len == 0) {
+                    AWS_LOGF_ERROR(
+                        AWS_LS_AUTH_SIGNING,
+                        "(id=%p) Sigv4 S3 Express signing configured with invalid credentials",
                         (void *)config);
                     return aws_raise_error(AWS_AUTH_SIGNING_INVALID_CREDENTIALS);
                 }

@@ -22,6 +22,7 @@
 #include <aws/io/socket.h>
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
+#include <aws/sdkutils/aws_profile.h>
 
 static struct aws_mock_sts_web_identity_tester {
     struct aws_tls_ctx *tls_ctx;
@@ -74,7 +75,7 @@ struct mock_connection_manager {
 
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
-    struct aws_http_connection_manager_options *options) {
+    const struct aws_http_connection_manager_options *options) {
 
     struct mock_connection_manager *mock_manager = aws_mem_calloc(allocator, 1, sizeof(struct mock_connection_manager));
     mock_manager->allocator = allocator;
@@ -351,6 +352,49 @@ static void s_get_credentials_callback(struct aws_credentials *credentials, int 
     aws_mutex_unlock(&s_tester.lock);
 }
 
+static int s_credentials_provider_sts_web_identity_new_destroy_from_parameters(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(token_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .region = aws_byte_cursor_from_c_str("us-east-1"),
+        .role_arn = aws_byte_cursor_from_c_str("arn:aws:iam::1234567890:role/test-arn"),
+        .role_session_name = aws_byte_cursor_from_c_str("9876543210"),
+        .token_file_path = aws_byte_cursor_from_string(token_file_path_str),
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+    aws_string_destroy(token_file_path_str);
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_sts_web_identity_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_new_destroy_from_parameters,
+    s_credentials_provider_sts_web_identity_new_destroy_from_parameters);
+
 static int s_credentials_provider_sts_web_identity_new_destroy_from_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -447,6 +491,7 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_config(struc
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+    ASSERT_NOT_NULL(provider);
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
@@ -458,6 +503,87 @@ static int s_credentials_provider_sts_web_identity_new_destroy_from_config(struc
 AWS_TEST_CASE(
     credentials_provider_sts_web_identity_new_destroy_from_config,
     s_credentials_provider_sts_web_identity_new_destroy_from_config);
+
+static int s_credentials_provider_sts_web_identity_new_destroy_from_cached_config(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    /* create a config file */
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(token_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content =
+        aws_byte_buf_from_c_str(aws_string_c_str(s_sts_web_identity_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(token_file_path_str);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    aws_string_destroy(token_file_path_str);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_sts_web_identity_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    /* read the config files */
+    struct aws_profile_collection *config_profiles = NULL;
+    struct aws_string *config_file_path = NULL;
+
+    ASSERT_TRUE(
+        aws_get_environment_value(allocator, s_default_config_path_env_variable_name, &config_file_path) ==
+        AWS_OP_SUCCESS);
+
+    config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
+    ASSERT_NOT_NULL(config_profiles);
+
+    options.config_profile_collection_cached = config_profiles;
+
+    /* unset environment and config file*/
+    struct aws_string *empty_content = aws_string_new_from_c_str(allocator, "");
+    ASSERT_TRUE(empty_content != NULL);
+    s_aws_sts_web_identity_test_init_config_profile(allocator, empty_content);
+    aws_string_destroy(empty_content);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    ASSERT_TRUE(aws_unset_environment_value(s_default_profile_env_variable_name) == AWS_OP_SUCCESS);
+
+    /* assert we can create sts web identity from cached config file */
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_sts_web_identity_tester_cleanup();
+    aws_string_destroy(config_file_path);
+    aws_profile_collection_release(config_profiles);
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_new_destroy_from_cached_config,
+    s_credentials_provider_sts_web_identity_new_destroy_from_cached_config);
 
 static int s_credentials_provider_sts_web_identity_new_failed_without_env_and_config(
     struct aws_allocator *allocator,

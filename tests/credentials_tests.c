@@ -206,6 +206,10 @@ static int s_anonymous_credentials_provider_basic_test(struct aws_allocator *all
 
     s_aws_credentials_shutdown_checker_clean_up();
 
+    /* Check that NULL works for the optional shutdown options */
+    provider = aws_credentials_provider_new_anonymous(allocator, NULL);
+    aws_credentials_provider_release(provider);
+
     return 0;
 }
 
@@ -245,6 +249,39 @@ static int s_environment_credentials_provider_basic_test(struct aws_allocator *a
 }
 
 AWS_TEST_CASE(environment_credentials_provider_basic_test, s_environment_credentials_provider_basic_test);
+
+static int s_environment_credentials_provider_empty_env_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_credentials_shutdown_checker_init();
+    struct aws_string *empty = aws_string_new_from_c_str(allocator, "");
+
+    aws_set_environment_value(s_access_key_id_env_var, empty);
+    aws_set_environment_value(s_secret_access_key_env_var, empty);
+    aws_set_environment_value(s_session_token_env_var, empty);
+
+    struct aws_credentials_provider_environment_options options = {
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_environment(allocator, &options);
+    /* Instead of getting an empty credentials, should just fail to fetch credentials */
+    ASSERT_TRUE(s_do_basic_provider_test(provider, 1, NULL, NULL, NULL) == AWS_OP_SUCCESS);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_string_destroy(empty);
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(environment_credentials_provider_empty_env_test, s_environment_credentials_provider_empty_env_test);
 
 static int s_do_environment_credentials_provider_failure(struct aws_allocator *allocator) {
     s_aws_credentials_shutdown_checker_init();
@@ -844,8 +881,15 @@ AWS_STATIC_STRING_FROM_LITERAL(
     s_config_contents,
     "[profile default]\naws_access_key_id=fake_access_key\naws_secret_access_key=fake_secret_key\n");
 AWS_STATIC_STRING_FROM_LITERAL(
+    s_config_contents2,
+    "[profile default]\naws_access_key_id=fake_access_key2\naws_secret_access_key=fake_secret_key2\n");
+
+AWS_STATIC_STRING_FROM_LITERAL(
     s_credentials_contents,
     "[foo]\naws_access_key_id=foo_access\naws_secret_access_key=foo_secret\naws_session_token=foo_session\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_credentials_contents2,
+    "[foo]\naws_access_key_id=foo_access2\naws_secret_access_key=foo_secret2\naws_session_token=foo_session2\n");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_fake_access, "fake_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_fake_secret, "fake_secret_key");
@@ -894,6 +938,102 @@ static int s_profile_credentials_provider_default_test(struct aws_allocator *all
 }
 
 AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_provider_default_test);
+
+static int s_profile_credentials_provider_cached_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    if (aws_create_profile_file(config_file_str, s_config_contents) ||
+        aws_create_profile_file(creds_file_str, s_credentials_contents)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    /* Read the config files */
+    struct aws_profile_collection *config_profiles = NULL;
+    struct aws_profile_collection *credentials_profiles = NULL;
+    struct aws_profile_collection *merged_profiles = NULL;
+    struct aws_string *credentials_file_path = NULL;
+    struct aws_string *config_file_path = NULL;
+    struct aws_string *profile_name = NULL;
+
+    credentials_file_path = aws_get_credentials_file_path(allocator, &options.credentials_file_name_override);
+    ASSERT_NOT_NULL(credentials_file_path);
+    config_file_path = aws_get_config_file_path(allocator, &options.config_file_name_override);
+    ASSERT_NOT_NULL(config_file_path);
+    profile_name = aws_get_profile_name(allocator, &options.profile_name_override);
+    ASSERT_NOT_NULL(profile_name);
+    config_profiles = aws_profile_collection_new_from_file(allocator, config_file_path, AWS_PST_CONFIG);
+    ASSERT_NOT_NULL(config_profiles);
+    credentials_profiles = aws_profile_collection_new_from_file(allocator, credentials_file_path, AWS_PST_CREDENTIALS);
+    ASSERT_NOT_NULL(credentials_profiles);
+    merged_profiles = aws_profile_collection_new_from_merge(allocator, config_profiles, credentials_profiles);
+    ASSERT_NOT_NULL(merged_profiles);
+    aws_profile_collection_release(config_profiles);
+    aws_profile_collection_release(credentials_profiles);
+
+    options.profile_collection_cached = merged_profiles;
+
+    s_aws_credentials_shutdown_checker_init();
+
+    /* Update profile and config file */
+    if (aws_create_profile_file(config_file_str, s_config_contents2) ||
+        aws_create_profile_file(creds_file_str, s_credentials_contents2)) {
+        return AWS_OP_ERR;
+    }
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    ASSERT_SUCCESS(
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
+    aws_wait_on_credentials_callback(&callback_results);
+    ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Fetch the credentials again */
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    ASSERT_SUCCESS(
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results));
+    aws_wait_on_credentials_callback(&callback_results);
+
+    /* assert that credentials are not changed */
+    ASSERT_SUCCESS(s_verify_default_credentials_callback(&callback_results));
+
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_credentials_shutdown_checker_clean_up();
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+    aws_profile_collection_release(merged_profiles);
+    aws_string_destroy(credentials_file_path);
+    aws_string_destroy(config_file_path);
+    aws_string_destroy(profile_name);
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(profile_credentials_provider_cached_test, s_profile_credentials_provider_cached_test);
 
 AWS_STATIC_STRING_FROM_LITERAL(s_foo_profile, "foo");
 
@@ -1238,3 +1378,85 @@ static int s_credentials_provider_default_manual_tls_test(struct aws_allocator *
     return s_credentials_provider_default_test(allocator, true /*manual_tls*/);
 }
 AWS_TEST_CASE(credentials_provider_default_manual_tls_test, s_credentials_provider_default_manual_tls_test);
+
+static int s_credentials_provider_default_chain_disable_environment_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+
+    s_aws_credentials_shutdown_checker_init();
+    /*
+     * Set the environment variable values, but make sure they are not used when environment credentials provider is
+     * disabled.
+     */
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
+
+    struct aws_event_loop_group *el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = el_group,
+        .max_entries = 4,
+    };
+    struct aws_host_resolver *resolver = aws_host_resolver_new_default(allocator, &resolver_options);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .host_resolver = resolver,
+        .on_shutdown_complete = NULL,
+        .host_resolution_config = NULL,
+        .user_data = NULL,
+        .event_loop_group = el_group,
+    };
+
+    struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+    ASSERT_NOT_NULL(bootstrap);
+
+    struct aws_byte_buf config_profile_collection_buf;
+    AWS_ZERO_STRUCT(config_profile_collection_buf);
+    /* Override profile with an empty buffer to prevent sourcing valid credentials from the profile */
+    struct aws_profile_collection *config_profile_collection =
+        aws_profile_collection_new_from_buffer(allocator, &config_profile_collection_buf, AWS_PST_CONFIG);
+    ASSERT_NOT_NULL(config_profile_collection);
+
+    struct aws_credentials_provider_chain_default_options options = {
+        .bootstrap = bootstrap,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .skip_environment_credentials_provider = true,
+        .profile_collection_cached = config_profile_collection,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_chain_default(allocator, &options);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+    aws_get_credentials_test_callback_result_init(&callback_results, 1);
+
+    int get_async_result =
+        aws_credentials_provider_get_credentials(provider, aws_test_get_credentials_async_callback, &callback_results);
+    ASSERT_TRUE(get_async_result == AWS_OP_SUCCESS);
+
+    aws_wait_on_credentials_callback(&callback_results);
+    /* Assert that no credentials were sourced from the environment */
+    ASSERT_NULL(callback_results.credentials);
+    ASSERT_TRUE(callback_results.last_error != AWS_OP_SUCCESS);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_credentials_shutdown_checker_clean_up();
+    aws_client_bootstrap_release(bootstrap);
+    aws_host_resolver_release(resolver);
+    aws_event_loop_group_release(el_group);
+    aws_profile_collection_release(config_profile_collection);
+    aws_auth_library_clean_up();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_default_chain_disable_environment_test,
+    s_credentials_provider_default_chain_disable_environment_test);

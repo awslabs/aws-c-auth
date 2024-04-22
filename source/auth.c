@@ -85,6 +85,33 @@ static struct aws_error_info s_errors[] = {
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_SIGV4A_SIGNATURE_VALIDATION_FAILURE,
         "The supplied sigv4a signature was not a valid signature for the hashed string to sign"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_COGNITO_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the cognito provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_DELEGATE_FAILURE,
+        "Valid credentials could not be sourced by the delegate provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SSO_TOKEN_PROVIDER_SOURCE_FAILURE,
+        "Valid token could not be sourced by the sso token provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SSO_TOKEN_INVALID,
+        "Token sourced by the sso token provider is invalid."),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_SSO_TOKEN_EXPIRED,
+        "Token sourced by the sso token provider is expired."),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE,
+        "Valid credentials could not be sourced by the sso credentials provider"),
+    AWS_DEFINE_ERROR_INFO_AUTH(
+        AWS_AUTH_IMDS_CLIENT_SOURCE_FAILURE,
+        "Failed to source the IMDS resource"),
+            AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_PROFILE_STS_CREDENTIALS_PROVIDER_CYCLE_FAILURE,
+        "Failed to resolve credentials because the profile contains a cycle in the assumeRole chain."),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_TOKEN_FILE_PATH,
+        "Failed to read the ECS token file specified in the AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE environment variable."),
 };
 /* clang-format on */
 
