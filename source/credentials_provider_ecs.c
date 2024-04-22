@@ -488,6 +488,7 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
     }
     ecs_user_data->connection = connection;
 
+    /* validate ip address if the connection manager is not mocked */
     if (impl->function_table == g_aws_credentials_provider_http_function_table &&
         !s_is_valid_remote_host_ip(ecs_user_data, connection)) {
         AWS_LOGF_ERROR(
