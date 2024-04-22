@@ -432,7 +432,12 @@ static void s_ecs_query_task_role_credentials(struct aws_credentials_provider_ec
         s_ecs_finalize_get_credentials_query(ecs_user_data);
     }
 }
-
+/*
+ *  The host must use either HTTPS or the resolved IP address must satisfy one of the following:
+ *   1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
+ *   2. corresponds to the ECS container host 169.254.170.2
+ *   3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
+ */
 static bool s_is_valid_remote_host_ip(
     struct aws_credentials_provider_ecs_user_data *ecs_user_data,
     struct aws_http_connection *connection) {

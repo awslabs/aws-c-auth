@@ -241,6 +241,11 @@ struct aws_credentials_provider_imds_options {
  * TODO: Support AWS_CONTAINER_CREDENTIALS_RELATIVE_URI and AWS_CONTAINER_CREDENTIALS_FULL_URI
  * parameters.
  *
+ *  The host must use either HTTPS or the resolved IP address must satisfy one of the following:
+ *   1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
+ *   2. corresponds to the ECS container host 169.254.170.2
+ *   3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
+ *
  * For the Authorization token, there are three ways (in order of priority).
  * 1. auth_token parameter
  * 2. AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE (env var which contains absolute path to the token file. The file will be
