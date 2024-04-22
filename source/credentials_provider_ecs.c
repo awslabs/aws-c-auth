@@ -455,6 +455,7 @@ static bool s_is_valid_remote_host_ip(
         result |= aws_byte_cursor_eq(&address, &ecs_container_host_address);
         result |= aws_byte_cursor_eq(&address, &eks_container_host_address);
     } else if (aws_host_utils_is_ipv6(address, false)) {
+        /* Check for both the short form and long form of an IPv6 address to be safe. */
         const struct aws_byte_cursor ipv6_loopback_address = aws_byte_cursor_from_c_str("::1");
         const struct aws_byte_cursor ipv6_loopback_address_verbose = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1");
         const struct aws_byte_cursor eks_container_host_ipv6_address = aws_byte_cursor_from_c_str("fd00:ec2::23");
