@@ -505,6 +505,10 @@ error:
 static void s_start_make_request(
     struct aws_credentials_provider *provider,
     struct sts_creds_provider_user_data *provider_user_data) {
+    if (!provider_user_data) {
+        goto error;
+    }
+    
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
 
     if (!provider_user_data->message) {
