@@ -649,7 +649,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
     AWS_ZERO_STRUCT(full_uri);
     struct aws_credentials_provider *provider = NULL;
 
-    if (aws_get_environment_value(allocator, &s_ecs_creds_env_relative_uri, &relative_uri_str) == AWS_OP_SUCCESS &&
+    if (aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &relative_uri_str) == AWS_OP_SUCCESS &&
         relative_uri_str != NULL && relative_uri_str->len != 0) {
 
         /* Using RELATIVE_URI */
@@ -660,7 +660,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
         provider = aws_credentials_provider_new_ecs(allocator, &explicit_options);
 
     } else if (
-        aws_get_environment_value(allocator, &s_ecs_creds_env_full_uri, &full_uri_str) == AWS_OP_SUCCESS &&
+        aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &full_uri_str) == AWS_OP_SUCCESS &&
         full_uri_str != NULL && full_uri_str->len != 0) {
 
         /* Using FULL_URI */

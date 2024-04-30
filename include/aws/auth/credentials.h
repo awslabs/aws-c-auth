@@ -1039,7 +1039,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
  *
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
-AWS_AUTH_API struct aws_credentials_provider *aws_credentials_provider_new_x509(
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_x509(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_x509_options *options);
 
