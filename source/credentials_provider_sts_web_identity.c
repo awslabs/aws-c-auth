@@ -860,53 +860,7 @@ on_error:
     return NULL;
 }
 
-static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
-static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
-static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
-
-static int s_construct_endpoint(
-    struct aws_allocator *allocator,
-    struct aws_byte_buf *endpoint,
-    const struct aws_string *region,
-    const struct aws_string *service_name) {
-
-    if (!allocator || !endpoint || !region || !service_name) {
-        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-    }
-    aws_byte_buf_clean_up(endpoint);
-
-    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
-    if (aws_byte_buf_init_copy_from_cursor(endpoint, allocator, service_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_dynamic(endpoint, &s_dot_cursor)) {
-        goto on_error;
-    }
-
-    struct aws_byte_cursor region_cursor;
-    region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
-    if (aws_byte_buf_append_dynamic(endpoint, &region_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_dynamic(endpoint, &s_amazonaws_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
-        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(endpoint, &s_cn_cursor)) {
-            goto on_error;
-        }
-    }
-    return AWS_OP_SUCCESS;
-
-on_error:
-    aws_byte_buf_clean_up(endpoint);
-    return AWS_OP_ERR;
-}
 
 static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_byte_buf *dst) {
 
@@ -1048,7 +1002,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
     }
 
     /* determin endpoint */
-    if (s_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
+    if (aws_credentials_provider_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sts endpoint with, probably region is missing.");
         goto on_finish;

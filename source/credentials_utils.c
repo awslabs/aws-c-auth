@@ -356,3 +356,53 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
     aws_string_destroy(config_file_path);
     return config_profiles;
 }
+
+static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
+static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
+static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
+
+int aws_credentials_provider_construct_endpoint(
+    struct aws_allocator *allocator,
+    struct aws_byte_buf *out_endpoint,
+    const struct aws_string *region,
+    const struct aws_string *service_name) {
+
+    AWS_PRECONDITION(allocator);
+    AWS_PRECONDITION(out_endpoint);
+
+    if (!region || !service_name) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+    aws_byte_buf_clean_up(out_endpoint);
+
+    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
+    if (aws_byte_buf_init_copy_from_cursor(out_endpoint, allocator, service_cursor)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor)) {
+        goto on_error;
+    }
+
+    struct aws_byte_cursor region_cursor;
+    region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
+    if (aws_byte_buf_append_dynamic(out_endpoint, &region_cursor)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_append_dynamic(out_endpoint, &s_amazonaws_cursor)) {
+        goto on_error;
+    }
+
+    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
+        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
+        if (aws_byte_buf_append_dynamic(out_endpoint, &s_cn_cursor)) {
+            goto on_error;
+        }
+    }
+    return AWS_OP_SUCCESS;
+
+on_error:
+    aws_byte_buf_clean_up(out_endpoint);
+    return AWS_OP_ERR;
+}

@@ -164,6 +164,13 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
 AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
+AWS_AUTH_API
+int aws_credentials_provider_construct_endpoint(
+    struct aws_allocator *allocator,
+    struct aws_byte_buf *out_endpoint,
+    const struct aws_string *region,
+    const struct aws_string *service_name);
+
 /*
  * Loads an aws config profile collection
  */
