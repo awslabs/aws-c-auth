@@ -25,9 +25,6 @@
 #    pragma warning(disable : 4221)
 #endif /* _MSC_VER */
 
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_full_uri, "AWS_CONTAINER_CREDENTIALS_FULL_URI");
-AWS_STATIC_STRING_FROM_LITERAL(s_ecs_host, "169.254.170.2");
 AWS_STATIC_STRING_FROM_LITERAL(s_ec2_creds_env_disable, "AWS_EC2_METADATA_DISABLED");
 
 /**
@@ -40,72 +37,27 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     struct aws_client_bootstrap *bootstrap,
     struct aws_tls_ctx *tls_ctx) {
 
-    struct aws_credentials_provider *ecs_or_imds_provider = NULL;
-    struct aws_string *ecs_relative_uri = NULL;
-    struct aws_string *ecs_full_uri = NULL;
-    struct aws_string *ec2_imds_disable = NULL;
-
-    if (aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &ecs_relative_uri) != AWS_OP_SUCCESS ||
-        aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &ecs_full_uri) != AWS_OP_SUCCESS ||
-        aws_get_environment_value(allocator, s_ec2_creds_env_disable, &ec2_imds_disable) != AWS_OP_SUCCESS) {
-        AWS_LOGF_ERROR(
+    /* Try to create the ECS provider. This will fail if its environment variables aren't set */
+    struct aws_credentials_provider_ecs_environment_options ecs_options = {
+        .shutdown_options = *shutdown_options,
+        .bootstrap = bootstrap,
+        .tls_ctx = tls_ctx,
+    };
+    struct aws_credentials_provider *ecs_provider =
+        aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
+    if (ecs_provider != NULL) {
+        AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "Failed reading environment variables during default credentials provider chain initialization.");
-        goto clean_up;
+            "default chain: ECS credentials provider will be used to retrieve credentials");
+        return ecs_provider;
     }
 
-    /*
-     * ToDo: the uri choice logic should be done in the ecs provider init logic.  As it stands, it's a nightmare
-     * to try and use the ecs provider anywhere outside the default chain.
-     */
-    if (ecs_relative_uri && ecs_relative_uri->len) {
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "default chain: ECS credentials provider with relative URI %s will be used to retrieve credentials",
-            aws_string_c_str(ecs_relative_uri));
-        struct aws_credentials_provider_ecs_options ecs_options = {
-            .shutdown_options = *shutdown_options,
-            .bootstrap = bootstrap,
-            .host = aws_byte_cursor_from_string(s_ecs_host),
-            .path_and_query = aws_byte_cursor_from_string(ecs_relative_uri),
-            .tls_ctx = NULL,
-        };
-        ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
-
-    } else if (ecs_full_uri && ecs_full_uri->len) {
-        struct aws_uri uri;
-        struct aws_byte_cursor uri_cstr = aws_byte_cursor_from_string(ecs_full_uri);
-        if (AWS_OP_ERR == aws_uri_init_parse(&uri, allocator, &uri_cstr)) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "default chain: failed to parse URI %s during default credentials provider chain initialization: %s",
-                aws_string_c_str(ecs_full_uri),
-                aws_error_str(aws_last_error()));
-            goto clean_up;
-        }
-
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "default chain: ECS credentials provider with full URI %s will be used to retrieve credentials",
-            aws_string_c_str(ecs_full_uri));
-
-        struct aws_byte_cursor path_and_query = uri.path_and_query;
-        if (path_and_query.len == 0) {
-            path_and_query = aws_byte_cursor_from_c_str("/");
-        }
-
-        struct aws_credentials_provider_ecs_options ecs_options = {
-            .shutdown_options = *shutdown_options,
-            .bootstrap = bootstrap,
-            .host = uri.host_name,
-            .path_and_query = path_and_query,
-            .tls_ctx = aws_byte_cursor_eq_c_str_ignore_case(&(uri.scheme), "HTTPS") ? tls_ctx : NULL,
-            .port = uri.port,
-        };
-
-        ecs_or_imds_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
-        aws_uri_clean_up(&uri);
-    } else if (ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false")) {
+    /* Can we do IMDS? */
+    struct aws_string *ec2_imds_disable = NULL;
+    aws_get_environment_value(allocator, s_ec2_creds_env_disable, &ec2_imds_disable);
+    bool imds_enabled = ec2_imds_disable == NULL || aws_string_eq_c_str_ignore_case(ec2_imds_disable, "false");
+    aws_string_destroy(ec2_imds_disable);
+    if (imds_enabled) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "default chain: IMDS credentials provider will be used to retrieve credentials");
@@ -113,21 +65,12 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
         };
-        ecs_or_imds_provider = aws_credentials_provider_new_imds(allocator, &imds_options);
+        return aws_credentials_provider_new_imds(allocator, &imds_options);
     }
 
-clean_up:
-    if (ecs_or_imds_provider == NULL) {
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "default chain: neither ECS nor IMDS will be used to retrieve credentials");
-    }
-
-    aws_string_destroy(ecs_relative_uri);
-    aws_string_destroy(ecs_full_uri);
-    aws_string_destroy(ec2_imds_disable);
-
-    return ecs_or_imds_provider;
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER, "default chain: neither ECS nor IMDS will be used to retrieve credentials");
+    return NULL;
 }
 
 struct default_chain_callback_data {

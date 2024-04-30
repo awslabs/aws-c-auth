@@ -32,6 +32,9 @@
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token_file, "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token, "AWS_CONTAINER_AUTHORIZATION_TOKEN");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_full_uri, "AWS_CONTAINER_CREDENTIALS_FULL_URI");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_host, "169.254.170.2");
 
 static void s_on_connection_manager_shutdown(void *user_data);
 
@@ -628,4 +631,70 @@ on_error:
     aws_credentials_provider_destroy(provider);
 
     return NULL;
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_environment_options *options) {
+
+    struct aws_credentials_provider_ecs_options explicit_options = {
+        .shutdown_options = options->shutdown_options,
+        .bootstrap = options->bootstrap,
+        .function_table = options->function_table,
+    };
+
+    struct aws_string *relative_uri_str = NULL;
+    struct aws_string *full_uri_str = NULL;
+    struct aws_uri full_uri;
+    AWS_ZERO_STRUCT(full_uri);
+    struct aws_credentials_provider *provider = NULL;
+
+    if (aws_get_environment_value(allocator, &s_ecs_creds_env_relative_uri, &relative_uri_str) == AWS_OP_SUCCESS &&
+        relative_uri_str != NULL && relative_uri_str->len != 0) {
+
+        /* Using RELATIVE_URI */
+        explicit_options.path_and_query = aws_byte_cursor_from_string(relative_uri_str);
+        explicit_options.host = aws_byte_cursor_from_string(s_ecs_host);
+        explicit_options.port = 80;
+
+        provider = aws_credentials_provider_new_ecs(allocator, &explicit_options);
+
+    } else if (
+        aws_get_environment_value(allocator, &s_ecs_creds_env_full_uri, &full_uri_str) == AWS_OP_SUCCESS &&
+        full_uri_str != NULL && full_uri_str->len != 0) {
+
+        /* Using FULL_URI */
+        struct aws_byte_cursor full_uri_cursor = aws_byte_cursor_from_string(full_uri_str);
+        if (aws_uri_init_parse(&full_uri, allocator, &full_uri_cursor)) {
+            goto cleanup;
+        }
+
+        explicit_options.host = *aws_uri_host_name(&full_uri);
+        explicit_options.path_and_query = *aws_uri_path_and_query(&full_uri); // TODO: / defaut???
+        if (explicit_options.path_and_query.len == 0) {
+            explicit_options.path_and_query = aws_byte_cursor_from_c_str("/");
+        }
+
+        if (aws_byte_cursor_eq_c_str_ignore_case(aws_uri_scheme(&full_uri), "https")) {
+            explicit_options.tls_ctx = options->tls_ctx;
+        }
+
+        explicit_options.port = aws_uri_port(&full_uri);
+        if (explicit_options.port == 0) {
+            explicit_options.port = explicit_options.tls_ctx ? 443 : 80;
+        }
+
+        provider = aws_credentials_provider_new_ecs(allocator, &explicit_options);
+
+    } else {
+        /* Neither environment variable is set */
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT);
+        goto cleanup;
+    }
+
+cleanup:
+    aws_string_destroy(relative_uri_str);
+    aws_string_destroy(full_uri_str);
+    aws_uri_clean_up(&full_uri);
+    return provider;
 }

@@ -290,6 +290,23 @@ struct aws_credentials_provider_ecs_options {
     uint32_t port;
 };
 
+struct aws_credentials_provider_ecs_environment_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
+    struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when making query.
+     */
+    struct aws_tls_ctx *tls_ctx;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_auth_http_system_vtable *function_table;
+};
+
 /**
  * Configuration options for the X509 credentials provider
  *
@@ -1009,6 +1026,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
 
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_environment_options *options);
+
 /**
  * Creates a provider that sources credentials from IoT Core
  *
@@ -1017,8 +1039,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
  *
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
  */
-AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_x509(
+AWS_AUTH_API struct aws_credentials_provider *aws_credentials_provider_new_x509(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_x509_options *options);
 
