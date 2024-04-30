@@ -30,6 +30,9 @@
 #define ECS_RESPONSE_SIZE_LIMIT 10000
 #define ECS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_full_uri, "AWS_CONTAINER_CREDENTIALS_FULL_URI");
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_host, "169.254.170.2");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token_file, "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token, "AWS_CONTAINER_AUTHORIZATION_TOKEN");
 
@@ -523,6 +526,101 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     const struct aws_credentials_provider_ecs_options *options) {
 
     struct aws_credentials_provider *provider = NULL;
+
+    /* The URI components may come from the options-struct, or may come from environment variables... */
+    struct aws_byte_cursor host = {0};
+    struct aws_byte_cursor path_and_query = {0};
+    uint32_t port = 0;
+    struct aws_tls_ctx *tls_ctx = NULL;
+
+    struct aws_tls_connection_options tls_connection_options;
+    AWS_ZERO_STRUCT(tls_connection_options);
+
+    struct aws_string *relative_uri_str = NULL;
+    struct aws_string *full_uri_str = NULL;
+    struct aws_uri full_uri = {0};
+
+    /* If any URI components are coming from options-struct, ALL components must come from the options-struct */
+    if (options->host.len != 0 || options->path_and_query.len != 0 || options->port != 0) {
+        if (options->host.len == 0 || options->path_and_query.len == 0) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "ECS credentials provider options contains some, but not all, options necessary to build a URI");
+            aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+            goto on_error;
+        }
+
+        host = options->host;
+        path_and_query = options->path_and_query;
+        tls_ctx = options->tls_ctx;
+        port = options->port;
+
+    } else {
+        /* Else check env vars: $AWS_CONTAINER_CREDENTIALS_RELATIVE_URI then $AWS_CONTAINER_CREDENTIALS_FULL_URI */
+
+        /* TLS must be passed in when reading env vars, since FULL_URI may be "https://" */
+        if (options->tls_ctx == NULL) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "ECS credentials provider requires TLS context when reading URI from the environment");
+            aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+            goto on_error;
+        }
+
+        aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &relative_uri_str);
+        aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &full_uri_str);
+        if (relative_uri_str != NULL && relative_uri_str->len != 0) {
+            /* using RELATIVE_URI */
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "ECS credentials provider with relative URI \"%s\" will be used to retrieve credentials",
+                aws_string_c_str(relative_uri_str));
+
+            host = aws_byte_cursor_from_string(s_ecs_host);
+            port = 80;
+            tls_ctx = NULL;
+            path_and_query = aws_byte_cursor_from_string(relative_uri_str);
+
+        } else if (full_uri_str != NULL && full_uri_str->len != 0) {
+            /* using FULL_URI */
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "ECS credentials provider with full URI \"%s\" will be used to retrieve credentials",
+                aws_string_c_str(full_uri_str));
+
+            struct aws_byte_cursor full_uri_cursor = aws_byte_cursor_from_string(full_uri_str);
+            if (aws_uri_init_parse(&full_uri, allocator, &full_uri_cursor)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "ECS credentials provider cannot parse full URI \"%s\"",
+                    aws_string_c_str(full_uri_str));
+                goto on_error;
+            }
+
+            host = *aws_uri_host_name(&full_uri);
+            path_and_query = *aws_uri_path_and_query(&full_uri);
+            if (path_and_query.len == 0) {
+                path_and_query = aws_byte_cursor_from_c_str("/");
+            }
+
+            if (aws_byte_cursor_eq_c_str_ignore_case(aws_uri_scheme(&full_uri), "https")) {
+                tls_ctx = options->tls_ctx;
+            }
+
+            port = aws_uri_port(&full_uri);
+
+        } else {
+            /* URI components not set in options struct or env vars: fail.
+             * This path is commonly hit by the default credentials provider. */
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "No ECS credentials provider created."
+                " Neither AWS_CONTAINER_CREDENTIALS_FULL_URI or AWS_CONTAINER_CREDENTIALS_RELATIVE_URI were set.");
+            aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT);
+            goto on_error;
+        }
+    }
+
     struct aws_credentials_provider_ecs_impl *impl = NULL;
 
     aws_mem_acquire_many(
@@ -533,20 +631,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         &impl,
         sizeof(struct aws_credentials_provider_ecs_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_ecs_vtable, impl);
 
-    struct aws_tls_connection_options tls_connection_options;
-    AWS_ZERO_STRUCT(tls_connection_options);
-    if (options->tls_ctx) {
-        aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-        struct aws_byte_cursor host = options->host;
+    if (tls_ctx) {
+        aws_tls_connection_options_init_from_ctx(&tls_connection_options, tls_ctx);
         if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -569,16 +660,16 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     manager_options.bootstrap = options->bootstrap;
     manager_options.initial_window_size = ECS_RESPONSE_SIZE_LIMIT;
     manager_options.socket_options = &socket_options;
-    manager_options.host = options->host;
-    if (options->port == 0) {
-        manager_options.port = options->tls_ctx ? 443 : 80;
+    manager_options.host = host;
+    if (port == 0) {
+        manager_options.port = tls_ctx ? 443 : 80;
     } else {
-        manager_options.port = options->port;
+        manager_options.port = port;
     }
     manager_options.max_connections = 2;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
-    manager_options.tls_connection_options = options->tls_ctx ? &tls_connection_options : NULL;
+    manager_options.tls_connection_options = tls_ctx ? &tls_connection_options : NULL;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {
@@ -591,41 +682,26 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     }
     if (options->auth_token.len != 0) {
         impl->auth_token = aws_string_new_from_cursor(allocator, &options->auth_token);
-        if (impl->auth_token == NULL) {
-            goto on_error;
-        }
     } else {
         /* read the environment variables */
-        struct aws_string *ecs_env_token_file_path = NULL;
-        struct aws_string *ecs_env_token = NULL;
-        if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) ||
-            aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
-            goto on_error;
-        }
-        impl->auth_token_file_path = ecs_env_token_file_path;
-        impl->auth_token = ecs_env_token;
+        aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &impl->auth_token_file_path);
+        aws_get_environment_value(allocator, s_ecs_creds_env_token, &impl->auth_token);
     }
-
-    impl->path_and_query = aws_string_new_from_cursor(allocator, &options->path_and_query);
-    if (impl->path_and_query == NULL) {
-        goto on_error;
-    }
-
-    impl->host = aws_string_new_from_cursor(allocator, &options->host);
-    if (impl->host == NULL) {
-        goto on_error;
-    }
+    impl->path_and_query = aws_string_new_from_cursor(allocator, &path_and_query);
+    impl->host = aws_string_new_from_cursor(allocator, &host);
 
     provider->shutdown_options = options->shutdown_options;
-
-    aws_tls_connection_options_clean_up(&tls_connection_options);
-
-    return provider;
+    goto cleanup;
 
 on_error:
-
-    aws_tls_connection_options_clean_up(&tls_connection_options);
     aws_credentials_provider_destroy(provider);
+    provider = NULL;
 
-    return NULL;
+cleanup:
+    aws_tls_connection_options_clean_up(&tls_connection_options);
+    aws_string_destroy(relative_uri_str);
+    aws_string_destroy(full_uri_str);
+    aws_uri_clean_up(&full_uri);
+
+    return provider;
 }

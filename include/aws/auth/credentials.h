@@ -237,9 +237,9 @@ struct aws_credentials_provider_imds_options {
  * If both relative uri and absolute uri are set, relative uri
  * has higher priority.
  *
- * Currently, the ECS creds provider doesn't read those environment variables and requires host & path_and_query
- * TODO: Support AWS_CONTAINER_CREDENTIALS_RELATIVE_URI and AWS_CONTAINER_CREDENTIALS_FULL_URI
- * parameters.
+ * If the `host`, `path_and_query`, or `port` parameters are set, then the
+ * AWS_CONTAINER_CREDENTIALS_RELATIVE_URI and AWS_CONTAINER_CREDENTIALS_FULL_URI
+ * environment variables are ignored.
  *
  * For the Authorization token, there are three ways (in order of priority).
  * 1. auth_token parameter
@@ -261,12 +261,16 @@ struct aws_credentials_provider_ecs_options {
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Host to query credentials from
+     * Host to query credentials from.
+     * Leave this blank to use environment variables (see above).
+     * If this is set, then `path_and_query` must also be set.
      */
     struct aws_byte_cursor host;
 
     /*
-     * Http path and query string for the credentials query
+     * Http path and query string for the credentials query.
+     * Leave this blank to use environment variables (see above).
+     * If this is set, then `host` must also be set.
      */
     struct aws_byte_cursor path_and_query;
 
@@ -277,7 +281,8 @@ struct aws_credentials_provider_ecs_options {
 
     /*
      * Client TLS context to use when making query.
-     * If set, port 443 is used. If NULL, port 80 is used.
+     * If using environment variables (see above) this must be set
+     * If `host` and `path_and_query` are set, then setting this controls whether TLS is used.
      */
     struct aws_tls_ctx *tls_ctx;
 
@@ -285,7 +290,9 @@ struct aws_credentials_provider_ecs_options {
     struct aws_auth_http_system_vtable *function_table;
 
     /*
-     * Port to query credentials from.  If zero, 80/443 will be used based on whether or not tls is enabled.
+     * Port to query credentials from.
+     * If using environment variables (see above) leave this at 0.
+     * Otherwise, if zero, 80/443 will be used based on whether or not `tls_ctx` is set.
      */
     uint32_t port;
 };
@@ -1003,6 +1010,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
  * @param options provider-specific configuration options
  *
  * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ * A common last-error is AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT,
+ * which indicates neither AWS_CONTAINER_CREDENTIALS_RELATIVE_URI or AWS_CONTAINER_CREDENTIALS_FULL_URI were set.
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(

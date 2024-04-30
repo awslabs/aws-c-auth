@@ -32,6 +32,7 @@ static struct aws_byte_cursor s_default_session_name_pfx =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime-profile-config");
 static struct aws_byte_cursor s_ec2_imds_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Ec2InstanceMetadata");
 static struct aws_byte_cursor s_environment_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Environment");
+static struct aws_byte_cursor s_ecs_container_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("EcsContainer");
 
 #define MAX_SESSION_NAME_LEN ((size_t)64)
 
@@ -232,6 +233,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     const struct aws_credentials_provider_profile_options *options,
     struct aws_profile_collection *merged_profiles,
     struct aws_hash_table *source_profiles_table) {
+
     struct aws_credentials_provider *provider = NULL;
 
     AWS_LOGF_INFO(
@@ -332,13 +334,13 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: failed to load STS credentials provider");
         }
     } else if (credential_source_property) {
+        const struct aws_string *credential_source_value = aws_profile_property_get_value(credential_source_property);
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "static: credential_source property set to %s",
-            aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
+            aws_string_c_str(credential_source_value));
 
-        if (aws_string_eq_byte_cursor_ignore_case(
-                aws_profile_property_get_value(credential_source_property), &s_ec2_imds_name)) {
+        if (aws_string_eq_byte_cursor_ignore_case(credential_source_value, &s_ec2_imds_name)) {
             struct aws_credentials_provider_imds_options imds_options = {
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
@@ -356,8 +358,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
 
             aws_credentials_provider_release(imds_provider);
 
-        } else if (aws_string_eq_byte_cursor_ignore_case(
-                       aws_profile_property_get_value(credential_source_property), &s_environment_name)) {
+        } else if (aws_string_eq_byte_cursor_ignore_case(credential_source_value, &s_environment_name)) {
             struct aws_credentials_provider_environment_options env_options;
             AWS_ZERO_STRUCT(env_options);
 
@@ -372,11 +373,32 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             provider = aws_credentials_provider_new_sts(allocator, &sts_options);
 
             aws_credentials_provider_release(env_provider);
+
+        } else if (aws_string_eq_byte_cursor_ignore_case(credential_source_value, &s_ecs_container_name)) {
+            struct aws_credentials_provider_ecs_options ecs_options = {
+                .bootstrap = options->bootstrap,
+                .tls_ctx = tls_ctx,
+                .function_table = options->function_table,
+            };
+            struct aws_credentials_provider *ecs_provider = aws_credentials_provider_new_ecs(allocator, &ecs_options);
+            if (!ecs_provider) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "static: failed to load ECS credentials provider: %s",
+                    aws_error_str(aws_last_error()));
+                goto done;
+            }
+
+            sts_options.creds_provider = ecs_provider;
+            provider = aws_credentials_provider_new_sts(allocator, &sts_options);
+
+            aws_credentials_provider_release(ecs_provider);
+
         } else {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "static: invalid credential_source property: %s",
-                aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
+                aws_string_c_str(credential_source_value));
             aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         }
     }
