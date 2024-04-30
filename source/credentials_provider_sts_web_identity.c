@@ -48,6 +48,7 @@ struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
     struct aws_string *token_file_path;
+    struct aws_string *endpoint;
 };
 
 /*
@@ -523,11 +524,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     s_finalize_get_credentials_query(user_data);
 }
 
-static struct aws_http_header s_host_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
-};
-
 static struct aws_http_header s_content_type_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
@@ -578,6 +574,11 @@ static int s_make_sts_web_identity_http_query(
         .value = aws_byte_cursor_from_c_str(content_length),
     };
 
+    struct aws_http_header host_header = {
+        .name = aws_byte_cursor_from_c_str("host"),
+        .value = aws_byte_cursor_from_string(impl->endpoint),
+    };
+
     if (aws_http_message_add_header(request, content_len_header)) {
         goto on_error;
     }
@@ -586,7 +587,7 @@ static int s_make_sts_web_identity_http_query(
         goto on_error;
     }
 
-    if (aws_http_message_add_header(request, s_host_header)) {
+    if (aws_http_message_add_header(request, host_header)) {
         goto on_error;
     }
 
@@ -777,6 +778,7 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
     aws_string_destroy(impl->role_arn);
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->token_file_path);
+    aws_string_destroy(impl->endpoint);
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
      * which will do memory release for provider and impl. So We should be freeing impl
      * related memory first, then call aws_http_connection_manager_release.
@@ -1150,6 +1152,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     impl->token_file_path =
         aws_string_new_from_array(allocator, parameters->token_file_path.buffer, parameters->token_file_path.len);
     if (impl->token_file_path == NULL) {
+        goto on_error;
+    }
+
+    impl->endpoint = aws_string_new_from_array(allocator, parameters->endpoint.buffer, parameters->endpoint.len);
+    if (impl->endpoint == NULL) {
         goto on_error;
     }
 
