@@ -598,6 +598,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
             goto on_error;
         }
     } else {
+        // TODO: Should move this over to the new function?
         /* read the environment variables */
         struct aws_string *ecs_env_token_file_path = NULL;
         struct aws_string *ecs_env_token = NULL;
