@@ -250,7 +250,7 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
     return AWS_OP_SUCCESS;
 }
 
-static void s_aws_ecs_tester_cleanup(void) {
+static void s_aws_ecs_tester_reset(void) {
     aws_array_list_clean_up(&s_tester.response_data_callbacks);
     aws_string_destroy(s_tester.request_path_and_query);
     aws_string_destroy(s_tester.request_authorization_header);
@@ -258,6 +258,10 @@ static void s_aws_ecs_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
+}
+
+static void s_aws_ecs_tester_cleanup(void) {
+    s_aws_ecs_tester_reset();
     aws_auth_library_clean_up();
 }
 
@@ -724,7 +728,6 @@ AWS_TEST_CASE(credentials_provider_ecs_basic_success_token_file, s_credentials_p
 
 static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    aws_auth_library_init(allocator);
 
     const struct test_case {
         const char *relative_uri;
@@ -840,12 +843,12 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             case_i.expected_uri,
             case_i.expected_auth_token));
 
-        s_aws_ecs_tester_cleanup();
+        s_aws_ecs_tester_reset();
     }
 
     aws_tls_ctx_release(tls_ctx);
     aws_tls_ctx_options_clean_up(&tls_options);
-
+    aws_auth_library_clean_up();
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_ecs_basic_success_uri_env, s_credentials_provider_ecs_basic_success_uri_env);
