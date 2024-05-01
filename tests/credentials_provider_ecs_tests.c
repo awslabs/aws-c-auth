@@ -258,6 +258,10 @@ static void s_aws_ecs_tester_reset(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
+    s_tester.credentials = NULL;
+    s_tester.request_path_and_query = NULL;
+    s_tester.request_authorization_header = NULL;
+    s_tester.selected_host = NULL;
 }
 
 static void s_aws_ecs_tester_cleanup(void) {
@@ -848,7 +852,7 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
 
     aws_tls_ctx_release(tls_ctx);
     aws_tls_ctx_options_clean_up(&tls_options);
-    aws_auth_library_clean_up();
+    s_aws_ecs_tester_cleanup();
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_ecs_basic_success_uri_env, s_credentials_provider_ecs_basic_success_uri_env);
