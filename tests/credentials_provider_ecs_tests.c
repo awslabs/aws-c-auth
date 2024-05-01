@@ -732,7 +732,7 @@ AWS_TEST_CASE(credentials_provider_ecs_basic_success_token_file, s_credentials_p
 
 static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-
+    aws_auth_library_init(allocator);
     const struct test_case {
         const char *relative_uri;
         const char *full_uri;
