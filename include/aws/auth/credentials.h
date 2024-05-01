@@ -288,7 +288,6 @@ struct aws_credentials_provider_ecs_options {
  * will be re-read for each call to get credentials.)
  * 2. AWS_CONTAINER_AUTHORIZATION_TOKEN (an env var that contains a static auth token)
  */
-
 struct aws_credentials_provider_ecs_environment_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
@@ -1025,6 +1024,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
 
+/**
+ * Creates a provider that sources credentials from the ecs role credentials service and reads the required params from
+ * environment variables
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
     struct aws_allocator *allocator,
