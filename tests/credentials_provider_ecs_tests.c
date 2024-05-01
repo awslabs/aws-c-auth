@@ -22,6 +22,7 @@
 #include <aws/io/event_loop.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
+#include <aws/io/tls_channel_handler.h>
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_full_uri, "AWS_CONTAINER_CREDENTIALS_FULL_URI");
@@ -533,84 +534,73 @@ static int s_do_ecs_success_test(
     return AWS_OP_SUCCESS;
 }
 
-// static int s_setup_ecs_env_variables(
-//     struct aws_allocator *allocator,
-//     char *relative_uri,
-//     char *full_uri,
-//     char *auth_token,
-//     char *auth_token_file) {
+static int s_do_ecs_env_success_test(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider_ecs_environment_options *options,
+    const char *relative_uri,
+    const char *full_uri,
+    const char *auth_token,
+    const char *auth_token_file,
+    const char *expected_uri,
+    const char *expected_token) {
 
-//     /* ensure pre-existing environment doesn't interfere  */
-//     aws_unset_environment_value(s_ecs_creds_env_relative_uri);
-//     aws_unset_environment_value(s_ecs_creds_env_full_uri);
-//     aws_unset_environment_value(s_ecs_creds_env_token_file);
-//     aws_unset_environment_value(s_ecs_creds_env_token);
+    struct aws_string *relative_uri_str = NULL;
+    if (relative_uri != NULL) {
+        relative_uri_str = aws_string_new_from_c_str(allocator, relative_uri);
+        ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_relative_uri, relative_uri_str));
+    }
+    struct aws_string *full_uri_str = NULL;
+    if (full_uri != NULL) {
+        full_uri_str = aws_string_new_from_c_str(allocator, full_uri);
+        ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_full_uri, full_uri_str));
+    }
+    struct aws_string *auth_token_str = NULL;
+    if (auth_token != NULL) {
+        auth_token_str = aws_string_new_from_c_str(allocator, auth_token);
+        ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token, auth_token_str));
+    }
+    struct aws_string *auth_token_file_str = NULL;
+    if (auth_token_file != NULL) {
+        auth_token_file_str = aws_string_new_from_c_str(allocator, auth_token_file);
+        ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token_file, auth_token_file_str));
+    }
 
-//     struct aws_string *relative_uri_str = aws_string_new_from_c_str(allocator, relative_uri);
-//     struct aws_string *full_uri_str = aws_string_new_from_c_str(allocator, full_uri);
-//     struct aws_string *auth_token_str = aws_string_new_from_c_str(allocator, auth_token);
-//     struct aws_string *auth_token_file_str = aws_string_new_from_c_str(allocator, auth_token_file);
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs_from_environment(allocator, options);
 
-//     if (relative_uri_str != NULL) {
-//         ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_relative_uri, relative_uri_str));
-//     }
-//     if (full_uri_str != NULL) {
-//         ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_full_uri, full_uri_str));
-//     }
-//     if (auth_token_str != NULL) {
-//         ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token, auth_token_str));
-//     }
-//     if (auth_token_file_str != NULL) {
-//         ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token_file, auth_token_file_str));
-//     }
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
-//     aws_string_destroy(relative_uri_str);
-//     aws_string_destroy(full_uri_str);
-//     aws_string_destroy(auth_token_str);
-//     aws_string_destroy(auth_token_file_str);
-// }
+    s_aws_wait_for_credentials_result();
 
-// static int s_do_ecs_env_success_test(
-//     struct aws_allocator *allocator,
-//     struct aws_credentials_provider_ecs_environment_options *options) {
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_SUCCESS(s_check_ecs_tester_request(expected_uri, expected_token));
 
-//     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs_from_environment(allocator,
-//     options);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
 
-//     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+    struct aws_date_time expiration;
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
+    aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
+    ASSERT_TRUE(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
+    aws_mutex_unlock(&s_tester.lock);
 
-//     s_aws_wait_for_credentials_result();
+    aws_credentials_provider_release(provider);
 
-//     aws_mutex_lock(&s_tester.lock);
-//     ASSERT_BIN_ARRAYS_EQUALS(
-//         s_tester.request_uri.buffer,
-//         s_tester.request_uri.len,
-//         s_expected_ecs_relative_uri->bytes,
-//         s_expected_ecs_relative_uri->len);
+    s_aws_wait_for_provider_shutdown_callback();
 
-//     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-//     ASSERT_TRUE(s_tester.credentials != NULL);
-//     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
-//     ASSERT_CURSOR_VALUE_STRING_EQUALS(
-//         aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
-//     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
 
-//     struct aws_date_time expiration;
-//     struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
-//     aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-//     ASSERT_TRUE(
-//         aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
-//     aws_mutex_unlock(&s_tester.lock);
-
-//     aws_credentials_provider_release(provider);
-
-//     s_aws_wait_for_provider_shutdown_callback();
-
-//     /* Because we mock the http connection manager, we never get a callback back from it */
-//     aws_mem_release(provider->allocator, provider);
-
-//     return AWS_OP_SUCCESS;
-// }
+    aws_string_destroy(relative_uri_str);
+    aws_string_destroy(full_uri_str);
+    aws_string_destroy(auth_token_str);
+    aws_string_destroy(auth_token_file_str);
+    return AWS_OP_SUCCESS;
+}
 
 static int s_credentials_provider_ecs_basic_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -705,6 +695,101 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_ecs_basic_success_token_file, s_credentials_provider_ecs_basic_success_token_file);
+
+static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    const struct test_case {
+        const char *relative_uri;
+        const char *full_uri;
+        const char *expected_uri;
+        const char *auth_token;
+        const char *auth_token_file;
+        const char *expected_auth_token;
+    } test_cases[] = {
+        /* simple full uri*/
+        {
+            .full_uri = "http://127.0.0.1/credentials",
+            .expected_uri = "http://127.0.0.1:80/credentials",
+        },
+        /* explicit port */
+        {
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
+        },
+        /* https */
+        {
+            .full_uri = "https://www.xxx123321testmocknonexsitingawsservice.com/credentials",
+            .expected_uri = "https://www.xxx123321testmocknonexsitingawsservice.com:443/credentials",
+        },
+        /* path and query */
+        {
+            .full_uri = "http://127.0.0.1/path/to/resource/?a=b&c=d",
+            .expected_uri = "http://127.0.0.1:80/path/to/resource/?a=b&c=d",
+        },
+        /* relative URI */
+        {
+            .relative_uri = "/path/to/resource/?a=b&c=d",
+            .expected_uri = "http://169.254.170.2:80/path/to/resource/?a=b&c=d",
+        },
+        /* relative URI takes priority, when both RELATIVE and FULL are set */
+        {
+            .relative_uri = "/from-relative-uri",
+            .full_uri = "http://127.0.0.1/from-full-uri",
+            .expected_uri = "http://169.254.170.2:80/from-relative-uri",
+        },
+    };
+
+    /* Provide tls_ctx, in case FULL_URI scheme is "https://" */
+    struct aws_tls_ctx_options tls_options;
+    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+    struct aws_tls_ctx *tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    ASSERT_NOT_NULL(tls_ctx);
+
+    for (size_t case_idx = 0; case_idx < AWS_ARRAY_SIZE(test_cases); ++case_idx) {
+        struct test_case case_i = test_cases[case_idx];
+        printf(
+            "CASE[%zu]: AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=%s AWS_CONTAINER_CREDENTIALS_FULL_URI=%s\n",
+            case_idx,
+            case_i.relative_uri ? case_i.relative_uri : "<UNSET>",
+            case_i.full_uri ? case_i.full_uri : "<UNSET>");
+
+        /* This unsets previous env vars */
+        ASSERT_SUCCESS(s_aws_ecs_tester_init(allocator));
+
+        struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+        aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+        struct aws_credentials_provider_ecs_environment_options options = {
+            .bootstrap = NULL,
+            .function_table = &s_mock_function_table,
+            .shutdown_options =
+                {
+                    .shutdown_callback = s_on_shutdown_complete,
+                    .shutdown_user_data = NULL,
+                },
+            .tls_ctx = tls_ctx,
+        };
+
+        ASSERT_SUCCESS(s_do_ecs_env_success_test(
+            allocator,
+            &options,
+            case_i.relative_uri,
+            case_i.full_uri,
+            case_i.auth_token,
+            case_i.auth_token_file,
+            case_i.expected_uri,
+            NULL));
+
+        s_aws_ecs_tester_cleanup();
+    }
+
+    aws_tls_ctx_release(tls_ctx);
+    aws_tls_ctx_options_clean_up(&tls_options);
+
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_ecs_basic_success_uri_env, s_credentials_provider_ecs_basic_success_uri_env);
 
 // static int s_credentials_provider_ecs_basic_success_token_env(struct aws_allocator *allocator, void *ctx) {
 //     (void)ctx;
