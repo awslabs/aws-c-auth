@@ -597,18 +597,26 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         if (impl->auth_token == NULL) {
             goto on_error;
         }
-    } else {
-        // TODO: Should move this over to the new function?
-        /* read the environment variables */
-        struct aws_string *ecs_env_token_file_path = NULL;
-        struct aws_string *ecs_env_token = NULL;
-        if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) ||
-            aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
+    }
+    if (options->auth_token_file_path.len != 0) {
+        impl->auth_token_file_path = aws_string_new_from_cursor(allocator, &options->auth_token_file_path);
+        if (impl->auth_token_file_path == NULL) {
             goto on_error;
         }
-        impl->auth_token_file_path = ecs_env_token_file_path;
-        impl->auth_token = ecs_env_token;
     }
+
+    // else {
+    //     // TODO: Should move this over to the new function?
+    //     /* read the environment variables */
+    //     struct aws_string *ecs_env_token_file_path = NULL;
+    //     struct aws_string *ecs_env_token = NULL;
+    //     if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) ||
+    //         aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
+    //         goto on_error;
+    //     }
+    //     impl->auth_token_file_path = ecs_env_token_file_path;
+    //     impl->auth_token = ecs_env_token;
+    // }
 
     impl->path_and_query = aws_string_new_from_cursor(allocator, &options->path_and_query);
     if (impl->path_and_query == NULL) {

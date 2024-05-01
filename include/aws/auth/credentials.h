@@ -276,6 +276,12 @@ struct aws_credentials_provider_ecs_options {
     struct aws_byte_cursor auth_token;
 
     /*
+     * Authorization token file path to include in the credentials query. The file will be re-read for each call to
+     * get_credentials.
+     */
+    struct aws_byte_cursor auth_token_file_path;
+
+    /*
      * Client TLS context to use when making query.
      * If set, port 443 is used. If NULL, port 80 is used.
      */
