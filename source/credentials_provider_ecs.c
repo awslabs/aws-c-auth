@@ -605,19 +605,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         }
     }
 
-    // else {
-    //     // TODO: Should move this over to the new function?
-    //     /* read the environment variables */
-    //     struct aws_string *ecs_env_token_file_path = NULL;
-    //     struct aws_string *ecs_env_token = NULL;
-    //     if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) ||
-    //         aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token)) {
-    //         goto on_error;
-    //     }
-    //     impl->auth_token_file_path = ecs_env_token_file_path;
-    //     impl->auth_token = ecs_env_token;
-    // }
-
     impl->path_and_query = aws_string_new_from_cursor(allocator, &options->path_and_query);
     if (impl->path_and_query == NULL) {
         goto on_error;
@@ -657,6 +644,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
     struct aws_uri full_uri;
     AWS_ZERO_STRUCT(full_uri);
     struct aws_credentials_provider *provider = NULL;
+
+    /* Read the auth token variables */
+    struct aws_string *ecs_env_token_file_path = NULL;
+    struct aws_string *ecs_env_token = NULL;
+    if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) != AWS_OP_SUCCESS ||
+        aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token) != AWS_OP_SUCCESS) {
+        goto cleanup;
+    }
+    if (ecs_env_token_file_path != NULL) {
+        explicit_options.auth_token_file_path = aws_byte_cursor_from_string(ecs_env_token_file_path);
+    }
+    if (ecs_env_token != NULL) {
+        explicit_options.auth_token = aws_byte_cursor_from_string(ecs_env_token);
+    }
 
     if (aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &relative_uri_str) == AWS_OP_SUCCESS &&
         relative_uri_str != NULL && relative_uri_str->len != 0) {
@@ -704,6 +705,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
 cleanup:
     aws_string_destroy(relative_uri_str);
     aws_string_destroy(full_uri_str);
+    aws_string_destroy(ecs_env_token_file_path);
+    aws_string_destroy(ecs_env_token);
+
     aws_uri_clean_up(&full_uri);
     return provider;
 }

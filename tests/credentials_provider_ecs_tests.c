@@ -805,10 +805,13 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
     for (size_t case_idx = 0; case_idx < AWS_ARRAY_SIZE(test_cases); ++case_idx) {
         struct test_case case_i = test_cases[case_idx];
         printf(
-            "CASE[%zu]: AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=%s AWS_CONTAINER_CREDENTIALS_FULL_URI=%s\n",
+            "CASE[%zu]: AWS_CONTAINER_CREDENTIALS_RELATIVE_URI=%s AWS_CONTAINER_CREDENTIALS_FULL_URI=%s\n, "
+            "AWS_CONTAINER_AUTHORIZATION_TOKEN=%s\n, auth_token_file_content=%s\n",
             case_idx,
             case_i.relative_uri ? case_i.relative_uri : "<UNSET>",
-            case_i.full_uri ? case_i.full_uri : "<UNSET>");
+            case_i.full_uri ? case_i.full_uri : "<UNSET>",
+            case_i.auth_token ? case_i.auth_token : "<UNSET>",
+            case_i.auth_token_file_content ? case_i.auth_token_file_content : "<UNSET>");
 
         /* This unsets previous env vars */
         ASSERT_SUCCESS(s_aws_ecs_tester_init(allocator));
@@ -835,7 +838,7 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             case_i.auth_token,
             case_i.auth_token_file_content,
             case_i.expected_uri,
-            NULL));
+            case_i.expected_auth_token));
 
         s_aws_ecs_tester_cleanup();
     }
