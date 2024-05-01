@@ -540,7 +540,7 @@ static int s_do_ecs_env_success_test(
     const char *relative_uri,
     const char *full_uri,
     const char *auth_token,
-    const char *auth_token_file,
+    const char *auth_token_file_content,
     const char *expected_uri,
     const char *expected_token) {
 
@@ -559,10 +559,15 @@ static int s_do_ecs_env_success_test(
         auth_token_str = aws_string_new_from_c_str(allocator, auth_token);
         ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token, auth_token_str));
     }
-    struct aws_string *auth_token_file_str = NULL;
-    if (auth_token_file != NULL) {
-        auth_token_file_str = aws_string_new_from_c_str(allocator, auth_token_file);
-        ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token_file, auth_token_file_str));
+    struct aws_string *auth_token_file_contents_str = NULL;
+    struct aws_string *auth_token_file_path = NULL;
+    if (auth_token_file_content != NULL) {
+        auth_token_file_contents_str = aws_string_new_from_c_str(allocator, auth_token_file_content);
+
+        auth_token_file_path = aws_create_process_unique_file_name(allocator);
+        ASSERT_NOT_NULL(auth_token_file_path);
+        ASSERT_TRUE(aws_create_profile_file(auth_token_file_path, auth_token_file_contents_str) == AWS_OP_SUCCESS);
+        ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_token_file, auth_token_file_path));
     }
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs_from_environment(allocator, options);
@@ -594,11 +599,15 @@ static int s_do_ecs_env_success_test(
 
     /* Because we mock the http connection manager, we never get a callback back from it */
     aws_mem_release(provider->allocator, provider);
-
+    if (auth_token_file_path != NULL) {
+        aws_file_delete(auth_token_file_path);
+    }
     aws_string_destroy(relative_uri_str);
     aws_string_destroy(full_uri_str);
     aws_string_destroy(auth_token_str);
-    aws_string_destroy(auth_token_file_str);
+    aws_string_destroy(auth_token_file_contents_str);
+    aws_string_destroy(auth_token_file_path);
+
     return AWS_OP_SUCCESS;
 }
 
@@ -704,7 +713,7 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
         const char *full_uri;
         const char *expected_uri;
         const char *auth_token;
-        const char *auth_token_file;
+        const char *auth_token_file_content;
         const char *expected_auth_token;
     } test_cases[] = {
         /* simple full uri*/
@@ -737,6 +746,35 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             .relative_uri = "/from-relative-uri",
             .full_uri = "http://127.0.0.1/from-full-uri",
             .expected_uri = "http://169.254.170.2:80/from-relative-uri",
+        },
+        /* auth token is properly set */
+        {
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
+            .auth_token = "testToken",
+            .expected_auth_token = "testToken",
+        },
+        /* auth_token is respected */
+        {
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
+            .auth_token = "testToken",
+            .expected_auth_token = "testToken",
+        },
+        /* auth_token_file_path is respected */
+        {
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
+            .auth_token_file_content = "testToken",
+            .expected_auth_token = "testToken",
+        },
+        /* auth_token_file_path is preferred */
+        {
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
+            .auth_token = "BadToken",
+            .auth_token_file_content = "testToken",
+            .expected_auth_token = "testToken",
         },
     };
 
@@ -777,7 +815,7 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             case_i.relative_uri,
             case_i.full_uri,
             case_i.auth_token,
-            case_i.auth_token_file,
+            case_i.auth_token_file_content,
             case_i.expected_uri,
             NULL));
 
