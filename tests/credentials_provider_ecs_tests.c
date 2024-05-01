@@ -674,26 +674,44 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
         .auth_token_file_path = aws_byte_cursor_from_string(token_file_path),
     };
 
-    ASSERT_SUCCESS(s_do_ecs_success_test(
-        allocator,
-        &options,
-        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d" /*expected_uri*/,
-        aws_string_c_str(auth_token) /*expected_token*/));
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_SUCCESS(s_check_ecs_tester_request(
+        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d",
+        aws_string_c_str(auth_token)));
+
+    aws_string_destroy(s_tester.request_path_and_query);
+    aws_string_destroy(s_tester.request_authorization_header);
+    aws_credentials_release(s_tester.credentials);
+
+    aws_mutex_unlock(&s_tester.lock);
 
     /* update the file with updated token */
     struct aws_string *auth_token2 = aws_string_new_from_c_str(allocator, "test-token2-4321-qwer");
     ASSERT_TRUE(aws_create_profile_file(token_file_path, auth_token2) == AWS_OP_SUCCESS);
 
-    /* reset tester */
-    s_aws_ecs_tester_cleanup();
-    s_aws_ecs_tester_init(allocator);
-    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
-    ASSERT_SUCCESS(s_do_ecs_success_test(
-        allocator,
-        &options,
-        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d" /*expected_uri*/,
-        aws_string_c_str(auth_token2) /*expected_token*/));
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_SUCCESS(s_check_ecs_tester_request(
+        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d",
+        aws_string_c_str(auth_token2)));
+
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
 
     s_aws_ecs_tester_cleanup();
     aws_file_delete(token_file_path);
