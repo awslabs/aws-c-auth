@@ -223,6 +223,7 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
 static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
+    aws_auth_library_init(allocator);
     s_tester.allocator = allocator;
     if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
@@ -235,8 +236,6 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
     if (aws_condition_variable_init(&s_tester.signal)) {
         return AWS_OP_ERR;
     }
-
-    aws_auth_library_init(allocator);
 
     /* default to everything successful */
     s_tester.is_connection_acquire_successful = true;
@@ -725,6 +724,7 @@ AWS_TEST_CASE(credentials_provider_ecs_basic_success_token_file, s_credentials_p
 
 static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
+    aws_auth_library_init(allocator);
 
     const struct test_case {
         const char *relative_uri;
