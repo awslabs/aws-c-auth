@@ -382,6 +382,9 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             };
             struct aws_credentials_provider *ecs_provider =
                 aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
+            if (!ecs_provider) {
+                goto done;
+            }
             sts_options.creds_provider = ecs_provider;
             provider = aws_credentials_provider_new_sts(allocator, &sts_options);
 

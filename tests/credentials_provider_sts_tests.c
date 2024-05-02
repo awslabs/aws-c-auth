@@ -175,12 +175,12 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
 
     struct aws_input_stream *input_stream = aws_http_message_get_body_stream(options->request);
     int64_t body_len = 0;
-
-    aws_input_stream_get_length(input_stream, &body_len);
-    aws_byte_buf_clean_up(&mocked_request->body);
-    aws_byte_buf_init(&mocked_request->body, s_tester.allocator, (size_t)body_len);
-    aws_input_stream_read(input_stream, &mocked_request->body);
-
+    if (input_stream != NULL) {
+        aws_input_stream_get_length(input_stream, &body_len);
+        aws_byte_buf_clean_up(&mocked_request->body);
+        aws_byte_buf_init(&mocked_request->body, s_tester.allocator, (size_t)body_len);
+        aws_input_stream_read(input_stream, &mocked_request->body);
+    }
     bool fail_request = false;
 
     if (s_tester.fail_operations) {
@@ -825,6 +825,120 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
 AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain,
     s_credentials_provider_sts_from_profile_config_with_chain_fn)
+
+AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+static const char *s_soure_credentials_ecs_config_file = "[default]\n"
+                                                         "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                         "credential_source=EcsContainer\n"
+                                                         "role_session_name=test_session\n";
+static struct aws_byte_cursor s_ecs_good_response = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
+    "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
+    "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
+static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_source_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    aws_unset_environment_value(s_default_profile_env_variable_name);
+    aws_unset_environment_value(s_default_config_path_env_variable_name);
+    aws_unset_environment_value(s_default_credentials_path_env_variable_name);
+
+    /* set the relative uri environment variable*/
+    char *relative_uri = "/test";
+    struct aws_string *relative_uri_str = aws_string_new_from_c_str(allocator, relative_uri);
+    ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_relative_uri, relative_uri_str));
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_credentials_ecs_config_file);
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(config_file_str, config_contents));
+    aws_string_destroy(config_contents);
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+    };
+    int expected_num_requests = 2;
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_ecs_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    ASSERT_INT_EQUALS(expected_num_requests, s_tester.num_request);
+    struct aws_mock_http_request expected_mocked_request[2];
+    /* expected ecs request*/
+    expected_mocked_request[0] = (struct aws_mock_http_request){
+        .method = aws_byte_buf_from_c_str("GET"),
+        .host_header = aws_byte_buf_from_c_str("169.254.170.2"),
+        .path = aws_byte_buf_from_c_str(relative_uri),
+        .body = aws_byte_buf_from_c_str(""),
+        .had_auth_header = false,
+    };
+    /* expected sts request */
+    expected_mocked_request[1] = (struct aws_mock_http_request){
+        .method = aws_byte_buf_from_c_str("POST"),
+        .host_header = aws_byte_buf_from_c_str("sts.amazonaws.com"),
+        .path = aws_byte_buf_from_c_str("/"),
+        .body = aws_byte_buf_from_c_str("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%"
+                                        "3Arole%2Ftest_role&RoleSessionName=test_session&DurationSeconds=900"),
+        .had_auth_header = true,
+    };
+
+    for (int i = 0; i < expected_num_requests; i++) {
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_mocked_request[i].method.buffer,
+            expected_mocked_request[i].method.len,
+            s_tester.mocked_requests[i].method.buffer,
+            s_tester.mocked_requests[i].method.len);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_mocked_request[i].path.buffer,
+            expected_mocked_request[i].path.len,
+            s_tester.mocked_requests[i].path.buffer,
+            s_tester.mocked_requests[i].path.len);
+        ASSERT_TRUE(s_tester.mocked_requests[i].had_auth_header == expected_mocked_request[i].had_auth_header);
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_mocked_request[i].host_header.buffer,
+            expected_mocked_request[i].host_header.len,
+            s_tester.mocked_requests[i].host_header.buffer,
+            s_tester.mocked_requests[i].host_header.len);
+        // AWS_LOGF_ERROR(
+        //     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        //     "waahm7: \n " PRInSTR ":\n " PRInSTR "\n",
+        //     AWS_BYTE_BUF_PRI(expected_mocked_request[i].body),
+        //     AWS_BYTE_BUF_PRI(s_tester.mocked_requests[i].body));
+        ASSERT_BIN_ARRAYS_EQUALS(
+            expected_mocked_request[i].body.buffer,
+            expected_mocked_request[i].body.len,
+            s_tester.mocked_requests[i].body.buffer,
+            s_tester.mocked_requests[i].body.len);
+    }
+
+    aws_credentials_provider_release(provider);
+    aws_string_destroy(relative_uri_str);
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_from_profile_config_with_ecs_credentials_source,
+    s_credentials_provider_sts_from_profile_config_with_ecs_credentials_source_fn)
 
 static const char *s_soure_profile_chain_and_profile_config_file = "[default]\n"
                                                                    "aws_access_key_id=BLAHBLAH\n"
