@@ -32,6 +32,7 @@ static struct aws_byte_cursor s_default_session_name_pfx =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime-profile-config");
 static struct aws_byte_cursor s_ec2_imds_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Ec2InstanceMetadata");
 static struct aws_byte_cursor s_environment_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Environment");
+static struct aws_byte_cursor s_ecs_credentials_provider_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("EcsContainer");
 
 #define MAX_SESSION_NAME_LEN ((size_t)64)
 
@@ -372,6 +373,19 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             provider = aws_credentials_provider_new_sts(allocator, &sts_options);
 
             aws_credentials_provider_release(env_provider);
+        } else if (aws_string_eq_byte_cursor_ignore_case(
+                       aws_profile_property_get_value(credential_source_property), &s_ecs_credentials_provider_name)) {
+            struct aws_credentials_provider_ecs_environment_options ecs_options = {
+                .bootstrap = options->bootstrap,
+                .function_table = options->function_table,
+                .tls_ctx = tls_ctx,
+            };
+            struct aws_credentials_provider *ecs_provider =
+                aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
+            sts_options.creds_provider = ecs_provider;
+            provider = aws_credentials_provider_new_sts(allocator, &sts_options);
+
+            aws_credentials_provider_release(ecs_provider);
         } else {
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,

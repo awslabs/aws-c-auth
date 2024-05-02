@@ -43,7 +43,7 @@ struct aws_mock_sts_tester {
     int mock_failure_code;
     size_t fail_operations;
 
-    struct aws_byte_buf mock_body;
+    struct aws_array_list response_data_callbacks;
 
     struct aws_mutex lock;
     struct aws_condition_variable signal;
@@ -125,7 +125,8 @@ static void s_invoke_mock_request_callbacks(
         options->on_response_header_block_done((struct aws_http_stream *)1, true, options->user_data);
     }
 
-    struct aws_byte_cursor data_callback_cur = aws_byte_cursor_from_buf(&s_tester.mock_body);
+    struct aws_byte_cursor data_callback_cur;
+    aws_array_list_get_at(&s_tester.response_data_callbacks, &data_callback_cur, s_tester.num_request - 1);
     options->on_response_body((struct aws_http_stream *)1, &data_callback_cur, options->user_data);
 
     options->on_complete(
@@ -262,6 +263,10 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     ASSERT_NOT_NULL(s_tester.tls_ctx);
     aws_tls_ctx_options_clean_up(&tls_options);
 
+    if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
+        return AWS_OP_ERR;
+    }
+
     return AWS_OP_SUCCESS;
 }
 
@@ -291,7 +296,7 @@ static int s_aws_sts_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
 
-    aws_byte_buf_clean_up(&s_tester.mock_body);
+    aws_array_list_clean_up(&s_tester.response_data_callbacks);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_host_resolver_release(s_tester.resolver);
@@ -335,21 +340,22 @@ static struct aws_byte_cursor s_role_arn_cur =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("arn:aws:iam::67895:role/test_role");
 static struct aws_byte_cursor s_session_name_cur = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("test_session");
 
-static const char *success_creds_doc = "<AssumeRoleResponse xmlns=\"who cares\">\n"
-                                       "     <AssumeRoleResult>\n"
-                                       "         <fuzzMePlz>\n"
-                                       "         </fuzzMePlz>\n"
-                                       "         <Credentials>\n"
-                                       "             <AccessKeyId>accessKeyIdResp</AccessKeyId>\n"
-                                       "             <SecretAccessKey>secretKeyResp</SecretAccessKey>\n"
-                                       "             <SessionToken>sessionTokenResp</SessionToken>\n"
-                                       "         </Credentials>\n"
-                                       "         <AssumeRoleUser>\n"
-                                       "             ... a bunch of other stuff we don't care about\n"
-                                       "         </AssumeRoleUser>\n"
-                                       "         ... more stuff we don't care about\n"
-                                       "      </AssumeRoleResult>\n"
-                                       "</AssumeRoleResponse>";
+static struct aws_byte_cursor s_success_creds_doc =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("<AssumeRoleResponse xmlns=\"who cares\">\n"
+                                          "     <AssumeRoleResult>\n"
+                                          "         <fuzzMePlz>\n"
+                                          "         </fuzzMePlz>\n"
+                                          "         <Credentials>\n"
+                                          "             <AccessKeyId>accessKeyIdResp</AccessKeyId>\n"
+                                          "             <SecretAccessKey>secretKeyResp</SecretAccessKey>\n"
+                                          "             <SessionToken>sessionTokenResp</SessionToken>\n"
+                                          "         </Credentials>\n"
+                                          "         <AssumeRoleUser>\n"
+                                          "             ... a bunch of other stuff we don't care about\n"
+                                          "         </AssumeRoleUser>\n"
+                                          "         ... more stuff we don't care about\n"
+                                          "      </AssumeRoleResult>\n"
+                                          "</AssumeRoleResponse>");
 
 static struct aws_byte_cursor s_expected_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%"
@@ -392,7 +398,8 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
     };
 
     mock_aws_set_system_time(0);
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
@@ -468,10 +475,13 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
     };
 
     mock_aws_set_system_time(0);
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
     s_tester.mock_response_code = 200;
     s_tester.mock_failure_code = 429;
     s_tester.fail_operations = 2;
+    int expected_num_requests = 3;
+    for (int i = 0; i < expected_num_requests; i++) {
+        aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    }
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
@@ -522,12 +532,13 @@ AWS_TEST_CASE(
     credentials_provider_sts_direct_config_succeeds_after_retry,
     s_credentials_provider_sts_direct_config_succeeds_after_retry_fn)
 
-static const char *malformed_creds_doc = "<AssumeRoleResponse xmlns=\"who cares\">\n"
-                                         "     <AssumeRoleResult>\n"
-                                         "         <AssumeRoleUser>\n"
-                                         "             <Credentials>\n"
-                                         "                 <AccessKeyId>accessKeyIdResp</AccessKeyId>\n"
-                                         "                ";
+static struct aws_byte_cursor s_malformed_creds_doc =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("<AssumeRoleResponse xmlns=\"who cares\">\n"
+                                          "     <AssumeRoleResult>\n"
+                                          "         <AssumeRoleUser>\n"
+                                          "             <Credentials>\n"
+                                          "                 <AccessKeyId>accessKeyIdResp</AccessKeyId>\n"
+                                          "                ");
 
 static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -553,7 +564,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
     };
 
     mock_aws_set_system_time(0);
-    s_tester.mock_body = aws_byte_buf_from_c_str(malformed_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_malformed_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
@@ -675,6 +686,11 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
 
     mock_aws_set_system_time(0);
     s_tester.mock_response_code = 529;
+    // Todo: What? 8 retries seems a lot
+    int expected_num_requests = 9;
+    for (int i = 0; i < expected_num_requests; i++) {
+        aws_array_list_push_back(&s_tester.response_data_callbacks, &s_malformed_creds_doc);
+    }
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
 
@@ -745,8 +761,10 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
     };
-
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    int expected_num_requests = 3;
+    for (int i = 0; i < expected_num_requests; i++) {
+        aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    }
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -761,7 +779,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
 
     ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
-    ASSERT_INT_EQUALS(3, s_tester.num_request);
+    ASSERT_INT_EQUALS(expected_num_requests, s_tester.num_request);
     static struct aws_byte_cursor s_expected_request_body[] = {
         AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67897%"
                                               "3Arole%2Ftest_role&RoleSessionName=test_session3&DurationSeconds=900"),
@@ -854,7 +872,10 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    int expected_num_requests = 2;
+    for (int i = 0; i < expected_num_requests; i++) {
+        aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    }
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -869,7 +890,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
 
     ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
-    ASSERT_INT_EQUALS(2, s_tester.num_request);
+    ASSERT_INT_EQUALS(expected_num_requests, s_tester.num_request);
     static struct aws_byte_cursor s_expected_request_body[] = {
         AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67896%"
                                               "3Arole%2Ftest_role&RoleSessionName=test_session2&DurationSeconds=900"),
@@ -960,7 +981,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -1021,7 +1042,7 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -1123,7 +1144,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn(
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -1184,7 +1205,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_and_p
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -1231,7 +1252,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds(
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -1343,7 +1364,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
         .function_table = &s_mock_function_table,
     };
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
@@ -1433,7 +1454,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     mock_aws_set_system_time(0);
     mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS);
 
-    s_tester.mock_body = aws_byte_buf_from_c_str(success_creds_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
@@ -1489,6 +1510,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     s_cleanup_creds_callback_data();
 
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
 
     s_aws_wait_for_credentials_result();
@@ -1502,6 +1524,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     s_cleanup_creds_callback_data();
 
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
     aws_credentials_provider_get_credentials(cached_provider, s_get_credentials_callback, NULL);
 
     s_aws_wait_for_credentials_result();
