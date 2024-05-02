@@ -481,7 +481,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z
 
 /* Check that expected URI and Authorization token were used to make request.
  * URI must be super explicit, specifying scheme and port. */
-static int s_check_ecs_tester_request(const char *expected_uri_cstr, const char *expected_token) {
+static int s_check_ecs_tester_request_uri_and_authorization(const char *expected_uri_cstr, const char *expected_token) {
     struct aws_byte_cursor expected_uri_cursor = aws_byte_cursor_from_c_str(expected_uri_cstr);
     struct aws_uri expected_uri;
     ASSERT_SUCCESS(aws_uri_init_parse(&expected_uri, s_tester.allocator, &expected_uri_cursor));
@@ -516,7 +516,7 @@ static int s_do_ecs_success_test(
     s_aws_wait_for_credentials_result();
 
     aws_mutex_lock(&s_tester.lock);
-    ASSERT_SUCCESS(s_check_ecs_tester_request(expected_uri, expected_token));
+    ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(expected_uri, expected_token));
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
@@ -584,7 +584,7 @@ static int s_do_ecs_env_success_test(
     s_aws_wait_for_credentials_result();
 
     aws_mutex_lock(&s_tester.lock);
-    ASSERT_SUCCESS(s_check_ecs_tester_request(expected_uri, expected_token));
+    ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(expected_uri, expected_token));
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials != NULL);
@@ -688,7 +688,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     s_aws_wait_for_credentials_result();
 
     aws_mutex_lock(&s_tester.lock);
-    ASSERT_SUCCESS(s_check_ecs_tester_request(
+    ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(
         "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d",
         aws_string_c_str(auth_token)));
 
@@ -707,7 +707,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     s_aws_wait_for_credentials_result();
 
     aws_mutex_lock(&s_tester.lock);
-    ASSERT_SUCCESS(s_check_ecs_tester_request(
+    ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(
         "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d",
         aws_string_c_str(auth_token2)));
 

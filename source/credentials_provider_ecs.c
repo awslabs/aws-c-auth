@@ -663,6 +663,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
         relative_uri_str != NULL && relative_uri_str->len != 0) {
 
         /* Using RELATIVE_URI */
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "ECS provider: using relative uri %s",
+            aws_string_c_str(relative_uri_str));
+
         explicit_options.path_and_query = aws_byte_cursor_from_string(relative_uri_str);
         explicit_options.host = aws_byte_cursor_from_string(s_ecs_host);
         explicit_options.port = 80;
@@ -674,13 +679,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
         full_uri_str != NULL && full_uri_str->len != 0) {
 
         /* Using FULL_URI */
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: using full uri %s", aws_string_c_str(full_uri_str));
         struct aws_byte_cursor full_uri_cursor = aws_byte_cursor_from_string(full_uri_str);
         if (aws_uri_init_parse(&full_uri, allocator, &full_uri_cursor)) {
             goto cleanup;
         }
 
         explicit_options.host = *aws_uri_host_name(&full_uri);
-        explicit_options.path_and_query = *aws_uri_path_and_query(&full_uri); // TODO: / defaut???
+        explicit_options.path_and_query = *aws_uri_path_and_query(&full_uri);
         if (explicit_options.path_and_query.len == 0) {
             explicit_options.path_and_query = aws_byte_cursor_from_c_str("/");
         }
