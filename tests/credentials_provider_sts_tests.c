@@ -67,7 +67,7 @@ struct aws_mock_sts_tester {
 
 static struct aws_mock_sts_tester s_tester;
 
-static void s_on_shutdown_complete(void *user_data) {
+static void s_on_connection_manager_shutdown_complete(void *user_data) {
     (void)user_data;
 
     aws_mutex_lock(&s_tester.lock);
@@ -109,7 +109,7 @@ static void s_aws_http_connection_manager_release_mock(struct aws_http_connectio
         shutdown_callback->shutdown_callback_fn(shutdown_callback->shutdown_callback_user_data);
     }
     aws_mem_release(s_tester.allocator, shutdown_callback);
-    s_on_shutdown_complete(NULL);
+    s_on_connection_manager_shutdown_complete(NULL);
 }
 
 static void s_aws_http_connection_manager_acquire_connection_mock(
