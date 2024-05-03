@@ -636,13 +636,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
     if (!options->bootstrap) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: bootstrap must be specified");
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-        return;
+        return NULL;
     }
 
     if (!options->tls_ctx) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: tls_ctx must be specified");
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-        return;
+        return NULL;
     }
 
     struct aws_credentials_provider_ecs_options explicit_options = {
