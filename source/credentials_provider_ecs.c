@@ -639,28 +639,28 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
         .function_table = options->function_table,
     };
 
+    struct aws_string *ecs_env_token_file_path = NULL;
+    struct aws_string *ecs_env_token = NULL;
     struct aws_string *relative_uri_str = NULL;
     struct aws_string *full_uri_str = NULL;
     struct aws_uri full_uri;
     AWS_ZERO_STRUCT(full_uri);
     struct aws_credentials_provider *provider = NULL;
 
-    /* Read the auth token variables */
-    struct aws_string *ecs_env_token_file_path = NULL;
-    struct aws_string *ecs_env_token = NULL;
-    if (aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path) != AWS_OP_SUCCESS ||
-        aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token) != AWS_OP_SUCCESS) {
-        goto cleanup;
-    }
-    if (ecs_env_token_file_path != NULL) {
+    /* read the environment variables */
+    aws_get_environment_value(allocator, s_ecs_creds_env_token_file, &ecs_env_token_file_path);
+    aws_get_environment_value(allocator, s_ecs_creds_env_token, &ecs_env_token);
+    aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &relative_uri_str);
+    aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &full_uri_str);
+
+    if (ecs_env_token_file_path != NULL && ecs_env_token_file_path->len > 0) {
         explicit_options.auth_token_file_path = aws_byte_cursor_from_string(ecs_env_token_file_path);
     }
-    if (ecs_env_token != NULL) {
+    if (ecs_env_token != NULL && ecs_env_token->len > 0) {
         explicit_options.auth_token = aws_byte_cursor_from_string(ecs_env_token);
     }
 
-    if (aws_get_environment_value(allocator, s_ecs_creds_env_relative_uri, &relative_uri_str) == AWS_OP_SUCCESS &&
-        relative_uri_str != NULL && relative_uri_str->len != 0) {
+    if (relative_uri_str != NULL && relative_uri_str->len != 0) {
 
         /* Using RELATIVE_URI */
         AWS_LOGF_INFO(
@@ -674,15 +674,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
 
         provider = aws_credentials_provider_new_ecs(allocator, &explicit_options);
 
-    } else if (
-        aws_get_environment_value(allocator, s_ecs_creds_env_full_uri, &full_uri_str) == AWS_OP_SUCCESS &&
-        full_uri_str != NULL && full_uri_str->len != 0) {
+    } else if (full_uri_str != NULL && full_uri_str->len != 0) {
 
         /* Using FULL_URI */
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: using full uri %s", aws_string_c_str(full_uri_str));
         struct aws_byte_cursor full_uri_cursor = aws_byte_cursor_from_string(full_uri_str);
         if (aws_uri_init_parse(&full_uri, allocator, &full_uri_cursor)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "ECS provider: Failed because %s environment variable is invalid uri %s.",
+                aws_string_c_str(s_ecs_creds_env_full_uri),
+                aws_string_c_str(full_uri_str));
             goto cleanup;
         }
 
