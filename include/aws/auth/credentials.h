@@ -241,12 +241,15 @@ struct aws_credentials_provider_ecs_environment_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /*
+     * (Required)
      * Connection bootstrap to use for any network connections made while sourcing credentials
      */
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Client TLS context to use when making query.
+     * (Required)
+     * Client TLS context to use when making a query. This will only be used if the AWS_CONTAINER_CREDENTIALS_FULL_URI
+     * is set and starts with https
      */
     struct aws_tls_ctx *tls_ctx;
 
