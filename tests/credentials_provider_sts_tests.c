@@ -63,9 +63,6 @@ struct aws_mock_sts_tester {
     struct aws_client_bootstrap *bootstrap;
 
     struct aws_tls_ctx *tls_ctx;
-
-    aws_http_connection_manager_shutdown_complete_fn *shutdown_complete_callback;
-    void *shutdown_complete_user_data;
 };
 
 static struct aws_mock_sts_tester s_tester;

@@ -709,7 +709,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
 
     } else {
         /* Neither environment variable is set */
-        AWS_LOGF_INFO(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider full_uri and relative_uri are both not set");
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "ECS provider: Unable to initialize from environment because AWS_CONTAINER_CREDENTIALS_FULL_URI and "
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI are not set.");
         aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT);
         goto cleanup;
     }
