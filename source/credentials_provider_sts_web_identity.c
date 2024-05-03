@@ -806,8 +806,6 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     aws_mem_release(provider->allocator, provider);
 }
 
-AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
-AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_arn_config, "role_arn");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_arn_env, "AWS_ROLE_ARN");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_session_name_config, "role_session_name");
@@ -955,7 +953,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
     parameters->allocator = allocator;
 
     bool success = false;
-    struct aws_string *region = s_check_or_get_with_env(allocator, s_region_env, options->region);
+    struct aws_string *region = NULL;
     struct aws_string *role_arn = s_check_or_get_with_env(allocator, s_role_arn_env, options->role_arn);
     struct aws_string *role_session_name =
         s_check_or_get_with_env(allocator, s_role_session_name_env, options->role_session_name);
@@ -971,37 +969,37 @@ static struct sts_web_identity_parameters *s_parameters_new(
     struct aws_profile_collection *config_profile = NULL;
     struct aws_string *profile_name = NULL;
     const struct aws_profile *profile = NULL;
-    bool get_all_parameters =
-        (region && region->len && role_arn && role_arn->len && token_file_path && token_file_path->len);
-    if (!get_all_parameters) {
-        if (options->config_profile_collection_cached) {
-            /* Use cached profile collection */
-            config_profile = aws_profile_collection_acquire(options->config_profile_collection_cached);
-        } else {
-            /* Load profile collection from files */
-            config_profile = s_load_profile(allocator);
-            if (!config_profile) {
-                goto on_finish;
-            }
-        }
-
-        profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
-        profile = aws_profile_collection_get_profile(config_profile, profile_name);
-
-        if (!profile) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "Failed to resolve either region, role arn or token file path during sts web identity provider "
-                "initialization.");
+    if (options->config_profile_collection_cached) {
+        /* Use cached profile collection */
+        config_profile = aws_profile_collection_acquire(options->config_profile_collection_cached);
+    } else {
+        /* Load profile collection from files */
+        config_profile = s_load_profile(allocator);
+        if (!config_profile) {
             goto on_finish;
-
-        } else {
-            s_check_or_get_with_profile_config(allocator, profile, &region, s_region_config);
-            s_check_or_get_with_profile_config(allocator, profile, &role_arn, s_role_arn_config);
-            s_check_or_get_with_profile_config(allocator, profile, &role_session_name, s_role_session_name_config);
-            s_check_or_get_with_profile_config(allocator, profile, &token_file_path, s_token_file_path_config);
         }
     }
+
+    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
+    profile = aws_profile_collection_get_profile(config_profile, profile_name);
+
+    if (!profile) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "Failed to resolve either region, role arn or token file path during sts web identity provider "
+            "initialization.");
+        goto on_finish;
+    }
+
+    if (options->region.len > 0) {
+        region = aws_string_new_from_cursor(allocator, &options->region);
+    } else {
+        region = aws_credentials_provider_resolve_region(allocator, profile);
+    }
+
+    s_check_or_get_with_profile_config(allocator, profile, &role_arn, s_role_arn_config);
+    s_check_or_get_with_profile_config(allocator, profile, &role_session_name, s_role_session_name_config);
+    s_check_or_get_with_profile_config(allocator, profile, &token_file_path, s_token_file_path_config);
 
     /* determin endpoint */
     if (aws_credentials_provider_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
