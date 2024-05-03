@@ -54,7 +54,7 @@ static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_L
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
 static struct aws_byte_cursor s_service_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts");
-static const int s_max_retries = 8;
+static const int s_max_retries = 3;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
 

@@ -723,8 +723,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
 
     mock_aws_set_system_time(0);
     s_tester.mock_response_code = 529;
-    // Todo: What? 8 retries seems a lot
-    int expected_num_requests = 9;
+    int expected_num_requests = 4;
     for (int i = 0; i < expected_num_requests; i++) {
         aws_array_list_push_back(&s_tester.response_data_callbacks, &s_malformed_creds_doc);
     }
