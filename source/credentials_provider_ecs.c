@@ -525,6 +525,12 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options) {
 
+    if (!options->bootstrap) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: bootstrap must be specified");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_ecs_impl *impl = NULL;
 
@@ -632,12 +638,6 @@ on_error:
 struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_environment_options *options) {
-
-    if (!options->bootstrap) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: bootstrap must be specified");
-        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-        return NULL;
-    }
 
     if (!options->tls_ctx) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "ECS provider: tls_ctx must be specified");

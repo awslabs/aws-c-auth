@@ -50,6 +50,10 @@ struct aws_mock_ecs_tester {
     uint32_t selected_port;
 
     int error_code;
+
+    struct aws_event_loop_group *el_group;
+    struct aws_host_resolver *host_resolver;
+    struct aws_client_bootstrap *bootstrap;
 };
 
 static struct aws_mock_ecs_tester s_tester;
@@ -241,6 +245,20 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
     s_tester.is_connection_acquire_successful = true;
     s_tester.is_request_successful = true;
 
+    s_tester.el_group = aws_event_loop_group_new_default(allocator, 1, NULL);
+
+    struct aws_host_resolver_default_options resolver_options = {
+        .el_group = s_tester.el_group,
+        .max_entries = 8,
+    };
+    s_tester.host_resolver = aws_host_resolver_new_default(allocator, &resolver_options);
+
+    struct aws_client_bootstrap_options bootstrap_options = {
+        .event_loop_group = s_tester.el_group,
+        .host_resolver = s_tester.host_resolver,
+    };
+    s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
+
     /* ensure pre-existing environment doesn't interfere with tests */
     aws_unset_environment_value(s_ecs_creds_env_relative_uri);
     aws_unset_environment_value(s_ecs_creds_env_full_uri);
@@ -258,10 +276,10 @@ static void s_aws_ecs_tester_reset(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
-    s_tester.credentials = NULL;
-    s_tester.request_path_and_query = NULL;
-    s_tester.request_authorization_header = NULL;
-    s_tester.selected_host = NULL;
+    aws_client_bootstrap_release(s_tester.bootstrap);
+    aws_host_resolver_release(s_tester.host_resolver);
+    aws_event_loop_group_release(s_tester.el_group);
+    AWS_ZERO_STRUCT(s_tester);
 }
 
 static void s_aws_ecs_tester_cleanup(void) {
@@ -300,7 +318,7 @@ static int s_credentials_provider_ecs_new_destroy(struct aws_allocator *allocato
     s_aws_ecs_tester_init(allocator);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -334,7 +352,7 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
     s_tester.is_connection_acquire_successful = false;
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -379,7 +397,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     s_tester.is_request_successful = false;
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -429,7 +447,7 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
     aws_array_list_push_back(&s_tester.response_data_callbacks, &bad_document_cursor);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -627,7 +645,7 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -668,7 +686,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -827,7 +845,7 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
         aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
         struct aws_credentials_provider_ecs_environment_options options = {
-            .bootstrap = NULL,
+            .bootstrap = s_tester.bootstrap,
             .function_table = &s_mock_function_table,
             .shutdown_options =
                 {
@@ -866,7 +884,7 @@ static int s_credentials_provider_ecs_no_auth_token_success(struct aws_allocator
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
@@ -907,7 +925,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
     aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor3);
 
     struct aws_credentials_provider_ecs_options options = {
-        .bootstrap = NULL,
+        .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
         .shutdown_options =
             {
