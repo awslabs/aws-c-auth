@@ -400,7 +400,10 @@ static int s_make_ecs_http_query(
         .user_data = ecs_user_data,
         .request = request,
     };
-
+    /* for test with mocking http stack where make request finishes
+      immediately and releases client before stream activate call */
+    struct aws_credentials_provider *provider = ecs_user_data->ecs_provider;
+    aws_credentials_provider_acquire(provider);
     stream = impl->function_table->aws_http_connection_make_request(ecs_user_data->connection, &request_options);
 
     if (!stream) {
@@ -410,6 +413,7 @@ static int s_make_ecs_http_query(
     if (impl->function_table->aws_http_stream_activate(stream)) {
         goto on_error;
     }
+    aws_credentials_provider_release(provider);
 
     return AWS_OP_SUCCESS;
 

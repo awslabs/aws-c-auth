@@ -50,6 +50,8 @@ struct aws_mock_sts_tester {
 
     struct aws_credentials *credentials;
     bool has_received_credentials_callback;
+    int mocked_connection_manager_shutdown_callback_count;
+    int expected_connection_manager_shutdown_callback_count;
     int error_code;
 
     bool fail_connection;
@@ -61,22 +63,56 @@ struct aws_mock_sts_tester {
     struct aws_client_bootstrap *bootstrap;
 
     struct aws_tls_ctx *tls_ctx;
+
+    aws_http_connection_manager_shutdown_complete_fn *shutdown_complete_callback;
+    void *shutdown_complete_user_data;
 };
 
 static struct aws_mock_sts_tester s_tester;
 
+static void s_on_shutdown_complete(void *user_data) {
+    (void)user_data;
+
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.mocked_connection_manager_shutdown_callback_count++;
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_condition_variable_notify_one(&s_tester.signal);
+}
+
+static bool s_has_tester_received_shutdown_callback(void *user_data) {
+    (void)user_data;
+
+    return s_tester.mocked_connection_manager_shutdown_callback_count ==
+           s_tester.expected_manager_shutdown_callback_count;
+}
+
+static void s_aws_wait_for_provider_shutdown_callback(void) {
+    aws_mutex_lock(&s_tester.lock);
+    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_shutdown_callback, NULL);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
     const struct aws_http_connection_manager_options *options) {
-
-    (void)allocator;
-    (void)options;
-
-    return (struct aws_http_connection_manager *)1;
+    /* copy the shutdown callback */
+    struct aws_shutdown_callback_options *shutdown_callback =
+        aws_mem_calloc(allocator, 1, sizeof(struct aws_shutdown_callback_options));
+    shutdown_callback->shutdown_callback_fn = options->shutdown_complete_callback;
+    shutdown_callback->shutdown_callback_user_data = options->shutdown_complete_user_data;
+    return (struct aws_http_connection_manager *)shutdown_callback;
 }
 
 static void s_aws_http_connection_manager_release_mock(struct aws_http_connection_manager *manager) {
     (void)manager;
+    /* invoke the shutdown callback */
+    struct aws_shutdown_callback_options *shutdown_callback = (struct aws_shutdown_callback_options *)manager;
+    if (shutdown_callback->shutdown_callback_fn != NULL) {
+        shutdown_callback->shutdown_callback_fn(shutdown_callback->shutdown_callback_user_data);
+    }
+    aws_mem_release(s_tester.allocator, shutdown_callback);
+    s_on_shutdown_complete(NULL);
 }
 
 static void s_aws_http_connection_manager_acquire_connection_mock(
@@ -849,7 +885,8 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
     ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_relative_uri, relative_uri_str));
 
     s_aws_sts_tester_init(allocator);
-
+    /* one for ecs provdier and one for sts provider */
+    s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_credentials_ecs_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
@@ -929,6 +966,7 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
     }
 
     aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_string_destroy(relative_uri_str);
     aws_string_destroy(config_file_str);
     aws_string_destroy(creds_file_str);
