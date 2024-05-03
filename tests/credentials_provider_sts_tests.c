@@ -84,7 +84,7 @@ static bool s_has_tester_received_shutdown_callback(void *user_data) {
     (void)user_data;
 
     return s_tester.mocked_connection_manager_shutdown_callback_count ==
-           s_tester.expected_manager_shutdown_callback_count;
+           s_tester.expected_connection_manager_shutdown_callback_count;
 }
 
 static void s_aws_wait_for_provider_shutdown_callback(void) {
