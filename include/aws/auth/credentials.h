@@ -227,6 +227,35 @@ struct aws_credentials_provider_imds_options {
 
 /*
  * Configuration options for the provider that sources credentials from ECS container metadata.
+ * The ECS creds provider can be used to access creds via either a relative URI to a fixed endpoint
+ * (http://169.254.170.2) or via a full URI specified by environment variables (in order of priority):
+ * AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+ * AWS_CONTAINER_CREDENTIALS_FULL_URI
+ *
+ * For the Authorization token, there are two ways (in order of priority):
+ * 1. AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE (an env var which contains the absolute path to the token file. The file
+ * will be re-read for each call to get credentials.)
+ * 2. AWS_CONTAINER_AUTHORIZATION_TOKEN (an env var that contains a static auth token)
+ */
+struct aws_credentials_provider_ecs_environment_options {
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     */
+    struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when making query.
+     */
+    struct aws_tls_ctx *tls_ctx;
+
+    /* For mocking the http layer in tests, leave NULL otherwise */
+    struct aws_auth_http_system_vtable *function_table;
+};
+
+/*
+ * Configuration options for the provider that sources credentials from ECS container metadata.
  * This options struct doesn't read anything from the environment and requires everything to be explicitly passed in. If
  * you need to read properties from the environment, use the `aws_credentials_provider_ecs_environment_options`.
  */
@@ -274,35 +303,6 @@ struct aws_credentials_provider_ecs_options {
      * Port to query credentials from.  If zero, 80/443 will be used based on whether or not tls is enabled.
      */
     uint32_t port;
-};
-
-/*
- * Configuration options for the provider that sources credentials from ECS container metadata.
- * The ECS creds provider can be used to access creds via either a relative URI to a fixed endpoint
- * (http://169.254.170.2) or via a full URI specified by environment variables (in order of priority):
- * AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
- * AWS_CONTAINER_CREDENTIALS_FULL_URI
- *
- * For the Authorization token, there are two ways (in order of priority):
- * 1. AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE (an env var which contains the absolute path to the token file. The file
- * will be re-read for each call to get credentials.)
- * 2. AWS_CONTAINER_AUTHORIZATION_TOKEN (an env var that contains a static auth token)
- */
-struct aws_credentials_provider_ecs_environment_options {
-    struct aws_credentials_provider_shutdown_options shutdown_options;
-
-    /*
-     * Connection bootstrap to use for any network connections made while sourcing credentials
-     */
-    struct aws_client_bootstrap *bootstrap;
-
-    /*
-     * Client TLS context to use when making query.
-     */
-    struct aws_tls_ctx *tls_ctx;
-
-    /* For mocking the http layer in tests, leave NULL otherwise */
-    struct aws_auth_http_system_vtable *function_table;
 };
 
 /**
@@ -1012,19 +1012,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     const struct aws_credentials_provider_imds_options *options);
 
 /**
- * Creates a provider that sources credentials from the ecs role credentials service
- *
- * @param allocator memory allocator to use for all memory allocation
- * @param options provider-specific configuration options
- *
- * @return the newly-constructed credentials provider, or NULL if an error occurred.
- */
-AWS_AUTH_API
-struct aws_credentials_provider *aws_credentials_provider_new_ecs(
-    struct aws_allocator *allocator,
-    const struct aws_credentials_provider_ecs_options *options);
-
-/**
  * Creates a provider that sources credentials from the ecs role credentials service and reads the required params from
  * environment variables
  *
@@ -1037,6 +1024,21 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_environment_options *options);
+
+/**
+ * Creates a provider that sources credentials from the ecs role credentials service
+ * This function doesn't read anything from the environment and requires everything to be explicitly passed in.
+ * If you need to read properties from the environment, use the `aws_credentials_provider_new_ecs_from_environment`.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_options *options);
 
 /**
  * Creates a provider that sources credentials from IoT Core
