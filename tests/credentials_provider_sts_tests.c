@@ -268,7 +268,7 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
 static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     AWS_ZERO_STRUCT(s_tester);
     s_tester.allocator = allocator;
-
+    s_tester.expected_connection_manager_shutdown_callback_count = 1;
     aws_auth_library_init(allocator);
 
     if (aws_mutex_init(&s_tester.lock)) {
@@ -477,6 +477,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -558,6 +559,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -641,6 +643,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -687,6 +690,7 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
     ASSERT_NULL(s_tester.credentials);
 
     aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -737,6 +741,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
     ASSERT_NULL(s_tester.credentials);
 
     aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -781,7 +786,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-
+    s_tester.expected_connection_manager_shutdown_callback_count = 3;
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_chain_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
@@ -853,7 +858,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
     }
 
     aws_credentials_provider_release(provider);
-
+    s_aws_wait_for_provider_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1006,7 +1011,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-
+    s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents =
         aws_string_new_from_c_str(allocator, s_soure_profile_chain_and_profile_config_file);
 
@@ -1078,7 +1083,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
     }
 
     aws_credentials_provider_release(provider);
-
+    s_aws_wait_for_provider_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1115,7 +1120,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-
+    s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents =
         aws_string_new_from_c_str(allocator, s_soure_profile_chain_and_partial_profile_config_file);
 
@@ -1149,7 +1154,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     ASSERT_NULL(s_tester.credentials);
     ASSERT_INT_EQUALS(s_tester.error_code, AWS_AUTH_SIGNING_NO_CREDENTIALS);
     aws_credentials_provider_release(provider);
-
+    s_aws_wait_for_provider_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1176,7 +1181,6 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-
     struct aws_string *config_contents =
         aws_string_new_from_c_str(allocator, s_soure_profile_self_assume_role_config_file);
 
@@ -1243,7 +1247,7 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
     }
 
     aws_credentials_provider_release(provider);
-
+    s_aws_wait_for_provider_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1449,7 +1453,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-
+    s_aws_wait_for_provider_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1561,6 +1565,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1684,6 +1689,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     aws_credentials_provider_release(cached_provider);
     aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
     aws_credentials_provider_release(static_provider);
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
