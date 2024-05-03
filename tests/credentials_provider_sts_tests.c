@@ -955,11 +955,6 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
             expected_mocked_request[i].host_header.len,
             s_tester.mocked_requests[i].host_header.buffer,
             s_tester.mocked_requests[i].host_header.len);
-        // AWS_LOGF_ERROR(
-        //     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        //     "waahm7: \n " PRInSTR ":\n " PRInSTR "\n",
-        //     AWS_BYTE_BUF_PRI(expected_mocked_request[i].body),
-        //     AWS_BYTE_BUF_PRI(s_tester.mocked_requests[i].body));
         ASSERT_BIN_ARRAYS_EQUALS(
             expected_mocked_request[i].body.buffer,
             expected_mocked_request[i].body.len,
