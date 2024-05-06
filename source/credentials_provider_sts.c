@@ -678,6 +678,7 @@ static struct aws_string *s_parse_region(
     const struct aws_credentials_provider_sts_options *options) {
     struct aws_profile_collection *profile_collection = NULL;
     struct aws_string *region = NULL;
+    struct aws_string *profile_name = NULL;
 
     /* check environment variable */
     aws_get_environment_value(allocator, s_region_env, &region);
@@ -696,7 +697,6 @@ static struct aws_string *s_parse_region(
     if (!profile_collection) {
         goto cleanup;
     }
-    struct aws_string *profile_name = NULL;
     profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
     if (!profile_name) {
         goto cleanup;
@@ -710,6 +710,7 @@ static struct aws_string *s_parse_region(
         region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
     }
 cleanup:
+    aws_string_destroy(profile_name);
     aws_profile_collection_release(profile_collection);
     return region;
 }
