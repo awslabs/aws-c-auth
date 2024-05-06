@@ -1005,7 +1005,8 @@ static struct sts_web_identity_parameters *s_parameters_new(
     }
 
     /* determin endpoint */
-    if (aws_credentials_provider_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
+    if (aws_credentials_provider_construct_regional_endpoint(
+            allocator, &parameters->endpoint, region, s_sts_service_name)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sts endpoint with, probably region is missing.");
         goto on_finish;

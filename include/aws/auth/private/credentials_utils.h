@@ -170,7 +170,7 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China specific regional endpoints.
  */
 AWS_AUTH_API
-int aws_credentials_provider_construct_endpoint(
+int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
     struct aws_byte_buf *out_endpoint,
     const struct aws_string *region,

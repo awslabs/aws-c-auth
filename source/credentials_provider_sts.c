@@ -673,7 +673,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
 
-static struct aws_string *s_parse_region(
+static struct aws_string *s_resolve_region(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_options *options) {
     struct aws_profile_collection *profile_collection = NULL;
@@ -818,20 +818,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     aws_credentials_provider_acquire(impl->provider);
 
     /*
-     * resolve the endpoint
+     * Construct a regional endpoint if we can resolve region from envrionment variable or the config file. Otherwise,
+     * use the global endpoint.
      */
-    region = s_parse_region(allocator, options);
+    region = s_resolve_region(allocator, options);
     if (region != NULL) {
         struct aws_byte_buf endpoint;
         AWS_ZERO_STRUCT(endpoint);
-        // construct endpoint
-        if (aws_credentials_provider_construct_endpoint(allocator, &endpoint, region, s_sts_service_name)) {
+        if (aws_credentials_provider_construct_regional_endpoint(allocator, &endpoint, region, s_sts_service_name)) {
             goto on_done;
         }
         impl->endpoint = aws_string_new_from_buf(allocator, &endpoint);
         aws_byte_buf_clean_up(&endpoint);
     } else {
-        // global endpoint
+        /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
     }
     struct aws_byte_cursor endpoint_cursor = aws_byte_cursor_from_string(impl->endpoint);

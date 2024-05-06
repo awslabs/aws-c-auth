@@ -362,7 +362,7 @@ static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITER
 static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com");
 static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
 
-int aws_credentials_provider_construct_endpoint(
+int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
     struct aws_byte_buf *out_endpoint,
     const struct aws_string *region,
