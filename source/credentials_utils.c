@@ -407,28 +407,3 @@ on_error:
     aws_byte_buf_clean_up(out_endpoint);
     return AWS_OP_ERR;
 }
-
-AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
-AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
-
-struct aws_string *aws_credentials_provider_resolve_region(
-    struct aws_allocator *allocator,
-    const struct aws_profile *profile) {
-    AWS_PRECONDITION(allocator);
-    AWS_PRECONDITION(profile);
-
-    /* check environment variable */
-    struct aws_string *region = NULL;
-    aws_get_environment_value(allocator, s_region_env, &region);
-
-    if (region != NULL && region->len > 0) {
-        return region;
-    }
-
-    /* check the config file */
-    const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
-    if (property) {
-        region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
-    }
-    return region;
-}

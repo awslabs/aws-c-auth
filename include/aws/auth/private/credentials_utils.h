@@ -172,11 +172,6 @@ int aws_credentials_provider_construct_endpoint(
     const struct aws_string *region,
     const struct aws_string *service_name);
 
-AWS_AUTH_API
-struct aws_string *aws_credentials_provider_resolve_region(
-    struct aws_allocator *allocator,
-    const struct aws_profile *profile);
-
 /*
  * Loads an aws config profile collection
  */
