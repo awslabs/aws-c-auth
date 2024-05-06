@@ -370,32 +370,20 @@ int aws_credentials_provider_construct_regional_endpoint(
 
     AWS_PRECONDITION(allocator);
     AWS_PRECONDITION(out_endpoint);
-
     if (!region || !service_name) {
         return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
+
     aws_byte_buf_clean_up(out_endpoint);
-
+    aws_byte_buf_init(out_endpoint, allocator, 1);
     struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
-    if (aws_byte_buf_init_copy_from_cursor(out_endpoint, allocator, service_cursor)) {
-        goto on_error;
-    }
+    struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
 
-    if (aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor)) {
-        goto on_error;
-    }
-
-    struct aws_byte_cursor region_cursor;
-    region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
-    if (aws_byte_buf_append_dynamic(out_endpoint, &region_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_dynamic(out_endpoint, &s_amazonaws_cursor)) {
+    if (aws_byte_buf_append_dynamic(out_endpoint, &service_cursor) ||
+        aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor) ||
+        aws_byte_buf_append_dynamic(out_endpoint, &region_cursor) ||
+        aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor) ||
+        aws_byte_buf_append_dynamic(out_endpoint, &s_amazonaws_cursor)) {
         goto on_error;
     }
 

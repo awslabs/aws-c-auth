@@ -583,7 +583,7 @@ static int s_make_sts_web_identity_http_query(
     }
 
     struct aws_http_header host_header = {
-        .name = aws_byte_cursor_from_c_str("host"),
+        .name = aws_byte_cursor_from_c_str("Host"),
         .value = aws_byte_cursor_from_string(impl->endpoint),
     };
 

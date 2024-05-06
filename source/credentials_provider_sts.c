@@ -471,7 +471,7 @@ static void s_start_make_request(
         goto error;
     }
     struct aws_http_header host_header = {
-        .name = aws_byte_cursor_from_c_str("host"),
+        .name = aws_byte_cursor_from_c_str("Host"),
         .value = aws_byte_cursor_from_string(impl->endpoint),
     };
 
@@ -673,6 +673,11 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
 AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
 
+/*
+ * Try to resolve the region in the following order
+ * 1. Check `AWS_DEFAULT_REGION` environment variable
+ * 2. check `region` config file property.
+ */
 static struct aws_string *s_resolve_region(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_options *options) {
