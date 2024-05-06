@@ -507,8 +507,8 @@ struct aws_credentials_provider_sts_options {
     /**
      * (Optional)
      * Use a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection which
-     * contains both config file and credentials file.
-     * TODO: decide should I add override the path, we probably need it for tests.
+     * contains both a config file and a credentials file.
+     * If this is provided, config_file_name_override is ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
 
