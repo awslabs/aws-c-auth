@@ -7,10 +7,10 @@
 
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
+#include <aws/common/environment.h>
 #include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
-#include <aws/common/environment.h>
 #include <aws/http/connection.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
@@ -416,7 +416,7 @@ struct aws_string *aws_credentials_provider_resolve_region(
     const struct aws_profile *profile) {
     AWS_PRECONDITION(allocator);
     AWS_PRECONDITION(profile);
-    
+
     /* check environment variable */
     struct aws_string *region = NULL;
     aws_get_environment_value(allocator, s_region_env, &region);
@@ -424,7 +424,7 @@ struct aws_string *aws_credentials_provider_resolve_region(
     if (region != NULL && region->len > 0) {
         return region;
     }
-    
+
     /* check the config file */
     const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
     if (property) {

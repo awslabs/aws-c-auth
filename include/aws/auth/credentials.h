@@ -486,6 +486,26 @@ struct aws_credentials_provider_sts_options {
      */
     const struct aws_http_proxy_options *http_proxy_options;
 
+    /**
+     * (Optional)
+     * Use a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection which
+     * contains both config file and credentials file.
+     * TODO: decide should I add override the path, we probably need it for tests.
+     */
+    struct aws_profile_collection *profile_collection_cached;
+
+    /*
+     * (Optional)
+     * Override of what profile to use, if not set, 'default' will be used.
+     */
+    struct aws_byte_cursor profile_name_override;
+
+    /*
+     * (Optional)
+     * Override path to the profile config file (~/.aws/config by default)
+     */
+    struct aws_byte_cursor config_file_name_override;
+
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
     /* For mocking, leave NULL otherwise */
@@ -555,7 +575,6 @@ struct aws_credentials_provider_chain_default_options {
      * Use a cached merged profile collection. A merge collection has both config file
      * (~/.aws/config) and credentials file based profile collection (~/.aws/credentials) using
      * `aws_profile_collection_new_from_merge`.
-     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
 
