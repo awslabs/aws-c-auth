@@ -165,6 +165,10 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
 AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
+/*
+ * Construct an endpoint in the format of service_name.region.amazonaws.com
+ * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China specific regional endpoints.
+ */
 AWS_AUTH_API
 int aws_credentials_provider_construct_endpoint(
     struct aws_allocator *allocator,

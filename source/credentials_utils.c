@@ -359,7 +359,7 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
 }
 
 static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
-static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
+static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com");
 static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
 
 int aws_credentials_provider_construct_endpoint(
@@ -388,6 +388,10 @@ int aws_credentials_provider_construct_endpoint(
     struct aws_byte_cursor region_cursor;
     region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
     if (aws_byte_buf_append_dynamic(out_endpoint, &region_cursor)) {
+        goto on_error;
+    }
+
+    if (aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor)) {
         goto on_error;
     }
 
