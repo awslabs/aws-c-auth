@@ -39,7 +39,7 @@ static struct aws_error_info s_errors[] = {
         "Attempt to sign an http request with an invalid signing configuration"),
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_ENVIRONMENT,
-        "Valid credentials could not be sourced from process environment"),
+        "Required environment variables could not be sourced from process environment"),
     AWS_DEFINE_ERROR_INFO_AUTH(
         AWS_AUTH_CREDENTIALS_PROVIDER_INVALID_DELEGATE,
         "Valid credentials could not be sourced from the provided vtable"),
