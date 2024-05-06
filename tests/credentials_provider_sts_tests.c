@@ -304,7 +304,7 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     }
 
     /*
-     * set the environment so that it doesn't messes with tests
+     * set the environment so that it doesn't mess with tests
      */
     aws_unset_environment_value(s_region_env_variable_name);
     struct aws_string *cur_directory = aws_string_new_from_c_str(allocator, ".");

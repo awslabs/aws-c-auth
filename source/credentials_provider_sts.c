@@ -913,7 +913,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 on_done:
     aws_tls_connection_options_clean_up(&tls_connection_options);
     aws_string_destroy(region);
-    if (result == AWS_OP_ERR) {
+    if (result != AWS_OP_SUCCESS) {
         provider = aws_credentials_provider_release(provider);
     }
     return provider;
