@@ -302,6 +302,9 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         .tls_ctx = tls_ctx,
         .role_arn = aws_byte_cursor_from_string(aws_profile_property_get_value(role_arn_property)),
         .session_name = aws_byte_cursor_from_c_str(session_name_array),
+        .profile_name_override = options->profile_name_override,
+        .config_file_name_override = options->config_file_name_override,
+        .profile_collection_cached = options->profile_collection_cached,
         .duration_seconds = 0,
         .function_table = options->function_table,
     };
