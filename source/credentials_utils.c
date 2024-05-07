@@ -375,7 +375,7 @@ int aws_credentials_provider_construct_regional_endpoint(
     }
 
     aws_byte_buf_clean_up(out_endpoint);
-    aws_byte_buf_init(out_endpoint, allocator, 1);
+    aws_byte_buf_init(out_endpoint, allocator, 10);
     struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
     struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
 
