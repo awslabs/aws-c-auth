@@ -832,6 +832,18 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             .auth_token_file_content = "testToken",
             .expected_auth_token = "testToken",
         },
+        /* IPv6 loopback address */
+        {
+            .full_uri = "http://[::1]:8080/credentials",
+            .expected_uri = "http://[::1]:8080/credentials",
+
+        },
+        /* IPv6 EKS host */
+        {
+            .full_uri = "http://[fd00:ec2::23]:8080/credentials",
+            .expected_uri = "http://[fd00:ec2::23]:8080/credentials",
+
+        },
     };
 
     for (size_t case_idx = 0; case_idx < AWS_ARRAY_SIZE(test_cases); ++case_idx) {
