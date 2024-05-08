@@ -904,7 +904,7 @@ static int s_credentials_provider_ecs_no_auth_token_success(struct aws_allocator
     ASSERT_SUCCESS(s_do_ecs_success_test(
         allocator,
         &options,
-        "https://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d" /*expected_uri*/,
+        "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d" /*expected_uri*/,
         NULL /*expected_token*/));
 
     s_aws_ecs_tester_cleanup();
