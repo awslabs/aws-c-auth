@@ -465,11 +465,11 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
 }
 
 /*
- *  *  The host must use either HTTPS or the resolved IP address must satisfy one of the following:
- *   *   1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
- *    *   2. corresponds to the ECS container host 169.254.170.2
- *     *   3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
- *      */
+ * The host must use either HTTPS or the resolved IP address must satisfy one of the following:
+ * 1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
+ * 2. corresponds to the ECS container host 169.254.170.2
+ * 3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
+ */
 static bool s_is_valid_remote_host_ip(struct aws_host_address *host_address_ptr) {
     bool result = false;
     struct aws_byte_cursor address = aws_byte_cursor_from_string(host_address_ptr->address);
