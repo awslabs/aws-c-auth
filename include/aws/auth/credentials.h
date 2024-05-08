@@ -360,14 +360,14 @@ struct aws_credentials_provider_x509_options {
  ---------------------------------------------------------------------------------
  | Parameter           | Environment Variable Name    | Config File Property Name |
  ----------------------------------------------------------------------------------
- | region              | AWS_DEFAULT_REGION           | region                    |
+ | region              | AWS_REGION/AWS_DEFAULT_REGION| region                    |
  | role_arn            | AWS_ROLE_ARN                 | role_arn                  |
  | role_session_name   | AWS_ROLE_SESSION_NAME        | role_session_name         |
  | token_file_path     | AWS_WEB_IDENTITY_TOKEN_FILE  | web_identity_token_file   |
  |--------------------------------------------------------------------------------|
  * The order of resolution is the following
  * 1. Parameters
- * 2. Environment Variables
+ * 2. Environment Variables (in case of region, AWS_REGION is preferred over AWS_DEFAULT_REGION)
  * 3. Config File
  */
 struct aws_credentials_provider_sts_web_identity_options {
@@ -465,8 +465,14 @@ struct aws_credentials_provider_sso_options {
 };
 
 /**
- * Configuration options for the STS credentials provider
+ * Configuration options for the STS credentials provider.
+ * STS Credentials Provider will try to automatically resolve the region and use a regional STS endpoint if successful.
+ * The region resolution order is the following:
+ * 1. AWS_REGION environment variable
+ * 2. AWS_DEFAULT_REGION environment variable
+ * 3. the region property in the config file
  */
+
 struct aws_credentials_provider_sts_options {
     /*
      * Connection bootstrap to use for any network connections made while sourcing credentials

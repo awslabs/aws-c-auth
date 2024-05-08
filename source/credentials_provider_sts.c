@@ -671,26 +671,24 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
 };
 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
-AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
 
 /*
  * Try to resolve the region in the following order
+ * 1. Check `AWS_REGION` environment variable
  * 1. Check `AWS_DEFAULT_REGION` environment variable
  * 2. check `region` config file property.
  */
 static struct aws_string *s_resolve_region(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_options *options) {
-    struct aws_profile_collection *profile_collection = NULL;
-    struct aws_string *region = NULL;
-    struct aws_string *profile_name = NULL;
-
-    /* check environment variable */
-    aws_get_environment_value(allocator, s_region_env, &region);
-
+    /* check environment variable first */
+    struct aws_string *region = aws_credentials_provider_resolve_region_from_env(allocator);
     if (region != NULL && region->len > 0) {
         return region;
     }
+
+    struct aws_profile_collection *profile_collection = NULL;
+    struct aws_string *profile_name = NULL;
 
     /* check the config file */
     if (options->profile_collection_cached) {

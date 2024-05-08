@@ -184,6 +184,14 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
     struct aws_allocator *allocator,
     struct aws_byte_cursor config_file_name_override);
 
+/*
+ * Resolve region from environment in the following order
+ * 1. AWS_REGION
+ * 2. AWS_DEFAULT_REGION
+ */
+AWS_AUTH_API
+struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_PRIVATE_H */

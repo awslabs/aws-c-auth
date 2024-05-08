@@ -808,7 +808,6 @@ static void s_on_connection_manager_shutdown(void *user_data) {
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
-AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_arn_config, "role_arn");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_arn_env, "AWS_ROLE_ARN");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_session_name_config, "role_session_name");
@@ -956,7 +955,13 @@ static struct sts_web_identity_parameters *s_parameters_new(
     parameters->allocator = allocator;
 
     bool success = false;
-    struct aws_string *region = s_check_or_get_with_env(allocator, s_region_env, options->region);
+    struct aws_string *region = NULL;
+    if (options->region.len > 0) {
+        region = aws_string_new_from_cursor(allocator, &options->region);
+    } else {
+        region = aws_credentials_provider_resolve_region_from_env(allocator);
+    }
+
     struct aws_string *role_arn = s_check_or_get_with_env(allocator, s_role_arn_env, options->role_arn);
     struct aws_string *role_session_name =
         s_check_or_get_with_env(allocator, s_role_session_name_env, options->role_session_name);

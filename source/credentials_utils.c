@@ -399,3 +399,19 @@ on_error:
     aws_byte_buf_clean_up(out_endpoint);
     return AWS_OP_ERR;
 }
+
+AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_REGION");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_region_env, "AWS_DEFAULT_REGION");
+
+struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator) {
+    struct aws_string *region = NULL;
+
+    /* check AWS_REGION environment variable first */ 
+    aws_get_environment_value(allocator, s_region_env, &region);
+    if (region != NULL && region->len > 0) {
+        return region;
+    }
+
+    aws_get_environment_value(allocator, s_default_region_env, &region);
+    return region;
+}
