@@ -367,7 +367,7 @@ struct aws_credentials_provider_x509_options {
  |--------------------------------------------------------------------------------|
  * The order of resolution is the following
  * 1. Parameters
- * 2. Environment Variables (in case of region, AWS_REGION is preferred over AWS_DEFAULT_REGION)
+ * 2. Environment Variables (in case of region, the AWS_REGION is preferred over the AWS_DEFAULT_REGION)
  * 3. Config File
  */
 struct aws_credentials_provider_sts_web_identity_options {
@@ -470,9 +470,8 @@ struct aws_credentials_provider_sso_options {
  * The region resolution order is the following:
  * 1. AWS_REGION environment variable
  * 2. AWS_DEFAULT_REGION environment variable
- * 3. the region property in the config file
+ * 3. The region property in the config file.
  */
-
 struct aws_credentials_provider_sts_options {
     /*
      * Connection bootstrap to use for any network connections made while sourcing credentials
@@ -512,21 +511,21 @@ struct aws_credentials_provider_sts_options {
 
     /**
      * (Optional)
-     * Use a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection which
-     * contains both a config file and a credentials file.
-     * If this is provided, config_file_name_override is ignored.
+     * Uses a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection,
+     * which contains both a config file and a credentials file.
+     * If provided, config_file_name_override is ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
 
     /*
      * (Optional)
-     * Override of what profile to use, if not set, 'default' will be used.
+     * Override of what profile to use; if not set, 'default' will be used.
      */
     struct aws_byte_cursor profile_name_override;
 
     /*
      * (Optional)
-     * Override path to the profile config file (~/.aws/config by default)
+     * Override path to the profile config file (~/.aws/config by default).
      */
     struct aws_byte_cursor config_file_name_override;
 
