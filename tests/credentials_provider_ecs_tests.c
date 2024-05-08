@@ -499,6 +499,49 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
 
 AWS_TEST_CASE(credentials_provider_ecs_bad_document_failure, s_credentials_provider_ecs_bad_document_failure);
 
+static int s_credentials_provider_ecs_bad_host_failure(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("www.google.com"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_NULL(s_tester.credentials);
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST, s_tester.error_code);
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_ecs_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_ecs_bad_host_failure, s_credentials_provider_ecs_bad_host_failure);
+
 AWS_STATIC_STRING_FROM_LITERAL(
     s_good_response,
     "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
