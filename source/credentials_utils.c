@@ -406,7 +406,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_default_region_env, "AWS_DEFAULT_REGION");
 struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator) {
     struct aws_string *region = NULL;
 
-    /* check AWS_REGION environment variable first */ 
+    /* check AWS_REGION environment variable first */
     aws_get_environment_value(allocator, s_region_env, &region);
     if (region != NULL && region->len > 0) {
         return region;
