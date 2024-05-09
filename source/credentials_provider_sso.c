@@ -534,41 +534,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vta
     .get_credentials = s_credentials_provider_sso_get_credentials,
     .destroy = s_credentials_provider_sso_destroy,
 };
-
-static int s_construct_sso_portal_endpoint(
-    struct aws_allocator *allocator,
-    struct aws_byte_buf *out_endpoint,
-    const struct aws_string *region) {
-    AWS_PRECONDITION(allocator);
-    AWS_PRECONDITION(out_endpoint);
-
-    if (!region) {
-        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-    }
-    aws_byte_buf_clean_up(out_endpoint);
-    struct aws_byte_cursor sso_prefix = aws_byte_cursor_from_c_str("portal.sso.");
-    struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
-    struct aws_byte_cursor amazonaws_cursor = aws_byte_cursor_from_c_str(".amazonaws.com");
-    struct aws_byte_cursor cn_cursor = aws_byte_cursor_from_c_str(".cn");
-
-    if (aws_byte_buf_init_copy_from_cursor(out_endpoint, allocator, sso_prefix) ||
-        aws_byte_buf_append_dynamic(out_endpoint, &region_cursor) ||
-        aws_byte_buf_append_dynamic(out_endpoint, &amazonaws_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
-        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(out_endpoint, &cn_cursor)) {
-            goto on_error;
-        }
-    }
-    return AWS_OP_SUCCESS;
-
-on_error:
-    aws_byte_buf_clean_up(out_endpoint);
-    return AWS_OP_ERR;
-}
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_service_name, "portal.sso");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_account_id, "sso_account_id");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_region, "sso_region");
@@ -577,7 +543,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_sso_session, "sso_session");
 
 struct sso_parameters {
     struct aws_allocator *allocator;
-    struct aws_byte_buf endpoint;
+    struct aws_string *endpoint;
     struct aws_string *sso_account_id;
     struct aws_string *sso_role_name;
     struct aws_credentials_provider *token_provider;
@@ -587,7 +553,7 @@ static void s_parameters_destroy(struct sso_parameters *parameters) {
     if (!parameters) {
         return;
     }
-    aws_byte_buf_clean_up(&parameters->endpoint);
+    aws_string_destroy(parameters->endpoint);
     aws_string_destroy(parameters->sso_account_id);
     aws_string_destroy(parameters->sso_role_name);
     aws_credentials_provider_release(parameters->token_provider);
@@ -716,7 +682,8 @@ static struct sso_parameters *s_parameters_new(
     parameters->sso_account_id = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_account_id));
     parameters->sso_role_name = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
     /* determine endpoint */
-    if (s_construct_sso_portal_endpoint(allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region))) {
+    if (aws_credentials_provider_construct_regional_endpoint(
+            allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region), s_sso_service_name)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sso endpoint");
         goto on_finish;
     }
@@ -776,7 +743,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     }
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
+    struct aws_byte_cursor host = aws_byte_cursor_from_string(parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -816,7 +783,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     }
 
     impl->token_provider = aws_credentials_provider_acquire(parameters->token_provider);
-    impl->endpoint = aws_string_new_from_buf(allocator, &parameters->endpoint);
+    impl->endpoint = aws_string_new_from_string(allocator, parameters->endpoint);
     impl->sso_account_id = aws_string_new_from_string(allocator, parameters->sso_account_id);
     impl->sso_role_name = aws_string_new_from_string(allocator, parameters->sso_role_name);
 

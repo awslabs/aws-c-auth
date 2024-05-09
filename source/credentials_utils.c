@@ -7,6 +7,7 @@
 
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
+#include <aws/common/environment.h>
 #include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
@@ -355,4 +356,68 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
 
     aws_string_destroy(config_file_path);
     return config_profiles;
+}
+
+static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
+static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com");
+static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
+
+int aws_credentials_provider_construct_regional_endpoint(
+    struct aws_allocator *allocator,
+    struct aws_string **out_endpoint,
+    const struct aws_string *region,
+    const struct aws_string *service_name) {
+
+    AWS_PRECONDITION(allocator);
+    AWS_PRECONDITION(out_endpoint);
+    if (!region || !service_name) {
+        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+    }
+    int result = AWS_OP_ERR;
+
+    struct aws_byte_buf endpoint;
+    AWS_ZERO_STRUCT(endpoint);
+    aws_byte_buf_init(&endpoint, allocator, 10);
+    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
+    struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
+
+    if (aws_byte_buf_append_dynamic(&endpoint, &service_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &region_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &s_amazonaws_cursor)) {
+        goto on_error;
+    }
+
+    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
+        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_cn_cursor)) {
+            goto on_error;
+        }
+    }
+    *out_endpoint = aws_string_new_from_buf(allocator, &endpoint);
+    result = AWS_OP_SUCCESS;
+
+on_error:
+    aws_byte_buf_clean_up(&endpoint);
+    if (result != AWS_OP_SUCCESS) {
+        *out_endpoint = NULL;
+    }
+    return result;
+}
+
+AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_REGION");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_region_env, "AWS_DEFAULT_REGION");
+
+struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator) {
+    struct aws_string *region = NULL;
+
+    /* check AWS_REGION environment variable first */
+    aws_get_environment_value(allocator, s_region_env, &region);
+    if (region != NULL && region->len > 0) {
+        return region;
+    }
+
+    aws_get_environment_value(allocator, s_default_region_env, &region);
+    return region;
 }

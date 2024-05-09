@@ -360,14 +360,14 @@ struct aws_credentials_provider_x509_options {
  ---------------------------------------------------------------------------------
  | Parameter           | Environment Variable Name    | Config File Property Name |
  ----------------------------------------------------------------------------------
- | region              | AWS_DEFAULT_REGION           | region                    |
+ | region              | AWS_REGION/AWS_DEFAULT_REGION| region                    |
  | role_arn            | AWS_ROLE_ARN                 | role_arn                  |
  | role_session_name   | AWS_ROLE_SESSION_NAME        | role_session_name         |
  | token_file_path     | AWS_WEB_IDENTITY_TOKEN_FILE  | web_identity_token_file   |
  |--------------------------------------------------------------------------------|
  * The order of resolution is the following
  * 1. Parameters
- * 2. Environment Variables
+ * 2. Environment Variables (in case of region, the AWS_REGION is preferred over the AWS_DEFAULT_REGION)
  * 3. Config File
  */
 struct aws_credentials_provider_sts_web_identity_options {
@@ -465,7 +465,12 @@ struct aws_credentials_provider_sso_options {
 };
 
 /**
- * Configuration options for the STS credentials provider
+ * Configuration options for the STS credentials provider.
+ * STS Credentials Provider will try to automatically resolve the region and use a regional STS endpoint if successful.
+ * The region resolution order is the following:
+ * 1. AWS_REGION environment variable
+ * 2. AWS_DEFAULT_REGION environment variable
+ * 3. The region property in the config file.
  */
 struct aws_credentials_provider_sts_options {
     /*
@@ -503,6 +508,26 @@ struct aws_credentials_provider_sts_options {
      * (Optional) Http proxy configuration for the AssumeRole http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional)
+     * Uses a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection,
+     * which contains both a config file and a credentials file.
+     * If provided, config_file_name_override is ignored.
+     */
+    struct aws_profile_collection *profile_collection_cached;
+
+    /*
+     * (Optional)
+     * Override of what profile to use; if not set, 'default' will be used.
+     */
+    struct aws_byte_cursor profile_name_override;
+
+    /*
+     * (Optional)
+     * Override path to the profile config file (~/.aws/config by default).
+     */
+    struct aws_byte_cursor config_file_name_override;
 
     struct aws_credentials_provider_shutdown_options shutdown_options;
 
@@ -573,7 +598,6 @@ struct aws_credentials_provider_chain_default_options {
      * Use a cached merged profile collection. A merge collection has both config file
      * (~/.aws/config) and credentials file based profile collection (~/.aws/credentials) using
      * `aws_profile_collection_new_from_merge`.
-     * If this option is provided, `config_file_name_override` and `credentials_file_name_override` will be ignored.
      */
     struct aws_profile_collection *profile_collection_cached;
 

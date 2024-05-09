@@ -8,10 +8,11 @@
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
 #include <aws/auth/signing_result.h>
-#include <aws/common/xml_parser.h>
-
 #include <aws/common/clock.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
+#include <aws/common/xml_parser.h>
+#include <aws/sdkutils/aws_profile.h>
 
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
@@ -40,11 +41,6 @@ static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *, void *);
 static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *, void *);
 static int s_sts_xml_on_Credentials_child(struct aws_xml_node *, void *);
 
-static struct aws_http_header s_host_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
-};
-
 static struct aws_http_header s_content_type_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
@@ -53,7 +49,7 @@ static struct aws_http_header s_content_type_header = {
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
-static struct aws_byte_cursor s_service_name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
 static const int s_max_retries = 3;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
@@ -62,6 +58,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_string *assume_role_profile;
     struct aws_string *role_session_name;
+    struct aws_string *endpoint;
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
@@ -468,12 +465,17 @@ static void s_start_make_request(
     struct aws_credentials_provider *provider,
     struct sts_creds_provider_user_data *provider_user_data) {
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
+    struct aws_credentials_provider_sts_impl *impl = provider->impl;
 
     if (!provider_user_data->message) {
         goto error;
     }
+    struct aws_http_header host_header = {
+        .name = aws_byte_cursor_from_c_str("Host"),
+        .value = aws_byte_cursor_from_string(impl->endpoint),
+    };
 
-    if (aws_http_message_add_header(provider_user_data->message, s_host_header)) {
+    if (aws_http_message_add_header(provider_user_data->message, host_header)) {
         goto error;
     }
 
@@ -526,8 +528,6 @@ static void s_start_make_request(
         goto error;
     }
 
-    struct aws_credentials_provider_sts_impl *impl = provider->impl;
-
     provider_user_data->signing_config.algorithm = AWS_SIGNING_ALGORITHM_V4;
     provider_user_data->signing_config.signature_type = AWS_ST_HTTP_REQUEST_HEADERS;
     provider_user_data->signing_config.signed_body_header = AWS_SBHT_NONE;
@@ -535,7 +535,7 @@ static void s_start_make_request(
     provider_user_data->signing_config.credentials_provider = impl->provider;
     aws_date_time_init_now(&provider_user_data->signing_config.date);
     provider_user_data->signing_config.region = s_signing_region;
-    provider_user_data->signing_config.service = s_service_name;
+    provider_user_data->signing_config.service = aws_byte_cursor_from_string(s_sts_service_name);
     provider_user_data->signing_config.flags.use_double_uri_encode = false;
 
     if (aws_sign_request_aws(
@@ -647,6 +647,7 @@ static void s_on_credentials_provider_shutdown(void *user_data) {
 
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->assume_role_profile);
+    aws_string_destroy(impl->endpoint);
 
     aws_mem_release(provider->allocator, provider);
 }
@@ -669,6 +670,54 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vta
     .destroy = s_destroy,
 };
 
+AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
+
+/*
+ * Try to resolve the region in the following order
+ * 1. Check `AWS_REGION` environment variable
+ * 1. Check `AWS_DEFAULT_REGION` environment variable
+ * 2. check `region` config file property.
+ */
+static struct aws_string *s_resolve_region(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_options *options) {
+    /* check environment variable first */
+    struct aws_string *region = aws_credentials_provider_resolve_region_from_env(allocator);
+    if (region != NULL && region->len > 0) {
+        return region;
+    }
+
+    struct aws_profile_collection *profile_collection = NULL;
+    struct aws_string *profile_name = NULL;
+
+    /* check the config file */
+    if (options->profile_collection_cached) {
+        profile_collection = aws_profile_collection_acquire(options->profile_collection_cached);
+    } else {
+        profile_collection =
+            aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
+    }
+    if (!profile_collection) {
+        goto cleanup;
+    }
+    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
+    if (!profile_name) {
+        goto cleanup;
+    }
+    const struct aws_profile *profile = aws_profile_collection_get_profile(profile_collection, profile_name);
+    if (!profile) {
+        goto cleanup;
+    }
+    const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
+    if (property) {
+        region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+    }
+cleanup:
+    aws_string_destroy(profile_name);
+    aws_profile_collection_release(profile_collection);
+    return region;
+}
+
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_options *options) {
@@ -687,6 +736,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_sts_impl *impl = NULL;
+    int result = AWS_OP_ERR;
+    struct aws_string *region = NULL;
 
     aws_mem_acquire_many(
         allocator,
@@ -719,14 +770,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "(id=%p): A credentials provider must be specified", (void *)provider);
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-        goto cleanup_provider;
+        goto on_done;
     }
 
     impl->role_session_name =
         aws_string_new_from_array(allocator, options->session_name.ptr, options->session_name.len);
 
     if (!impl->role_session_name) {
-        goto cleanup_provider;
+        goto on_done;
     }
 
     AWS_LOGF_DEBUG(
@@ -738,7 +789,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     impl->assume_role_profile = aws_string_new_from_array(allocator, options->role_arn.ptr, options->role_arn.len);
 
     if (!impl->assume_role_profile) {
-        goto cleanup_provider;
+        goto on_done;
     }
 
     AWS_LOGF_DEBUG(
@@ -769,15 +820,31 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     impl->provider = options->creds_provider;
     aws_credentials_provider_acquire(impl->provider);
 
+    /*
+     * Construct a regional endpoint if we can resolve region from envrionment variable or the config file. Otherwise,
+     * use the global endpoint.
+     */
+    region = s_resolve_region(allocator, options);
+    if (region != NULL) {
+        if (aws_credentials_provider_construct_regional_endpoint(
+                allocator, &impl->endpoint, region, s_sts_service_name)) {
+            goto on_done;
+        }
+    } else {
+        /* use the global endpoint */
+        impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
+    }
+    struct aws_byte_cursor endpoint_cursor = aws_byte_cursor_from_string(impl->endpoint);
+
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
 
-    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &s_host_header.value)) {
+    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &endpoint_cursor)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to create a tls connection options with error %s",
             (void *)provider,
             aws_error_debug_str(aws_last_error()));
-        goto cleanup_provider;
+        goto on_done;
     }
 
     struct aws_socket_options socket_options = {
@@ -788,7 +855,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     struct aws_http_connection_manager_options connection_manager_options = {
         .bootstrap = options->bootstrap,
-        .host = s_host_header.value,
+        .host = endpoint_cursor,
         .initial_window_size = SIZE_MAX,
         .max_connections = 2,
         .port = 443,
@@ -806,7 +873,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
             "(id=%p): failed to create a connection manager with error %s",
             (void *)provider,
             aws_error_debug_str(aws_last_error()));
-        goto cleanup_provider;
+        goto on_done;
     }
 
     /*
@@ -834,15 +901,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
             "(id=%p): failed to create a retry strategy with error %s",
             (void *)provider,
             aws_error_debug_str(aws_last_error()));
-        goto cleanup_provider;
+        goto on_done;
     }
+    result = AWS_OP_SUCCESS;
 
+on_done:
     aws_tls_connection_options_clean_up(&tls_connection_options);
+    aws_string_destroy(region);
+    if (result != AWS_OP_SUCCESS) {
+        provider = aws_credentials_provider_release(provider);
+    }
     return provider;
-
-cleanup_provider:
-    aws_tls_connection_options_clean_up(&tls_connection_options);
-    aws_credentials_provider_release(provider);
-
-    return NULL;
 }

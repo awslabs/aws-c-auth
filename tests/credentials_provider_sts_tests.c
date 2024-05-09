@@ -262,6 +262,10 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_stream_release = s_aws_http_stream_release_mock,
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
+AWS_STATIC_STRING_FROM_LITERAL(s_config_file_path_env_variable_name, "AWS_CONFIG_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_region_env_variable_name, "AWS_REGION");
+AWS_STATIC_STRING_FROM_LITERAL(s_region_default_env_variable_name, "AWS_DEFAULT_REGION");
+
 static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     AWS_ZERO_STRUCT(s_tester);
     s_tester.allocator = allocator;
@@ -299,6 +303,15 @@ static int s_aws_sts_tester_init(struct aws_allocator *allocator) {
     if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
     }
+
+    /*
+     * set the environment so that it doesn't mess with tests
+     */
+    aws_unset_environment_value(s_region_env_variable_name);
+    aws_unset_environment_value(s_region_default_env_variable_name);
+    struct aws_string *cur_directory = aws_string_new_from_c_str(allocator, ".");
+    aws_set_environment_value(s_config_file_path_env_variable_name, cur_directory);
+    aws_string_destroy(cur_directory);
 
     return AWS_OP_SUCCESS;
 }
@@ -482,6 +495,266 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
 }
 
 AWS_TEST_CASE(credentials_provider_sts_direct_config_succeeds, s_credentials_provider_sts_direct_config_succeeds_fn)
+
+static int s_credentials_provider_sts_direct_config_with_region_succeeds_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+    /* verify that it picks the s_region_env_variable_name if both are set */
+    struct aws_string *region = aws_string_new_from_c_str(allocator, "us-west-2");
+    struct aws_string *default_region = aws_string_new_from_c_str(allocator, "us-east-1");
+    aws_set_environment_value(s_region_env_variable_name, region);
+    aws_set_environment_value(s_region_default_env_variable_name, default_region);
+    aws_string_destroy(default_region);
+    aws_string_destroy(region);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    mock_aws_set_system_time(0);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
+
+    const char *expected_method = "POST";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_method,
+        strlen(expected_method),
+        s_tester.mocked_requests[0].method.buffer,
+        s_tester.mocked_requests[0].method.len);
+
+    const char *expected_path = "/";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_path,
+        strlen(expected_path),
+        s_tester.mocked_requests[0].path.buffer,
+        s_tester.mocked_requests[0].path.len);
+
+    ASSERT_TRUE(s_tester.mocked_requests[0].had_auth_header);
+
+    const char *expected_host_header = "sts.us-west-2.amazonaws.com";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_host_header,
+        strlen(expected_host_header),
+        s_tester.mocked_requests[0].host_header.buffer,
+        s_tester.mocked_requests[0].host_header.len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_payload.ptr,
+        s_expected_payload.len,
+        s_tester.mocked_requests[0].body.buffer,
+        s_tester.mocked_requests[0].body.len);
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_direct_config_with_region_succeeds,
+    s_credentials_provider_sts_direct_config_with_region_succeeds_fn)
+
+static int s_credentials_provider_sts_direct_config_with_default_region_succeeds_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+    struct aws_string *default_region = aws_string_new_from_c_str(allocator, "us-east-1");
+    aws_set_environment_value(s_region_default_env_variable_name, default_region);
+    aws_string_destroy(default_region);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    mock_aws_set_system_time(0);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
+
+    const char *expected_method = "POST";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_method,
+        strlen(expected_method),
+        s_tester.mocked_requests[0].method.buffer,
+        s_tester.mocked_requests[0].method.len);
+
+    const char *expected_path = "/";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_path,
+        strlen(expected_path),
+        s_tester.mocked_requests[0].path.buffer,
+        s_tester.mocked_requests[0].path.len);
+
+    ASSERT_TRUE(s_tester.mocked_requests[0].had_auth_header);
+
+    const char *expected_host_header = "sts.us-east-1.amazonaws.com";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_host_header,
+        strlen(expected_host_header),
+        s_tester.mocked_requests[0].host_header.buffer,
+        s_tester.mocked_requests[0].host_header.len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_payload.ptr,
+        s_expected_payload.len,
+        s_tester.mocked_requests[0].body.buffer,
+        s_tester.mocked_requests[0].body.len);
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_direct_config_with_default_region_succeeds,
+    s_credentials_provider_sts_direct_config_with_default_region_succeeds_fn)
+
+static int s_credentials_provider_sts_direct_config_with_region_from_config_succeeds_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, "[profile myProfile]\nregion=cn-north-1");
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(config_file_str, config_contents));
+    aws_string_destroy(config_contents);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .profile_name_override = aws_byte_cursor_from_c_str("myProfile"),
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    mock_aws_set_system_time(0);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
+
+    const char *expected_method = "POST";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_method,
+        strlen(expected_method),
+        s_tester.mocked_requests[0].method.buffer,
+        s_tester.mocked_requests[0].method.len);
+
+    const char *expected_path = "/";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_path,
+        strlen(expected_path),
+        s_tester.mocked_requests[0].path.buffer,
+        s_tester.mocked_requests[0].path.len);
+
+    ASSERT_TRUE(s_tester.mocked_requests[0].had_auth_header);
+    const char *expected_host_header = "sts.cn-north-1.amazonaws.com.cn";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_host_header,
+        strlen(expected_host_header),
+        s_tester.mocked_requests[0].host_header.buffer,
+        s_tester.mocked_requests[0].host_header.len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_payload.ptr,
+        s_expected_payload.len,
+        s_tester.mocked_requests[0].body.buffer,
+        s_tester.mocked_requests[0].body.len);
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    aws_file_delete(config_file_str);
+    aws_string_destroy(config_file_str);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_direct_config_with_region_from_config_succeeds,
+    s_credentials_provider_sts_direct_config_with_region_from_config_succeeds_fn)
 
 static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
     struct aws_allocator *allocator,
