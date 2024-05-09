@@ -16,6 +16,7 @@ struct aws_http_connection_manager;
 struct aws_http_make_request_options;
 struct aws_http_stream;
 struct aws_json_value;
+struct aws_profile;
 
 /*
  * Internal struct tracking an asynchronous credentials query.
@@ -165,12 +166,31 @@ AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
 /*
+ * Constructs an endpoint in the format of service_name.region.amazonaws.com
+ * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.
+ */
+AWS_AUTH_API
+int aws_credentials_provider_construct_regional_endpoint(
+    struct aws_allocator *allocator,
+    struct aws_string **out_endpoint,
+    const struct aws_string *region,
+    const struct aws_string *service_name);
+
+/*
  * Loads an aws config profile collection
  */
 AWS_AUTH_API
 struct aws_profile_collection *aws_load_profile_collection_from_config_file(
     struct aws_allocator *allocator,
     struct aws_byte_cursor config_file_name_override);
+
+/*
+ * Resolve region from environment in the following order:
+ * 1. AWS_REGION
+ * 2. AWS_DEFAULT_REGION
+ */
+AWS_AUTH_API
+struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator);
 
 AWS_EXTERN_C_END
 

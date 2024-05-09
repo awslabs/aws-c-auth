@@ -48,6 +48,7 @@ struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
     struct aws_string *token_file_path;
+    struct aws_string *endpoint;
 };
 
 /*
@@ -523,11 +524,6 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     s_finalize_get_credentials_query(user_data);
 }
 
-static struct aws_http_header s_host_header = {
-    .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("host"),
-    .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sts.amazonaws.com"),
-};
-
 static struct aws_http_header s_content_type_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
     .value = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("application/x-www-form-urlencoded"),
@@ -586,7 +582,12 @@ static int s_make_sts_web_identity_http_query(
         goto on_error;
     }
 
-    if (aws_http_message_add_header(request, s_host_header)) {
+    struct aws_http_header host_header = {
+        .name = aws_byte_cursor_from_c_str("Host"),
+        .value = aws_byte_cursor_from_string(impl->endpoint),
+    };
+
+    if (aws_http_message_add_header(request, host_header)) {
         goto on_error;
     }
 
@@ -777,6 +778,8 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
     aws_string_destroy(impl->role_arn);
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->token_file_path);
+    aws_string_destroy(impl->endpoint);
+
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
      * which will do memory release for provider and impl. So We should be freeing impl
      * related memory first, then call aws_http_connection_manager_release.
@@ -805,7 +808,6 @@ static void s_on_connection_manager_shutdown(void *user_data) {
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
-AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_DEFAULT_REGION");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_arn_config, "role_arn");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_arn_env, "AWS_ROLE_ARN");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_session_name_config, "role_session_name");
@@ -816,7 +818,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_token_file_path_env, "AWS_WEB_IDENTITY_TOKEN_FI
 struct sts_web_identity_parameters {
     struct aws_allocator *allocator;
     /* region is actually used to construct endpoint */
-    struct aws_byte_buf endpoint;
+    struct aws_string *endpoint;
     struct aws_byte_buf role_arn;
     struct aws_byte_buf role_session_name;
     struct aws_byte_buf token_file_path;
@@ -860,53 +862,7 @@ on_error:
     return NULL;
 }
 
-static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
-static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".amazonaws.com");
-static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
-
-static int s_construct_endpoint(
-    struct aws_allocator *allocator,
-    struct aws_byte_buf *endpoint,
-    const struct aws_string *region,
-    const struct aws_string *service_name) {
-
-    if (!allocator || !endpoint || !region || !service_name) {
-        return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-    }
-    aws_byte_buf_clean_up(endpoint);
-
-    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
-    if (aws_byte_buf_init_copy_from_cursor(endpoint, allocator, service_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_dynamic(endpoint, &s_dot_cursor)) {
-        goto on_error;
-    }
-
-    struct aws_byte_cursor region_cursor;
-    region_cursor = aws_byte_cursor_from_array(region->bytes, region->len);
-    if (aws_byte_buf_append_dynamic(endpoint, &region_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_byte_buf_append_dynamic(endpoint, &s_amazonaws_cursor)) {
-        goto on_error;
-    }
-
-    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
-        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(endpoint, &s_cn_cursor)) {
-            goto on_error;
-        }
-    }
-    return AWS_OP_SUCCESS;
-
-on_error:
-    aws_byte_buf_clean_up(endpoint);
-    return AWS_OP_ERR;
-}
 
 static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_byte_buf *dst) {
 
@@ -980,7 +936,7 @@ static void s_parameters_destroy(struct sts_web_identity_parameters *parameters)
     if (!parameters) {
         return;
     }
-    aws_byte_buf_clean_up(&parameters->endpoint);
+    aws_string_destroy(parameters->endpoint);
     aws_byte_buf_clean_up(&parameters->role_arn);
     aws_byte_buf_clean_up(&parameters->role_session_name);
     aws_byte_buf_clean_up(&parameters->token_file_path);
@@ -999,7 +955,13 @@ static struct sts_web_identity_parameters *s_parameters_new(
     parameters->allocator = allocator;
 
     bool success = false;
-    struct aws_string *region = s_check_or_get_with_env(allocator, s_region_env, options->region);
+    struct aws_string *region = NULL;
+    if (options->region.len > 0) {
+        region = aws_string_new_from_cursor(allocator, &options->region);
+    } else {
+        region = aws_credentials_provider_resolve_region_from_env(allocator);
+    }
+
     struct aws_string *role_arn = s_check_or_get_with_env(allocator, s_role_arn_env, options->role_arn);
     struct aws_string *role_session_name =
         s_check_or_get_with_env(allocator, s_role_session_name_env, options->role_session_name);
@@ -1047,8 +1009,9 @@ static struct sts_web_identity_parameters *s_parameters_new(
         }
     }
 
-    /* determin endpoint */
-    if (s_construct_endpoint(allocator, &parameters->endpoint, region, s_sts_service_name)) {
+    /* determine endpoint */
+    if (aws_credentials_provider_construct_regional_endpoint(
+            allocator, &parameters->endpoint, region, s_sts_service_name)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sts endpoint with, probably region is missing.");
         goto on_finish;
@@ -1143,7 +1106,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     }
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
+    struct aws_byte_cursor host = aws_byte_cursor_from_string(parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -1196,6 +1159,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     impl->token_file_path =
         aws_string_new_from_array(allocator, parameters->token_file_path.buffer, parameters->token_file_path.len);
     if (impl->token_file_path == NULL) {
+        goto on_error;
+    }
+
+    impl->endpoint = aws_string_new_from_string(allocator, parameters->endpoint);
+    if (impl->endpoint == NULL) {
         goto on_error;
     }
 
