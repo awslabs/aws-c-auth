@@ -875,10 +875,10 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             .auth_token_file_content = "testToken",
             .expected_auth_token = "testToken",
         },
-        /* IPv4 loopback address*/
+        /* IPv4 loopback address */
         {
-            .full_uri = "http://127.1.2.3:8080/credentials",
-            .expected_uri = "http://127.1.2.3:8080/credentials",
+            .full_uri = "http://127.1.2.3:456/credentials",
+            .expected_uri = "http://127.1.2.3:456/credentials",
         },
         /* IPv4 EKS container host address */
         {

@@ -563,7 +563,8 @@ static int s_credentials_provider_ecs_get_credentials_async(
     if (wrapped_user_data == NULL) {
         goto error;
     }
-    /* No need to verify the host IP address if the connection is using HTTPS or a relative URI with an ECS host. */
+    /* No need to verify the host IP address if the connection is using HTTPS or the ECS container host (relative URI)
+     */
     if (impl->is_https || aws_string_eq(impl->host, s_ecs_host)) {
         impl->function_table->aws_http_connection_manager_acquire_connection(
             impl->connection_manager, s_ecs_on_acquire_connection, wrapped_user_data);
