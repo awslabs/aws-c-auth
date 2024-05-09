@@ -894,13 +894,11 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
         {
             .full_uri = "http://[::1]:8080/credentials",
             .expected_uri = "http://[::1]:8080/credentials",
-
         },
         /* IPv6 EKS host */
         {
             .full_uri = "http://[fd00:ec2::23]:8080/credentials",
             .expected_uri = "http://[fd00:ec2::23]:8080/credentials",
-
         },
     };
 
