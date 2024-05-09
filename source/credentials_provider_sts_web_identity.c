@@ -818,7 +818,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_token_file_path_env, "AWS_WEB_IDENTITY_TOKEN_FI
 struct sts_web_identity_parameters {
     struct aws_allocator *allocator;
     /* region is actually used to construct endpoint */
-    struct aws_byte_buf endpoint;
+    struct aws_string *endpoint;
     struct aws_byte_buf role_arn;
     struct aws_byte_buf role_session_name;
     struct aws_byte_buf token_file_path;
@@ -936,7 +936,7 @@ static void s_parameters_destroy(struct sts_web_identity_parameters *parameters)
     if (!parameters) {
         return;
     }
-    aws_byte_buf_clean_up(&parameters->endpoint);
+    aws_string_destroy(parameters->endpoint);
     aws_byte_buf_clean_up(&parameters->role_arn);
     aws_byte_buf_clean_up(&parameters->role_session_name);
     aws_byte_buf_clean_up(&parameters->token_file_path);
@@ -1009,7 +1009,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
         }
     }
 
-    /* determin endpoint */
+    /* determine endpoint */
     if (aws_credentials_provider_construct_regional_endpoint(
             allocator, &parameters->endpoint, region, s_sts_service_name)) {
         AWS_LOGF_ERROR(
@@ -1106,7 +1106,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     }
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
+    struct aws_byte_cursor host = aws_byte_cursor_from_string(parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -1162,7 +1162,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
         goto on_error;
     }
 
-    impl->endpoint = aws_string_new_from_array(allocator, parameters->endpoint.buffer, parameters->endpoint.len);
+    impl->endpoint = aws_string_new_from_string(allocator, parameters->endpoint);
     if (impl->endpoint == NULL) {
         goto on_error;
     }

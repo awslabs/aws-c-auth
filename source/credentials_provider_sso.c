@@ -543,7 +543,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_sso_session, "sso_session");
 
 struct sso_parameters {
     struct aws_allocator *allocator;
-    struct aws_byte_buf endpoint;
+    struct aws_string *endpoint;
     struct aws_string *sso_account_id;
     struct aws_string *sso_role_name;
     struct aws_credentials_provider *token_provider;
@@ -553,7 +553,7 @@ static void s_parameters_destroy(struct sso_parameters *parameters) {
     if (!parameters) {
         return;
     }
-    aws_byte_buf_clean_up(&parameters->endpoint);
+    aws_string_destroy(parameters->endpoint);
     aws_string_destroy(parameters->sso_account_id);
     aws_string_destroy(parameters->sso_role_name);
     aws_credentials_provider_release(parameters->token_provider);
@@ -743,7 +743,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     }
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    struct aws_byte_cursor host = aws_byte_cursor_from_buf(&parameters->endpoint);
+    struct aws_byte_cursor host = aws_byte_cursor_from_string(parameters->endpoint);
     if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -783,7 +783,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     }
 
     impl->token_provider = aws_credentials_provider_acquire(parameters->token_provider);
-    impl->endpoint = aws_string_new_from_buf(allocator, &parameters->endpoint);
+    impl->endpoint = aws_string_new_from_string(allocator, parameters->endpoint);
     impl->sso_account_id = aws_string_new_from_string(allocator, parameters->sso_account_id);
     impl->sso_role_name = aws_string_new_from_string(allocator, parameters->sso_role_name);
 

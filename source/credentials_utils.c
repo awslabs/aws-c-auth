@@ -364,7 +364,7 @@ static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERA
 
 int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
-    struct aws_byte_buf *out_endpoint,
+    struct aws_string **out_endpoint,
     const struct aws_string *region,
     const struct aws_string *service_name) {
 
@@ -373,31 +373,37 @@ int aws_credentials_provider_construct_regional_endpoint(
     if (!region || !service_name) {
         return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
+    int result = AWS_OP_ERR;
 
-    aws_byte_buf_clean_up(out_endpoint);
-    aws_byte_buf_init(out_endpoint, allocator, 10);
+    struct aws_byte_buf endpoint;
+    AWS_ZERO_STRUCT(endpoint);
+    aws_byte_buf_init(&endpoint, allocator, 10);
     struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
     struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
 
-    if (aws_byte_buf_append_dynamic(out_endpoint, &service_cursor) ||
-        aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor) ||
-        aws_byte_buf_append_dynamic(out_endpoint, &region_cursor) ||
-        aws_byte_buf_append_dynamic(out_endpoint, &s_dot_cursor) ||
-        aws_byte_buf_append_dynamic(out_endpoint, &s_amazonaws_cursor)) {
+    if (aws_byte_buf_append_dynamic(&endpoint, &service_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &region_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor) ||
+        aws_byte_buf_append_dynamic(&endpoint, &s_amazonaws_cursor)) {
         goto on_error;
     }
 
     if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
         aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(out_endpoint, &s_cn_cursor)) {
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_cn_cursor)) {
             goto on_error;
         }
     }
-    return AWS_OP_SUCCESS;
+    *out_endpoint = aws_string_new_from_buf(allocator, &endpoint);
+    result = AWS_OP_SUCCESS;
 
 on_error:
-    aws_byte_buf_clean_up(out_endpoint);
-    return AWS_OP_ERR;
+    aws_byte_buf_clean_up(&endpoint);
+    if (result != AWS_OP_SUCCESS) {
+        *out_endpoint = NULL;
+    }
+    return result;
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_REGION");

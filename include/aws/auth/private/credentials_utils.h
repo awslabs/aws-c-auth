@@ -172,7 +172,7 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
 AWS_AUTH_API
 int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
-    struct aws_byte_buf *out_endpoint,
+    struct aws_string **out_endpoint,
     const struct aws_string *region,
     const struct aws_string *service_name);
 

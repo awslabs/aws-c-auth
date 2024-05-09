@@ -826,13 +826,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
      */
     region = s_resolve_region(allocator, options);
     if (region != NULL) {
-        struct aws_byte_buf endpoint;
-        AWS_ZERO_STRUCT(endpoint);
-        if (aws_credentials_provider_construct_regional_endpoint(allocator, &endpoint, region, s_sts_service_name)) {
+        if (aws_credentials_provider_construct_regional_endpoint(
+                allocator, &impl->endpoint, region, s_sts_service_name)) {
             goto on_done;
         }
-        impl->endpoint = aws_string_new_from_buf(allocator, &endpoint);
-        aws_byte_buf_clean_up(&endpoint);
     } else {
         /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
