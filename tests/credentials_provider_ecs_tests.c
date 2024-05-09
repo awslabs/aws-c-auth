@@ -848,8 +848,8 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
         },
         /* auth token is properly set */
         {
-            .full_uri = "http://127.1.2.3:8080/credentials",
-            .expected_uri = "http://127.1.2.3:8080/credentials",
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
             .auth_token = "testToken",
             .expected_auth_token = "testToken",
         },
@@ -862,18 +862,33 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
         },
         /* auth_token_file_path is respected */
         {
-            .full_uri = "http://169.254.170.23:8080/credentials",
-            .expected_uri = "http://169.254.170.23:8080/credentials",
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
             .auth_token_file_content = "testToken",
             .expected_auth_token = "testToken",
         },
         /* auth_token_file_path is preferred */
         {
-            .full_uri = "http://169.254.170.2:8080/credentials",
-            .expected_uri = "http://169.254.170.2:8080/credentials",
+            .full_uri = "http://127.0.0.1:8080/credentials",
+            .expected_uri = "http://127.0.0.1:8080/credentials",
             .auth_token = "BadToken",
             .auth_token_file_content = "testToken",
             .expected_auth_token = "testToken",
+        },
+        /* IPv4 loopback address*/
+        {
+            .full_uri = "http://127.1.2.3:8080/credentials",
+            .expected_uri = "http://127.1.2.3:8080/credentials",
+        },
+        /* IPv4 EKS container host address */
+        {
+            .full_uri = "http://169.254.170.23:8080/credentials",
+            .expected_uri = "http://169.254.170.23:8080/credentials",
+        },
+        /* IPv4 ECS container host address */
+        {
+            .full_uri = "http://169.254.170.2:8080/credentials",
+            .expected_uri = "http://169.254.170.2:8080/credentials",
         },
         /* IPv6 loopback address */
         {

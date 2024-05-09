@@ -465,7 +465,7 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
 }
 
 /*
- * The host must use either HTTPS or the resolved IP address must satisfy one of the following:
+ * The resolved IP address must satisfy one of the following:
  * 1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
  * 2. corresponds to the ECS container host 169.254.170.2
  * 3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
@@ -525,7 +525,6 @@ static void s_on_host_resolved(
     if (!host_addresses_len) {
         goto on_error;
     }
-    AWS_FATAL_ASSERT(host_addresses_len > 0);
     for (size_t i = 0; i < host_addresses_len; ++i) {
         struct aws_host_address *host_address_ptr = NULL;
         aws_array_list_get_at_ptr(host_addresses, (void **)&host_address_ptr, i);
@@ -547,7 +546,6 @@ on_error:
         aws_error_str(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST));
     ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST;
     s_ecs_finalize_get_credentials_query(ecs_user_data);
-    return;
 }
 
 static int s_credentials_provider_ecs_get_credentials_async(
@@ -565,6 +563,7 @@ static int s_credentials_provider_ecs_get_credentials_async(
     if (wrapped_user_data == NULL) {
         goto error;
     }
+    /* No need to verify the host IP address if the connection is using HTTPS or a relative URI with an ECS host. */
     if (impl->is_https || aws_string_eq(impl->host, s_ecs_host)) {
         impl->function_table->aws_http_connection_manager_acquire_connection(
             impl->connection_manager, s_ecs_on_acquire_connection, wrapped_user_data);
