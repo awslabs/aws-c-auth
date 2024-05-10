@@ -30,6 +30,7 @@ struct aws_mock_http_request {
     struct aws_byte_buf host_header;
     struct aws_byte_buf body;
     bool had_auth_header;
+    struct aws_byte_buf auth_header;
     int response_code;
 };
 
@@ -203,6 +204,7 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
 
         if (aws_byte_cursor_eq_c_str_ignore_case(&header.name, "authorization")) {
             mocked_request->had_auth_header = true;
+            aws_byte_buf_init_copy_from_cursor(&mocked_request->auth_header, s_tester.allocator, header.value);
         }
     }
 
@@ -329,6 +331,7 @@ static void s_cleanup_creds_callback_data(void) {
         aws_byte_buf_clean_up(&s_tester.mocked_requests[i].path);
         aws_byte_buf_clean_up(&s_tester.mocked_requests[i].method);
         aws_byte_buf_clean_up(&s_tester.mocked_requests[i].host_header);
+        aws_byte_buf_clean_up(&s_tester.mocked_requests[i].auth_header);
         aws_byte_buf_clean_up(&s_tester.mocked_requests[i].body);
     }
 
@@ -472,6 +475,15 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
         s_tester.mocked_requests[0].path.len);
 
     ASSERT_TRUE(s_tester.mocked_requests[0].had_auth_header);
+    const char *expected_auth_header =
+        "AWS4-HMAC-SHA256 Credential=accessKey12345/19700101/us-east-1/sts/aws4_request, "
+        "SignedHeaders=content-length;content-type;host;x-amz-date;x-amz-security-token, "
+        "Signature=06e941853a2cc010ed8ac7072754e0089be8aae59e319924fb0105b20dda77cd";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_auth_header,
+        strlen(expected_auth_header),
+        s_tester.mocked_requests[0].auth_header.buffer,
+        s_tester.mocked_requests[0].auth_header.len);
 
     const char *expected_host_header = "sts.amazonaws.com";
     ASSERT_BIN_ARRAYS_EQUALS(
@@ -564,6 +576,16 @@ static int s_credentials_provider_sts_direct_config_with_region_succeeds_fn(
         strlen(expected_host_header),
         s_tester.mocked_requests[0].host_header.buffer,
         s_tester.mocked_requests[0].host_header.len);
+
+    const char *expected_auth_header =
+        "AWS4-HMAC-SHA256 Credential=accessKey12345/19700101/us-west-2/sts/aws4_request, "
+        "SignedHeaders=content-length;content-type;host;x-amz-date;x-amz-security-token, "
+        "Signature=a4a164e00acb40795ea491092dfcfbbfcda817b6b0bb5d06d328f535ec163ac6";
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_auth_header,
+        strlen(expected_auth_header),
+        s_tester.mocked_requests[0].auth_header.buffer,
+        s_tester.mocked_requests[0].auth_header.len);
 
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_payload.ptr,
