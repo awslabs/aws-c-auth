@@ -48,7 +48,6 @@ static struct aws_http_header s_content_type_header = {
 
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
-static struct aws_byte_cursor s_signing_region = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-east-1");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
 static const int s_max_retries = 3;
 
@@ -59,6 +58,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_string *assume_role_profile;
     struct aws_string *role_session_name;
     struct aws_string *endpoint;
+    struct aws_string *region;
     uint16_t duration_seconds;
     struct aws_credentials_provider *provider;
     struct aws_credentials_provider_shutdown_options source_shutdown_options;
@@ -533,8 +533,13 @@ static void s_start_make_request(
     provider_user_data->signing_config.signed_body_header = AWS_SBHT_NONE;
     provider_user_data->signing_config.config_type = AWS_SIGNING_CONFIG_AWS;
     provider_user_data->signing_config.credentials_provider = impl->provider;
-    aws_date_time_init_now(&provider_user_data->signing_config.date);
-    provider_user_data->signing_config.region = s_signing_region;
+    uint64_t now = UINT64_MAX;
+    if (impl->system_clock_fn(&now) != AWS_OP_SUCCESS) {
+        goto error;
+    }
+    uint64_t now_millis = aws_timestamp_convert(now, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_MILLIS, NULL);
+    aws_date_time_init_epoch_millis(&provider_user_data->signing_config.date, now_millis);
+    provider_user_data->signing_config.region = aws_byte_cursor_from_string(impl->region);
     provider_user_data->signing_config.service = aws_byte_cursor_from_string(s_sts_service_name);
     provider_user_data->signing_config.flags.use_double_uri_encode = false;
 
@@ -648,7 +653,7 @@ static void s_on_credentials_provider_shutdown(void *user_data) {
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->assume_role_profile);
     aws_string_destroy(impl->endpoint);
-
+    aws_string_destroy(impl->region);
     aws_mem_release(provider->allocator, provider);
 }
 
@@ -830,9 +835,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
                 allocator, &impl->endpoint, region, s_sts_service_name)) {
             goto on_done;
         }
+        impl->region = aws_string_new_from_string(allocator, region);
     } else {
         /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
+        impl->region = aws_string_new_from_c_str(allocator, "us-east-1");
     }
     struct aws_byte_cursor endpoint_cursor = aws_byte_cursor_from_string(impl->endpoint);
 
