@@ -470,10 +470,10 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
  * 2. corresponds to the ECS container host 169.254.170.2
  * 3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
  */
-static bool s_is_valid_remote_host_ip(struct aws_host_address *host_address_ptr) {
+static bool s_is_valid_remote_host_ip(const struct aws_host_address *host_address) {
     bool result = false;
-    struct aws_byte_cursor address = aws_byte_cursor_from_string(host_address_ptr->address);
-    if (host_address_ptr->record_type == AWS_ADDRESS_RECORD_TYPE_A) {
+    struct aws_byte_cursor address = aws_byte_cursor_from_string(host_address->address);
+    if (host_address->record_type == AWS_ADDRESS_RECORD_TYPE_A) {
         const struct aws_byte_cursor ipv4_loopback_address_prefix = aws_byte_cursor_from_c_str("127.");
         const struct aws_byte_cursor ecs_container_host_address = aws_byte_cursor_from_c_str("169.254.170.2");
         const struct aws_byte_cursor eks_container_host_address = aws_byte_cursor_from_c_str("169.254.170.23");
@@ -482,7 +482,7 @@ static bool s_is_valid_remote_host_ip(struct aws_host_address *host_address_ptr)
         result |= aws_byte_cursor_eq(&address, &ecs_container_host_address);
         result |= aws_byte_cursor_eq(&address, &eks_container_host_address);
 
-    } else if (host_address_ptr->record_type == AWS_ADDRESS_RECORD_TYPE_AAAA) {
+    } else if (host_address->record_type == AWS_ADDRESS_RECORD_TYPE_AAAA) {
         /* Check for both the short form and long form of an IPv6 address to be safe. */
         const struct aws_byte_cursor ipv6_loopback_address = aws_byte_cursor_from_c_str("::1");
         const struct aws_byte_cursor ipv6_loopback_address_verbose = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1");
