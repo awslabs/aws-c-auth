@@ -269,12 +269,8 @@ struct aws_credentials_provider_ecs_environment_options {
  *
  *`host` must satisfy one of the following:
  *  1. tls_context is set
- *  2. The host refers to an allowed IP address. If a URL contains a domain name instead of an IP address,
- *      a DNS lookup will be performed. All resolved IP addresses must refer to an allowed IP address, or
- *      the credentials provider will return `AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST`. Valid IP addresses are:
- *          a) Within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
- *          b) The ECS container address (169.254.170.2)
- *          c) EKS Pod Identity address (169.254.170.23 or fd00:ec2::23)
+ *  2. The resolved IP address is within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128), ECS container address
+ *     (169.254.170.2), or EKS Pod Identity address (169.254.170.23 or fd00:ec2::23).
  */
 struct aws_credentials_provider_ecs_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
