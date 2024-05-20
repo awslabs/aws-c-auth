@@ -54,6 +54,7 @@ struct aws_mock_ecs_tester {
     struct aws_event_loop_group *el_group;
     struct aws_host_resolver *host_resolver;
     struct aws_client_bootstrap *bootstrap;
+    struct aws_tls_ctx *tls_ctx;
 };
 
 static struct aws_mock_ecs_tester s_tester;
@@ -259,6 +260,13 @@ static int s_aws_ecs_tester_init(struct aws_allocator *allocator) {
     };
     s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
+    struct aws_tls_ctx_options tls_options;
+    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
+    struct aws_tls_ctx *tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
+    ASSERT_NOT_NULL(tls_ctx);
+    s_tester.tls_ctx = tls_ctx;
+    aws_tls_ctx_options_clean_up(&tls_options);
+
     /* ensure pre-existing environment doesn't interfere with tests */
     aws_unset_environment_value(s_ecs_creds_env_relative_uri);
     aws_unset_environment_value(s_ecs_creds_env_full_uri);
@@ -279,6 +287,7 @@ static void s_aws_ecs_tester_reset(void) {
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_host_resolver_release(s_tester.host_resolver);
     aws_event_loop_group_release(s_tester.el_group);
+    aws_tls_ctx_release(s_tester.tls_ctx);
     AWS_ZERO_STRUCT(s_tester);
 }
 
@@ -362,6 +371,7 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
@@ -373,7 +383,7 @@ static int s_credentials_provider_ecs_connect_failure(struct aws_allocator *allo
     aws_mutex_lock(&s_tester.lock);
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
-    ASSERT_UINT_EQUALS(80, s_tester.selected_port);
+    ASSERT_UINT_EQUALS(443, s_tester.selected_port);
     aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
@@ -407,6 +417,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
@@ -419,7 +430,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     ASSERT_STR_EQUALS("/path/to/resource/?a=b&c=d", aws_string_c_str(s_tester.request_path_and_query));
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
-    ASSERT_UINT_EQUALS(80, s_tester.selected_port);
+    ASSERT_UINT_EQUALS(443, s_tester.selected_port);
     aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
@@ -457,7 +468,7 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
-        .port = 555,
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
@@ -471,7 +482,7 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
-    ASSERT_UINT_EQUALS(555, s_tester.selected_port);
+    ASSERT_UINT_EQUALS(443, s_tester.selected_port);
     aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
@@ -487,6 +498,49 @@ static int s_credentials_provider_ecs_bad_document_failure(struct aws_allocator 
 }
 
 AWS_TEST_CASE(credentials_provider_ecs_bad_document_failure, s_credentials_provider_ecs_bad_document_failure);
+
+static int s_credentials_provider_ecs_bad_host_failure(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("www.google.com"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_NULL(s_tester.credentials);
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST, s_tester.error_code);
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_ecs_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_ecs_bad_host_failure, s_credentials_provider_ecs_bad_host_failure);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_good_response,
@@ -655,12 +709,13 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     ASSERT_SUCCESS(s_do_ecs_success_test(
         allocator,
         &options,
-        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d" /*expected_uri*/,
+        "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d" /*expected_uri*/,
         "test-token-1234-abcd" /*expected_token*/));
 
     s_aws_ecs_tester_cleanup();
@@ -697,6 +752,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_string(auth_token),
         .auth_token_file_path = aws_byte_cursor_from_string(token_file_path),
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
@@ -707,7 +763,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
 
     aws_mutex_lock(&s_tester.lock);
     ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(
-        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d",
+        "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d",
         aws_string_c_str(auth_token)));
 
     aws_string_destroy(s_tester.request_path_and_query);
@@ -726,7 +782,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
 
     aws_mutex_lock(&s_tester.lock);
     ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(
-        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d",
+        "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d",
         aws_string_c_str(auth_token2)));
 
     aws_mutex_unlock(&s_tester.lock);
@@ -819,13 +875,32 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
             .auth_token_file_content = "testToken",
             .expected_auth_token = "testToken",
         },
+        /* IPv4 loopback address */
+        {
+            .full_uri = "http://127.1.2.3:456/credentials",
+            .expected_uri = "http://127.1.2.3:456/credentials",
+        },
+        /* IPv4 EKS container host address */
+        {
+            .full_uri = "http://169.254.170.23:8080/credentials",
+            .expected_uri = "http://169.254.170.23:8080/credentials",
+        },
+        /* IPv4 ECS container host address */
+        {
+            .full_uri = "http://169.254.170.2:8080/credentials",
+            .expected_uri = "http://169.254.170.2:8080/credentials",
+        },
+        /* IPv6 loopback address */
+        {
+            .full_uri = "http://[::1]:8080/credentials",
+            .expected_uri = "http://[::1]:8080/credentials",
+        },
+        /* IPv6 EKS host */
+        {
+            .full_uri = "http://[fd00:ec2::23]:8080/credentials",
+            .expected_uri = "http://[fd00:ec2::23]:8080/credentials",
+        },
     };
-
-    /* Provide tls_ctx, in case FULL_URI scheme is "https://" */
-    struct aws_tls_ctx_options tls_options;
-    aws_tls_ctx_options_init_default_client(&tls_options, allocator);
-    struct aws_tls_ctx *tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
-    ASSERT_NOT_NULL(tls_ctx);
 
     for (size_t case_idx = 0; case_idx < AWS_ARRAY_SIZE(test_cases); ++case_idx) {
         struct test_case case_i = test_cases[case_idx];
@@ -852,7 +927,7 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
                     .shutdown_callback = s_on_shutdown_complete,
                     .shutdown_user_data = NULL,
                 },
-            .tls_ctx = tls_ctx,
+            .tls_ctx = s_tester.tls_ctx,
         };
 
         ASSERT_SUCCESS(s_do_ecs_env_success_test(
@@ -868,8 +943,6 @@ static int s_credentials_provider_ecs_basic_success_uri_env(struct aws_allocator
         s_aws_ecs_tester_reset();
     }
 
-    aws_tls_ctx_release(tls_ctx);
-    aws_tls_ctx_options_clean_up(&tls_options);
     s_aws_ecs_tester_cleanup();
     return 0;
 }
@@ -893,12 +966,13 @@ static int s_credentials_provider_ecs_no_auth_token_success(struct aws_allocator
             },
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     ASSERT_SUCCESS(s_do_ecs_success_test(
         allocator,
         &options,
-        "http://www.xxx123321testmocknonexsitingawsservice.com:80/path/to/resource/?a=b&c=d" /*expected_uri*/,
+        "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d" /*expected_uri*/,
         NULL /*expected_token*/));
 
     s_aws_ecs_tester_cleanup();
@@ -935,6 +1009,7 @@ static int s_credentials_provider_ecs_success_multi_part_doc(struct aws_allocato
         .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
         .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
         .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .tls_ctx = s_tester.tls_ctx,
     };
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);

@@ -112,6 +112,9 @@ static struct aws_error_info s_errors[] = {
         AWS_DEFINE_ERROR_INFO_AUTH(
     AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_TOKEN_FILE_PATH,
         "Failed to read the ECS token file specified in the AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE environment variable."),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST,
+        "Failed to establish connection. The specified host is not allowed. It must be a loopback address, ECS/EKS container host, or use HTTPS."),
 };
 /* clang-format on */
 

@@ -10,11 +10,14 @@
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/environment.h>
+#include <aws/common/host_utils.h>
 #include <aws/common/string.h>
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
+#include <aws/io/channel_bootstrap.h>
+#include <aws/io/host_resolver.h>
 #include <aws/io/logging.h>
 #include <aws/io/socket.h>
 #include <aws/io/tls_channel_handler.h>
@@ -45,6 +48,8 @@ struct aws_credentials_provider_ecs_impl {
     struct aws_string *path_and_query;
     struct aws_string *auth_token_file_path;
     struct aws_string *auth_token;
+    struct aws_client_bootstrap *bootstrap;
+    bool is_https;
 };
 
 /*
@@ -459,6 +464,89 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
     s_ecs_query_task_role_credentials(ecs_user_data);
 }
 
+/*
+ * The resolved IP address must satisfy one of the following:
+ * 1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
+ * 2. corresponds to the ECS container host 169.254.170.2
+ * 3. corresponds to the EKS container host IPs (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
+ */
+static bool s_is_valid_remote_host_ip(const struct aws_host_address *host_address) {
+    bool result = false;
+    struct aws_byte_cursor address = aws_byte_cursor_from_string(host_address->address);
+    if (host_address->record_type == AWS_ADDRESS_RECORD_TYPE_A) {
+        const struct aws_byte_cursor ipv4_loopback_address_prefix = aws_byte_cursor_from_c_str("127.");
+        const struct aws_byte_cursor ecs_container_host_address = aws_byte_cursor_from_c_str("169.254.170.2");
+        const struct aws_byte_cursor eks_container_host_address = aws_byte_cursor_from_c_str("169.254.170.23");
+
+        result |= aws_byte_cursor_starts_with(&address, &ipv4_loopback_address_prefix);
+        result |= aws_byte_cursor_eq(&address, &ecs_container_host_address);
+        result |= aws_byte_cursor_eq(&address, &eks_container_host_address);
+
+    } else if (host_address->record_type == AWS_ADDRESS_RECORD_TYPE_AAAA) {
+        /* Check for both the short form and long form of an IPv6 address to be safe. */
+        const struct aws_byte_cursor ipv6_loopback_address = aws_byte_cursor_from_c_str("::1");
+        const struct aws_byte_cursor ipv6_loopback_address_verbose = aws_byte_cursor_from_c_str("0:0:0:0:0:0:0:1");
+        const struct aws_byte_cursor eks_container_host_ipv6_address = aws_byte_cursor_from_c_str("fd00:ec2::23");
+        const struct aws_byte_cursor eks_container_host_ipv6_address_verbose =
+            aws_byte_cursor_from_c_str("fd00:ec2:0:0:0:0:0:23");
+
+        result |= aws_byte_cursor_eq(&address, &ipv6_loopback_address);
+        result |= aws_byte_cursor_eq(&address, &ipv6_loopback_address_verbose);
+        result |= aws_byte_cursor_eq(&address, &eks_container_host_ipv6_address);
+        result |= aws_byte_cursor_eq(&address, &eks_container_host_ipv6_address_verbose);
+    }
+
+    return result;
+}
+
+static void s_on_host_resolved(
+    struct aws_host_resolver *resolver,
+    const struct aws_string *host_name,
+    int error_code,
+    const struct aws_array_list *host_addresses,
+    void *user_data) {
+    (void)resolver;
+    (void)host_name;
+
+    struct aws_credentials_provider_ecs_user_data *ecs_user_data = user_data;
+    if (error_code) {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: ECS provider failed to resolve host, error code %d(%s)",
+            (void *)ecs_user_data->ecs_provider,
+            error_code,
+            aws_error_str(error_code));
+        ecs_user_data->error_code = error_code;
+        s_ecs_finalize_get_credentials_query(ecs_user_data);
+        return;
+    }
+    size_t host_addresses_len = aws_array_list_length(host_addresses);
+    if (!host_addresses_len) {
+        goto on_error;
+    }
+    for (size_t i = 0; i < host_addresses_len; ++i) {
+        struct aws_host_address *host_address_ptr = NULL;
+        aws_array_list_get_at_ptr(host_addresses, (void **)&host_address_ptr, i);
+        if (!s_is_valid_remote_host_ip(host_address_ptr)) {
+            goto on_error;
+        }
+    }
+    struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
+    impl->function_table->aws_http_connection_manager_acquire_connection(
+        impl->connection_manager, s_ecs_on_acquire_connection, ecs_user_data);
+
+    return;
+on_error:
+    AWS_LOGF_ERROR(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "id=%p: ECS provider failed to resolve address to an allowed ip address with error %d(%s)",
+        (void *)ecs_user_data->ecs_provider,
+        AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST,
+        aws_error_str(AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST));
+    ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST;
+    s_ecs_finalize_get_credentials_query(ecs_user_data);
+}
+
 static int s_credentials_provider_ecs_get_credentials_async(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
@@ -474,10 +562,19 @@ static int s_credentials_provider_ecs_get_credentials_async(
     if (wrapped_user_data == NULL) {
         goto error;
     }
-
-    impl->function_table->aws_http_connection_manager_acquire_connection(
-        impl->connection_manager, s_ecs_on_acquire_connection, wrapped_user_data);
-
+    /* No need to verify the host IP address if the connection is using HTTPS or the ECS container host (relative URI)
+     */
+    if (impl->is_https || aws_string_eq(impl->host, s_ecs_host)) {
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_ecs_on_acquire_connection, wrapped_user_data);
+    } else if (aws_host_resolver_resolve_host(
+                   impl->bootstrap->host_resolver,
+                   impl->host,
+                   s_on_host_resolved,
+                   &impl->bootstrap->host_resolver_config,
+                   wrapped_user_data)) {
+        goto error;
+    }
     return AWS_OP_SUCCESS;
 
 error:
@@ -497,6 +594,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
     aws_string_destroy(impl->auth_token);
     aws_string_destroy(impl->auth_token_file_path);
     aws_string_destroy(impl->host);
+    aws_client_bootstrap_release(impl->bootstrap);
 
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
      * which will do memory release for provider and impl. So We should be freeing impl
@@ -554,7 +652,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_ecs_vtable, impl);
-
+    impl->bootstrap = aws_client_bootstrap_acquire(options->bootstrap);
     struct aws_tls_connection_options tls_connection_options;
     AWS_ZERO_STRUCT(tls_connection_options);
     if (options->tls_ctx) {
@@ -568,6 +666,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
                 aws_error_debug_str(aws_last_error()));
             goto on_error;
         }
+        impl->is_https = true;
     }
 
     struct aws_socket_options socket_options;
