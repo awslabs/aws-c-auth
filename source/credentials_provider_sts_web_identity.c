@@ -207,7 +207,7 @@ static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *node, void *
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Code")) {
 
-        struct aws_byte_cursor data_cursor = {0,0};
+        struct aws_byte_cursor data_cursor = {0, 0};
         if (aws_xml_node_as_body(node, &data_cursor)) {
             return AWS_OP_ERR;
         }
