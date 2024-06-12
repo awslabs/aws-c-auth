@@ -30,9 +30,9 @@ struct aws_credentials_query {
     void *user_data;
 };
 
-typedef struct aws_http_connection_manager *(aws_http_connection_manager_new_fn)(
-    struct aws_allocator *allocator,
-    const struct aws_http_connection_manager_options *options);
+typedef struct aws_http_connection_manager *(
+    aws_http_connection_manager_new_fn)(struct aws_allocator *allocator,
+                                        const struct aws_http_connection_manager_options *options);
 typedef void(aws_http_connection_manager_release_fn)(struct aws_http_connection_manager *manager);
 typedef void(aws_http_connection_manager_acquire_connection_fn)(
     struct aws_http_connection_manager *manager,
@@ -41,9 +41,9 @@ typedef void(aws_http_connection_manager_acquire_connection_fn)(
 typedef int(aws_http_connection_manager_release_connection_fn)(
     struct aws_http_connection_manager *manager,
     struct aws_http_connection *connection);
-typedef struct aws_http_stream *(aws_http_connection_make_request_fn)(
-    struct aws_http_connection *client_connection,
-    const struct aws_http_make_request_options *options);
+typedef struct aws_http_stream *(
+    aws_http_connection_make_request_fn)(struct aws_http_connection *client_connection,
+                                         const struct aws_http_make_request_options *options);
 typedef int(aws_http_stream_activate_fn)(struct aws_http_stream *stream);
 typedef struct aws_http_connection *(aws_http_stream_get_connection_fn)(const struct aws_http_stream *stream);
 
