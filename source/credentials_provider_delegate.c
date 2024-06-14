@@ -47,10 +47,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_delegate(
         &impl,
         sizeof(struct aws_credentials_provider_delegate_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
