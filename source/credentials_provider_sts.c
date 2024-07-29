@@ -57,6 +57,7 @@ struct aws_credentials_provider_sts_impl {
     struct aws_http_connection_manager *connection_manager;
     struct aws_string *assume_role_profile;
     struct aws_string *role_session_name;
+    struct aws_string *external_id;
     struct aws_string *endpoint;
     struct aws_string *region;
     uint16_t duration_seconds;
@@ -155,6 +156,18 @@ static int s_write_body_to_buffer(struct aws_credentials_provider *provider, str
     struct aws_byte_cursor session_cur = aws_byte_cursor_from_string(provider_impl->role_session_name);
     if (aws_byte_buf_append_encoding_uri_param(body, &session_cur)) {
         return AWS_OP_ERR;
+    }
+
+    if (provider_impl->external_id != NULL) {
+        working_cur = aws_byte_cursor_from_c_str("&ExternalId=");
+        if (aws_byte_buf_append_dynamic(body, &working_cur)) {
+            return AWS_OP_ERR;
+        }
+
+        struct aws_byte_cursor external_id_cur = aws_byte_cursor_from_string(provider_impl->external_id);
+        if (aws_byte_buf_append_encoding_uri_param(body, &external_id_cur)) {
+            return AWS_OP_ERR;
+        }
     }
 
     working_cur = aws_byte_cursor_from_c_str("&DurationSeconds=");
@@ -652,6 +665,7 @@ static void s_on_credentials_provider_shutdown(void *user_data) {
 
     aws_string_destroy(impl->role_session_name);
     aws_string_destroy(impl->assume_role_profile);
+    aws_string_destroy(impl->external_id);
     aws_string_destroy(impl->endpoint);
     aws_string_destroy(impl->region);
     aws_mem_release(provider->allocator, provider);
@@ -780,28 +794,27 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
 
     impl->role_session_name =
         aws_string_new_from_array(allocator, options->session_name.ptr, options->session_name.len);
-
-    if (!impl->role_session_name) {
-        goto on_done;
-    }
-
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): using session_name %s",
+        "(id=%p): using session_name '%s'",
         (void *)provider,
         aws_string_c_str(impl->role_session_name));
 
     impl->assume_role_profile = aws_string_new_from_array(allocator, options->role_arn.ptr, options->role_arn.len);
-
-    if (!impl->assume_role_profile) {
-        goto on_done;
-    }
-
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): using assume_role_arn %s",
+        "(id=%p): using assume_role_arn '%s'",
         (void *)provider,
         aws_string_c_str(impl->assume_role_profile));
+
+    if (options->external_id.len > 0) {
+        impl->external_id = aws_string_new_from_cursor(allocator, &options->external_id);
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): using external_id '%s'",
+            (void *)provider,
+            aws_string_c_str(impl->external_id));
+    }
 
     impl->duration_seconds = options->duration_seconds;
 

@@ -388,6 +388,7 @@ static struct aws_byte_cursor s_session_token_cur = AWS_BYTE_CUR_INIT_FROM_STRIN
 static struct aws_byte_cursor s_role_arn_cur =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("arn:aws:iam::67895:role/test_role");
 static struct aws_byte_cursor s_session_name_cur = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("test_session");
+static struct aws_byte_cursor s_external_id_cur = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("externalId123_+=,.@:\\/-");
 
 static struct aws_byte_cursor s_success_creds_doc =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("<AssumeRoleResponse xmlns=\"who cares\">\n"
@@ -409,6 +410,14 @@ static struct aws_byte_cursor s_success_creds_doc =
 static struct aws_byte_cursor s_expected_payload =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15&Action=AssumeRole&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%"
                                           "3Arole%2Ftest_role&RoleSessionName=test_session&DurationSeconds=900");
+
+static struct aws_byte_cursor s_expected_payload_with_external_id =
+    AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Version=2011-06-15"
+                                          "&Action=AssumeRole"
+                                          "&RoleArn=arn%3Aaws%3Aiam%3A%3A67895%3Arole%2Ftest_role"
+                                          "&RoleSessionName=test_session"
+                                          "&ExternalId=externalId123_%2B%3D%2C.%40%3A%5C%2F-"
+                                          "&DurationSeconds=900");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_response, "accessKeyIdResp");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_response, "secretKeyResp");
@@ -507,6 +516,61 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
 }
 
 AWS_TEST_CASE(credentials_provider_sts_direct_config_succeeds, s_credentials_provider_sts_direct_config_succeeds_fn)
+
+static int s_credentials_provider_sts_direct_config_with_external_id_succeeds_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .external_id = s_external_id_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    mock_aws_set_system_time(0);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_payload_with_external_id.ptr,
+        s_expected_payload_with_external_id.len,
+        s_tester.mocked_requests[0].body.buffer,
+        s_tester.mocked_requests[0].body.len);
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_direct_config_with_external_id_succeeds,
+    s_credentials_provider_sts_direct_config_with_external_id_succeeds_fn)
 
 static int s_credentials_provider_sts_direct_config_with_region_succeeds_fn(
     struct aws_allocator *allocator,
@@ -1043,31 +1107,41 @@ AWS_TEST_CASE(
     credentials_provider_sts_direct_config_service_fails,
     s_credentials_provider_sts_direct_config_service_fails_fn)
 
-static const char *s_soure_profile_config_file = "[default]\n"
-                                                 "aws_access_key_id=BLAHBLAH\n"
-                                                 "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                 "\n"
-                                                 "[roletest]\n"
-                                                 "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                 "source_profile=default\n"
-                                                 "role_session_name=test_session";
+static const char *s_source_profile_config_file = "[default]\n"
+                                                  "aws_access_key_id=BLAHBLAH\n"
+                                                  "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                  "\n"
+                                                  "[roletest]\n"
+                                                  "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                  "source_profile=default\n"
+                                                  "role_session_name=test_session";
 
-static const char *s_soure_profile_chain_config_file = "[default]\n"
-                                                       "aws_access_key_id=BLAHBLAH\n"
-                                                       "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                       "\n"
-                                                       "[roletest]\n"
-                                                       "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                       "source_profile=roletest2\n"
-                                                       "role_session_name=test_session\n"
-                                                       "[roletest2]\n"
-                                                       "role_arn=arn:aws:iam::67896:role/test_role\n"
-                                                       "source_profile=roletest3\n"
-                                                       "role_session_name=test_session2\n"
-                                                       "[roletest3]\n"
-                                                       "role_arn=arn:aws:iam::67897:role/test_role\n"
-                                                       "source_profile=default\n"
-                                                       "role_session_name=test_session3\n";
+static const char *s_source_profile_external_id_config_file = "[default]\n"
+                                                              "aws_access_key_id=BLAHBLAH\n"
+                                                              "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                              "\n"
+                                                              "[roletest]\n"
+                                                              "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                              "source_profile=default\n"
+                                                              "role_session_name=test_session\n"
+                                                              "external_id=externalId123_+=,.@:\\/-\n";
+
+static const char *s_source_profile_chain_config_file = "[default]\n"
+                                                        "aws_access_key_id=BLAHBLAH\n"
+                                                        "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                        "\n"
+                                                        "[roletest]\n"
+                                                        "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                        "source_profile=roletest2\n"
+                                                        "role_session_name=test_session\n"
+                                                        "[roletest2]\n"
+                                                        "role_arn=arn:aws:iam::67896:role/test_role\n"
+                                                        "source_profile=roletest3\n"
+                                                        "role_session_name=test_session2\n"
+                                                        "[roletest3]\n"
+                                                        "role_arn=arn:aws:iam::67897:role/test_role\n"
+                                                        "source_profile=default\n"
+                                                        "role_session_name=test_session3\n";
 
 static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -1078,7 +1152,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
 
     s_aws_sts_tester_init(allocator);
     s_tester.expected_connection_manager_shutdown_callback_count = 3;
-    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_chain_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_chain_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1676,7 +1750,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds(
 
     s_aws_sts_tester_init(allocator);
 
-    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1762,6 +1836,63 @@ static int credentials_provider_sts_from_profile_config_manual_tls_succeeds_fn(
 AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_manual_tls_succeeds,
     credentials_provider_sts_from_profile_config_manual_tls_succeeds_fn)
+
+static int s_credentials_provider_sts_from_profile_config_with_external_id_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    aws_unset_environment_value(s_default_profile_env_variable_name);
+    aws_unset_environment_value(s_default_config_path_env_variable_name);
+    aws_unset_environment_value(s_default_credentials_path_env_variable_name);
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_external_id_config_file);
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(creds_file_str, config_contents));
+    aws_string_destroy(config_contents);
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+    };
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        s_expected_payload_with_external_id.ptr,
+        s_expected_payload_with_external_id.len,
+        s_tester.mocked_requests[0].body.buffer,
+        s_tester.mocked_requests[0].body.len);
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_from_profile_config_with_external_id,
+    s_credentials_provider_sts_from_profile_config_with_external_id_fn)
 
 static const char *s_env_source_config_file = "[default]\n"
                                               "aws_access_key_id=BLAHBLAH\n"
