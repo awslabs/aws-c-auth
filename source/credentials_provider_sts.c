@@ -753,6 +753,18 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         return NULL;
     }
 
+    if (options->role_arn.len == 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "role_arn is necessary for querying STS");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
+    if (options->session_name.len == 0) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "role_session_name is necessary for querying STS");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_sts_impl *impl = NULL;
     int result = AWS_OP_ERR;
@@ -796,14 +808,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         aws_string_new_from_array(allocator, options->session_name.ptr, options->session_name.len);
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): using session_name '%s'",
+        "(id=%p): using role_session_name '%s'",
         (void *)provider,
         aws_string_c_str(impl->role_session_name));
 
     impl->assume_role_profile = aws_string_new_from_array(allocator, options->role_arn.ptr, options->role_arn.len);
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): using assume_role_arn '%s'",
+        "(id=%p): using role_arn '%s'",
         (void *)provider,
         aws_string_c_str(impl->assume_role_profile));
 
