@@ -23,6 +23,7 @@
 
 AWS_STRING_FROM_LITERAL(s_role_arn_name, "role_arn");
 AWS_STRING_FROM_LITERAL(s_role_session_name_name, "role_session_name");
+AWS_STRING_FROM_LITERAL(s_external_id_name, "external_id");
 AWS_STRING_FROM_LITERAL(s_credential_source_name, "credential_source");
 AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
 AWS_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
@@ -235,6 +236,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     struct aws_hash_table *source_profiles_table) {
     struct aws_credentials_provider *provider = NULL;
 
+    /* role_arn */
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "static: profile %s has role_arn property is set to %s, attempting to "
@@ -247,6 +249,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     const struct aws_profile_property *credential_source_property =
         aws_profile_get_property(profile, s_credential_source_name);
 
+    /* role_session_name */
     const struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
     char session_name_array[MAX_SESSION_NAME_LEN + 1];
     AWS_ZERO_ARRAY(session_name_array);
@@ -273,6 +276,13 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
     }
 
     AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: computed session_name as %s", session_name_array);
+
+    /* external_id */
+    struct aws_byte_cursor external_id = {0};
+    const struct aws_profile_property *external_id_property = aws_profile_get_property(profile, s_external_id_name);
+    if (external_id_property) {
+        external_id = aws_byte_cursor_from_string(aws_profile_property_get_value(external_id_property));
+    }
 
     /* Automatically create a TLS context if necessary. We'd prefer that users pass one in, but can't force
      * them to because aws_credentials_provider_profile_options didn't always have a tls_ctx member. */
@@ -301,6 +311,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         .bootstrap = options->bootstrap,
         .tls_ctx = tls_ctx,
         .role_arn = aws_byte_cursor_from_string(aws_profile_property_get_value(role_arn_property)),
+        .external_id = external_id,
         .session_name = aws_byte_cursor_from_c_str(session_name_array),
         .profile_name_override = options->profile_name_override,
         .config_file_name_override = options->config_file_name_override,

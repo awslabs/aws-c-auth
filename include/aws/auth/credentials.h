@@ -510,6 +510,11 @@ struct aws_credentials_provider_sts_options {
     struct aws_byte_cursor session_name;
 
     /*
+     * (Optional) Unique identifier for assuming a role in another account
+     */
+    struct aws_byte_cursor external_id;
+
+    /*
      * How long sourced credentials should remain valid for, in seconds.  900 is the minimum allowed value.
      */
     uint16_t duration_seconds;
