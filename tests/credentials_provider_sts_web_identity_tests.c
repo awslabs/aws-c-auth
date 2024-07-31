@@ -504,6 +504,55 @@ AWS_TEST_CASE(
     credentials_provider_sts_web_identity_new_destroy_from_config,
     s_credentials_provider_sts_web_identity_new_destroy_from_config);
 
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_basic_config_file,
+    "[profile foo]\n"
+    "region=us-east-1\n");
+
+static int s_credentials_provider_sts_web_identity_fail_with_empty_config_or_env(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+
+    struct aws_byte_buf content_buf =
+        aws_byte_buf_from_c_str(aws_string_c_str(s_basic_config_file));
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_sts_web_identity_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+        s_aws_sts_web_identity_test_init_env_parameters(
+        allocator,
+        "",
+        "",
+        "",
+        "");
+
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    ASSERT_NULL(aws_credentials_provider_new_sts_web_identity(allocator, &options));
+    s_aws_sts_web_identity_tester_cleanup();
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_fail_with_empty_config_or_env,
+    s_credentials_provider_sts_web_identity_fail_with_empty_config_or_env);
+
+
 static int s_credentials_provider_sts_web_identity_new_destroy_from_cached_config(
     struct aws_allocator *allocator,
     void *ctx) {
