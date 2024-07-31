@@ -924,6 +924,7 @@ static void s_check_or_get_with_profile_config(
     if ((!(*target) || !(*target)->len)) {
         if (*target) {
             aws_string_destroy(*target);
+            *target = NULL;
         }
         const struct aws_profile_property *property = aws_profile_get_property(profile, config_key);
         if (property) {
