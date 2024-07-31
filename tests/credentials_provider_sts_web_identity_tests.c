@@ -509,7 +509,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "[profile foo]\n"
     "region=us-east-1\n");
 
-static int s_credentials_provider_sts_web_identity_fail_with_empty_config_or_env(
+static int s_credentials_provider_sts_web_identity_fail_with_empty_config_and_env(
     struct aws_allocator *allocator,
     void *ctx) {
     (void)ctx;
@@ -543,8 +543,8 @@ static int s_credentials_provider_sts_web_identity_fail_with_empty_config_or_env
     return 0;
 }
 AWS_TEST_CASE(
-    credentials_provider_sts_web_identity_fail_with_empty_config_or_env,
-    s_credentials_provider_sts_web_identity_fail_with_empty_config_or_env);
+    credentials_provider_sts_web_identity_fail_with_empty_config_and_env,
+    s_credentials_provider_sts_web_identity_fail_with_empty_config_and_env);
 
 static int s_credentials_provider_sts_web_identity_new_destroy_from_cached_config(
     struct aws_allocator *allocator,
