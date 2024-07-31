@@ -411,6 +411,50 @@ static int s_credentials_provider_process_basic_success(struct aws_allocator *al
 }
 AWS_TEST_CASE(credentials_provider_process_basic_success, s_credentials_provider_process_basic_success);
 
+static int s_credentials_provider_process_basic_success_from_profile_provider(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_process_tester_init(allocator);
+
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_test_command);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    s_aws_process_test_init_config_profile(allocator, config_file_contents);
+    aws_string_destroy(config_file_contents);
+
+    struct aws_credentials_provider_profile_options options = {
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .profile_name_override = aws_byte_cursor_from_string(s_credentials_process_profile),
+    };
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_process_tester_cleanup();
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_process_basic_success_from_profile_provider, s_credentials_provider_process_basic_success_from_profile_provider);
+
 static int s_credentials_provider_process_basic_success_cached(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
