@@ -335,7 +335,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
      */
     aws_credentials_provider_release(environment_provider);
     aws_credentials_provider_release(profile_provider);
-    aws_credentials_provider_release(process_provider);
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(ecs_or_imds_provider);
 
@@ -377,7 +376,6 @@ on_error:
     } else {
         aws_credentials_provider_release(ecs_or_imds_provider);
         aws_credentials_provider_release(profile_provider);
-        aws_credentials_provider_release(process_provider);
         aws_credentials_provider_release(sts_provider);
         aws_credentials_provider_release(environment_provider);
     }

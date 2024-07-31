@@ -411,7 +411,9 @@ static int s_credentials_provider_process_basic_success(struct aws_allocator *al
 }
 AWS_TEST_CASE(credentials_provider_process_basic_success, s_credentials_provider_process_basic_success);
 
-static int s_credentials_provider_process_basic_success_from_profile_provider(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_process_basic_success_from_profile_provider(
+    struct aws_allocator *allocator,
+    void *ctx) {
     (void)ctx;
 
     s_aws_process_tester_init(allocator);
@@ -453,7 +455,9 @@ static int s_credentials_provider_process_basic_success_from_profile_provider(st
     s_aws_process_tester_cleanup();
     return 0;
 }
-AWS_TEST_CASE(credentials_provider_process_basic_success_from_profile_provider, s_credentials_provider_process_basic_success_from_profile_provider);
+AWS_TEST_CASE(
+    credentials_provider_process_basic_success_from_profile_provider,
+    s_credentials_provider_process_basic_success_from_profile_provider);
 
 static int s_credentials_provider_process_basic_success_cached(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;

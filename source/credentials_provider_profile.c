@@ -232,7 +232,7 @@ static struct aws_credentials_provider *s_create_process_based_provider(
         aws_string_c_str(profile_name));
 
     struct aws_credentials_provider_process_options options = {
-        .profile_to_use = aws_byte_cursor_from_string(profile_name), 
+        .profile_to_use = aws_byte_cursor_from_string(profile_name),
         .config_profile_collection_cached = profile_collection,
     };
     return aws_credentials_provider_new_process(allocator, &options);
