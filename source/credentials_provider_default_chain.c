@@ -230,7 +230,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_tls_ctx *tls_ctx = NULL;
     struct aws_credentials_provider *environment_provider = NULL;
     struct aws_credentials_provider *profile_provider = NULL;
-    struct aws_credentials_provider *process_provider = NULL;
     struct aws_credentials_provider *sts_provider = NULL;
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
@@ -263,7 +262,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 #endif /* BYO_CRYPTO */
     }
 
-    enum { providers_size = 5 };
+    enum { providers_size = 4 };
     struct aws_credentials_provider *providers[providers_size];
     AWS_ZERO_ARRAY(providers);
     size_t index = 0;
@@ -306,18 +305,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     if (sts_provider != NULL) {
         providers[index++] = sts_provider;
         /* 1 shutdown call from the web identity provider's shutdown */
-        aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
-    }
-
-    struct aws_credentials_provider_process_options process_options;
-    AWS_ZERO_STRUCT(process_options);
-    process_options.shutdown_options = sub_provider_shutdown_options;
-    process_options.config_profile_collection_cached = options->profile_collection_cached;
-    process_options.profile_to_use = options->profile_name_override;
-    process_provider = aws_credentials_provider_new_process(allocator, &process_options);
-    if (process_provider != NULL) {
-        providers[index++] = process_provider;
-        /* 1 shutdown call from the process provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
     }
 
