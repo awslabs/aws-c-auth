@@ -28,6 +28,7 @@ AWS_STRING_FROM_LITERAL(s_credential_source_name, "credential_source");
 AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
 AWS_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
 AWS_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "aws_secret_access_key");
+AWS_STATIC_STRING_FROM_LITERAL(s_credentials_process, "credential_process");
 
 static struct aws_byte_cursor s_default_session_name_pfx =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime-profile-config");
@@ -219,6 +220,22 @@ static struct aws_credentials_provider *s_create_profile_based_provider(
     impl->profile_name = aws_string_clone_or_reuse(allocator, profile_name);
     impl->profile_collection_cached = aws_profile_collection_acquire(profile_collection_cached);
     return provider;
+}
+
+static struct aws_credentials_provider *s_create_process_based_provider(
+    struct aws_allocator *allocator,
+    const struct aws_string *profile_name,
+    struct aws_profile_collection *profile_collection) {
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "static: profile %s attempting to create process-based credentials provider",
+        aws_string_c_str(profile_name));
+
+    struct aws_credentials_provider_process_options options = {
+        .profile_to_use = aws_byte_cursor_from_string(profile_name),
+        .config_profile_collection_cached = profile_collection,
+    };
+    return aws_credentials_provider_new_process(allocator, &options);
 }
 
 static struct aws_credentials_provider *s_credentials_provider_new_profile_internal(
@@ -492,6 +509,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
             aws_string_c_str(profile_name));
         goto on_finished;
     }
+    /* check if sts provider is applicable */
     const struct aws_profile_property *role_arn_property = aws_profile_get_property(profile, s_role_arn_name);
     bool profile_contains_access_key = aws_profile_get_property(profile, s_access_key_id_profile_var) != NULL;
     bool profile_contains_secret_access_key =
@@ -513,9 +531,15 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     }
 
     aws_hash_table_put(source_profiles_table, (void *)aws_string_c_str(profile_name), NULL, 0);
+
+    /* check if process provider is applicable */
+    const struct aws_profile_property *process_property = aws_profile_get_property(profile, s_credentials_process);
+
     if (role_arn_property && (first_profile_in_chain || !profile_contains_credentials)) {
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profiles_table);
+    } else if (process_property) {
+        provider = s_create_process_based_provider(allocator, profile_name, merged_profiles);
     } else {
         provider = s_create_profile_based_provider(
             allocator, credentials_file_path, config_file_path, profile_name, options->profile_collection_cached);
