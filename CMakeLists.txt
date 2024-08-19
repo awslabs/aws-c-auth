@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.13)
 project(aws-c-auth C)
 
 if (DEFINED CMAKE_PREFIX_PATH)
@@ -61,7 +61,6 @@ file(GLOB AUTH_SRC
         ${AWS_AUTH_ROOT_SRC}
         )
 
-aws_set_common_policies()
 add_library(${PROJECT_NAME} ${LIBTYPE} ${AUTH_HEADERS} ${AUTH_SRC})
 aws_set_common_properties(${PROJECT_NAME})
 aws_prepare_symbol_visibility_args(${PROJECT_NAME} "AWS_AUTH")
