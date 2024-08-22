@@ -2078,7 +2078,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
         s_tester.mocked_requests[0].body.len);
 
     /* advance each time to a little before expiration, verify we get creds with the same expiration */
-    uint64_t eight_hundred_seconds_in_ns = aws_timestamp_convert(800, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    uint64_t eight_hundred_seconds_in_ns = aws_timestamp_convert(599, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
     mock_aws_set_system_time(eight_hundred_seconds_in_ns);
     mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + eight_hundred_seconds_in_ns);
 

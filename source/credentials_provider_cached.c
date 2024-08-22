@@ -120,6 +120,8 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
                         AWS_TIMESTAMP_SECS,
                         AWS_TIMESTAMP_NANOS,
                         NULL);
+                } else {
+                    next_refresh_time_in_ns = high_res_now;
                 }
             }
         }
