@@ -20,7 +20,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 
 */
 
-#define REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS 10
+#define REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS 60 * 5 /* 5 minutes */
 
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
