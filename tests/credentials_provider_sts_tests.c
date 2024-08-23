@@ -2091,8 +2091,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
 
     /* advance each time to after expiration but before cached provider timeout, verify we get new creds */
-    uint64_t after_expiration_time =
-        aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    uint64_t after_expiration_time = aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
     mock_aws_set_system_time(after_expiration_time);
     mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + after_expiration_time);
 
