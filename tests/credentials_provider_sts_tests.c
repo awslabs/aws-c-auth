@@ -2078,9 +2078,9 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
         s_tester.mocked_requests[0].body.len);
 
     /* advance each time to a little before expiration, verify we get creds with the same expiration */
-    uint64_t eight_hundred_seconds_in_ns = aws_timestamp_convert(800, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
-    mock_aws_set_system_time(eight_hundred_seconds_in_ns);
-    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + eight_hundred_seconds_in_ns);
+    uint64_t before_expiration_time = aws_timestamp_convert(599, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    mock_aws_set_system_time(before_expiration_time);
+    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + before_expiration_time);
 
     s_cleanup_creds_callback_data();
 
@@ -2091,10 +2091,9 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
     ASSERT_TRUE(aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == 900);
 
     /* advance each time to after expiration but before cached provider timeout, verify we get new creds */
-    uint64_t nine_hundred_and_one_seconds_in_ns =
-        aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
-    mock_aws_set_system_time(nine_hundred_and_one_seconds_in_ns);
-    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + nine_hundred_and_one_seconds_in_ns);
+    uint64_t after_expiration_time = aws_timestamp_convert(901, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+    mock_aws_set_system_time(after_expiration_time);
+    mock_aws_set_high_res_time(HIGH_RES_BASE_TIME_NS + after_expiration_time);
 
     s_cleanup_creds_callback_data();
 
