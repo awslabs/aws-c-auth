@@ -1,0 +1,9 @@
+POST
+/
+
+host:example.amazonaws.com
+x-amz-content-sha256:UNSIGNED-PAYLOAD
+x-amz-date:20150830T123600Z
+
+host;x-amz-content-sha256;x-amz-date
+UNSIGNED-PAYLOAD
