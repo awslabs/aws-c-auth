@@ -45,9 +45,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
     const struct aws_credentials_provider_static_options *options) {
 
     struct aws_credentials_provider *provider = aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*provider);
 
