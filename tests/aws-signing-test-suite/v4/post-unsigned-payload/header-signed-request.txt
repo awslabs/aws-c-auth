@@ -1,0 +1,8 @@
+POST / HTTP/1.1
+Host:example.amazonaws.com
+Content-Length:13
+X-Amz-Date:20150830T123600Z
+x-amz-content-sha256:UNSIGNED-PAYLOAD
+Authorization:AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=content-length;host;x-amz-content-sha256;x-amz-date, Signature=9fb60e8938d2178a7d63b49e055d1e65d8f6226f38846e8e0293bf43ce29050c
+
+Param1=value1
