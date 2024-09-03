@@ -209,6 +209,7 @@ struct v4_test_context {
     struct aws_credentials *credentials;
     bool should_normalize;
     bool should_sign_body;
+    struct aws_string *signed_body_value;
     uint64_t expiration_in_seconds;
     struct aws_input_stream *payload_stream;
     struct aws_ecc_key_pair *signing_key;
@@ -242,6 +243,7 @@ static void s_v4_test_context_clean_up(struct v4_test_context *context) {
     aws_string_destroy(context->region_config);
     aws_string_destroy(context->service);
     aws_string_destroy(context->timestamp);
+    aws_string_destroy(context->signed_body_value);
     aws_credentials_release(context->credentials);
 
     aws_mutex_clean_up(&context->lock);
@@ -265,6 +267,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_service_name, "service");
 AWS_STATIC_STRING_FROM_LITERAL(s_timestamp_name, "timestamp");
 AWS_STATIC_STRING_FROM_LITERAL(s_normalize_name, "normalize");
 AWS_STATIC_STRING_FROM_LITERAL(s_body_name, "sign_body");
+AWS_STATIC_STRING_FROM_LITERAL(s_signed_body_value_name, "signed_body_value");
 AWS_STATIC_STRING_FROM_LITERAL(s_expiration_name, "expiration_in_seconds");
 AWS_STATIC_STRING_FROM_LITERAL(s_omit_token_name, "omit_session_token");
 
@@ -384,6 +387,20 @@ static int s_v4_test_context_parse_context_file(struct v4_test_context *context)
     }
 
     aws_json_value_get_boolean(body_node, &context->should_sign_body);
+
+    struct aws_json_value *signed_body_value_node =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_signed_body_value_name));
+    if (signed_body_value_node != NULL && aws_json_value_is_string(signed_body_value_node)) {
+        struct aws_byte_cursor signed_body_value_cursor;
+        /* Optional field. If not set, ignore it. */
+        if (aws_json_value_get_string(signed_body_value_node, &signed_body_value_cursor) == AWS_OP_ERR) {
+            goto done;
+        }
+        context->signed_body_value = aws_string_new_from_cursor(context->allocator, &signed_body_value_cursor);
+        if (context->signed_body_value == NULL) {
+            goto done;
+        }
+    }
 
     struct aws_json_value *expiration_node =
         aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_expiration_name));
@@ -586,6 +603,10 @@ static int s_v4_test_context_init_signing_config(
         context->config->signed_body_header = AWS_SBHT_X_AMZ_CONTENT_SHA256;
     } else {
         context->config->signed_body_value = g_aws_signed_body_value_empty_sha256;
+    }
+    if (context->signed_body_value) {
+        /* Override the signed body value */
+        context->config->signed_body_value = aws_byte_cursor_from_string(context->signed_body_value);
     }
 
     context->config->credentials = context->credentials;
@@ -1407,6 +1428,7 @@ DECLARE_SIGV4A_TEST_SUITE_CASE(post_header_value_case, "post-header-value-case")
 DECLARE_SIGV4A_TEST_SUITE_CASE(post_vanilla, "post-vanilla");
 DECLARE_SIGV4A_TEST_SUITE_CASE(post_vanilla_empty_query_value, "post-vanilla-empty-query-value");
 DECLARE_SIGV4A_TEST_SUITE_CASE(post_vanilla_query, "post-vanilla-query");
+DECLARE_SIGV4A_TEST_SUITE_CASE(post_unsigned_payload, "post-unsigned-payload");
 DECLARE_SIGV4A_TEST_SUITE_CASE(post_x_www_form_urlencoded, "post-x-www-form-urlencoded");
 DECLARE_SIGV4A_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www-form-urlencoded-parameters");
 DECLARE_SIGV4A_TEST_SUITE_CASE(get_vanilla_with_session_token, "get-vanilla-with-session-token");
@@ -1470,6 +1492,7 @@ DECLARE_SIGV4_TEST_SUITE_CASE(post_header_value_case, "post-header-value-case");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla, "post-vanilla");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla_empty_query_value, "post-vanilla-empty-query-value");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_vanilla_query, "post-vanilla-query");
+DECLARE_SIGV4_TEST_SUITE_CASE(post_unsigned_payload, "post-unsigned-payload");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded, "post-x-www-form-urlencoded");
 DECLARE_SIGV4_TEST_SUITE_CASE(post_x_www_form_urlencoded_parameters, "post-x-www-form-urlencoded-parameters");
 DECLARE_SIGV4_TEST_SUITE_CASE(get_vanilla_with_session_token, "get-vanilla-with-session-token");
