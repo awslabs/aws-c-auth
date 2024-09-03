@@ -6,8 +6,8 @@ on:
       - 'main'
 
 env:
-  BUILDER_VERSION: v0.9.62
-  BUILDER_SOURCE: releases
+  BUILDER_VERSION: sse2-lc
+  BUILDER_SOURCE: channels
   BUILDER_HOST: https://d19elf31gohf1l.cloudfront.net
   PACKAGE_NAME: aws-c-auth
   LINUX_BASE_IMAGE: ubuntu-18-x64
