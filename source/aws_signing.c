@@ -1351,19 +1351,19 @@ static int s_build_canonical_stable_header_list(
         }
 
         /* NOTE: Update MAX_AUTHORIZATION_HEADER_COUNT if more headers added */
-    } else if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+    } else if (
+        state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
+        aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
         /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
-        if (aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
-            /* Add unsigned payload as `x-amz-content-sha256` header to the canonical request when signing through query
-             * params.  */
-            if (s_add_authorization_header(
-                    state,
-                    stable_header_list,
-                    out_required_capacity,
-                    s_amz_content_sha256_header_name,
-                    g_aws_signed_body_value_unsigned_payload)) {
-                return AWS_OP_ERR;
-            }
+        /* Add unsigned payload as `x-amz-content-sha256` header to the canonical request when signing through query
+         * params.  */
+        if (s_add_authorization_header(
+                state,
+                stable_header_list,
+                out_required_capacity,
+                s_amz_content_sha256_header_name,
+                g_aws_signed_body_value_unsigned_payload)) {
+            return AWS_OP_ERR;
         }
     }
 
@@ -1527,66 +1527,75 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
-    if (state->config.signed_body_value.len == 0) {
-        /* No value provided by user, so we must calculate it */
-        hash = aws_sha256_new(allocator);
-        if (hash == NULL) {
-            return AWS_OP_ERR;
-        }
-
-        if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
-            aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
-            goto on_cleanup;
-        }
-
-        struct aws_input_stream *payload_stream = NULL;
-        if (aws_signable_get_payload_stream(signable, &payload_stream)) {
-            goto on_cleanup;
-        }
-
-        if (payload_stream != NULL) {
-            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
-                goto on_cleanup;
-            }
-
-            struct aws_stream_status payload_status;
-            AWS_ZERO_STRUCT(payload_status);
-
-            while (!payload_status.is_end_of_stream) {
-                /* reset the temporary body buffer; we can calculate the hash in window chunks */
-                body_buffer.len = 0;
-                if (aws_input_stream_read(payload_stream, &body_buffer)) {
-                    goto on_cleanup;
-                }
-
-                if (body_buffer.len > 0) {
-                    struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
-                    aws_hash_update(hash, &body_cursor);
-                }
-
-                if (aws_input_stream_get_status(payload_stream, &payload_status)) {
-                    goto on_cleanup;
-                }
-            }
-
-            /* reset the input stream for sending */
-            if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
-                goto on_cleanup;
-            }
-        }
-
-        if (aws_hash_finalize(hash, &digest_buffer, 0)) {
-            goto on_cleanup;
-        }
-
-        struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
-        if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
+    if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
+        aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
+        /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
+        /* ALWAYS USE UNSIGNED-PAYLOAD FOR VPC Lattice.  */
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &g_aws_signed_body_value_unsigned_payload)) {
             goto on_cleanup;
         }
     } else {
-        /* Use value provided in config */
-        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &state->config.signed_body_value)) {
-            goto on_cleanup;
+        if (state->config.signed_body_value.len == 0) {
+            /* No value provided by user, so we must calculate it */
+            hash = aws_sha256_new(allocator);
+            if (hash == NULL) {
+                return AWS_OP_ERR;
+            }
+
+            if (aws_byte_buf_init(&body_buffer, allocator, BODY_READ_BUFFER_SIZE) ||
+                aws_byte_buf_init(&digest_buffer, allocator, AWS_SHA256_LEN)) {
+                goto on_cleanup;
+            }
+
+            struct aws_input_stream *payload_stream = NULL;
+            if (aws_signable_get_payload_stream(signable, &payload_stream)) {
+                goto on_cleanup;
+            }
+
+            if (payload_stream != NULL) {
+                if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+                    goto on_cleanup;
+                }
+
+                struct aws_stream_status payload_status;
+                AWS_ZERO_STRUCT(payload_status);
+
+                while (!payload_status.is_end_of_stream) {
+                    /* reset the temporary body buffer; we can calculate the hash in window chunks */
+                    body_buffer.len = 0;
+                    if (aws_input_stream_read(payload_stream, &body_buffer)) {
+                        goto on_cleanup;
+                    }
+
+                    if (body_buffer.len > 0) {
+                        struct aws_byte_cursor body_cursor = aws_byte_cursor_from_buf(&body_buffer);
+                        aws_hash_update(hash, &body_cursor);
+                    }
+
+                    if (aws_input_stream_get_status(payload_stream, &payload_status)) {
+                        goto on_cleanup;
+                    }
+                }
+
+                /* reset the input stream for sending */
+                if (aws_input_stream_seek(payload_stream, 0, AWS_SSB_BEGIN)) {
+                    goto on_cleanup;
+                }
+            }
+
+            if (aws_hash_finalize(hash, &digest_buffer, 0)) {
+                goto on_cleanup;
+            }
+
+            struct aws_byte_cursor digest_cursor = aws_byte_cursor_from_buf(&digest_buffer);
+            if (aws_hex_encode_append_dynamic(&digest_cursor, payload_hash_buffer)) {
+                goto on_cleanup;
+            }
+        } else {
+            /* Use value provided in config */
+            if (aws_byte_buf_append_dynamic(payload_hash_buffer, &state->config.signed_body_value)) {
+                goto on_cleanup;
+            }
         }
     }
 
