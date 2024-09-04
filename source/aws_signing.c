@@ -1351,6 +1351,20 @@ static int s_build_canonical_stable_header_list(
         }
 
         /* NOTE: Update MAX_AUTHORIZATION_HEADER_COUNT if more headers added */
+    } else if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS) {
+        /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
+        if (aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
+            /* Add unsigned payload as `x-amz-content-sha256` header to the canonical request when signing through query
+             * params.  */
+            if (s_add_authorization_header(
+                    state,
+                    stable_header_list,
+                    out_required_capacity,
+                    s_amz_content_sha256_header_name,
+                    g_aws_signed_body_value_unsigned_payload)) {
+                return AWS_OP_ERR;
+            }
+        }
     }
 
     *out_required_capacity += aws_array_list_length(stable_header_list) * 2; /*  ':' + '\n' per header */
