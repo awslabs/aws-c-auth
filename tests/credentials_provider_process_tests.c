@@ -144,6 +144,16 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\"Expiration\":\"2020-02-25T06:03:31Z\"}'");
 #endif
 
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_command_with_logging_on_stderr,
+    "("
+    "echo 'Logging on stderr' >&2"
+    " && "
+    "echo '{\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\"}'"
+    ")");
+
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_test_command, "/i/dont/know/what/is/this/command");
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_command_output, "echo \"Hello, World!\"");
 
@@ -262,15 +272,14 @@ static int s_credentials_provider_process_new_failed(struct aws_allocator *alloc
 }
 AWS_TEST_CASE(credentials_provider_process_new_failed, s_credentials_provider_process_new_failed);
 
-static int s_credentials_provider_process_bad_command(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
+static int s_test_command_expect_failure(struct aws_allocator *allocator, const struct aws_string *command) {
 
     s_aws_process_tester_init(allocator);
 
     struct aws_byte_buf content_buf;
     struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
     aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_bad_test_command);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(command);
     ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
     cursor = aws_byte_cursor_from_c_str("\n");
     ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
@@ -304,49 +313,16 @@ static int s_credentials_provider_process_bad_command(struct aws_allocator *allo
     s_aws_process_tester_cleanup();
     return 0;
 }
+
+static int s_credentials_provider_process_bad_command(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_test_command_expect_failure(allocator, s_bad_test_command);
+}
 AWS_TEST_CASE(credentials_provider_process_bad_command, s_credentials_provider_process_bad_command);
 
 static int s_credentials_provider_process_incorrect_command_output(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-
-    s_aws_process_tester_init(allocator);
-
-    struct aws_byte_buf content_buf;
-    struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
-    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_bad_command_output);
-    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
-    cursor = aws_byte_cursor_from_c_str("\n");
-    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
-
-    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
-    ASSERT_TRUE(config_file_contents != NULL);
-    aws_byte_buf_clean_up(&content_buf);
-
-    s_aws_process_test_init_config_profile(allocator, config_file_contents);
-    aws_string_destroy(config_file_contents);
-
-    struct aws_credentials_provider_process_options options = {
-        .shutdown_options =
-            {
-                .shutdown_callback = s_on_shutdown_complete,
-                .shutdown_user_data = NULL,
-            },
-        .profile_to_use = aws_byte_cursor_from_string(s_credentials_process_profile),
-    };
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_process(allocator, &options);
-    ASSERT_NOT_NULL(provider);
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    s_aws_wait_for_credentials_result();
-
-    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_TRUE(s_tester.credentials == NULL);
-
-    aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
-    s_aws_process_tester_cleanup();
-    return 0;
+    return s_test_command_expect_failure(allocator, s_bad_command_output);
 }
 AWS_TEST_CASE(
     credentials_provider_process_incorrect_command_output,
@@ -367,15 +343,13 @@ static int s_verify_credentials(struct aws_credentials *credentials) {
     return AWS_OP_SUCCESS;
 }
 
-static int s_credentials_provider_process_basic_success(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
+static int s_test_command_expect_success(struct aws_allocator *allocator, const struct aws_string *command) {
     s_aws_process_tester_init(allocator);
 
     struct aws_byte_buf content_buf;
     struct aws_byte_buf existing_content = aws_byte_buf_from_c_str(aws_string_c_str(s_process_config_file_contents));
     aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
-    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(s_test_command);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(command);
     ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
     cursor = aws_byte_cursor_from_c_str("\n");
     ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
@@ -409,7 +383,22 @@ static int s_credentials_provider_process_basic_success(struct aws_allocator *al
     s_aws_process_tester_cleanup();
     return 0;
 }
+
+static int s_credentials_provider_process_basic_success(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_test_command_expect_success(allocator, s_test_command);
+}
 AWS_TEST_CASE(credentials_provider_process_basic_success, s_credentials_provider_process_basic_success);
+
+/* Test that stderr is ignored, if the process otherwise succeeds with exit code 0 and valid JSON to stdout.
+ * Once upon a time stderr and stdout were merged, and mundane logging to stderr would break things. */
+static int s_credentials_provider_process_success_ignores_stderr(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_test_command_expect_success(allocator, s_test_command_with_logging_on_stderr);
+}
+AWS_TEST_CASE(
+    credentials_provider_process_success_ignores_stderr,
+    s_credentials_provider_process_success_ignores_stderr);
 
 static int s_credentials_provider_process_basic_success_from_profile_provider(
     struct aws_allocator *allocator,
