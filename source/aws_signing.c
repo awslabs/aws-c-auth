@@ -1336,17 +1336,10 @@ static int s_build_canonical_stable_header_list(
             }
         }
 
-        /* NOTE: Update MAX_AUTHORIZATION_HEADER_COUNT if more headers added */
-    }
-
-    /*
-     * x-amz-content-sha256 (optional)
-     */
-    if (state->config.signed_body_header == AWS_SBHT_X_AMZ_CONTENT_SHA256) {
-        if (state->config.signature_type == AWS_ST_HTTP_REQUEST_HEADERS ||
-            (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
-             aws_byte_cursor_eq(&state->config.signed_body_value, &g_aws_signed_body_value_unsigned_payload))) {
-            /* Add the x-amz-content-sha256 header for UNSIGNED-PAYLOAD when signing via query params as well. */
+        /*
+         * x-amz-content-sha256 (optional)
+         */
+        if (state->config.signed_body_header == AWS_SBHT_X_AMZ_CONTENT_SHA256) {
             if (s_add_authorization_header(
                     state,
                     stable_header_list,
@@ -1356,6 +1349,8 @@ static int s_build_canonical_stable_header_list(
                 return AWS_OP_ERR;
             }
         }
+
+        /* NOTE: Update MAX_AUTHORIZATION_HEADER_COUNT if more headers added */
     }
 
     *out_required_capacity += aws_array_list_length(stable_header_list) * 2; /*  ':' + '\n' per header */
