@@ -1336,17 +1336,10 @@ static int s_build_canonical_stable_header_list(
             }
         }
 
-        /* NOTE: Update MAX_AUTHORIZATION_HEADER_COUNT if more headers added */
-    }
-
-    /*
-     * x-amz-content-sha256 (optional)
-     */
-    if (state->config.signed_body_header == AWS_SBHT_X_AMZ_CONTENT_SHA256) {
-        if (state->config.signature_type == AWS_ST_HTTP_REQUEST_HEADERS ||
-            (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
-             aws_byte_cursor_eq(&state->config.signed_body_value, &g_aws_signed_body_value_unsigned_payload))) {
-            /* Add the x-amz-content-sha256 header for UNSIGNED-PAYLOAD when signing via query params as well. */
+        /*
+         * x-amz-content-sha256 (optional)
+         */
+        if (state->config.signed_body_header == AWS_SBHT_X_AMZ_CONTENT_SHA256) {
             if (s_add_authorization_header(
                     state,
                     stable_header_list,
@@ -1355,6 +1348,22 @@ static int s_build_canonical_stable_header_list(
                     aws_byte_cursor_from_buf(&state->payload_hash))) {
                 return AWS_OP_ERR;
             }
+        }
+
+        /* NOTE: Update MAX_AUTHORIZATION_HEADER_COUNT if more headers added */
+    } else if (
+        state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
+        aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
+        /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
+        /* Add unsigned payload as `x-amz-content-sha256` header to the canonical request when signing through query
+         * params.  */
+        if (s_add_authorization_header(
+                state,
+                stable_header_list,
+                out_required_capacity,
+                s_amz_content_sha256_header_name,
+                g_aws_signed_body_value_unsigned_payload)) {
+            return AWS_OP_ERR;
         }
     }
 
@@ -1518,6 +1527,17 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     struct aws_hash *hash = NULL;
 
     int result = AWS_OP_ERR;
+    if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
+        aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
+        /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
+        /* ALWAYS USE UNSIGNED-PAYLOAD FOR VPC Lattice.  */
+        if (aws_byte_buf_append_dynamic(payload_hash_buffer, &g_aws_signed_body_value_unsigned_payload) ==
+            AWS_OP_SUCCESS) {
+            result = AWS_OP_SUCCESS;
+        }
+        goto on_cleanup;
+    }
+
     if (state->config.signed_body_value.len == 0) {
         /* No value provided by user, so we must calculate it */
         hash = aws_sha256_new(allocator);
