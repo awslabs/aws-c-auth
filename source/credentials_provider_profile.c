@@ -344,11 +344,14 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             "static: source_profile set to %s",
             aws_string_c_str(aws_profile_property_get_value(source_profile_property)));
 
-        struct aws_credentials_provider_profile_options profile_provider_options = *options;
-        profile_provider_options.profile_name_override =
-            aws_byte_cursor_from_string(aws_profile_property_get_value(source_profile_property));
-        /* reuse profile collection instead of reading it again */
-        profile_provider_options.profile_collection_cached = merged_profiles;
+        struct aws_credentials_provider_profile_options profile_provider_options = {
+                .bootstrap = options->bootstrap,
+                .profile_name_override = aws_byte_cursor_from_string(aws_profile_property_get_value(source_profile_property)),
+                /* reuse profile collection instead of reading it again */
+                .profile_collection_cached = merged_profiles,
+                .tls_ctx = options->tls_ctx,
+                .function_table = options->function_table,
+        };
         sts_options.creds_provider =
             s_credentials_provider_new_profile_internal(allocator, &profile_provider_options, source_profiles_table);
 
