@@ -144,6 +144,17 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\"Expiration\":\"2020-02-25T06:03:31Z\"}'");
 #endif
 
+#ifdef _WIN32
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_command_with_logging_on_stderr,
+    "("
+    "echo Logging on stderr >&2"
+    " && "
+    "echo {\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\"}"
+    ")");
+#else
 AWS_STATIC_STRING_FROM_LITERAL(
     s_test_command_with_logging_on_stderr,
     "("
@@ -153,6 +164,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
     "\"Expiration\":\"2020-02-25T06:03:31Z\"}'"
     ")");
+#endif
 
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_test_command, "/i/dont/know/what/is/this/command");
 AWS_STATIC_STRING_FROM_LITERAL(s_bad_command_output, "echo \"Hello, World!\"");
