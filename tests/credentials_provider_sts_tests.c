@@ -1366,7 +1366,7 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
     }
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_string_destroy(relative_uri_str);
     aws_string_destroy(config_file_str);
     aws_string_destroy(creds_file_str);
@@ -1478,7 +1478,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
     }
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1549,7 +1549,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     ASSERT_NULL(s_tester.credentials);
     ASSERT_INT_EQUALS(s_tester.error_code, AWS_AUTH_SIGNING_NO_CREDENTIALS);
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1642,7 +1642,7 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
     }
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1848,7 +1848,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1920,7 +1920,7 @@ static int s_credentials_provider_sts_from_profile_config_with_external_id_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -2017,7 +2017,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -2140,7 +2140,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     aws_credentials_provider_release(cached_provider);
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
