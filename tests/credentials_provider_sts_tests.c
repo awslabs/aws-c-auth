@@ -89,10 +89,10 @@ static bool s_has_tester_received_connection_manager_shutdown_callback(void *use
 
 static void s_aws_wait_for_connection_manager_shutdown_callback(void) {
     aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_connection_manager_shutdown_callback, NULL);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_connection_manager_shutdown_callback, NULL);
     aws_mutex_unlock(&s_tester.lock);
 }
-
 
 static void s_on_provider_shutdown(void *user_data) {
     (void)user_data;
@@ -112,7 +112,8 @@ static bool s_has_tester_received_provider_shutdown_callback(void *user_data) {
 
 static void s_aws_wait_for_provider_shutdown_callback(void) {
     aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_provider_shutdown_callback, NULL);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_provider_shutdown_callback, NULL);
     aws_mutex_unlock(&s_tester.lock);
 }
 
@@ -1191,9 +1192,10 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
-        .shutdown_options = {
-            .shutdown_callback = s_on_provider_shutdown,
-        },
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_provider_shutdown,
+            },
     };
     int expected_num_requests = 3;
     for (int i = 0; i < expected_num_requests; i++) {
