@@ -152,7 +152,22 @@ static void s_check_or_get_with_profile_config(
     }
 }
 
-static struct aws_byte_cursor s_stderr_redirect_to_stdout = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(" 2>&1");
+/* Redirect stderr to /dev/null
+ * As of Sep 2024, aws_process_run() can only capture stdout, and the
+ * process's stderr goes into the stderr of the application that launched it.
+ * Some credentials-processes log to stderr during normal operation.
+ * To prevent this from polluting the application's stderr,
+ * we redirect the credential-process's stderr into oblivion.
+ *
+ * It would be better to fix aws_process_run() so it captures stderr as well,
+ * and logging it if the process fails. This is recommended by the SEP:
+ * > SDKs SHOULD make this error message accessible to the customer. */
+#ifdef _WIN32
+static struct aws_byte_cursor s_stderr_redirect_to_devnull = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(" 2> nul");
+#else
+static struct aws_byte_cursor s_stderr_redirect_to_devnull = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(" 2> /dev/null");
+#endif
+
 static struct aws_string *s_get_command(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_process_options *options) {
@@ -190,7 +205,7 @@ static struct aws_string *s_get_command(
         goto on_finish;
     }
 
-    if (aws_byte_buf_append_dynamic(&command_buf, &s_stderr_redirect_to_stdout)) {
+    if (aws_byte_buf_append_dynamic(&command_buf, &s_stderr_redirect_to_devnull)) {
         goto on_finish;
     }
 
