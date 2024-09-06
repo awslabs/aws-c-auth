@@ -351,6 +351,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 .profile_collection_cached = merged_profiles,
                 .tls_ctx = options->tls_ctx,
                 .function_table = options->function_table,
+                .shutdown_options = options->shutdown_options,
         };
         sts_options.creds_provider =
             s_credentials_provider_new_profile_internal(allocator, &profile_provider_options, source_profiles_table);

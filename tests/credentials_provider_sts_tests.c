@@ -57,6 +57,8 @@ struct aws_mock_sts_tester {
 
     bool fail_connection;
 
+    int provider_shutdown_callback_count;
+
     struct aws_event_loop_group *el_group;
 
     struct aws_host_resolver *resolver;
@@ -78,16 +80,39 @@ static void s_on_connection_manager_shutdown_complete(void *user_data) {
     aws_condition_variable_notify_one(&s_tester.signal);
 }
 
-static bool s_has_tester_received_shutdown_callback(void *user_data) {
+static bool s_has_tester_received_connection_manager_shutdown_callback(void *user_data) {
     (void)user_data;
 
     return s_tester.mocked_connection_manager_shutdown_callback_count ==
            s_tester.expected_connection_manager_shutdown_callback_count;
 }
 
+static void s_aws_wait_for_connection_manager_shutdown_callback(void) {
+    aws_mutex_lock(&s_tester.lock);
+    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_connection_manager_shutdown_callback, NULL);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+
+static void s_on_provider_shutdown(void *user_data) {
+    (void)user_data;
+
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.provider_shutdown_callback_count++;
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_condition_variable_notify_one(&s_tester.signal);
+}
+
+static bool s_has_tester_received_provider_shutdown_callback(void *user_data) {
+    (void)user_data;
+
+    return s_tester.provider_shutdown_callback_count;
+}
+
 static void s_aws_wait_for_provider_shutdown_callback(void) {
     aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_shutdown_callback, NULL);
+    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_provider_shutdown_callback, NULL);
     aws_mutex_unlock(&s_tester.lock);
 }
 
@@ -508,7 +533,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -561,7 +586,7 @@ static int s_credentials_provider_sts_direct_config_with_external_id_succeeds_fn
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -658,7 +683,7 @@ static int s_credentials_provider_sts_direct_config_with_region_succeeds_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -741,7 +766,7 @@ static int s_credentials_provider_sts_direct_config_with_default_region_succeeds
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -829,7 +854,7 @@ static int s_credentials_provider_sts_direct_config_with_region_from_config_succ
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     aws_file_delete(config_file_str);
     aws_string_destroy(config_file_str);
@@ -915,7 +940,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -999,7 +1024,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1046,7 +1071,7 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
     ASSERT_NULL(s_tester.credentials);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1096,7 +1121,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
     ASSERT_NULL(s_tester.credentials);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1166,6 +1191,9 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
+        .shutdown_options = {
+            .shutdown_callback = s_on_provider_shutdown,
+        },
     };
     int expected_num_requests = 3;
     for (int i = 0; i < expected_num_requests; i++) {
@@ -1223,7 +1251,10 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
     }
 
     aws_credentials_provider_release(provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
     s_aws_wait_for_provider_shutdown_callback();
+    aws_thread_current_sleep(3000000000);
+    ASSERT_INT_EQUALS(1, s_tester.provider_shutdown_callback_count);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
