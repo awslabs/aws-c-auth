@@ -51,7 +51,6 @@ static int s_credentials_utils_construct_endpoint_test(struct aws_allocator *all
     aws_string_destroy(region);
 
     aws_string_destroy(service_name);
-    aws_string_destroy(endpoint);
 
     return 0;
 }
