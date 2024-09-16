@@ -359,8 +359,11 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
 }
 
 static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
-static struct aws_byte_cursor s_amazonaws_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com");
-static struct aws_byte_cursor s_cn_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".cn");
+
+static struct aws_byte_cursor s_aws_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com");
+
+static struct aws_byte_cursor s_cn_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("cn-");
+static struct aws_byte_cursor s_aws_cn_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com.cn");
 
 int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
@@ -384,17 +387,20 @@ int aws_credentials_provider_construct_regional_endpoint(
     if (aws_byte_buf_append_dynamic(&endpoint, &service_cursor) ||
         aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor) ||
         aws_byte_buf_append_dynamic(&endpoint, &region_cursor) ||
-        aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor) ||
-        aws_byte_buf_append_dynamic(&endpoint, &s_amazonaws_cursor)) {
+        aws_byte_buf_append_dynamic(&endpoint, &s_dot_cursor)) {
         goto on_error;
     }
 
-    if (aws_string_eq_c_str_ignore_case(region, "cn-north-1") ||
-        aws_string_eq_c_str_ignore_case(region, "cn-northwest-1")) {
-        if (aws_byte_buf_append_dynamic(&endpoint, &s_cn_cursor)) {
+    if (aws_byte_cursor_starts_with(&region, &s_cn_region_prefix)) { /* AWS CN partition */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_cn_dns_suffix)) {
+            goto on_error;
+        }
+    } else { /* Assume AWS partition for all other regions */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_dns_suffix)) {
             goto on_error;
         }
     }
+
     *out_endpoint = aws_string_new_from_buf(allocator, &endpoint);
     result = AWS_OP_SUCCESS;
 
