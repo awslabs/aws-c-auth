@@ -1269,9 +1269,9 @@ AWS_TEST_CASE(
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
 static const char *s_source_credentials_ecs_config_file = "[default]\n"
-                                                         "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                         "credential_source=EcsContainer\n"
-                                                         "role_session_name=test_session\n";
+                                                          "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                          "credential_source=EcsContainer\n"
+                                                          "role_session_name=test_session\n";
 static struct aws_byte_cursor s_ecs_good_response = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
     "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
     "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
@@ -1379,23 +1379,23 @@ AWS_TEST_CASE(
     s_credentials_provider_sts_from_profile_config_with_ecs_credentials_source_fn)
 
 static const char *s_source_profile_chain_and_profile_config_file = "[default]\n"
-                                                                   "aws_access_key_id=BLAHBLAH\n"
-                                                                   "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                                   "\n"
-                                                                   "[roletest]\n"
-                                                                   "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                                   "source_profile=roletest2\n"
-                                                                   "role_session_name=test_session\n"
-                                                                   "[roletest2]\n"
-                                                                   "role_arn=arn:aws:iam::67896:role/test_role\n"
-                                                                   "source_profile=roletest3\n"
-                                                                   "role_session_name=test_session2\n"
-                                                                   "[roletest3]\n"
-                                                                   "role_arn=arn:aws:iam::67897:role/test_role\n"
-                                                                   "source_profile=default\n"
-                                                                   "role_session_name=test_session3\n"
-                                                                   "aws_access_key_id = BLAH\n"
-                                                                   "aws_secret_access_key = BLAHBLAH\n";
+                                                                    "aws_access_key_id=BLAHBLAH\n"
+                                                                    "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                                    "\n"
+                                                                    "[roletest]\n"
+                                                                    "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                                    "source_profile=roletest2\n"
+                                                                    "role_session_name=test_session\n"
+                                                                    "[roletest2]\n"
+                                                                    "role_arn=arn:aws:iam::67896:role/test_role\n"
+                                                                    "source_profile=roletest3\n"
+                                                                    "role_session_name=test_session2\n"
+                                                                    "[roletest3]\n"
+                                                                    "role_arn=arn:aws:iam::67897:role/test_role\n"
+                                                                    "source_profile=default\n"
+                                                                    "role_session_name=test_session3\n"
+                                                                    "aws_access_key_id = BLAH\n"
+                                                                    "aws_secret_access_key = BLAHBLAH\n";
 static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile_creds_fn(
     struct aws_allocator *allocator,
     void *ctx) {
@@ -1559,15 +1559,15 @@ AWS_TEST_CASE(
     s_credentials_provider_sts_from_profile_config_with_chain_and_partial_profile_creds_fn)
 
 static const char *s_source_profile_self_assume_role_config_file = "[default]\n"
-                                                                  "aws_access_key_id=BLAHBLAH\n"
-                                                                  "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                                  "\n"
-                                                                  "[roletest]\n"
-                                                                  "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                                  "source_profile=roletest\n"
-                                                                  "role_session_name=test_session\n"
-                                                                  "aws_access_key_id = BLAH\n"
-                                                                  "aws_secret_access_key = BLAHBLAH\n";
+                                                                   "aws_access_key_id=BLAHBLAH\n"
+                                                                   "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                                   "\n"
+                                                                   "[roletest]\n"
+                                                                   "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                                   "source_profile=roletest\n"
+                                                                   "role_session_name=test_session\n"
+                                                                   "aws_access_key_id = BLAH\n"
+                                                                   "aws_secret_access_key = BLAHBLAH\n";
 static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -1652,21 +1652,21 @@ AWS_TEST_CASE(
     s_credentials_provider_sts_from_self_referencing_profile_fn)
 
 static const char *s_source_profile_chain_cycle_config_file = "[default]\n"
-                                                             "aws_access_key_id=BLAHBLAH\n"
-                                                             "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                             "\n"
-                                                             "[roletest]\n"
-                                                             "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                             "source_profile=roletest2\n"
-                                                             "role_session_name=test_session\n"
-                                                             "[roletest2]\n"
-                                                             "role_arn=arn:aws:iam::67896:role/test_role\n"
-                                                             "source_profile=roletest3\n"
-                                                             "role_session_name=test_session2\n"
-                                                             "[roletest3]\n"
-                                                             "role_arn=arn:aws:iam::67897:role/test_role\n"
-                                                             "source_profile=roletest2\n"
-                                                             "role_session_name=test_session3\n";
+                                                              "aws_access_key_id=BLAHBLAH\n"
+                                                              "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                              "\n"
+                                                              "[roletest]\n"
+                                                              "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                              "source_profile=roletest2\n"
+                                                              "role_session_name=test_session\n"
+                                                              "[roletest2]\n"
+                                                              "role_arn=arn:aws:iam::67896:role/test_role\n"
+                                                              "source_profile=roletest3\n"
+                                                              "role_session_name=test_session2\n"
+                                                              "[roletest3]\n"
+                                                              "role_arn=arn:aws:iam::67897:role/test_role\n"
+                                                              "source_profile=roletest2\n"
+                                                              "role_session_name=test_session3\n";
 
 static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn(
     struct aws_allocator *allocator,
