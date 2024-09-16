@@ -1268,7 +1268,7 @@ AWS_TEST_CASE(
     s_credentials_provider_sts_from_profile_config_with_chain_fn)
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
-static const char *s_soure_credentials_ecs_config_file = "[default]\n"
+static const char *s_source_credentials_ecs_config_file = "[default]\n"
                                                          "role_arn=arn:aws:iam::67895:role/test_role\n"
                                                          "credential_source=EcsContainer\n"
                                                          "role_session_name=test_session\n";
@@ -1290,9 +1290,9 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
     ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_relative_uri, relative_uri_str));
 
     s_aws_sts_tester_init(allocator);
-    /* one for ecs provdier and one for sts provider */
+    /* one for ecs provider and one for sts provider */
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
-    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_credentials_ecs_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_credentials_ecs_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1378,7 +1378,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_ecs_credentials_source,
     s_credentials_provider_sts_from_profile_config_with_ecs_credentials_source_fn)
 
-static const char *s_soure_profile_chain_and_profile_config_file = "[default]\n"
+static const char *s_source_profile_chain_and_profile_config_file = "[default]\n"
                                                                    "aws_access_key_id=BLAHBLAH\n"
                                                                    "aws_secret_access_key=BLAHBLAHBLAH\n"
                                                                    "\n"
@@ -1408,7 +1408,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
     s_aws_sts_tester_init(allocator);
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_chain_and_profile_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_chain_and_profile_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1487,7 +1487,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain_and_profile_creds,
     s_credentials_provider_sts_from_profile_config_with_chain_and_profile_creds_fn)
 
-static const char *s_soure_profile_chain_and_partial_profile_config_file =
+static const char *s_source_profile_chain_and_partial_profile_config_file =
     "[default]\n"
     "aws_access_key_id=BLAHBLAH\n"
     "aws_secret_access_key=BLAHBLAHBLAH\n"
@@ -1517,7 +1517,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     s_aws_sts_tester_init(allocator);
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_chain_and_partial_profile_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_chain_and_partial_profile_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1558,7 +1558,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain_and_partial_profile_creds,
     s_credentials_provider_sts_from_profile_config_with_chain_and_partial_profile_creds_fn)
 
-static const char *s_soure_profile_self_assume_role_config_file = "[default]\n"
+static const char *s_source_profile_self_assume_role_config_file = "[default]\n"
                                                                   "aws_access_key_id=BLAHBLAH\n"
                                                                   "aws_secret_access_key=BLAHBLAHBLAH\n"
                                                                   "\n"
@@ -1577,7 +1577,7 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
 
     s_aws_sts_tester_init(allocator);
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_self_assume_role_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_self_assume_role_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1651,7 +1651,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_self_referencing_profile,
     s_credentials_provider_sts_from_self_referencing_profile_fn)
 
-static const char *s_soure_profile_chain_cycle_config_file = "[default]\n"
+static const char *s_source_profile_chain_cycle_config_file = "[default]\n"
                                                              "aws_access_key_id=BLAHBLAH\n"
                                                              "aws_secret_access_key=BLAHBLAHBLAH\n"
                                                              "\n"
@@ -1679,7 +1679,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn(
 
     s_aws_sts_tester_init(allocator);
 
-    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_chain_cycle_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_chain_cycle_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1712,7 +1712,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain_cycle,
     s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn)
 
-static const char *s_soure_profile_chain_cycle_and_static_creds_config_file =
+static const char *s_source_profile_chain_cycle_and_static_creds_config_file =
     "[roletest]\n"
     "role_arn=arn:aws:iam::67895:role/test_role\n"
     "source_profile=roletest2\n"
@@ -1740,7 +1740,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_and_p
     s_aws_sts_tester_init(allocator);
 
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_chain_cycle_and_static_creds_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_chain_cycle_and_static_creds_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
