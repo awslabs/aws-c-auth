@@ -144,7 +144,7 @@ void aws_credentials_provider_invoke_shutdown_callback(struct aws_credentials_pr
  * A valid credentials must have "access key" and "secrete access key".
  * For some services, token and expiration are not required.
  * So in this API, the keys are provided by callers and this API will
- * performe a case insensitive search.
+ * perform a case insensitive search.
  */
 AWS_AUTH_API
 struct aws_credentials *aws_parse_credentials_from_aws_json_object(
@@ -154,7 +154,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
 /**
  * This API is similar to aws_parse_credentials_from_aws_json_object,
- * except it accpets a char buffer json document as it's input.
+ * except it accepts a char buffer json document as it's input.
  */
 AWS_AUTH_API
 struct aws_credentials *aws_parse_credentials_from_json_document(
