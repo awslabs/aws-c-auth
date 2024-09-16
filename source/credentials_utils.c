@@ -360,10 +360,28 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
 
 static struct aws_byte_cursor s_dot_cursor = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(".");
 
+/* AWS */
 static struct aws_byte_cursor s_aws_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com");
 
+/* AWS CN */
 static struct aws_byte_cursor s_cn_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("cn-");
 static struct aws_byte_cursor s_aws_cn_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com.cn");
+
+/* AWS ISO */
+static struct aws_byte_cursor s_iso_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-iso-");
+static struct aws_byte_cursor s_aws_iso_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("c2s.ic.gov");
+
+/* AWS ISO B */
+static struct aws_byte_cursor s_isob_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-isob-");
+static struct aws_byte_cursor s_aws_isob_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("sc2s.sgov.gov");
+
+/* AWS ISO E */
+static struct aws_byte_cursor s_isoe_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("eu-isoe-");
+static struct aws_byte_cursor s_aws_isoe_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("cloud.adc-e.uk");
+
+/* AWS ISO F */
+static struct aws_byte_cursor s_isof_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-isof-");
+static struct aws_byte_cursor s_aws_isof_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("csp.hci.ic.gov");
 
 int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
@@ -391,8 +409,26 @@ int aws_credentials_provider_construct_regional_endpoint(
         goto on_error;
     }
 
-    if (aws_byte_cursor_starts_with(&region, &s_cn_region_prefix)) { /* AWS CN partition */
+    const struct aws_byte_cursor region_cur = aws_byte_cursor_from_string(region);
+
+    if (aws_byte_cursor_starts_with(&region_cur, &s_cn_region_prefix)) { /* AWS CN partition */
         if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_cn_dns_suffix)) {
+            goto on_error;
+        }
+    } else if (aws_byte_cursor_starts_with(&region_cur, &s_iso_region_prefix)) { /* AWS ISO partition */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_iso_dns_suffix)) {
+            goto on_error;
+        }
+    } else if (aws_byte_cursor_starts_with(&region_cur, &s_isob_region_prefix)) { /* AWS ISOB partition */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_isob_dns_suffix)) {
+            goto on_error;
+        }
+    } else if (aws_byte_cursor_starts_with(&region_cur, &s_isoe_region_prefix)) { /* AWS ISOE partition */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_isoe_dns_suffix)) {
+            goto on_error;
+        }
+    } else if (aws_byte_cursor_starts_with(&region_cur, &s_isof_region_prefix)) { /* AWS ISOF partition */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_isof_dns_suffix)) {
             goto on_error;
         }
     } else { /* Assume AWS partition for all other regions */
