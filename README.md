@@ -13,7 +13,7 @@ This library is licensed under the Apache 2.0 License.
 
 ### Building
 
-CMake 3.1+ is required to build.
+CMake 3.9+ is required to build.
 
 `<install-path>` must be an absolute path in the following instructions.
 
@@ -62,7 +62,7 @@ cmake --build aws-c-auth/build --target install
 ### Testing
 Certain tests require a specific environment setup in order to run successfully.  This may be a specific execution
 environment (EC2, ECS, etc...) or it may require certain environment variables to be set that configure properties
-(often sensitive materials, like keys).  Whether or not these tests are enabled is controlled by certain CMAKE 
+(often sensitive materials, like keys).  Whether or not these tests are enabled is controlled by certain CMAKE
 properties:
 * AWS_BUILDING_ON_EC2 - indicates real IMDS credentials provider test(s) should run
 * AWS_BUILDING_ON_ECS - indciates real ECS credentials provider tests(s) should run
