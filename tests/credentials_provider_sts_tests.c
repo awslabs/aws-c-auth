@@ -57,6 +57,8 @@ struct aws_mock_sts_tester {
 
     bool fail_connection;
 
+    int provider_shutdown_callback_count;
+
     struct aws_event_loop_group *el_group;
 
     struct aws_host_resolver *resolver;
@@ -78,16 +80,40 @@ static void s_on_connection_manager_shutdown_complete(void *user_data) {
     aws_condition_variable_notify_one(&s_tester.signal);
 }
 
-static bool s_has_tester_received_shutdown_callback(void *user_data) {
+static bool s_has_tester_received_connection_manager_shutdown_callback(void *user_data) {
     (void)user_data;
 
     return s_tester.mocked_connection_manager_shutdown_callback_count ==
            s_tester.expected_connection_manager_shutdown_callback_count;
 }
 
+static void s_aws_wait_for_connection_manager_shutdown_callback(void) {
+    aws_mutex_lock(&s_tester.lock);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_connection_manager_shutdown_callback, NULL);
+    aws_mutex_unlock(&s_tester.lock);
+}
+
+static void s_on_provider_shutdown(void *user_data) {
+    (void)user_data;
+
+    aws_mutex_lock(&s_tester.lock);
+    s_tester.provider_shutdown_callback_count++;
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_condition_variable_notify_one(&s_tester.signal);
+}
+
+static bool s_has_tester_received_provider_shutdown_callback(void *user_data) {
+    (void)user_data;
+
+    return s_tester.provider_shutdown_callback_count;
+}
+
 static void s_aws_wait_for_provider_shutdown_callback(void) {
     aws_mutex_lock(&s_tester.lock);
-    aws_condition_variable_wait_pred(&s_tester.signal, &s_tester.lock, s_has_tester_received_shutdown_callback, NULL);
+    aws_condition_variable_wait_pred(
+        &s_tester.signal, &s_tester.lock, s_has_tester_received_provider_shutdown_callback, NULL);
     aws_mutex_unlock(&s_tester.lock);
 }
 
@@ -508,7 +534,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_fn(struct aws_alloc
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -561,7 +587,7 @@ static int s_credentials_provider_sts_direct_config_with_external_id_succeeds_fn
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -658,7 +684,7 @@ static int s_credentials_provider_sts_direct_config_with_region_succeeds_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -741,7 +767,7 @@ static int s_credentials_provider_sts_direct_config_with_default_region_succeeds
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -829,7 +855,7 @@ static int s_credentials_provider_sts_direct_config_with_region_from_config_succ
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     aws_file_delete(config_file_str);
     aws_string_destroy(config_file_str);
@@ -915,7 +941,7 @@ static int s_credentials_provider_sts_direct_config_succeeds_after_retry_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -999,7 +1025,7 @@ static int s_credentials_provider_sts_direct_config_invalid_doc_fn(struct aws_al
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1046,7 +1072,7 @@ static int s_credentials_provider_sts_direct_config_connection_failed_fn(struct 
     ASSERT_NULL(s_tester.credentials);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1096,7 +1122,7 @@ static int s_credentials_provider_sts_direct_config_service_fails_fn(struct aws_
     ASSERT_NULL(s_tester.credentials);
 
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -1166,6 +1192,10 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
         .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
         .bootstrap = s_tester.bootstrap,
         .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_provider_shutdown,
+            },
     };
     int expected_num_requests = 3;
     for (int i = 0; i < expected_num_requests; i++) {
@@ -1223,7 +1253,12 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_fn(struct a
     }
 
     aws_credentials_provider_release(provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
     s_aws_wait_for_provider_shutdown_callback();
+    /* There used to be a bug that triggered the shutdown callback multiple times. Sleep for a few seconds
+     * and validate that we don't trigger the shutdown callback multiple times */
+    aws_thread_current_sleep(3000000000);
+    ASSERT_INT_EQUALS(1, s_tester.provider_shutdown_callback_count);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1233,10 +1268,10 @@ AWS_TEST_CASE(
     s_credentials_provider_sts_from_profile_config_with_chain_fn)
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
-static const char *s_soure_credentials_ecs_config_file = "[default]\n"
-                                                         "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                         "credential_source=EcsContainer\n"
-                                                         "role_session_name=test_session\n";
+static const char *s_source_credentials_ecs_config_file = "[default]\n"
+                                                          "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                          "credential_source=EcsContainer\n"
+                                                          "role_session_name=test_session\n";
 static struct aws_byte_cursor s_ecs_good_response = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
     "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
     "\"Token\":\"TokenSuccess\", \n \"Expiration\":\"2020-02-25T06:03:31Z\"}");
@@ -1255,9 +1290,9 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
     ASSERT_SUCCESS(aws_set_environment_value(s_ecs_creds_env_relative_uri, relative_uri_str));
 
     s_aws_sts_tester_init(allocator);
-    /* one for ecs provdier and one for sts provider */
+    /* one for ecs provider and one for sts provider */
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
-    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_credentials_ecs_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_credentials_ecs_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1331,7 +1366,7 @@ static int s_credentials_provider_sts_from_profile_config_with_ecs_credentials_s
     }
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_string_destroy(relative_uri_str);
     aws_string_destroy(config_file_str);
     aws_string_destroy(creds_file_str);
@@ -1343,24 +1378,24 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_ecs_credentials_source,
     s_credentials_provider_sts_from_profile_config_with_ecs_credentials_source_fn)
 
-static const char *s_soure_profile_chain_and_profile_config_file = "[default]\n"
-                                                                   "aws_access_key_id=BLAHBLAH\n"
-                                                                   "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                                   "\n"
-                                                                   "[roletest]\n"
-                                                                   "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                                   "source_profile=roletest2\n"
-                                                                   "role_session_name=test_session\n"
-                                                                   "[roletest2]\n"
-                                                                   "role_arn=arn:aws:iam::67896:role/test_role\n"
-                                                                   "source_profile=roletest3\n"
-                                                                   "role_session_name=test_session2\n"
-                                                                   "[roletest3]\n"
-                                                                   "role_arn=arn:aws:iam::67897:role/test_role\n"
-                                                                   "source_profile=default\n"
-                                                                   "role_session_name=test_session3\n"
-                                                                   "aws_access_key_id = BLAH\n"
-                                                                   "aws_secret_access_key = BLAHBLAH\n";
+static const char *s_source_profile_chain_and_profile_config_file = "[default]\n"
+                                                                    "aws_access_key_id=BLAHBLAH\n"
+                                                                    "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                                    "\n"
+                                                                    "[roletest]\n"
+                                                                    "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                                    "source_profile=roletest2\n"
+                                                                    "role_session_name=test_session\n"
+                                                                    "[roletest2]\n"
+                                                                    "role_arn=arn:aws:iam::67896:role/test_role\n"
+                                                                    "source_profile=roletest3\n"
+                                                                    "role_session_name=test_session2\n"
+                                                                    "[roletest3]\n"
+                                                                    "role_arn=arn:aws:iam::67897:role/test_role\n"
+                                                                    "source_profile=default\n"
+                                                                    "role_session_name=test_session3\n"
+                                                                    "aws_access_key_id = BLAH\n"
+                                                                    "aws_secret_access_key = BLAHBLAH\n";
 static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile_creds_fn(
     struct aws_allocator *allocator,
     void *ctx) {
@@ -1373,7 +1408,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
     s_aws_sts_tester_init(allocator);
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_chain_and_profile_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_chain_and_profile_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1443,7 +1478,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_profile
     }
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1452,7 +1487,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain_and_profile_creds,
     s_credentials_provider_sts_from_profile_config_with_chain_and_profile_creds_fn)
 
-static const char *s_soure_profile_chain_and_partial_profile_config_file =
+static const char *s_source_profile_chain_and_partial_profile_config_file =
     "[default]\n"
     "aws_access_key_id=BLAHBLAH\n"
     "aws_secret_access_key=BLAHBLAHBLAH\n"
@@ -1482,7 +1517,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     s_aws_sts_tester_init(allocator);
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_chain_and_partial_profile_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_chain_and_partial_profile_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1514,7 +1549,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_and_partial
     ASSERT_NULL(s_tester.credentials);
     ASSERT_INT_EQUALS(s_tester.error_code, AWS_AUTH_SIGNING_NO_CREDENTIALS);
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1523,16 +1558,16 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain_and_partial_profile_creds,
     s_credentials_provider_sts_from_profile_config_with_chain_and_partial_profile_creds_fn)
 
-static const char *s_soure_profile_self_assume_role_config_file = "[default]\n"
-                                                                  "aws_access_key_id=BLAHBLAH\n"
-                                                                  "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                                  "\n"
-                                                                  "[roletest]\n"
-                                                                  "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                                  "source_profile=roletest\n"
-                                                                  "role_session_name=test_session\n"
-                                                                  "aws_access_key_id = BLAH\n"
-                                                                  "aws_secret_access_key = BLAHBLAH\n";
+static const char *s_source_profile_self_assume_role_config_file = "[default]\n"
+                                                                   "aws_access_key_id=BLAHBLAH\n"
+                                                                   "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                                   "\n"
+                                                                   "[roletest]\n"
+                                                                   "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                                   "source_profile=roletest\n"
+                                                                   "role_session_name=test_session\n"
+                                                                   "aws_access_key_id = BLAH\n"
+                                                                   "aws_secret_access_key = BLAHBLAH\n";
 static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -1542,7 +1577,7 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
 
     s_aws_sts_tester_init(allocator);
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_self_assume_role_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_self_assume_role_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1607,7 +1642,7 @@ static int s_credentials_provider_sts_from_self_referencing_profile_fn(struct aw
     }
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1616,22 +1651,22 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_self_referencing_profile,
     s_credentials_provider_sts_from_self_referencing_profile_fn)
 
-static const char *s_soure_profile_chain_cycle_config_file = "[default]\n"
-                                                             "aws_access_key_id=BLAHBLAH\n"
-                                                             "aws_secret_access_key=BLAHBLAHBLAH\n"
-                                                             "\n"
-                                                             "[roletest]\n"
-                                                             "role_arn=arn:aws:iam::67895:role/test_role\n"
-                                                             "source_profile=roletest2\n"
-                                                             "role_session_name=test_session\n"
-                                                             "[roletest2]\n"
-                                                             "role_arn=arn:aws:iam::67896:role/test_role\n"
-                                                             "source_profile=roletest3\n"
-                                                             "role_session_name=test_session2\n"
-                                                             "[roletest3]\n"
-                                                             "role_arn=arn:aws:iam::67897:role/test_role\n"
-                                                             "source_profile=roletest2\n"
-                                                             "role_session_name=test_session3\n";
+static const char *s_source_profile_chain_cycle_config_file = "[default]\n"
+                                                              "aws_access_key_id=BLAHBLAH\n"
+                                                              "aws_secret_access_key=BLAHBLAHBLAH\n"
+                                                              "\n"
+                                                              "[roletest]\n"
+                                                              "role_arn=arn:aws:iam::67895:role/test_role\n"
+                                                              "source_profile=roletest2\n"
+                                                              "role_session_name=test_session\n"
+                                                              "[roletest2]\n"
+                                                              "role_arn=arn:aws:iam::67896:role/test_role\n"
+                                                              "source_profile=roletest3\n"
+                                                              "role_session_name=test_session2\n"
+                                                              "[roletest3]\n"
+                                                              "role_arn=arn:aws:iam::67897:role/test_role\n"
+                                                              "source_profile=roletest2\n"
+                                                              "role_session_name=test_session3\n";
 
 static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn(
     struct aws_allocator *allocator,
@@ -1644,7 +1679,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn(
 
     s_aws_sts_tester_init(allocator);
 
-    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_soure_profile_chain_cycle_config_file);
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_chain_cycle_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1677,7 +1712,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain_cycle,
     s_credentials_provider_sts_from_profile_config_with_chain_cycle_fn)
 
-static const char *s_soure_profile_chain_cycle_and_static_creds_config_file =
+static const char *s_source_profile_chain_cycle_and_static_creds_config_file =
     "[roletest]\n"
     "role_arn=arn:aws:iam::67895:role/test_role\n"
     "source_profile=roletest2\n"
@@ -1705,7 +1740,7 @@ static int s_credentials_provider_sts_from_profile_config_with_chain_cycle_and_p
     s_aws_sts_tester_init(allocator);
 
     struct aws_string *config_contents =
-        aws_string_new_from_c_str(allocator, s_soure_profile_chain_cycle_and_static_creds_config_file);
+        aws_string_new_from_c_str(allocator, s_source_profile_chain_cycle_and_static_creds_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
     struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
@@ -1813,7 +1848,7 @@ static int s_credentials_provider_sts_from_profile_config_succeeds(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1885,7 +1920,7 @@ static int s_credentials_provider_sts_from_profile_config_with_external_id_fn(
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;
@@ -1982,7 +2017,7 @@ static int s_credentials_provider_sts_from_profile_config_environment_succeeds_f
         s_tester.mocked_requests[0].body.len);
 
     aws_credentials_provider_release(provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
@@ -2105,7 +2140,7 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 
     aws_credentials_provider_release(cached_provider);
     aws_credentials_provider_release(sts_provider);
-    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_wait_for_connection_manager_shutdown_callback();
     aws_credentials_provider_release(static_provider);
 
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
