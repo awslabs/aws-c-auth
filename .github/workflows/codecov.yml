@@ -11,9 +11,12 @@ env:
   CRT_CI_ROLE: ${{ secrets.CRT_CI_ROLE_ARN }}
   AWS_DEFAULT_REGION: us-east-1
 
+permissions:
+  id-token: write # This is required for requesting the JWT
+
 jobs:
   codecov-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: aws-actions/configure-aws-credentials@v4
       with:
