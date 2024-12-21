@@ -12,6 +12,7 @@ include(AwsCheckHeaders)
 include(AwsSharedLibSetup)
 include(AwsSanitizers)
 include(AwsFindPackage)
+include(GNUInstallDirs)
 
 option(BUILD_RELOCATABLE_BINARIES
         "Build Relocatable Binaries, this will turn off features that will fail on older kernels than used for the build."
@@ -73,7 +74,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC ${DEP_AWS_LIBS})
 
 aws_prepare_shared_lib_exports(${PROJECT_NAME})
 
-install(FILES ${AWS_AUTH_ROOT_HEADERS} DESTINATION "${INCLUDE_DIRECTORY}/aws/auth" COMPONENT Development)
+install(FILES ${AWS_AUTH_ROOT_HEADERS} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/aws/auth" COMPONENT Development)
 
 if (BUILD_SHARED_LIBS)
    set (TARGET_DIR "shared")
@@ -82,7 +83,7 @@ else()
 endif()
 
 install(EXPORT "${PROJECT_NAME}-targets"
-        DESTINATION "${LIBRARY_DIRECTORY}/cmake/${PROJECT_NAME}/${TARGET_DIR}/"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/${TARGET_DIR}/"
         NAMESPACE AWS::
         COMPONENT Development)
 
@@ -91,7 +92,7 @@ configure_file("cmake/${PROJECT_NAME}-config.cmake"
         @ONLY)
 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
-        DESTINATION "${LIBRARY_DIRECTORY}/cmake/${PROJECT_NAME}/"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/"
         COMPONENT Development)
 
 include(CTest)
