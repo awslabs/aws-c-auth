@@ -686,13 +686,13 @@ struct aws_credentials_provider_cognito_options {
     /**
      * Optional set of identity provider token pairs to allow for authenticated identity access.
      */
-    struct aws_cognito_identity_provider_token_pair *logins;
+    const struct aws_cognito_identity_provider_token_pair *logins;
     size_t login_count;
 
     /**
      * Optional ARN of the role to be assumed when multiple roles were received in the token from the identity provider.
      */
-    struct aws_byte_cursor *custom_role_arn;
+    const struct aws_byte_cursor *custom_role_arn;
 
     /*
      * Connection bootstrap to use for network connections made while sourcing credentials
