@@ -32,6 +32,8 @@
 #define ECS_RESPONSE_SIZE_INITIAL 2048
 #define ECS_RESPONSE_SIZE_LIMIT 10000
 #define ECS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
+#define ECS_MAX_ATTEMPTS 3
+#define ECS_RETRY_TIMEOUT_MS 100
 
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token_file, "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_token, "AWS_CONTAINER_AUTHORIZATION_TOKEN");
@@ -49,6 +51,7 @@ struct aws_credentials_provider_ecs_impl {
     struct aws_string *auth_token_file_path;
     struct aws_string *auth_token;
     struct aws_client_bootstrap *bootstrap;
+    struct aws_retry_strategy *retry_strategy;
     bool is_https;
 };
 
@@ -62,6 +65,7 @@ struct aws_credentials_provider_ecs_user_data {
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
     struct aws_byte_buf auth_token;
+    struct aws_retry_token *retry_token;
 
     /* mutable */
     struct aws_http_connection *connection;
@@ -70,6 +74,25 @@ struct aws_credentials_provider_ecs_user_data {
     int status_code;
     int error_code;
 };
+
+/* called in between retries. */
+static void s_ecs_user_data_reset_request_specific_data(struct aws_credentials_provider_ecs_user_data *user_data) {
+    if (user_data->request) {
+        aws_http_message_release(user_data->request);
+        user_data->request = NULL;
+    }
+    if (user_data->connection) {
+        struct aws_credentials_provider_ecs_impl *impl = user_data->ecs_provider->impl;
+        int result = impl->function_table->aws_http_connection_manager_release_connection(
+            impl->connection_manager, user_data->connection);
+        (void)result;
+        AWS_ASSERT(result == AWS_OP_SUCCESS);
+        user_data->connection = NULL;
+    }
+    aws_byte_buf_reset(&user_data->current_result, false);
+    user_data->status_code = 0;
+    user_data->error_code = 0;
+}
 
 static void s_aws_credentials_provider_ecs_user_data_destroy(struct aws_credentials_provider_ecs_user_data *user_data) {
     if (user_data == NULL) {
@@ -85,6 +108,7 @@ static void s_aws_credentials_provider_ecs_user_data_destroy(struct aws_credenti
 
     aws_byte_buf_clean_up(&user_data->auth_token);
     aws_byte_buf_clean_up(&user_data->current_result);
+    aws_retry_token_release(user_data->retry_token);
 
     if (user_data->request) {
         aws_http_message_destroy(user_data->request);
@@ -152,6 +176,8 @@ static void s_aws_credentials_provider_ecs_user_data_reset_response(
     }
 }
 
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data);
+
 /*
  * In general, the ECS document looks something like:
  {
@@ -192,20 +218,44 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) ECS credentials provider successfully queried instance role credentials",
             (void *)ecs_user_data->ecs_provider);
+
+        int result = aws_retry_token_record_success(ecs_user_data->retry_token);
+        (void)result;
+        AWS_ASSERT(result == AWS_ERROR_SUCCESS);
     } else {
-        /* no credentials, make sure we have a valid error to report */
-        if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
-            ecs_user_data->error_code = aws_last_error();
-            if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
-                ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_SOURCE_FAILURE;
-            }
-        }
         AWS_LOGF_WARN(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) ECS credentials provider failed to query instance role credentials with error %d(%s)",
             (void *)ecs_user_data->ecs_provider,
             ecs_user_data->error_code,
             aws_error_str(ecs_user_data->error_code));
+        enum aws_retry_error_type error_type =
+            aws_credentials_provider_compute_retry_error_type(ecs_user_data->status_code, ecs_user_data->error_code);
+
+        /* don't retry client errors at all. */
+        if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
+            if (aws_retry_strategy_schedule_retry(
+                    ecs_user_data->retry_token, error_type, s_on_retry_ready, ecs_user_data) == AWS_OP_SUCCESS) {
+                AWS_LOGF_INFO(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p): successfully scheduled a retry",
+                    (void *)ecs_user_data->ecs_provider);
+                return;
+            }
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): failed to schedule retry: %s",
+                (void *)ecs_user_data->ecs_provider,
+                aws_error_str(aws_last_error()));
+            ecs_user_data->error_code = aws_last_error();
+        }
+        /* make sure we have a valid error to report */
+        if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
+            ecs_user_data->error_code = aws_last_error();
+            if (ecs_user_data->error_code == AWS_ERROR_SUCCESS) {
+                ecs_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_ECS_SOURCE_FAILURE;
+            }
+        }
     }
 
     /* pass the credentials back */
@@ -464,6 +514,59 @@ static void s_ecs_on_acquire_connection(struct aws_http_connection *connection, 
     s_ecs_query_task_role_credentials(ecs_user_data);
 }
 
+/* called for each retry. */
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data) {
+    (void)token;
+    struct aws_credentials_provider_ecs_user_data *ecs_user_data = user_data;
+
+    if (error_code) {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: ECS provider failed to acquire a connection, error code %d(%s)",
+            (void *)ecs_user_data->ecs_provider,
+            error_code,
+            aws_error_str(error_code));
+
+        ecs_user_data->error_code = error_code;
+        s_ecs_finalize_get_credentials_query(ecs_user_data);
+        return;
+    }
+
+    /* clear the result from previous attempt */
+    s_ecs_user_data_reset_request_specific_data(ecs_user_data);
+
+    struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
+    impl->function_table->aws_http_connection_manager_acquire_connection(
+        impl->connection_manager, s_ecs_on_acquire_connection, ecs_user_data);
+}
+
+static void s_on_retry_token_acquired(
+    struct aws_retry_strategy *strategy,
+    int error_code,
+    struct aws_retry_token *token,
+    void *user_data) {
+    (void)strategy;
+    struct aws_credentials_provider_ecs_user_data *ecs_user_data = user_data;
+
+    if (error_code) {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: ECS provider failed to acquire a connection, error code %d(%s)",
+            (void *)ecs_user_data->ecs_provider,
+            error_code,
+            aws_error_str(error_code));
+
+        ecs_user_data->error_code = error_code;
+        s_ecs_finalize_get_credentials_query(ecs_user_data);
+        return;
+    }
+
+    ecs_user_data->retry_token = token;
+    struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
+    impl->function_table->aws_http_connection_manager_acquire_connection(
+        impl->connection_manager, s_ecs_on_acquire_connection, ecs_user_data);
+}
+
 /*
  * The resolved IP address must satisfy one of the following:
  * 1. within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
@@ -531,9 +634,18 @@ static void s_on_host_resolved(
             goto on_error;
         }
     }
+
     struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
-    impl->function_table->aws_http_connection_manager_acquire_connection(
-        impl->connection_manager, s_ecs_on_acquire_connection, ecs_user_data);
+
+    if (aws_retry_strategy_acquire_retry_token(
+            impl->retry_strategy, NULL, s_on_retry_token_acquired, ecs_user_data, ECS_RETRY_TIMEOUT_MS)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to acquire retry token: %s",
+            (void *)ecs_user_data->ecs_provider,
+            aws_error_debug_str(aws_last_error()));
+        goto on_error;
+    }
 
     return;
 on_error:
@@ -562,7 +674,8 @@ static int s_credentials_provider_ecs_get_credentials_async(
     if (wrapped_user_data == NULL) {
         goto error;
     }
-    /* No need to verify the host IP address if the connection is using HTTPS or the ECS container host (relative URI)
+    /* No need to verify the host IP address if the connection is using HTTPS or the ECS container host (relative
+     * URI)
      */
     if (impl->is_https || aws_string_eq(impl->host, s_ecs_host)) {
         impl->function_table->aws_http_connection_manager_acquire_connection(
@@ -594,6 +707,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
     aws_string_destroy(impl->auth_token);
     aws_string_destroy(impl->auth_token_file_path);
     aws_string_destroy(impl->host);
+    aws_retry_strategy_release(impl->retry_strategy);
     aws_client_bootstrap_release(impl->bootstrap);
 
     /* aws_http_connection_manager_release will eventually leads to call of s_on_connection_manager_shutdown,
@@ -723,6 +837,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
     if (impl->host == NULL) {
         goto on_error;
     }
+
+    struct aws_standard_retry_options retry_options = {
+        .backoff_retry_options =
+            {
+                .el_group = options->bootstrap->event_loop_group,
+                .max_retries = ECS_MAX_ATTEMPTS,
+            },
+    };
+    impl->retry_strategy = aws_retry_strategy_new_standard(allocator, &retry_options);
 
     provider->shutdown_options = options->shutdown_options;
 
