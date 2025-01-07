@@ -233,7 +233,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
             aws_credentials_provider_compute_retry_error_type(ecs_user_data->status_code, ecs_user_data->error_code);
 
         /* don't retry client errors at all. */
-        if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
+        if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR && ecs_user_data->retry_token != NULL) {
             if (aws_retry_strategy_schedule_retry(
                     ecs_user_data->retry_token, error_type, s_on_retry_ready, ecs_user_data) == AWS_OP_SUCCESS) {
                 AWS_LOGF_INFO(
@@ -241,7 +241,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
                     "(id=%p): successfully scheduled a retry",
                     (void *)ecs_user_data->ecs_provider);
                 return;
-            }
+            } else
             AWS_LOGF_ERROR(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
                 "(id=%p): failed to schedule retry: %s",
@@ -678,8 +678,15 @@ static int s_credentials_provider_ecs_get_credentials_async(
      * URI)
      */
     if (impl->is_https || aws_string_eq(impl->host, s_ecs_host)) {
-        impl->function_table->aws_http_connection_manager_acquire_connection(
-            impl->connection_manager, s_ecs_on_acquire_connection, wrapped_user_data);
+        if (aws_retry_strategy_acquire_retry_token(
+                impl->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, ECS_RETRY_TIMEOUT_MS)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): failed to acquire retry token: %s",
+                (void *)wrapped_user_data->ecs_provider,
+                aws_error_debug_str(aws_last_error()));
+            goto error;
+        }
     } else if (aws_host_resolver_resolve_host(
                    impl->bootstrap->host_resolver,
                    impl->host,
