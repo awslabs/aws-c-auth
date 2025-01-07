@@ -242,11 +242,11 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
                     (void *)ecs_user_data->ecs_provider);
                 return;
             } else
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "(id=%p): failed to schedule retry: %s",
-                (void *)ecs_user_data->ecs_provider,
-                aws_error_str(aws_last_error()));
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "(id=%p): failed to schedule retry: %s",
+                    (void *)ecs_user_data->ecs_provider,
+                    aws_error_str(aws_last_error()));
             ecs_user_data->error_code = aws_last_error();
         }
         /* make sure we have a valid error to report */

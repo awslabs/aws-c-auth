@@ -176,7 +176,7 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     struct aws_byte_cursor path;
     AWS_ZERO_STRUCT(path);
     aws_http_message_get_request_path(options->request, &path);
-    if(s_tester.request_path_and_query != NULL) {
+    if (s_tester.request_path_and_query != NULL) {
         aws_string_destroy(s_tester.request_path_and_query);
         s_tester.request_path_and_query = NULL;
     }
@@ -187,11 +187,10 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
             aws_http_message_get_headers(options->request),
             aws_byte_cursor_from_c_str("Authorization"),
             &authorization_header_value) == AWS_OP_SUCCESS) {
-         if(s_tester.request_authorization_header != NULL) {
-        aws_string_destroy(s_tester.request_authorization_header);
-                 s_tester.request_authorization_header = NULL;
-
-    }
+        if (s_tester.request_authorization_header != NULL) {
+            aws_string_destroy(s_tester.request_authorization_header);
+            s_tester.request_authorization_header = NULL;
+        }
         s_tester.request_authorization_header =
             aws_string_new_from_cursor(s_tester.allocator, &authorization_header_value);
     }
