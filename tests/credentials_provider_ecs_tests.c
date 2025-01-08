@@ -35,6 +35,7 @@ struct aws_mock_ecs_tester {
     struct aws_string *request_path_and_query;
     struct aws_string *request_authorization_header;
     struct aws_string *selected_host;
+    int attempts;
 
     struct aws_array_list response_data_callbacks;
     bool is_connection_acquire_successful;
@@ -173,6 +174,7 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     (void)client_connection;
     (void)options;
 
+    s_tester.attempts++;
     struct aws_byte_cursor path;
     AWS_ZERO_STRUCT(path);
     aws_http_message_get_request_path(options->request, &path);
@@ -438,6 +440,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
     ASSERT_UINT_EQUALS(443, s_tester.selected_port);
+    ASSERT_UINT_EQUALS(4, s_tester.attempts);
     aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
