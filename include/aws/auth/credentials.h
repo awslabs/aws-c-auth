@@ -751,7 +751,7 @@ struct aws_credentials *aws_credentials_new(
  * @param access_key_id_cursor value for the aws access key id field
  * @param secret_access_key_cursor value for the secret access key field
  * @param session_token_cursor (optional) security token associated with the credentials
- * @param account_id value for the account_id field
+ * @param account_id (optional) value for the account_id field
  * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
  * be valid past.  For credentials that do not expire, use UINT64_MAX
  *
