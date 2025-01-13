@@ -86,6 +86,7 @@ struct aws_credentials {
 /*
  * Credentials API implementations
  */
+
 struct aws_credentials *aws_credentials_new(
     struct aws_allocator *allocator,
     struct aws_byte_cursor access_key_id_cursor,
@@ -104,6 +105,7 @@ struct aws_credentials *aws_credentials_new(
         account_id,
         expiration_timepoint_seconds);
 }
+
 struct aws_credentials *aws_credentials_new_with_account_id(
     struct aws_allocator *allocator,
     struct aws_byte_cursor access_key_id_cursor,
