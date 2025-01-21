@@ -165,16 +165,6 @@ on_error:
     return NULL;
 }
 
-static void s_aws_credentials_provider_ecs_user_data_reset_response(
-    struct aws_credentials_provider_ecs_user_data *ecs_user_data) {
-    ecs_user_data->current_result.len = 0;
-    ecs_user_data->status_code = 0;
-
-    if (ecs_user_data->request) {
-        aws_http_message_destroy(ecs_user_data->request);
-        ecs_user_data->request = NULL;
-    }
-}
 
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data);
 
@@ -483,9 +473,6 @@ static void s_ecs_query_task_role_credentials(struct aws_credentials_provider_ec
     AWS_FATAL_ASSERT(ecs_user_data->connection);
 
     struct aws_credentials_provider_ecs_impl *impl = ecs_user_data->ecs_provider->impl;
-
-    /* "Clear" the result */
-    s_aws_credentials_provider_ecs_user_data_reset_response(ecs_user_data);
 
     struct aws_byte_cursor uri_cursor = aws_byte_cursor_from_string(impl->path_and_query);
     if (s_make_ecs_http_query(ecs_user_data, &uri_cursor) == AWS_OP_ERR) {
