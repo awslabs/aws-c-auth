@@ -35,6 +35,7 @@ struct aws_mock_ecs_tester {
     struct aws_string *request_path_and_query;
     struct aws_string *request_authorization_header;
     struct aws_string *selected_host;
+    int attempts;
 
     struct aws_array_list response_data_callbacks;
     bool is_connection_acquire_successful;
@@ -173,10 +174,14 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     (void)client_connection;
     (void)options;
 
+    s_tester.attempts++;
     struct aws_byte_cursor path;
     AWS_ZERO_STRUCT(path);
     aws_http_message_get_request_path(options->request, &path);
-
+    if (s_tester.request_path_and_query != NULL) {
+        aws_string_destroy(s_tester.request_path_and_query);
+        s_tester.request_path_and_query = NULL;
+    }
     s_tester.request_path_and_query = aws_string_new_from_cursor(s_tester.allocator, &path);
     struct aws_byte_cursor authorization_header_value;
     AWS_ZERO_STRUCT(authorization_header_value);
@@ -184,6 +189,10 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
             aws_http_message_get_headers(options->request),
             aws_byte_cursor_from_c_str("Authorization"),
             &authorization_header_value) == AWS_OP_SUCCESS) {
+        if (s_tester.request_authorization_header != NULL) {
+            aws_string_destroy(s_tester.request_authorization_header);
+            s_tester.request_authorization_header = NULL;
+        }
         s_tester.request_authorization_header =
             aws_string_new_from_cursor(s_tester.allocator, &authorization_header_value);
     }
@@ -431,6 +440,7 @@ static int s_credentials_provider_ecs_request_failure(struct aws_allocator *allo
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
     ASSERT_TRUE(s_tester.credentials == NULL);
     ASSERT_UINT_EQUALS(443, s_tester.selected_port);
+    ASSERT_UINT_EQUALS(4, s_tester.attempts);
     aws_mutex_unlock(&s_tester.lock);
 
     aws_credentials_provider_release(provider);
@@ -766,8 +776,7 @@ static int s_credentials_provider_ecs_basic_success_token_file(struct aws_alloca
         "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d",
         aws_string_c_str(auth_token)));
 
-    aws_string_destroy(s_tester.request_path_and_query);
-    aws_string_destroy(s_tester.request_authorization_header);
+    s_tester.has_received_credentials_callback = false;
     aws_credentials_release(s_tester.credentials);
 
     aws_mutex_unlock(&s_tester.lock);
