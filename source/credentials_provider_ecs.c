@@ -165,7 +165,6 @@ on_error:
     return NULL;
 }
 
-
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data);
 
 /*
