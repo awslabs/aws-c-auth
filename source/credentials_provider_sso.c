@@ -378,7 +378,7 @@ static void s_on_get_token_callback(struct aws_credentials *credentials, int err
     struct aws_byte_cursor token = aws_credentials_get_token(credentials);
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): successfully accquired a token",
+        "(id=%p): successfully acquired a token",
         (void *)sso_query_context->provider);
 
     sso_query_context->token = aws_string_new_from_cursor(sso_query_context->allocator, &token);
@@ -401,7 +401,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
     }
     AWS_LOGF_INFO(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p): successfully accquired a connection",
+        "(id=%p): successfully acquired a connection",
         (void *)sso_query_context->provider);
     sso_query_context->connection = connection;
 

@@ -1600,6 +1600,33 @@ static int s_sigv4_skip_user_agent_header_test(struct aws_allocator *allocator, 
 AWS_TEST_CASE(sigv4_skip_user_agent_header_test, s_sigv4_skip_user_agent_header_test);
 
 AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_transfer_encoding_header_request,
+    "GET / HTTP/1.1\n"
+    "Transfer-Encoding: chunked\n"
+    "Host:example.amazonaws.com\n\n");
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_skip_transfer_encoding_header_expected_canonical_request,
+    "GET\n"
+    "/\n"
+    "\n"
+    "host:example.amazonaws.com\n"
+    "x-amz-date:20150830T123600Z\n"
+    "\n"
+    "host;x-amz-date\n"
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+static int s_sigv4_skip_transfer_encoding_header_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_do_header_skip_test(
+        allocator,
+        NULL,
+        s_skip_transfer_encoding_header_request,
+        s_skip_transfer_encoding_header_expected_canonical_request);
+}
+AWS_TEST_CASE(sigv4_skip_transfer_encoding_header_test, s_sigv4_skip_transfer_encoding_header_test);
+
+AWS_STATIC_STRING_FROM_LITERAL(
     s_skip_custom_header_request,
     "GET / HTTP/1.1\n"
     "MyHeader:Blahblah\n"

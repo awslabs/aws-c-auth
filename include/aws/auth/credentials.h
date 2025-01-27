@@ -915,7 +915,7 @@ bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
  * the hybrid mode based on AWS credentials.
  *
  * @param allocator memory allocator to use for all memory allocation
- * @param credentials AWS credentials to derive the ECC key from using the AWS sigv4a key deriviation specification
+ * @param credentials AWS credentials to derive the ECC key from using the AWS sigv4a key derivation specification
  * @return a new ecc key pair or NULL on failure
  */
 AWS_AUTH_API
