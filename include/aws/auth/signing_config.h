@@ -209,7 +209,7 @@ struct aws_signing_config_aws {
     void *should_sign_header_ud;
 
     /*
-     * Put all flags in here at the end.  If this grows, stay aware of bit-space overflow and ABI compatibilty.
+     * Put all flags in here at the end.  If this grows, stay aware of bit-space overflow and ABI compatibility.
      */
     struct {
         /**

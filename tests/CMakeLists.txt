@@ -195,6 +195,7 @@ add_test_case(credentials_utils_construct_endpoint_test)
 add_test_case(sigv4_skip_xray_header_test)
 add_test_case(sigv4_skip_user_agent_header_test)
 add_test_case(sigv4_skip_custom_header_test)
+add_test_case(sigv4_skip_transfer_encoding_header_test)
 
 add_test_case(sigv4_fail_date_header_test)
 add_test_case(sigv4_fail_content_header_test)

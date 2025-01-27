@@ -82,6 +82,7 @@ static struct aws_byte_cursor s_sec_websocket_key_header_name;
 static struct aws_byte_cursor s_sec_websocket_protocol_header_name;
 static struct aws_byte_cursor s_sec_websocket_version_header_name;
 static struct aws_byte_cursor s_upgrade_header_name;
+static struct aws_byte_cursor s_transfer_encoding_header_name;
 
 static struct aws_byte_cursor s_amz_content_sha256_header_name;
 static struct aws_byte_cursor s_amz_date_header_name;
@@ -154,6 +155,11 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
 
     s_upgrade_header_name = aws_byte_cursor_from_c_str("upgrade");
     if (aws_hash_table_put(&s_skipped_headers, &s_upgrade_header_name, NULL, NULL)) {
+        return AWS_OP_ERR;
+    }
+
+    s_transfer_encoding_header_name = aws_byte_cursor_from_c_str("transfer-encoding");
+    if (aws_hash_table_put(&s_skipped_headers, &s_transfer_encoding_header_name, NULL, NULL)) {
         return AWS_OP_ERR;
     }
 
