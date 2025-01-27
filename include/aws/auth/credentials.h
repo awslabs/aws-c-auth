@@ -82,6 +82,7 @@ struct aws_credentials_provider_static_options {
     struct aws_byte_cursor access_key_id;
     struct aws_byte_cursor secret_access_key;
     struct aws_byte_cursor session_token;
+    struct aws_byte_cursor account_id;
 };
 
 /**
@@ -744,6 +745,28 @@ struct aws_credentials *aws_credentials_new(
     uint64_t expiration_timepoint_seconds);
 
 /**
+ * Creates a new set of aws credentials with account_id
+ *
+ * @param allocator memory allocator to use
+ * @param access_key_id_cursor value for the aws access key id field
+ * @param secret_access_key_cursor value for the secret access key field
+ * @param session_token_cursor (optional) security token associated with the credentials
+ * @param account_id (optional) value for the account_id field
+ * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
+ * be valid past.  For credentials that do not expire, use UINT64_MAX
+ *
+ * @return a valid credentials object, or NULL
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_with_account_id(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor access_key_id_cursor,
+    struct aws_byte_cursor secret_access_key_cursor,
+    struct aws_byte_cursor session_token_cursor,
+    struct aws_byte_cursor account_id_cursor,
+    uint64_t expiration_timepoint_seconds);
+
+/**
  * Creates a new set of aws anonymous credentials.
  * Use Anonymous credentials, when you want to skip the signing process.
  *
@@ -847,6 +870,15 @@ struct aws_byte_cursor aws_credentials_get_secret_access_key(const struct aws_cr
  */
 AWS_AUTH_API
 struct aws_byte_cursor aws_credentials_get_session_token(const struct aws_credentials *credentials);
+
+/**
+ * Get the AWS account id from a set of credentials
+ *
+ * @param credentials to get the account id from
+ * @return a byte cursor to the account id or an empty byte cursor if there is no account id
+ */
+AWS_AUTH_API
+struct aws_byte_cursor aws_credentials_get_account_id(const struct aws_credentials *credentials);
 
 /**
  * Get the expiration timepoint (in seconds since epoch) associated with a set of credentials
