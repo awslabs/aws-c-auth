@@ -1619,7 +1619,10 @@ AWS_STATIC_STRING_FROM_LITERAL(
 static int s_sigv4_skip_transfer_encoding_header_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     return s_do_header_skip_test(
-        allocator, NULL, s_skip_transfer_encoding_header_request, s_skip_transfer_encoding_header_expected_canonical_request);
+        allocator,
+        NULL,
+        s_skip_transfer_encoding_header_request,
+        s_skip_transfer_encoding_header_expected_canonical_request);
 }
 AWS_TEST_CASE(sigv4_skip_transfer_encoding_header_test, s_sigv4_skip_transfer_encoding_header_test);
 
