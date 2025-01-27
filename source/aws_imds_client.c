@@ -954,7 +954,7 @@ static enum imds_token_copy_result s_copy_token_safely(struct imds_user_data *us
     return ret;
 }
 /**
- * Once a requseter returns from token request, it should call this function to unblock all other
+ * Once a requester returns from token request, it should call this function to unblock all other
  * waiting requesters. When the token parameter is NULL, means the token request failed. Now we need
  * a new requester to acquire the token again.
  */

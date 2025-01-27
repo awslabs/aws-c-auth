@@ -742,7 +742,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     const struct aws_credentials_provider_sts_options *options) {
 
     if (!options->bootstrap) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for quering STS");
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for querying STS");
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
