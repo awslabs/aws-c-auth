@@ -257,6 +257,17 @@ static int s_environment_credentials_provider_basic_test(struct aws_allocator *a
             s_session_token_test_value,
             NULL) == AWS_OP_SUCCESS);
 
+    aws_set_environment_value(s_account_id_env_var, s_account_id_test_value);
+
+    ASSERT_TRUE(
+        s_do_basic_provider_test(
+            provider,
+            1,
+            s_access_key_id_test_value,
+            s_secret_access_key_test_value,
+            s_session_token_test_value,
+            s_account_id_test_value) == AWS_OP_SUCCESS);
+
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();

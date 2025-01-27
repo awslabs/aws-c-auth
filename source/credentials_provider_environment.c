@@ -12,6 +12,7 @@
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
+AWS_STATIC_STRING_FROM_LITERAL(s_account_id_env_var, "AWS_ACCOUNT_ID");
 
 static int s_credentials_provider_environment_get_credentials_async(
     struct aws_credentials_provider *provider,
@@ -23,16 +24,19 @@ static int s_credentials_provider_environment_get_credentials_async(
     struct aws_string *access_key_id = NULL;
     struct aws_string *secret_access_key = NULL;
     struct aws_string *session_token = NULL;
+    struct aws_string *account_id = NULL;
     struct aws_credentials *credentials = NULL;
     int error_code = AWS_ERROR_SUCCESS;
 
     aws_get_environment_value(allocator, s_access_key_id_env_var, &access_key_id);
     aws_get_environment_value(allocator, s_secret_access_key_env_var, &secret_access_key);
     aws_get_environment_value(allocator, s_session_token_env_var, &session_token);
+    aws_get_environment_value(allocator, s_account_id_env_var, &account_id);
 
     if (access_key_id != NULL && access_key_id->len > 0 && secret_access_key != NULL && secret_access_key->len > 0) {
         credentials =
-            aws_credentials_new_from_string(allocator, access_key_id, secret_access_key, session_token, UINT64_MAX);
+            aws_credentials_new_from_string_with_account_id(allocator, access_key_id, secret_access_key, session_token, account_id
+                    ,UINT64_MAX);
         if (credentials == NULL) {
             error_code = aws_last_error();
         }
@@ -54,6 +58,7 @@ static int s_credentials_provider_environment_get_credentials_async(
     callback(credentials, error_code, user_data);
 
     aws_credentials_release(credentials);
+    aws_string_destroy(account_id);
     aws_string_destroy(session_token);
     aws_string_destroy(secret_access_key);
     aws_string_destroy(access_key_id);

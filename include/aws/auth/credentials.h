@@ -798,6 +798,28 @@ struct aws_credentials *aws_credentials_new_from_string(
     uint64_t expiration_timepoint_seconds);
 
 /**
+ * Creates a new set of AWS credentials with account_id
+ *
+ * @param allocator memory allocator to use
+ * @param access_key_id  value for the aws access key id field
+ * @param secret_access_key value for the secret access key field
+ * @param session_token (optional) security token associated with the credentials
+ * @param account_id (optional) account id associated with the credentials
+ * @param expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer
+ * be valid past.  For credentials that do not expire, use UINT64_MAX
+ *
+ * @return a valid credentials object, or NULL
+ */
+AWS_AUTH_API
+struct aws_credentials *aws_credentials_new_from_string_with_account_id(
+    struct aws_allocator *allocator,
+    const struct aws_string *access_key_id,
+    const struct aws_string *secret_access_key,
+    const struct aws_string *session_token,
+    const struct aws_string *account_id,
+    uint64_t expiration_timepoint_seconds);
+
+/**
  * Creates a set of AWS credentials that includes an ECC key pair.  These credentials do not have a value for
  * the secret access key; the ecc key takes over that field's role in sigv4a signing.
  *

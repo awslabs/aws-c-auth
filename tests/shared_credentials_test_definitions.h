@@ -23,6 +23,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AW
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_env_var, "AWS_SESSION_TOKEN");
+AWS_STATIC_STRING_FROM_LITERAL(s_account_id_env_var, "AWS_ACCOUNT_ID");
 
 static struct aws_string *aws_create_process_unique_file_name(struct aws_allocator *allocator) {
     char file_name_storage[64] = {0};
