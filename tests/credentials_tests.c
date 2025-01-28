@@ -30,6 +30,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_test_value, "SekritKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_test_value, "Some Session Token");
 AWS_STATIC_STRING_FROM_LITERAL(s_account_id_test_value, "Some Account Value");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_account_id_env_var, "AWS_ACCOUNT_ID");
+
 static int s_credentials_create_destroy_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
