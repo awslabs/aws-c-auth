@@ -53,7 +53,7 @@ static int s_token_provider_sso_session_get_token(
         goto done;
     }
 
-    /* TODO: Refresh token if it is within refresh window and refreshable */
+    /* TODO: Refresh token if it is within refresh window and refreshble */
 
     credentials = aws_credentials_new_token(
         provider->allocator,

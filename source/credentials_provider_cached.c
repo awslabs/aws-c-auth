@@ -60,7 +60,7 @@ static void s_swap_cached_credentials(
 
         AWS_LOGF_DEBUG(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Cached credentials provider succesfully sourced credentials on refresh",
+            "(id=%p) Cached credentials provider successfully sourced credentials on refresh",
             (void *)provider);
     } else {
         AWS_LOGF_DEBUG(

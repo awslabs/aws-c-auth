@@ -96,7 +96,7 @@ static bool s_parse_expiration_value_from_json_object(
             if (aws_json_value_get_string(value, &expiration_cursor)) {
                 AWS_LOGF_INFO(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Unabled to extract credentials Expiration field from Json document.");
+                    "Unable to extract credentials Expiration field from Json document.");
                 return false;
             }
 
@@ -123,7 +123,7 @@ static bool s_parse_expiration_value_from_json_object(
             if (aws_json_value_get_number(value, &expiration_value)) {
                 AWS_LOGF_INFO(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Unabled to extract credentials Expiration field from Json document.");
+                    "Unable to extract credentials Expiration field from Json document.");
                 return false;
             }
 
@@ -136,7 +136,7 @@ static bool s_parse_expiration_value_from_json_object(
             if (aws_json_value_get_number(value, &expiration_value_ms)) {
                 AWS_LOGF_INFO(
                     AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Unabled to extract credentials Expiration field from Json document.");
+                    "Unable to extract credentials Expiration field from Json document.");
                 return false;
             }
 
