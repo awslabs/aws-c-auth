@@ -914,7 +914,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "[profile default]\naws_access_key_id=fake_access_key2\naws_secret_access_key=fake_secret_key2\n");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_account_id_config_contents,
-    "[profile default]\naws_access_key_id=fake_access_key\naws_secret_access_key=fake_secret_key\naws_account_id=fake_account_id");
+    "[profile "
+    "default]\naws_access_key_id=fake_access_key\naws_secret_access_key=fake_secret_key\naws_account_id=fake_account_"
+    "id");
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_credentials_contents,
@@ -978,8 +980,7 @@ int s_verify_account_id_credentials_callback(struct aws_get_credentials_test_cal
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(callback_results->credentials), s_fake_access);
     ASSERT_CURSOR_VALUE_STRING_EQUALS(
         aws_credentials_get_secret_access_key(callback_results->credentials), s_fake_secret);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(
-        aws_credentials_get_account_id(callback_results->credentials), s_fake_account_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_account_id(callback_results->credentials), s_fake_account_id);
     ASSERT_TRUE(aws_credentials_get_session_token(callback_results->credentials).len == 0);
 
     return AWS_OP_SUCCESS;

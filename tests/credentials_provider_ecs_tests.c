@@ -781,7 +781,9 @@ static int s_credentials_provider_ecs_basic_success_with_account_id(struct aws_a
     return 0;
 }
 
-AWS_TEST_CASE(credentials_provider_ecs_basic_success_with_account_id, s_credentials_provider_ecs_basic_success_with_account_id);
+AWS_TEST_CASE(
+    credentials_provider_ecs_basic_success_with_account_id,
+    s_credentials_provider_ecs_basic_success_with_account_id);
 
 static int s_credentials_provider_ecs_basic_success_token_file(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;

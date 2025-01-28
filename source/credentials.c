@@ -362,7 +362,12 @@ struct aws_credentials *aws_credentials_new_from_string_with_account_id(
     }
 
     return aws_credentials_new_with_account_id(
-        allocator, access_key_cursor, secret_access_key_cursor, session_token_cursor, account_id_cursor, expiration_timepoint_seconds);
+        allocator,
+        access_key_cursor,
+        secret_access_key_cursor,
+        session_token_cursor,
+        account_id_cursor,
+        expiration_timepoint_seconds);
 }
 
 struct aws_credentials *aws_credentials_new_ecc(

@@ -38,5 +38,6 @@ struct aws_credentials *aws_credentials_new_from_profile(
     const struct aws_string *session_token = s_profile_get_property_value(profile, s_session_token_profile_var);
     const struct aws_string *account_id = s_profile_get_property_value(profile, s_account_id_profile_var);
 
-    return aws_credentials_new_from_string_with_account_id(allocator, access_key, secret_key, session_token, account_id, UINT64_MAX);
+    return aws_credentials_new_from_string_with_account_id(
+        allocator, access_key, secret_key, session_token, account_id, UINT64_MAX);
 }
