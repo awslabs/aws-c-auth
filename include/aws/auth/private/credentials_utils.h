@@ -84,6 +84,7 @@ struct aws_parse_credentials_from_json_doc_options {
     const char *secret_access_key_name;
     const char *token_name;
     const char *expiration_name;
+    const char *account_id_name;
     const char *top_level_object_name;
     enum aws_parse_credentials_expiration_format expiration_format;
     bool token_required;

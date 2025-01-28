@@ -50,6 +50,7 @@ static int s_get_credentials_from_process(
         .access_key_id_name = "AccessKeyId",
         .secret_access_key_name = "SecretAccessKey",
         .token_name = "SessionToken",
+        .account_id_name = "AccountId",
         .expiration_name = "Expiration",
         .token_required = false,
         .expiration_required = false,
