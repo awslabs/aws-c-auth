@@ -24,6 +24,7 @@ static const struct aws_string *s_profile_get_property_value(
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "aws_secret_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_profile_var, "aws_session_token");
+AWS_STATIC_STRING_FROM_LITERAL(s_account_id_profile_var, "aws_account_id");
 
 struct aws_credentials *aws_credentials_new_from_profile(
     struct aws_allocator *allocator,
@@ -35,6 +36,7 @@ struct aws_credentials *aws_credentials_new_from_profile(
     }
 
     const struct aws_string *session_token = s_profile_get_property_value(profile, s_session_token_profile_var);
+    const struct aws_string *account_id = s_profile_get_property_value(profile, s_account_id_profile_var);
 
-    return aws_credentials_new_from_string(allocator, access_key, secret_key, session_token, UINT64_MAX);
+    return aws_credentials_new_from_string_with_account_id(allocator, access_key, secret_key, session_token, account_id, UINT64_MAX);
 }

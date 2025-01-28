@@ -912,6 +912,9 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(
     s_config_contents2,
     "[profile default]\naws_access_key_id=fake_access_key2\naws_secret_access_key=fake_secret_key2\n");
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_account_id_config_contents,
+    "[profile default]\naws_access_key_id=fake_access_key\naws_secret_access_key=fake_secret_key\naws_account_id=fake_account_id");
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_credentials_contents,
@@ -922,6 +925,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
 
 AWS_STATIC_STRING_FROM_LITERAL(s_fake_access, "fake_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_fake_secret, "fake_secret_key");
+AWS_STATIC_STRING_FROM_LITERAL(s_fake_account_id, "fake_account_id");
 
 int s_verify_default_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
     ASSERT_TRUE(callback_results->count == 1);
@@ -967,6 +971,54 @@ static int s_profile_credentials_provider_default_test(struct aws_allocator *all
 }
 
 AWS_TEST_CASE(profile_credentials_provider_default_test, s_profile_credentials_provider_default_test);
+
+int s_verify_account_id_credentials_callback(struct aws_get_credentials_test_callback_result *callback_results) {
+    ASSERT_TRUE(callback_results->count == 1);
+    ASSERT_TRUE(callback_results->credentials != NULL);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(callback_results->credentials), s_fake_access);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(callback_results->credentials), s_fake_secret);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_account_id(callback_results->credentials), s_fake_account_id);
+    ASSERT_TRUE(aws_credentials_get_session_token(callback_results->credentials).len == 0);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_profile_credentials_provider_account_id_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)s_account_id_config_contents;
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    ASSERT_SUCCESS(s_do_credentials_provider_profile_test(
+        allocator,
+        config_file_str,
+        s_account_id_config_contents,
+        creds_file_str,
+        s_credentials_contents,
+        &options,
+        s_verify_account_id_credentials_callback,
+        true));
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(profile_credentials_provider_account_id_test, s_profile_credentials_provider_account_id_test);
 
 static int s_profile_credentials_provider_cached_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
