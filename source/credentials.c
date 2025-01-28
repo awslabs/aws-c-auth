@@ -346,6 +346,7 @@ struct aws_credentials *aws_credentials_new_from_string_with_account_id(
     const struct aws_string *session_token,
     const struct aws_string *account_id,
     uint64_t expiration_timepoint_seconds) {
+
     struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_string(access_key_id);
     struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_string(secret_access_key);
     struct aws_byte_cursor session_token_cursor;

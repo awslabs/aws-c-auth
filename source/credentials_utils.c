@@ -203,7 +203,7 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     AWS_ZERO_STRUCT(token_cursor);
     if (options->token_name) {
         token = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->token_name));
-        if (!aws_json_value_is_string(token) || aws_json_value_get_string(token, &token_cursor) == AWS_OP_ERR) {
+        if (!aws_json_value_is_string(token) || aws_json_value_get_string(token, &token_cursor) == AWS_OP_ERR || token_cursor.len == 0) {
             if (options->token_required) {
                 AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from Json document.");
                 goto done;
