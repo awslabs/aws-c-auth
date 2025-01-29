@@ -426,9 +426,10 @@ static struct aws_byte_cursor s_success_creds_doc =
                                           "             <SecretAccessKey>secretKeyResp</SecretAccessKey>\n"
                                           "             <SessionToken>sessionTokenResp</SessionToken>\n"
                                           "         </Credentials>\n"
-                                          "         <AssumeRoleUser>\n"
-                                          "             ... a bunch of other stuff we don't care about\n"
-                                          "         </AssumeRoleUser>\n"
+                                          "         <AssumedRoleUser>\n"
+                                          "             <AssumedRoleId>assumeRoleIdResp</AssumedRoleId>\n"
+                                          "             <Arn>arn:aws:sts::123456789012:assumed-role</Arn>\n"
+                                          "         </AssumedRoleUser>\n"
                                           "         ... more stuff we don't care about\n"
                                           "      </AssumeRoleResult>\n"
                                           "</AssumeRoleResponse>");
@@ -448,12 +449,14 @@ static struct aws_byte_cursor s_expected_payload_with_external_id =
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_response, "accessKeyIdResp");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_response, "secretKeyResp");
 AWS_STATIC_STRING_FROM_LITERAL(s_session_token_response, "sessionTokenResp");
+AWS_STATIC_STRING_FROM_LITERAL(s_account_id_response, "123456789012");
 
 static int s_verify_credentials(struct aws_credentials *credentials) {
     ASSERT_NOT_NULL(credentials);
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_access_key_id_response);
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(credentials), s_secret_access_key_response);
     ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_session_token_response);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_account_id(credentials), s_account_id_response);
 
     return AWS_OP_SUCCESS;
 }

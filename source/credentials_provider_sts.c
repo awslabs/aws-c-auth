@@ -40,6 +40,7 @@
 static int s_sts_xml_on_AssumeRoleResponse_child(struct aws_xml_node *, void *);
 static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *, void *);
 static int s_sts_xml_on_Credentials_child(struct aws_xml_node *, void *);
+static int s_sts_xml_on_AssumedRoleUser_child(struct aws_xml_node *, void *);
 
 static struct aws_http_header s_content_type_header = {
     .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-type"),
@@ -75,6 +76,7 @@ struct sts_creds_provider_user_data {
     struct aws_string *access_key_id;
     struct aws_string *secret_access_key;
     struct aws_string *session_token;
+    struct aws_string *account_id;
     aws_on_get_credentials_callback_fn *callback;
     struct aws_http_connection *connection;
     struct aws_byte_buf payload_body;
@@ -124,6 +126,9 @@ static void s_reset_request_specific_data(struct sts_creds_provider_user_data *u
 
     aws_string_destroy(user_data->session_token);
     user_data->session_token = NULL;
+
+    aws_string_destroy(user_data->account_id);
+    user_data->account_id = NULL;
 }
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
     user_data->callback(user_data->credentials, user_data->error_code, user_data->user_data);
@@ -229,6 +234,39 @@ static int s_sts_xml_on_AssumeRoleResult_child(struct aws_xml_node *node, void *
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
         return aws_xml_node_traverse(node, s_sts_xml_on_Credentials_child, user_data);
     }
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumedRoleUser")) {
+        return aws_xml_node_traverse(node, s_sts_xml_on_AssumedRoleUser_child, user_data);
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_sts_xml_on_AssumedRoleUser_child(struct aws_xml_node *node, void *user_data) {
+    struct sts_creds_provider_user_data *provider_user_data = user_data;
+    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
+    struct aws_byte_cursor arn_cursor;
+    AWS_ZERO_STRUCT(arn_cursor);
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Arn")) {
+        if (aws_xml_node_as_body(node, &arn_cursor)) {
+            return AWS_OP_ERR;
+        }
+        struct aws_byte_cursor account_id;
+        AWS_ZERO_STRUCT(account_id);
+        /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the account-id out of it which is the fifth element. */
+        for (int i = 0; i < 5; i++) {
+            if (!aws_byte_cursor_next_split(&arn_cursor, ':', &account_id)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                    "Failed to parse account_id string from STS xml response: %s",
+                    aws_error_str(aws_last_error()));
+                return AWS_OP_ERR;
+            }
+        }
+
+        provider_user_data->account_id = aws_string_new_from_cursor(provider_user_data->allocator, &account_id);
+    }
+
     return AWS_OP_SUCCESS;
 }
 
@@ -372,13 +410,14 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         }
 
         if (provider_user_data->access_key_id && provider_user_data->secret_access_key &&
-            provider_user_data->session_token) {
+            provider_user_data->session_token && provider_user_data->account_id) {
 
-            provider_user_data->credentials = aws_credentials_new_from_string(
+            provider_user_data->credentials = aws_credentials_new_from_string_with_account_id(
                 provider_user_data->allocator,
                 provider_user_data->access_key_id,
                 provider_user_data->secret_access_key,
                 provider_user_data->session_token,
+                provider_user_data->account_id,
                 now_seconds + provider_impl->duration_seconds);
         }
 
