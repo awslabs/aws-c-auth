@@ -253,7 +253,8 @@ static int s_sts_xml_on_AssumedRoleUser_child(struct aws_xml_node *node, void *u
         }
         struct aws_byte_cursor account_id;
         AWS_ZERO_STRUCT(account_id);
-        /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the account-id out of it which is the fifth element. */
+        /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the
+         * account-id out of it which is the fifth element. */
         for (int i = 0; i < 5; i++) {
             if (!aws_byte_cursor_next_split(&arn_cursor, ':', &account_id)) {
                 AWS_LOGF_ERROR(
