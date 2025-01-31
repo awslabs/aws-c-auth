@@ -699,12 +699,32 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
  */
 static struct aws_string *s_resolve_region(
     struct aws_allocator *allocator,
-    const struct aws_credentials_provider_sts_options *options) {
+    const struct aws_profile *profile) {
     /* check environment variable first */
     struct aws_string *region = aws_credentials_provider_resolve_region_from_env(allocator);
     if (region != NULL && region->len > 0) {
         return region;
     }
+
+    const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
+    if (property) {
+        region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+    }
+
+    return region;
+}
+
+/*
+ * Try to resolve the region in the following order
+ * 1. Check `AWS_REGION` environment variable
+ * 1. Check `AWS_DEFAULT_REGION` environment variable
+ * 2. check `region` config file property.
+ */
+void s_resolve_regional_endpoint(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_options *options,
+    struct aws_string **out_endpoint,
+    struct aws_string **out_region) {
 
     struct aws_profile_collection *profile_collection = NULL;
     struct aws_string *profile_name = NULL;
@@ -727,15 +747,21 @@ static struct aws_string *s_resolve_region(
     if (!profile) {
         goto cleanup;
     }
-    const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
-    if (property) {
-        region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+    *out_region = s_resolve_region(allocator, profile);
+    if(!*out_region) {
+        goto cleanup;
     }
+
+    if (aws_credentials_provider_construct_regional_endpoint(
+            allocator, out_endpoint, *out_region, s_sts_service_name, profile_collection, profile)) {
+        goto cleanup;
+    }
+
 cleanup:
     aws_string_destroy(profile_name);
     aws_profile_collection_release(profile_collection);
-    return region;
 }
+
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
@@ -854,18 +880,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
      * Construct a regional endpoint if we can resolve region from envrionment variable or the config file. Otherwise,
      * use the global endpoint.
      */
-    region = s_resolve_region(allocator, options);
-    if (region != NULL) {
-        if (aws_credentials_provider_construct_regional_endpoint(
-                allocator, &impl->endpoint, region, s_sts_service_name)) {
-            goto on_done;
-        }
-        impl->region = aws_string_new_from_string(allocator, region);
-    } else {
+    s_resolve_regional_endpoint(allocator, options, &impl->endpoint, &impl->region);
+    if(!impl->endpoint) {
         /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
         impl->region = aws_string_new_from_c_str(allocator, "us-east-1");
     }
+
     struct aws_byte_cursor endpoint_cursor = aws_byte_cursor_from_string(impl->endpoint);
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);

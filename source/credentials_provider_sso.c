@@ -683,7 +683,7 @@ static struct sso_parameters *s_parameters_new(
     parameters->sso_role_name = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
     /* determine endpoint */
     if (aws_credentials_provider_construct_regional_endpoint(
-            allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region), s_sso_service_name)) {
+            allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region), s_sso_service_name, config_profile_collection, profile)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sso endpoint");
         goto on_finish;
     }
