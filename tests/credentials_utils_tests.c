@@ -67,6 +67,7 @@ static int s_credentials_utils_construct_endpoint_test(struct aws_allocator *all
 AWS_TEST_CASE(credentials_utils_construct_endpoint_test, s_credentials_utils_construct_endpoint_test);
 
 static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allocator, void *ctx) {
+    (void) ctx;
 
     struct aws_string *region = aws_string_new_from_c_str(allocator, "us-east-2");
     struct aws_string *service_name = aws_string_new_from_c_str(allocator, "sts");
