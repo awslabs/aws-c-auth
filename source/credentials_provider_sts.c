@@ -715,7 +715,7 @@ static struct aws_string *s_resolve_region(struct aws_allocator *allocator, cons
 }
 
 /*
- * Try to construct an endpoint for the sts service 
+ * Try to construct an endpoint for the sts service
  */
 void s_resolve_endpoint(
     struct aws_allocator *allocator,
