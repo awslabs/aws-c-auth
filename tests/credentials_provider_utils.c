@@ -6,7 +6,6 @@
 #include "credentials_provider_utils.h"
 #include <aws/testing/aws_test_harness.h>
 
-#include "shared_credentials_test_definitions.h"
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/environment.h>
@@ -818,23 +817,4 @@ void aws_credentials_provider_http_mock_get_credentials_callback(
     }
     aws_condition_variable_notify_one(&credentials_provider_http_mock_tester.signal);
     aws_mutex_unlock(&credentials_provider_http_mock_tester.lock);
-}
-
-int aws_credentials_provider_test_init_config_profile(
-    struct aws_allocator *allocator,
-    const struct aws_string *config_contents) {
-
-    struct aws_string *config_file_path_str = aws_create_process_unique_file_name(allocator);
-    ASSERT_TRUE(config_file_path_str != NULL);
-    ASSERT_TRUE(aws_create_profile_file(config_file_path_str, config_contents) == AWS_OP_SUCCESS);
-
-    ASSERT_TRUE(
-        aws_set_environment_value(s_default_config_path_env_variable_name, config_file_path_str) == AWS_OP_SUCCESS);
-
-    ASSERT_TRUE(
-        aws_set_environment_value(s_default_profile_env_variable_name, s_default_profile_name) == AWS_OP_SUCCESS);
-
-    aws_string_destroy(config_file_path_str);
-
-    return AWS_OP_SUCCESS;
 }

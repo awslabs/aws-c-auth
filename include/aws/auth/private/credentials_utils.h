@@ -167,7 +167,7 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
 
 /*
  * If an endpoint override is configured, use that. Otherwise do the following:
- * Construct an endpoint in the format of service_name.region.amazonaws.com.
+ * Construct an endpoint in the format of service_name_host.region.amazonaws.com.
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.
  * To configure the endpoint override, check the
  * https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html.

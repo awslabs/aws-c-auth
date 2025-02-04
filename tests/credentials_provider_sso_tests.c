@@ -13,11 +13,29 @@
 #include <aws/common/environment.h>
 #include <aws/http/status_code.h>
 
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_profile, "sso");
+static int s_aws_credentials_provider_sso_test_init_config_profile(
+    struct aws_allocator *allocator,
+    const struct aws_string *config_contents) {
+
+    struct aws_string *config_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(config_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(config_file_path_str, config_contents) == AWS_OP_SUCCESS);
+
+    ASSERT_TRUE(
+        aws_set_environment_value(s_default_config_path_env_variable_name, config_file_path_str) == AWS_OP_SUCCESS);
+
+    ASSERT_TRUE(aws_set_environment_value(s_default_profile_env_variable_name, s_sso_profile) == AWS_OP_SUCCESS);
+
+    aws_string_destroy(config_file_path_str);
+    return AWS_OP_SUCCESS;
+}
+
 /* start_url should be same in `s_sso_profile_start_url` and `s_sso_profile_config_contents` */
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_profile_start_url, "https://d-123.awsapps.com/start");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sso_profile_config_contents,
-    "[profile test-profile]\n"
+    "[profile sso]\n"
     "sso_start_url = https://d-123.awsapps.com/start\n"
     "sso_region = us-west-2\n"
     "sso_account_id = 123\n"
@@ -26,7 +44,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_session_name, "session");
 AWS_STATIC_STRING_FROM_LITERAL(
     s_sso_session_config_contents,
-    "[profile test-profile]\n"
+    "[profile sso]\n"
     "sso_start_url = https://d-123.awsapps.com/start\n"
     "sso_region = us-west-2\n"
     "sso_account_id = 123\n"
@@ -48,37 +66,37 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
     } invalid_config_examples[] = {
         {"empty", ""},
 
-        {"profile without any sso config", "[profile test-profile]\naccessKey=access"},
+        {"profile without any sso config", "[profile sso]\naccessKey=access"},
 
         {"profile without role_name",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"},
 
         {"profile without account_id",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"
          "sso_role_name=roleName\n"},
 
         {"profile without region",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_account_id=123\n"
          "sso_role_name=roleName\n"},
 
         {"profile without start_url",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_region=us-west-2\n"
          "sso_account_id=123\n"
          "sso_role_name=roleName\n"},
 
         {"profile with invalid session",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"
@@ -88,7 +106,7 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
          "[sso-session session]\n"},
 
         {"session without start_url",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"
@@ -99,7 +117,7 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
          "sso_region = us-west-2\n"},
 
         {"session without region",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"
@@ -110,7 +128,7 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
          "sso_start_url = https://d-123.awsapps.com/start\n"},
 
         {"session with different region",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-east-1\n"
@@ -122,7 +140,7 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
          "sso_region = us-west-2\n"},
 
         {"session with different start-url",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"
@@ -150,7 +168,7 @@ static int s_credentials_provider_sso_failed_invalid_config(struct aws_allocator
         printf("invalid config example [%d]: %s\n", i, invalid_config_examples[i].name);
         struct aws_string *content = aws_string_new_from_c_str(allocator, invalid_config_examples[i].text);
         ASSERT_TRUE(content != NULL);
-        aws_credentials_provider_test_init_config_profile(allocator, content);
+        s_aws_credentials_provider_sso_test_init_config_profile(allocator, content);
         aws_string_destroy(content);
         struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
         ASSERT_NULL(provider);
@@ -171,7 +189,7 @@ static int s_credentials_provider_sso_create_destroy_valid_config(struct aws_all
     } valid_config_examples[] = {
 
         {"profile",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_account_id=123\n"
@@ -179,7 +197,7 @@ static int s_credentials_provider_sso_create_destroy_valid_config(struct aws_all
          "sso_role_name=roleName\n"},
 
         {"session",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_account_id=123\n"
          "sso_role_name=roleName\n"
@@ -189,7 +207,7 @@ static int s_credentials_provider_sso_create_destroy_valid_config(struct aws_all
          "sso_region = us-west-2\n"},
 
         {"session with profile",
-         "[profile test-profile]\n"
+         "[profile sso]\n"
          "accessKey=access\n"
          "sso_start_url=https://d-123.awsapps.com/start\n"
          "sso_region=us-west-2\n"
@@ -218,7 +236,7 @@ static int s_credentials_provider_sso_create_destroy_valid_config(struct aws_all
         printf("valid config example [%d]: %s\n", i, valid_config_examples[i].name);
         struct aws_string *content = aws_string_new_from_c_str(allocator, valid_config_examples[i].text);
         ASSERT_TRUE(content != NULL);
-        aws_credentials_provider_test_init_config_profile(allocator, content);
+        s_aws_credentials_provider_sso_test_init_config_profile(allocator, content);
         aws_string_destroy(content);
         struct aws_credentials_provider *provider = aws_credentials_provider_new_sso(allocator, &options);
         ASSERT_NOT_NULL(provider);
@@ -276,7 +294,7 @@ static int s_credentials_provider_sso_connect_failure(struct aws_allocator *allo
     aws_credentials_provider_http_mock_tester_init(allocator);
     credentials_provider_http_mock_tester.is_connection_acquire_successful = false;
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -318,7 +336,7 @@ static int s_credentials_provider_sso_failure_token_missing(struct aws_allocator
     struct aws_string *tmp_home;
     ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -374,7 +392,7 @@ static int s_credentials_provider_sso_failure_token_expired(struct aws_allocator
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
     uint64_t nano_expiration =
         aws_timestamp_convert(s_sso_token_expiration_s + 100, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
     mock_aws_set_system_time(nano_expiration);
@@ -430,7 +448,7 @@ static int s_credentials_provider_sso_failure_token_empty(struct aws_allocator *
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_empty_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
     mock_aws_set_system_time(0);
     struct aws_credentials_provider_sso_options options = {
         .bootstrap = credentials_provider_http_mock_tester.bootstrap,
@@ -484,7 +502,7 @@ static int s_credentials_provider_sso_request_failure(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     mock_aws_set_system_time(0);
     struct aws_credentials_provider_sso_options options = {
@@ -539,7 +557,7 @@ static int s_credentials_provider_sso_bad_response(struct aws_allocator *allocat
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_byte_cursor bad_json_cursor = aws_byte_cursor_from_string(s_bad_json_response);
     aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &bad_json_cursor);
@@ -597,7 +615,7 @@ static int s_credentials_provider_sso_retryable_error(struct aws_allocator *allo
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     struct aws_byte_cursor bad_json_cursor = aws_byte_cursor_from_string(s_bad_json_response);
     aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &bad_json_cursor);
@@ -654,7 +672,7 @@ static int s_credentials_provider_sso_basic_success(struct aws_allocator *alloca
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     /* set the response */
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
@@ -712,7 +730,7 @@ static int s_credentials_provider_sso_basic_success_cached_config_file(struct aw
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_invalid_config);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_invalid_config);
 
     struct aws_byte_buf profile_buffer = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_session_config_contents));
     struct aws_profile_collection *config_collection =
@@ -779,7 +797,7 @@ static int s_credentials_provider_sso_basic_success_profile(struct aws_allocator
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_profile_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_profile_config_contents);
 
     /* set the response */
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
@@ -839,7 +857,7 @@ static int s_credentials_provider_sso_basic_success_profile_cached_config_file(
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_invalid_config);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_invalid_config);
 
     struct aws_byte_buf profile_buffer = aws_byte_buf_from_c_str(aws_string_c_str(s_sso_profile_config_contents));
     struct aws_profile_collection *config_collection =
@@ -904,7 +922,7 @@ static int s_credentials_provider_sso_basic_success_after_failure(struct aws_all
     ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path));
     ASSERT_SUCCESS(aws_create_profile_file(token_path, s_sso_token));
 
-    aws_credentials_provider_test_init_config_profile(allocator, s_sso_session_config_contents);
+    s_aws_credentials_provider_sso_test_init_config_profile(allocator, s_sso_session_config_contents);
 
     /* set the response */
     struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
