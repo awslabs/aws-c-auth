@@ -684,7 +684,7 @@ static struct sso_parameters *s_parameters_new(
     parameters->sso_account_id = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_account_id));
     parameters->sso_role_name = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
     /* determine endpoint */
-    if (aws_credentials_provider_construct_regional_endpoint(
+    if (aws_credentials_provider_construct_endpoint(
             allocator,
             &parameters->endpoint,
             aws_profile_property_get_value(sso_region),

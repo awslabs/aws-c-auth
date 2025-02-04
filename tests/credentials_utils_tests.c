@@ -17,42 +17,42 @@ static int s_credentials_utils_construct_endpoint_test(struct aws_allocator *all
     struct aws_string *region;
 
     region = aws_string_new_from_c_str(allocator, "us-east-2");
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL));
     ASSERT_STR_EQUALS("sts.us-east-2.amazonaws.com", aws_string_c_str(endpoint));
     aws_string_destroy(endpoint);
     aws_string_destroy(region);
 
     region = aws_string_new_from_c_str(allocator, "cn-northwest-1");
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL));
     ASSERT_STR_EQUALS("sts.cn-northwest-1.amazonaws.com.cn", aws_string_c_str(endpoint));
     aws_string_destroy(endpoint);
     aws_string_destroy(region);
 
     region = aws_string_new_from_c_str(allocator, "us-iso-east-1");
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL));
     ASSERT_STR_EQUALS("sts.us-iso-east-1.c2s.ic.gov", aws_string_c_str(endpoint));
     aws_string_destroy(endpoint);
     aws_string_destroy(region);
 
     region = aws_string_new_from_c_str(allocator, "us-isob-east-1");
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL));
     ASSERT_STR_EQUALS("sts.us-isob-east-1.sc2s.sgov.gov", aws_string_c_str(endpoint));
     aws_string_destroy(endpoint);
     aws_string_destroy(region);
 
     region = aws_string_new_from_c_str(allocator, "eu-isoe-west-1");
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL));
     ASSERT_STR_EQUALS("sts.eu-isoe-west-1.cloud.adc-e.uk", aws_string_c_str(endpoint));
     aws_string_destroy(endpoint);
     aws_string_destroy(region);
 
     region = aws_string_new_from_c_str(allocator, "us-isof-south-1");
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL));
     ASSERT_STR_EQUALS("sts.us-isof-south-1.csp.hci.ic.gov", aws_string_c_str(endpoint));
     aws_string_destroy(endpoint);
@@ -77,7 +77,7 @@ static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allo
     struct aws_string *endpoint_override_env = aws_string_new_from_c_str(allocator, "AWS_ENDPOINT_URL_STS");
     struct aws_string *endpoint_override = aws_string_new_from_c_str(allocator, "test.endpoint.override.com");
     aws_set_environment_value(endpoint_override_env, endpoint_override);
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name_env, service_name, NULL, NULL));
     ASSERT_STR_EQUALS(aws_string_c_str(endpoint_override), aws_string_c_str(endpoint));
     aws_unset_environment_value(endpoint_override_env);
@@ -89,7 +89,7 @@ static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allo
     struct aws_string *endpoint_override_env_global = aws_string_new_from_c_str(allocator, "AWS_ENDPOINT_URL");
     endpoint_override = aws_string_new_from_c_str(allocator, "global.endpoint.override.com");
     aws_set_environment_value(endpoint_override_env_global, endpoint_override);
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name_env, service_name, NULL, NULL));
     ASSERT_STR_EQUALS(aws_string_c_str(endpoint_override), aws_string_c_str(endpoint));
     aws_unset_environment_value(endpoint_override_env_global);
@@ -116,7 +116,7 @@ static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allo
 
     struct aws_string *expected_endpoint = aws_string_new_from_c_str(allocator, "test.sts.endpoint.com");
 
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, profile_collection, profile));
     ASSERT_STR_EQUALS(aws_string_c_str(expected_endpoint), aws_string_c_str(endpoint));
     aws_string_destroy(expected_endpoint);
@@ -136,7 +136,7 @@ static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allo
     profile = aws_profile_collection_get_profile(profile_collection, profile_name);
     expected_endpoint = aws_string_new_from_c_str(allocator, "global.sts.endpoint.com");
 
-    ASSERT_SUCCESS(aws_credentials_provider_construct_regional_endpoint(
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, profile_collection, profile));
     ASSERT_STR_EQUALS(aws_string_c_str(expected_endpoint), aws_string_c_str(endpoint));
     aws_string_destroy(expected_endpoint);

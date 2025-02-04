@@ -1012,7 +1012,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
     }
 
     /* determine endpoint */
-    if (aws_credentials_provider_construct_regional_endpoint(
+    if (aws_credentials_provider_construct_endpoint(
             allocator,
             &parameters->endpoint,
             region,
