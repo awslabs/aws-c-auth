@@ -883,10 +883,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
         impl->region = aws_string_new_from_c_str(allocator, "us-east-1");
-    } else if(!impl->region) {
+    } else if (!impl->region) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p): Region must be configured if the endpoint_override is configured. Please configure the region using the AWS_REGION environment variable or region property in the configuration file. %s",
+            "(id=%p): Region must be configured if the endpoint_override is configured. Please configure the region "
+            "using the AWS_REGION environment variable or region property in the configuration file. %s",
             (void *)provider,
             aws_error_debug_str(aws_last_error()));
         goto on_done;
