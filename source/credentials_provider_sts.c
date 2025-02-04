@@ -706,9 +706,11 @@ static struct aws_string *s_resolve_region(struct aws_allocator *allocator, cons
         return region;
     }
 
-    const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
-    if (property) {
-        region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+    if (profile) {
+        const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
+        if (property) {
+            region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+        }
     }
 
     return region;
