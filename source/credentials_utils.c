@@ -387,7 +387,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_endpoint_url_env, "AWS_ENDPOINT_URL");
 AWS_STATIC_STRING_FROM_LITERAL(s_endpoint_url_property, "endpoint_url");
 AWS_STATIC_STRING_FROM_LITERAL(s_services_property, "services");
 
-struct aws_string *s_find_override_endpoint(
+struct aws_string *s_get_override_endpoint(
     struct aws_allocator *allocator,
     const struct aws_string *override_service_name_env,
     const struct aws_string *override_service_name_property,
@@ -423,17 +423,17 @@ struct aws_string *s_find_override_endpoint(
         goto on_finish;
     }
 
+    /* parse endpoint override from config file */
     if (profile_collection == NULL || profile == NULL) {
         goto on_finish;
     }
 
-    /* check services endpoint property */
+    /* check services specific endpoint property */
     const struct aws_profile_property *property = aws_profile_get_property(profile, s_services_property);
     if (property) {
         const struct aws_profile *services = aws_profile_collection_get_section(
             profile_collection, AWS_PROFILE_SECTION_TYPE_SERVICES, aws_profile_property_get_value(property));
         if (services) {
-            // TODO: empty?
             property = aws_profile_get_property(services, override_service_name_property);
             if (property) {
                 out_endpoint = aws_string_new_from_string(
@@ -458,7 +458,7 @@ on_finish:
     return out_endpoint;
 }
 
-int aws_credentials_provider_construct_regional_endpoint(
+int aws_credentials_provider_construct_endpoint(
     struct aws_allocator *allocator,
     struct aws_string **out_endpoint,
     const struct aws_string *region,
@@ -469,7 +469,7 @@ int aws_credentials_provider_construct_regional_endpoint(
     const struct aws_profile *profile) {
 
     *out_endpoint =
-        s_find_override_endpoint(allocator, service_name_env, service_name_property, profile_collection, profile);
+        s_get_override_endpoint(allocator, service_name_env, service_name_property, profile_collection, profile);
     if (*out_endpoint) {
         return AWS_OP_SUCCESS;
     }

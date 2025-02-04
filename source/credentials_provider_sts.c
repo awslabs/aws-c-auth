@@ -715,12 +715,9 @@ static struct aws_string *s_resolve_region(struct aws_allocator *allocator, cons
 }
 
 /*
- * Try to resolve the region in the following order
- * 1. Check `AWS_REGION` environment variable
- * 1. Check `AWS_DEFAULT_REGION` environment variable
- * 2. check `region` config file property.
+ * Try to construct an endpoint for the sts service 
  */
-void s_resolve_regional_endpoint(
+void s_resolve_endpoint(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_options *options,
     struct aws_string **out_endpoint,
@@ -744,11 +741,8 @@ void s_resolve_regional_endpoint(
     }
 
     *out_region = s_resolve_region(allocator, profile);
-    if (!*out_region) {
-        goto cleanup;
-    }
 
-    if (aws_credentials_provider_construct_regional_endpoint(
+    if (aws_credentials_provider_construct_endpoint(
             allocator,
             out_endpoint,
             *out_region,
@@ -882,7 +876,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
      * Construct a regional endpoint if we can resolve region from envrionment variable or the config file. Otherwise,
      * use the global endpoint.
      */
-    s_resolve_regional_endpoint(allocator, options, &impl->endpoint, &impl->region);
+    s_resolve_endpoint(allocator, options, &impl->endpoint, &impl->region);
     if (!impl->endpoint) {
         /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
