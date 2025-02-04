@@ -534,7 +534,9 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_sso_vta
     .get_credentials = s_credentials_provider_sso_get_credentials,
     .destroy = s_credentials_provider_sso_destroy,
 };
-AWS_STATIC_STRING_FROM_LITERAL(s_sso_service_name, "portal.sso");
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_service_host_prefix, "portal.sso");
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_service_name, "sso");
+AWS_STATIC_STRING_FROM_LITERAL(s_sso_service_env_name, "SSO");
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_account_id, "sso_account_id");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_region, "sso_region");
@@ -683,7 +685,7 @@ static struct sso_parameters *s_parameters_new(
     parameters->sso_role_name = aws_string_new_from_string(allocator, aws_profile_property_get_value(sso_role_name));
     /* determine endpoint */
     if (aws_credentials_provider_construct_regional_endpoint(
-            allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region), s_sso_service_name, config_profile_collection, profile)) {
+            allocator, &parameters->endpoint, aws_profile_property_get_value(sso_region), s_sso_service_host_prefix, s_sso_service_env_name, s_sso_service_name, config_profile_collection, profile)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sso endpoint");
         goto on_finish;
     }

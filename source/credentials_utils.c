@@ -383,20 +383,100 @@ static struct aws_byte_cursor s_aws_isoe_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STR
 static struct aws_byte_cursor s_isof_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-isof-");
 static struct aws_byte_cursor s_aws_isof_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("csp.hci.ic.gov");
 
+AWS_STATIC_STRING_FROM_LITERAL(s_endpoint_url_env, "AWS_ENDPOINT_URL");
+AWS_STATIC_STRING_FROM_LITERAL(s_endpoint_url_property, "endpoint_url");
+AWS_STATIC_STRING_FROM_LITERAL(s_services_property, "services");
+
+struct aws_string *s_find_override_endpoint(
+    struct aws_allocator *allocator,
+    const struct aws_string *override_service_name_env,
+    const struct aws_string *override_service_name_property,
+    const struct aws_profile_collection *profile_collection,
+    const struct aws_profile *profile) {
+
+    struct aws_byte_cursor url_env_cursor = aws_byte_cursor_from_string(s_endpoint_url_env);
+    struct aws_byte_cursor underscore_cursor = aws_byte_cursor_from_c_str("_");
+    struct aws_byte_cursor service_name_env_cursor = aws_byte_cursor_from_string(override_service_name_env);
+
+    struct aws_string *out_endpoint = NULL;
+    struct aws_string *service_endpoint_str = NULL;
+
+    struct aws_byte_buf service_endpoint_buf;
+    AWS_ZERO_STRUCT(service_endpoint_buf);
+    /* Check AWS_ENDPOINT_URL_SERVICENAME variable */
+    aws_byte_buf_init(&service_endpoint_buf, allocator, 10);
+    if (aws_byte_buf_append_dynamic(&service_endpoint_buf, &url_env_cursor) ||
+        aws_byte_buf_append_dynamic(&service_endpoint_buf, &underscore_cursor) ||
+        aws_byte_buf_append_dynamic(&service_endpoint_buf, &service_name_env_cursor)) {
+        goto on_finish;
+    }
+    service_endpoint_str = aws_string_new_from_buf(allocator, &service_endpoint_buf);
+
+    if (aws_get_environment_value(allocator, service_endpoint_str, &out_endpoint) == AWS_OP_SUCCESS &&
+        out_endpoint != NULL) {
+        goto on_finish;
+    }
+
+    /* Check AWS_ENDPOINT_URL variable */
+    if (aws_get_environment_value(allocator, s_endpoint_url_env, &out_endpoint) == AWS_OP_SUCCESS &&
+        out_endpoint != NULL) {
+        goto on_finish;
+    }
+
+    if (profile_collection == NULL || profile == NULL) {
+        goto on_finish;
+    }
+
+    /* check services endpoint property */
+    const struct aws_profile_property *property = aws_profile_get_property(profile, s_services_property);
+    if (property) {
+        const struct aws_profile *services = aws_profile_collection_get_section(
+            profile_collection, AWS_PROFILE_SECTION_TYPE_SERVICES, aws_profile_property_get_value(property));
+        if (services) {
+            // TODO: empty?
+            property = aws_profile_get_property(services, override_service_name_property);
+            if (property) {
+                out_endpoint = aws_string_new_from_string(
+                    allocator, aws_profile_property_get_sub_property(property, s_endpoint_url_property));
+                goto on_finish;
+            }
+        }
+        goto on_finish;
+    }
+
+    /* check aws_endpoint_url property */
+    property = aws_profile_get_property(profile, s_endpoint_url_property);
+    if (property) {
+        out_endpoint = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+
+        goto on_finish;
+    }
+
+on_finish:
+    aws_byte_buf_clean_up(&service_endpoint_buf);
+    aws_string_destroy(service_endpoint_str);
+    return out_endpoint;
+}
+
 int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
     struct aws_string **out_endpoint,
     const struct aws_string *region,
-    const struct aws_string *service_name,
+    const struct aws_string *service_name_host,
+    const struct aws_string *service_name_env,
+    const struct aws_string *service_name_property,
     const struct aws_profile_collection *profile_collection,
     const struct aws_profile *profile) {
-    // TODO: Use these to parse endpoint override. waahm7
-    (void) profile_collection;
-    (void) profile;
+
+    *out_endpoint =
+        s_find_override_endpoint(allocator, service_name_env, service_name_property, profile_collection, profile);
+    if (*out_endpoint) {
+        return AWS_OP_SUCCESS;
+    }
 
     AWS_PRECONDITION(allocator);
     AWS_PRECONDITION(out_endpoint);
-    if (!region || !service_name) {
+    if (!region || !service_name_host) {
         return aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
     }
     int result = AWS_OP_ERR;
@@ -404,7 +484,7 @@ int aws_credentials_provider_construct_regional_endpoint(
     struct aws_byte_buf endpoint;
     AWS_ZERO_STRUCT(endpoint);
     aws_byte_buf_init(&endpoint, allocator, 10);
-    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name);
+    struct aws_byte_cursor service_cursor = aws_byte_cursor_from_string(service_name_host);
     struct aws_byte_cursor region_cursor = aws_byte_cursor_from_string(region);
 
     if (aws_byte_buf_append_dynamic(&endpoint, &service_cursor) ||

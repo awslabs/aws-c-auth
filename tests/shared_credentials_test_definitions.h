@@ -19,6 +19,7 @@
 
 AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_env_variable_name, "AWS_PROFILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_default_config_path_env_variable_name, "AWS_CONFIG_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_default_profile_name, "test-profile");
 AWS_STATIC_STRING_FROM_LITERAL(s_default_credentials_path_env_variable_name, "AWS_SHARED_CREDENTIALS_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_access_key_id_env_var, "AWS_ACCESS_KEY_ID");
 AWS_STATIC_STRING_FROM_LITERAL(s_secret_access_key_env_var, "AWS_SECRET_ACCESS_KEY");
@@ -50,7 +51,7 @@ static int aws_create_profile_file(const struct aws_string *file_name, const str
     (void)s_access_key_id_env_var;
     (void)s_secret_access_key_env_var;
     (void)s_session_token_env_var;
-
+    (void)aws_create_process_unique_file_name;
     FILE *fp = fopen(aws_string_c_str(file_name), "w");
     if (fp == NULL) {
         return aws_translate_and_raise_io_error(errno);

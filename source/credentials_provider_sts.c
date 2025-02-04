@@ -49,6 +49,8 @@ static struct aws_http_header s_content_type_header = {
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_env_name, "STS");
+
 static const int s_max_retries = 3;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
@@ -697,9 +699,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
  * 1. Check `AWS_DEFAULT_REGION` environment variable
  * 2. check `region` config file property.
  */
-static struct aws_string *s_resolve_region(
-    struct aws_allocator *allocator,
-    const struct aws_profile *profile) {
+static struct aws_string *s_resolve_region(struct aws_allocator *allocator, const struct aws_profile *profile) {
     /* check environment variable first */
     struct aws_string *region = aws_credentials_provider_resolve_region_from_env(allocator);
     if (region != NULL && region->len > 0) {
@@ -728,7 +728,7 @@ void s_resolve_regional_endpoint(
 
     struct aws_profile_collection *profile_collection = NULL;
     struct aws_string *profile_name = NULL;
-
+    const struct aws_profile *profile = NULL;
     /* check the config file */
     if (options->profile_collection_cached) {
         profile_collection = aws_profile_collection_acquire(options->profile_collection_cached);
@@ -736,24 +736,27 @@ void s_resolve_regional_endpoint(
         profile_collection =
             aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
     }
-    if (!profile_collection) {
-        goto cleanup;
+    if (profile_collection) {
+        profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
+        if (profile_name) {
+            profile = aws_profile_collection_get_profile(profile_collection, profile_name);
+        }
     }
-    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
-    if (!profile_name) {
-        goto cleanup;
-    }
-    const struct aws_profile *profile = aws_profile_collection_get_profile(profile_collection, profile_name);
-    if (!profile) {
-        goto cleanup;
-    }
+
     *out_region = s_resolve_region(allocator, profile);
-    if(!*out_region) {
+    if (!*out_region) {
         goto cleanup;
     }
 
     if (aws_credentials_provider_construct_regional_endpoint(
-            allocator, out_endpoint, *out_region, s_sts_service_name, profile_collection, profile)) {
+            allocator,
+            out_endpoint,
+            *out_region,
+            s_sts_service_name,
+            s_sts_service_env_name,
+            s_sts_service_name,
+            profile_collection,
+            profile)) {
         goto cleanup;
     }
 
@@ -761,7 +764,6 @@ cleanup:
     aws_string_destroy(profile_name);
     aws_profile_collection_release(profile_collection);
 }
-
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
     struct aws_allocator *allocator,
@@ -881,7 +883,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
      * use the global endpoint.
      */
     s_resolve_regional_endpoint(allocator, options, &impl->endpoint, &impl->region);
-    if(!impl->endpoint) {
+    if (!impl->endpoint) {
         /* use the global endpoint */
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
         impl->region = aws_string_new_from_c_str(allocator, "us-east-1");

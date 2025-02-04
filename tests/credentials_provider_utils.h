@@ -1,18 +1,18 @@
 #ifndef AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H
-#define AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H
+#    define AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H
 
 /**
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: Apache-2.0.
  */
 
-#include <aws/auth/private/aws_profile.h>
-#include <aws/auth/private/credentials_utils.h>
+#    include <aws/auth/private/aws_profile.h>
+#    include <aws/auth/private/credentials_utils.h>
 
-#include <aws/common/condition_variable.h>
-#include <aws/common/mutex.h>
-#include <aws/http/connection_manager.h>
-#include <aws/http/request_response.h>
+#    include <aws/common/condition_variable.h>
+#    include <aws/common/mutex.h>
+#    include <aws/http/connection_manager.h>
+#    include <aws/http/request_response.h>
 
 struct aws_credentials;
 struct aws_credentials_provider;
@@ -178,3 +178,7 @@ void aws_credentials_provider_http_mock_get_credentials_callback(
 extern struct aws_auth_http_system_vtable aws_credentials_provider_http_mock_function_table;
 
 #endif /* AWS_AUTH_CREDENTIALS_PROVIDER_MOCK_H */
+
+int aws_credentials_provider_test_init_config_profile(
+    struct aws_allocator *allocator,
+    const struct aws_string *config_contents);

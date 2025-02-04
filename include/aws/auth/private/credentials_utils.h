@@ -174,7 +174,9 @@ int aws_credentials_provider_construct_regional_endpoint(
     struct aws_allocator *allocator,
     struct aws_string **out_endpoint,
     const struct aws_string *region,
-    const struct aws_string *service_name,
+    const struct aws_string *service_name_host,
+    const struct aws_string *service_name_env,
+    const struct aws_string *service_name_property,
     const struct aws_profile_collection *profile_collection,
     const struct aws_profile *profile); 
 
