@@ -68,7 +68,6 @@ AWS_TEST_CASE(credentials_utils_construct_endpoint_test, s_credentials_utils_con
 
 static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allocator, void *ctx) {
 
-
     struct aws_string *region = aws_string_new_from_c_str(allocator, "us-east-2");
     struct aws_string *service_name = aws_string_new_from_c_str(allocator, "sts");
     struct aws_string *service_name_env = aws_string_new_from_c_str(allocator, "STS");
@@ -132,8 +131,7 @@ static int s_credentials_utils_endpoint_override_test(struct aws_allocator *allo
                                    "endpoint_url = global.sts.endpoint.com\n");
     AWS_ZERO_STRUCT(config_file);
     aws_byte_buf_init_copy_from_cursor(&config_file, allocator, global_override_config_contents);
-    profile_collection =
-        aws_profile_collection_new_from_buffer(allocator, &config_file, AWS_PST_CONFIG);
+    profile_collection = aws_profile_collection_new_from_buffer(allocator, &config_file, AWS_PST_CONFIG);
     profile_name = aws_string_new_from_c_str(allocator, "test-profile");
     profile = aws_profile_collection_get_profile(profile_collection, profile_name);
     expected_endpoint = aws_string_new_from_c_str(allocator, "global.sts.endpoint.com");

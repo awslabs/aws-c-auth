@@ -178,8 +178,7 @@ int aws_credentials_provider_construct_regional_endpoint(
     const struct aws_string *service_name_env,
     const struct aws_string *service_name_property,
     const struct aws_profile_collection *profile_collection,
-    const struct aws_profile *profile); 
-
+    const struct aws_profile *profile);
 
 /*
  * Loads an aws config profile collection
