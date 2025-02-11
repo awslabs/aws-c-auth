@@ -35,10 +35,10 @@ static int s_credentials_provider_environment_get_credentials_async(
 
     if (access_key_id != NULL && access_key_id->len > 0 && secret_access_key != NULL && secret_access_key->len > 0) {
         struct aws_credentials_options creds_option = {
-            .access_key_id_cursor = aws_byte_cursor_from_optional_string(access_key_id),
-            .secret_access_key_cursor = aws_byte_cursor_from_optional_string(secret_access_key),
-            .session_token_cursor = aws_byte_cursor_from_optional_string(session_token),
-            .account_id_cursor = aws_byte_cursor_from_optional_string(account_id),
+            .access_key_id_cursor = aws_byte_cursor_from_string(access_key_id),
+            .secret_access_key_cursor = aws_byte_cursor_from_string(secret_access_key),
+            .session_token_cursor = aws_byte_cursor_from_string(session_token),
+            .account_id_cursor = aws_byte_cursor_from_string(account_id),
             .expiration_timepoint_seconds = UINT64_MAX,
         };
         credentials = aws_credentials_new_with_options(allocator, &creds_option);

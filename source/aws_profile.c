@@ -38,10 +38,10 @@ struct aws_credentials *aws_credentials_new_from_profile(
     const struct aws_string *session_token = s_profile_get_property_value(profile, s_session_token_profile_var);
     const struct aws_string *account_id = s_profile_get_property_value(profile, s_account_id_profile_var);
     struct aws_credentials_options creds_option = {
-        .access_key_id_cursor = aws_byte_cursor_from_optional_string(access_key),
-        .secret_access_key_cursor = aws_byte_cursor_from_optional_string(secret_key),
-        .session_token_cursor = aws_byte_cursor_from_optional_string(session_token),
-        .account_id_cursor = aws_byte_cursor_from_optional_string(account_id),
+        .access_key_id_cursor = aws_byte_cursor_from_string(access_key),
+        .secret_access_key_cursor = aws_byte_cursor_from_string(secret_key),
+        .session_token_cursor = aws_byte_cursor_from_string(session_token),
+        .account_id_cursor = aws_byte_cursor_from_string(account_id),
         .expiration_timepoint_seconds = UINT64_MAX,
     };
 

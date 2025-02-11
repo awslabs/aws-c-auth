@@ -400,10 +400,10 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         if (provider_user_data->access_key_id && provider_user_data->secret_access_key &&
             provider_user_data->session_token) {
             struct aws_credentials_options creds_option = {
-                .access_key_id_cursor = aws_byte_cursor_from_optional_string(provider_user_data->access_key_id),
-                .secret_access_key_cursor = aws_byte_cursor_from_optional_string(provider_user_data->secret_access_key),
-                .session_token_cursor = aws_byte_cursor_from_optional_string(provider_user_data->session_token),
-                .account_id_cursor = aws_byte_cursor_from_optional_string(provider_user_data->account_id),
+                .access_key_id_cursor = aws_byte_cursor_from_string(provider_user_data->access_key_id),
+                .secret_access_key_cursor = aws_byte_cursor_from_string(provider_user_data->secret_access_key),
+                .session_token_cursor = aws_byte_cursor_from_string(provider_user_data->session_token),
+                .account_id_cursor = aws_byte_cursor_from_string(provider_user_data->account_id),
                 .expiration_timepoint_seconds = now_seconds + provider_impl->duration_seconds,
             };
             provider_user_data->credentials =

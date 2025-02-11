@@ -386,10 +386,10 @@ static struct aws_credentials *s_parse_credentials_from_response(
         goto on_finish;
     }
     struct aws_credentials_options creds_option = {
-        .access_key_id_cursor = aws_byte_cursor_from_optional_string(query_user_data->access_key_id),
-        .secret_access_key_cursor = aws_byte_cursor_from_optional_string(query_user_data->secret_access_key),
-        .session_token_cursor = aws_byte_cursor_from_optional_string(query_user_data->session_token),
-        .account_id_cursor = aws_byte_cursor_from_optional_string(query_user_data->account_id),
+        .access_key_id_cursor = aws_byte_cursor_from_string(query_user_data->access_key_id),
+        .secret_access_key_cursor = aws_byte_cursor_from_string(query_user_data->secret_access_key),
+        .session_token_cursor = aws_byte_cursor_from_string(query_user_data->session_token),
+        .account_id_cursor = aws_byte_cursor_from_string(query_user_data->account_id),
         .expiration_timepoint_seconds = query_user_data->expiration_timepoint_in_seconds,
     };
     credentials = aws_credentials_new_with_options(query_user_data->allocator, &creds_option);
