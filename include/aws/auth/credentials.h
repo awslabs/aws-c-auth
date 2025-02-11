@@ -716,7 +716,7 @@ struct aws_credentials_provider_cognito_options {
 };
 
 /**
- * Configuration options for `aws_credentials_new_with_options` 
+ * Configuration options for `aws_credentials_new_with_options`
  */
 struct aws_credentials_options {
 
