@@ -728,7 +728,7 @@ struct aws_credentials_options {
     struct aws_byte_cursor session_token_cursor;
     /* (Optional) account id associated with the credentials */
     struct aws_byte_cursor account_id_cursor;
-    /* expiration_timepoint_seconds timepoint, in seconds since epoch, that the credentials will no longer be valid.
+    /* Time point, in seconds since epoch, that the credentials will no longer be valid.
      * For credentials that do not expire, use UINT64_MAX. */
     uint64_t expiration_timepoint_seconds;
 };
