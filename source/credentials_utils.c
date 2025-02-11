@@ -246,14 +246,14 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
             "Parsed an unexpected credentials json document, either access key, secret key is empty.");
         goto done;
     }
-
-    credentials = aws_credentials_new_with_account_id(
-        allocator,
-        access_key_id_cursor,
-        secret_access_key_cursor,
-        token_cursor,
-        account_id_cursor,
-        expiration_timepoint_in_seconds);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = access_key_id_cursor,
+        .secret_access_key_cursor = secret_access_key_cursor,
+        .session_token_cursor = token_cursor,
+        .account_id_cursor = account_id_cursor,
+        .expiration_timepoint_seconds = expiration_timepoint_in_seconds,
+    };
+    credentials = aws_credentials_new_with_options(allocator, &creds_option);
 
     if (credentials == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to allocate memory for credentials.");
@@ -465,4 +465,23 @@ struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_a
 
     aws_get_environment_value(allocator, s_default_region_env, &region);
     return region;
+}
+
+struct aws_byte_cursor aws_parse_account_id_from_arn(struct aws_byte_cursor arn) {
+    struct aws_byte_cursor account_id;
+    AWS_ZERO_STRUCT(account_id);
+    /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the
+     * account-id out of it which is the fifth element. */
+    for (int i = 0; i < 5; i++) {
+        if (!aws_byte_cursor_next_split(&arn, ':', &account_id)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Failed to parse account_id string from STS xml response: %s",
+                aws_error_str(aws_last_error()));
+            struct aws_byte_cursor empty;
+            AWS_ZERO_STRUCT(empty);
+            return empty;
+        }
+    }
+    return account_id;
 }

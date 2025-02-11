@@ -52,7 +52,21 @@ static int s_credentials_utils_construct_endpoint_test(struct aws_allocator *all
 
     aws_string_destroy(service_name);
 
-    return 0;
+    return AWS_OP_SUCCESS;
 }
 
 AWS_TEST_CASE(credentials_utils_construct_endpoint_test, s_credentials_utils_construct_endpoint_test);
+
+static int s_credentials_utils_parse_account_id_from_arn(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(
+        aws_parse_account_id_from_arn(aws_byte_cursor_from_c_str("::::123456789012::")), "123456789012");
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(
+        aws_parse_account_id_from_arn(aws_byte_cursor_from_c_str("arn:a:b:c:123456789012::")), "123456789012");
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(aws_parse_account_id_from_arn(aws_byte_cursor_from_c_str("::::::")), "");
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(aws_parse_account_id_from_arn(aws_byte_cursor_from_c_str("invalid-arn")), "");
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(credentials_utils_parse_account_id_from_arn, s_credentials_utils_parse_account_id_from_arn);

@@ -288,20 +288,7 @@ static int s_stswebid_xml_on_AssumedRoleUser_child(struct aws_xml_node *node, vo
         if (aws_xml_node_as_body(node, &arn_cursor)) {
             return AWS_OP_ERR;
         }
-        struct aws_byte_cursor account_id;
-        AWS_ZERO_STRUCT(account_id);
-        /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the
-         * account-id out of it which is the fifth element. */
-        for (int i = 0; i < 5; i++) {
-            if (!aws_byte_cursor_next_split(&arn_cursor, ':', &account_id)) {
-                AWS_LOGF_ERROR(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Failed to parse account_id string from STS web identity xml response: %s",
-                    aws_error_str(aws_last_error()));
-                return AWS_OP_ERR;
-            }
-        }
-
+        struct aws_byte_cursor account_id = aws_parse_account_id_from_arn(arn_cursor);
         query_user_data->account_id = aws_string_new_from_cursor(query_user_data->allocator, &account_id);
     }
 
@@ -398,14 +385,14 @@ static struct aws_credentials *s_parse_credentials_from_response(
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "STS web identity not found in XML response.");
         goto on_finish;
     }
-
-    credentials = aws_credentials_new_from_string_with_account_id(
-        query_user_data->allocator,
-        query_user_data->access_key_id,
-        query_user_data->secret_access_key,
-        query_user_data->session_token,
-        query_user_data->account_id,
-        query_user_data->expiration_timepoint_in_seconds);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = aws_byte_cursor_from_optional_string(query_user_data->access_key_id),
+        .secret_access_key_cursor = aws_byte_cursor_from_optional_string(query_user_data->secret_access_key),
+        .session_token_cursor = aws_byte_cursor_from_optional_string(query_user_data->session_token),
+        .account_id_cursor = aws_byte_cursor_from_optional_string(query_user_data->account_id),
+        .expiration_timepoint_seconds = query_user_data->expiration_timepoint_in_seconds,
+    };
+    credentials = aws_credentials_new_with_options(query_user_data->allocator, &creds_option);
 
     if (credentials == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to create credentials for sts web identity");

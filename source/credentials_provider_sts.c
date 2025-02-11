@@ -251,20 +251,7 @@ static int s_sts_xml_on_AssumedRoleUser_child(struct aws_xml_node *node, void *u
         if (aws_xml_node_as_body(node, &arn_cursor)) {
             return AWS_OP_ERR;
         }
-        struct aws_byte_cursor account_id;
-        AWS_ZERO_STRUCT(account_id);
-        /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the
-         * account-id out of it which is the fifth element. */
-        for (int i = 0; i < 5; i++) {
-            if (!aws_byte_cursor_next_split(&arn_cursor, ':', &account_id)) {
-                AWS_LOGF_ERROR(
-                    AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                    "Failed to parse account_id string from STS xml response: %s",
-                    aws_error_str(aws_last_error()));
-                return AWS_OP_ERR;
-            }
-        }
-
+        struct aws_byte_cursor account_id = aws_parse_account_id_from_arn(arn_cursor);
         provider_user_data->account_id = aws_string_new_from_cursor(provider_user_data->allocator, &account_id);
     }
 
@@ -411,15 +398,16 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
         }
 
         if (provider_user_data->access_key_id && provider_user_data->secret_access_key &&
-            provider_user_data->session_token && provider_user_data->account_id) {
-
-            provider_user_data->credentials = aws_credentials_new_from_string_with_account_id(
-                provider_user_data->allocator,
-                provider_user_data->access_key_id,
-                provider_user_data->secret_access_key,
-                provider_user_data->session_token,
-                provider_user_data->account_id,
-                now_seconds + provider_impl->duration_seconds);
+            provider_user_data->session_token) {
+            struct aws_credentials_options creds_option = {
+                .access_key_id_cursor = aws_byte_cursor_from_optional_string(provider_user_data->access_key_id),
+                .secret_access_key_cursor = aws_byte_cursor_from_optional_string(provider_user_data->secret_access_key),
+                .session_token_cursor = aws_byte_cursor_from_optional_string(provider_user_data->session_token),
+                .account_id_cursor = aws_byte_cursor_from_optional_string(provider_user_data->account_id),
+                .expiration_timepoint_seconds = now_seconds + provider_impl->duration_seconds,
+            };
+            provider_user_data->credentials =
+                aws_credentials_new_with_options(provider_user_data->allocator, &creds_option);
         }
 
         if (provider_user_data->credentials == NULL) {

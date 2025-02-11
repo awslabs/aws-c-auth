@@ -166,14 +166,14 @@ static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_q
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) successfully queried credentials",
             (void *)sso_query_context->provider);
-        struct aws_byte_cursor account_id = aws_byte_cursor_from_string(sso_query_context->sso_account_id);
-        credentials_with_account_id = aws_credentials_new_with_account_id(
-            sso_query_context->allocator,
-            aws_credentials_get_access_key_id(credentials),
-            aws_credentials_get_secret_access_key(credentials),
-            aws_credentials_get_session_token(credentials),
-            account_id,
-            aws_credentials_get_expiration_timepoint_seconds(credentials));
+        struct aws_credentials_options creds_option = {
+            .access_key_id_cursor = aws_credentials_get_access_key_id(credentials),
+            .secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials),
+            .session_token_cursor = aws_credentials_get_session_token(credentials),
+            .account_id_cursor = aws_byte_cursor_from_string(sso_query_context->sso_account_id),
+            .expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials),
+        };
+        credentials_with_account_id = aws_credentials_new_with_options(sso_query_context->allocator, &creds_option);
     } else {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,

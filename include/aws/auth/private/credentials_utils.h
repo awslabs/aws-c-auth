@@ -193,6 +193,13 @@ struct aws_profile_collection *aws_load_profile_collection_from_config_file(
 AWS_AUTH_API
 struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator);
 
+/*
+ * Parses account_id from arn with the format arn:partition:service:region:account-id:resource-id
+ * Returns an empty cursor if the account_id is not present or unable to parse the account_id
+ */
+AWS_AUTH_API
+struct aws_byte_cursor aws_parse_account_id_from_arn(struct aws_byte_cursor arn);
+
 AWS_EXTERN_C_END
 
 #endif /* AWS_AUTH_CREDENTIALS_PRIVATE_H */

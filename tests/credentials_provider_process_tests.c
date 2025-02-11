@@ -461,13 +461,14 @@ AWS_TEST_CASE(
 
 static int s_credentials_provider_process_basic_success_with_account_id(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    struct aws_credentials *expected_credentials = aws_credentials_new_from_string_with_account_id(
-        allocator,
-        s_good_access_key_id,
-        s_good_secret_access_key,
-        s_good_session_token,
-        s_good_account_id,
-        s_good_expiration);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = aws_byte_cursor_from_string(s_good_access_key_id),
+        .secret_access_key_cursor = aws_byte_cursor_from_string(s_good_secret_access_key),
+        .session_token_cursor = aws_byte_cursor_from_string(s_good_session_token),
+        .account_id_cursor = aws_byte_cursor_from_string(s_good_account_id),
+        .expiration_timepoint_seconds = s_good_expiration,
+    };
+    struct aws_credentials *expected_credentials = aws_credentials_new_with_options(allocator, &creds_option);
     ASSERT_SUCCESS(s_test_command_expect_success(allocator, s_test_command_with_account_id, expected_credentials));
     aws_credentials_release(expected_credentials);
     return AWS_OP_SUCCESS;

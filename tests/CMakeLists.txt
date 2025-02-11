@@ -195,6 +195,7 @@ add_test_case(profile_override_test)
 add_test_case(profile_environment_test)
 
 add_test_case(credentials_utils_construct_endpoint_test)
+add_test_case(credentials_utils_parse_account_id_from_arn)
 
 add_test_case(sigv4_skip_xray_header_test)
 add_test_case(sigv4_skip_user_agent_header_test)
