@@ -411,15 +411,14 @@ struct aws_string *s_get_override_endpoint(
         goto on_finish;
     }
     service_endpoint_str = aws_string_new_from_buf(allocator, &service_endpoint_buf);
-
-    if (aws_get_environment_value(allocator, service_endpoint_str, &out_endpoint) == AWS_OP_SUCCESS &&
-        out_endpoint != NULL) {
+    out_endpoint = aws_get_env_nonempty(allocator, aws_string_c_str(service_endpoint_str));
+    if (out_endpoint) {
         goto on_finish;
     }
 
     /* Check AWS_ENDPOINT_URL variable */
-    if (aws_get_environment_value(allocator, s_endpoint_url_env, &out_endpoint) == AWS_OP_SUCCESS &&
-        out_endpoint != NULL) {
+    out_endpoint = aws_get_env_nonempty(allocator, aws_string_c_str(s_endpoint_url_env));
+    if (out_endpoint) {
         goto on_finish;
     }
 
@@ -537,14 +536,12 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_env, "AWS_REGION");
 AWS_STATIC_STRING_FROM_LITERAL(s_default_region_env, "AWS_DEFAULT_REGION");
 
 struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_allocator *allocator) {
-    struct aws_string *region = NULL;
-
     /* check AWS_REGION environment variable first */
-    aws_get_environment_value(allocator, s_region_env, &region);
-    if (region != NULL && region->len > 0) {
+    struct aws_string *region = aws_get_env_nonempty(allocator, aws_string_c_str(s_region_env));
+    if (region != NULL) {
         return region;
     }
 
-    aws_get_environment_value(allocator, s_default_region_env, &region);
-    return region;
+    /* check AWS_DEFAULT_REGION environment variable first */
+    return aws_get_env_nonempty(allocator, aws_string_c_str(s_default_region_env));
 }

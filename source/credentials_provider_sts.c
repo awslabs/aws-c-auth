@@ -702,7 +702,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
 static struct aws_string *s_resolve_region(struct aws_allocator *allocator, const struct aws_profile *profile) {
     /* check environment variable first */
     struct aws_string *region = aws_credentials_provider_resolve_region_from_env(allocator);
-    if (region != NULL && region->len > 0) {
+    if (region != NULL) {
         return region;
     }
 
@@ -743,7 +743,7 @@ void s_resolve_endpoint(
     }
 
     *out_region = s_resolve_region(allocator, profile);
-
+    /* even if out_region is NULL, we still want to check if there are any endpoint overrides set up */
     if (aws_credentials_provider_construct_endpoint(
             allocator,
             out_endpoint,
@@ -881,6 +881,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     s_resolve_endpoint(allocator, options, &impl->endpoint, &impl->region);
     if (!impl->endpoint) {
         /* use the global endpoint */
+        if (impl->region) {
+            aws_string_destroy(impl->region);
+        }
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
         impl->region = aws_string_new_from_c_str(allocator, "us-east-1");
     } else if (!impl->region) {
