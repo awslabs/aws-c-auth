@@ -258,6 +258,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
 AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "SuccessfulToken");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_account_id, "123");
 static int s_good_response_expiration = 1678574216;
 static int s_verify_credentials(bool request_made, bool got_credentials, int expected_attempts) {
     ASSERT_TRUE(credentials_provider_http_mock_tester.has_received_credentials_callback);
@@ -271,6 +272,8 @@ static int s_verify_credentials(bool request_made, bool got_credentials, int exp
             s_good_secret_access_key);
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
             aws_credentials_get_session_token(credentials_provider_http_mock_tester.credentials), s_good_session_token);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_account_id(credentials_provider_http_mock_tester.credentials), s_good_account_id);
         ASSERT_INT_EQUALS(
             aws_credentials_get_expiration_timepoint_seconds(credentials_provider_http_mock_tester.credentials),
             s_good_response_expiration);
