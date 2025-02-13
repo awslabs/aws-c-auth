@@ -41,6 +41,7 @@ static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *, void *);
 static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(struct aws_xml_node *, void *);
 static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(struct aws_xml_node *, void *);
 static int s_stswebid_200_xml_on_Credentials_child(struct aws_xml_node *, void *);
+static int s_stswebid_xml_on_AssumedRoleUser_child(struct aws_xml_node *, void *);
 
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
@@ -69,6 +70,7 @@ struct sts_web_identity_user_data {
     struct aws_string *access_key_id;
     struct aws_string *secret_access_key;
     struct aws_string *session_token;
+    struct aws_string *account_id;
     uint64_t expiration_timepoint_in_seconds;
 
     struct aws_byte_buf payload_buf;
@@ -96,6 +98,9 @@ static void s_user_data_reset_request_and_response(struct sts_web_identity_user_
 
     aws_string_destroy_secure(user_data->session_token);
     user_data->session_token = NULL;
+
+    aws_string_destroy(user_data->account_id);
+    user_data->account_id = NULL;
 }
 
 static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
@@ -261,15 +266,32 @@ static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(
     return AWS_OP_SUCCESS;
 }
 
-static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(
-    struct aws_xml_node *node,
-
-    void *user_data) {
+static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(struct aws_xml_node *node, void *user_data) {
 
     struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
     if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Credentials")) {
         return aws_xml_node_traverse(node, s_stswebid_200_xml_on_Credentials_child, user_data);
     }
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "AssumedRoleUser")) {
+        return aws_xml_node_traverse(node, s_stswebid_xml_on_AssumedRoleUser_child, user_data);
+    }
+    return AWS_OP_SUCCESS;
+}
+
+static int s_stswebid_xml_on_AssumedRoleUser_child(struct aws_xml_node *node, void *user_data) {
+    struct sts_web_identity_user_data *query_user_data = user_data;
+    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
+    struct aws_byte_cursor arn_cursor;
+    AWS_ZERO_STRUCT(arn_cursor);
+
+    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Arn")) {
+        if (aws_xml_node_as_body(node, &arn_cursor)) {
+            return AWS_OP_ERR;
+        }
+        struct aws_byte_cursor account_id = aws_parse_account_id_from_arn(arn_cursor);
+        query_user_data->account_id = aws_string_new_from_cursor(query_user_data->allocator, &account_id);
+    }
+
     return AWS_OP_SUCCESS;
 }
 
@@ -363,13 +385,14 @@ static struct aws_credentials *s_parse_credentials_from_response(
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "STS web identity not found in XML response.");
         goto on_finish;
     }
-
-    credentials = aws_credentials_new(
-        query_user_data->allocator,
-        aws_byte_cursor_from_string(query_user_data->access_key_id),
-        aws_byte_cursor_from_string(query_user_data->secret_access_key),
-        aws_byte_cursor_from_string(query_user_data->session_token),
-        query_user_data->expiration_timepoint_in_seconds);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = aws_byte_cursor_from_string(query_user_data->access_key_id),
+        .secret_access_key_cursor = aws_byte_cursor_from_string(query_user_data->secret_access_key),
+        .session_token_cursor = aws_byte_cursor_from_string(query_user_data->session_token),
+        .account_id_cursor = aws_byte_cursor_from_string(query_user_data->account_id),
+        .expiration_timepoint_seconds = query_user_data->expiration_timepoint_in_seconds,
+    };
+    credentials = aws_credentials_new_with_options(query_user_data->allocator, &creds_option);
 
     if (credentials == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to create credentials for sts web identity");

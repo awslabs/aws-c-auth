@@ -171,8 +171,9 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
 
     struct aws_credentials *credentials = NULL;
     struct aws_json_value *access_key_id = NULL;
-    struct aws_json_value *secrete_access_key = NULL;
+    struct aws_json_value *secret_access_key = NULL;
     struct aws_json_value *token = NULL;
+    struct aws_json_value *account_id = NULL;
     struct aws_json_value *creds_expiration = NULL;
 
     bool parse_error = true;
@@ -189,23 +190,36 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
         goto done;
     }
 
-    struct aws_byte_cursor secrete_access_key_cursor;
-    secrete_access_key = aws_json_value_get_from_object(
+    struct aws_byte_cursor secret_access_key_cursor;
+    secret_access_key = aws_json_value_get_from_object(
         document_root, aws_byte_cursor_from_c_str((char *)options->secret_access_key_name));
-    if (!aws_json_value_is_string(secrete_access_key) ||
-        aws_json_value_get_string(secrete_access_key, &secrete_access_key_cursor) == AWS_OP_ERR) {
+    if (!aws_json_value_is_string(secret_access_key) ||
+        aws_json_value_get_string(secret_access_key, &secret_access_key_cursor) == AWS_OP_ERR) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse SecretAccessKey from Json document.");
         goto done;
     }
 
     struct aws_byte_cursor token_cursor;
+    AWS_ZERO_STRUCT(token_cursor);
     if (options->token_name) {
         token = aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->token_name));
-        if (!aws_json_value_is_string(token) || aws_json_value_get_string(token, &token_cursor) == AWS_OP_ERR) {
+        if (!aws_json_value_is_string(token) || aws_json_value_get_string(token, &token_cursor) == AWS_OP_ERR ||
+            token_cursor.len == 0) {
             if (options->token_required) {
                 AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse Token from Json document.");
                 goto done;
             }
+        }
+    }
+
+    struct aws_byte_cursor account_id_cursor;
+    AWS_ZERO_STRUCT(account_id_cursor);
+    if (options->account_id_name) {
+        account_id =
+            aws_json_value_get_from_object(document_root, aws_byte_cursor_from_c_str((char *)options->account_id_name));
+        if (!aws_json_value_is_string(account_id) ||
+            aws_json_value_get_string(account_id, &account_id_cursor) == AWS_OP_ERR) {
+            AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to parse account_id from Json document.");
         }
     }
 
@@ -226,31 +240,20 @@ struct aws_credentials *aws_parse_credentials_from_aws_json_object(
     /*
      * Build the credentials
      */
-    if (access_key_id_cursor.len == 0 || secrete_access_key_cursor.len == 0) {
+    if (access_key_id_cursor.len == 0 || secret_access_key_cursor.len == 0) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Parsed an unexpected credentials json document, either access key, secret key is empty.");
         goto done;
     }
-
-    struct aws_byte_cursor session_token_cursor;
-    AWS_ZERO_STRUCT(session_token_cursor);
-
-    if (token) {
-        aws_json_value_get_string(token, &session_token_cursor);
-        if (options->token_required && session_token_cursor.len == 0) {
-            AWS_LOGF_ERROR(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Parsed an unexpected credentials json document with empty token.");
-            goto done;
-        }
-    }
-
-    credentials = aws_credentials_new(
-        allocator,
-        access_key_id_cursor,
-        secrete_access_key_cursor,
-        session_token_cursor,
-        expiration_timepoint_in_seconds);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = access_key_id_cursor,
+        .secret_access_key_cursor = secret_access_key_cursor,
+        .session_token_cursor = token_cursor,
+        .account_id_cursor = account_id_cursor,
+        .expiration_timepoint_seconds = expiration_timepoint_in_seconds,
+    };
+    credentials = aws_credentials_new_with_options(allocator, &creds_option);
 
     if (credentials == NULL) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to allocate memory for credentials.");
@@ -554,4 +557,23 @@ struct aws_string *aws_credentials_provider_resolve_region_from_env(struct aws_a
 
     /* check AWS_DEFAULT_REGION environment variable first */
     return aws_get_env_nonempty(allocator, aws_string_c_str(s_default_region_env));
+}
+
+struct aws_byte_cursor aws_parse_account_id_from_arn(struct aws_byte_cursor arn) {
+    struct aws_byte_cursor account_id;
+    AWS_ZERO_STRUCT(account_id);
+    /* The format of the Arn is arn:partition:service:region:account-id:resource-ID and we need to parse the
+     * account-id out of it which is the fifth element. */
+    for (int i = 0; i < 5; i++) {
+        if (!aws_byte_cursor_next_split(&arn, ':', &account_id)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "Failed to parse account_id string from STS xml response: %s",
+                aws_error_str(aws_last_error()));
+            struct aws_byte_cursor empty;
+            AWS_ZERO_STRUCT(empty);
+            return empty;
+        }
+    }
+    return account_id;
 }

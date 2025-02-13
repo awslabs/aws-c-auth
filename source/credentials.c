@@ -96,30 +96,25 @@ struct aws_credentials *aws_credentials_new(
 
     struct aws_byte_cursor account_id;
     AWS_ZERO_STRUCT(account_id);
-
-    return aws_credentials_new_with_account_id(
-        allocator,
-        access_key_id_cursor,
-        secret_access_key_cursor,
-        session_token_cursor,
-        account_id,
-        expiration_timepoint_seconds);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = access_key_id_cursor,
+        .secret_access_key_cursor = secret_access_key_cursor,
+        .session_token_cursor = session_token_cursor,
+        .account_id_cursor = account_id,
+        .expiration_timepoint_seconds = expiration_timepoint_seconds,
+    };
+    return aws_credentials_new_with_options(allocator, &creds_option);
 }
-
-struct aws_credentials *aws_credentials_new_with_account_id(
+struct aws_credentials *aws_credentials_new_with_options(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor access_key_id_cursor,
-    struct aws_byte_cursor secret_access_key_cursor,
-    struct aws_byte_cursor session_token_cursor,
-    struct aws_byte_cursor account_id_cursor,
-    uint64_t expiration_timepoint_seconds) {
+    const struct aws_credentials_options *options) {
 
-    if (access_key_id_cursor.ptr == NULL || access_key_id_cursor.len == 0) {
+    if (options->access_key_id_cursor.ptr == NULL || options->access_key_id_cursor.len == 0) {
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
 
-    if (secret_access_key_cursor.ptr == NULL || secret_access_key_cursor.len == 0) {
+    if (options->secret_access_key_cursor.ptr == NULL || options->secret_access_key_cursor.len == 0) {
         aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
@@ -136,34 +131,34 @@ struct aws_credentials *aws_credentials_new_with_account_id(
     credentials->identity_type = AWS_CREDENTIALS_IDENTITY;
     struct aws_credentials_identity *credentials_identity = &credentials->identity.credentials_identity;
     credentials_identity->access_key_id =
-        aws_string_new_from_array(allocator, access_key_id_cursor.ptr, access_key_id_cursor.len);
+        aws_string_new_from_array(allocator, options->access_key_id_cursor.ptr, options->access_key_id_cursor.len);
     if (credentials_identity->access_key_id == NULL) {
         goto error;
     }
 
-    credentials_identity->secret_access_key =
-        aws_string_new_from_array(allocator, secret_access_key_cursor.ptr, secret_access_key_cursor.len);
+    credentials_identity->secret_access_key = aws_string_new_from_array(
+        allocator, options->secret_access_key_cursor.ptr, options->secret_access_key_cursor.len);
     if (credentials_identity->secret_access_key == NULL) {
         goto error;
     }
 
-    if (session_token_cursor.ptr != NULL && session_token_cursor.len > 0) {
+    if (options->session_token_cursor.ptr != NULL && options->session_token_cursor.len > 0) {
         credentials_identity->session_token =
-            aws_string_new_from_array(allocator, session_token_cursor.ptr, session_token_cursor.len);
+            aws_string_new_from_array(allocator, options->session_token_cursor.ptr, options->session_token_cursor.len);
         if (credentials_identity->session_token == NULL) {
             goto error;
         }
     }
 
-    if (account_id_cursor.ptr != NULL && account_id_cursor.len > 0) {
+    if (options->account_id_cursor.ptr != NULL && options->account_id_cursor.len > 0) {
         credentials_identity->account_id =
-            aws_string_new_from_array(allocator, account_id_cursor.ptr, account_id_cursor.len);
+            aws_string_new_from_array(allocator, options->account_id_cursor.ptr, options->account_id_cursor.len);
         if (credentials_identity->account_id == NULL) {
             goto error;
         }
     }
 
-    credentials->expiration_timepoint_seconds = expiration_timepoint_seconds;
+    credentials->expiration_timepoint_seconds = options->expiration_timepoint_seconds;
 
     return credentials;
 
@@ -334,6 +329,7 @@ struct aws_credentials *aws_credentials_new_from_string(
     const struct aws_string *secret_access_key,
     const struct aws_string *session_token,
     uint64_t expiration_timepoint_seconds) {
+
     struct aws_byte_cursor access_key_cursor = aws_byte_cursor_from_string(access_key_id);
     struct aws_byte_cursor secret_access_key_cursor = aws_byte_cursor_from_string(secret_access_key);
     struct aws_byte_cursor session_token_cursor;

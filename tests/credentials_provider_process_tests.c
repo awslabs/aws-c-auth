@@ -146,6 +146,20 @@ AWS_STATIC_STRING_FROM_LITERAL(
 
 #ifdef _WIN32
 AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_command_with_account_id,
+    "echo {\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\", \"AccountId\":\"AccountId123\"}");
+#else
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_test_command_with_account_id,
+    "echo '{\"Version\": 1, \"AccessKeyId\": \"AccessKey123\", "
+    "\"SecretAccessKey\": \"SecretAccessKey321\", \"SessionToken\":\"TokenSuccess\", "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\", \"AccountId\":\"AccountId123\"}'");
+#endif
+
+#ifdef _WIN32
+AWS_STATIC_STRING_FROM_LITERAL(
     s_test_command_with_logging_on_stderr,
     "("
     "echo Logging on stderr >&2"
@@ -172,7 +186,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_bad_command_output, "echo \"Hello, World!\"");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "AccessKey123");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SecretAccessKey321");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
-AWS_STATIC_STRING_FROM_LITERAL(s_good_expiration, "2020-02-25T06:03:31Z");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_account_id, "AccountId123");
+
+static uint64_t s_good_expiration = 1582610611;
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_process_config_file_contents,
@@ -340,22 +356,45 @@ AWS_TEST_CASE(
     credentials_provider_process_incorrect_command_output,
     s_credentials_provider_process_incorrect_command_output);
 
-static int s_verify_credentials(struct aws_credentials *credentials) {
+static int s_verify_credentials(struct aws_credentials *credentials, struct aws_credentials *expected_credentials) {
     ASSERT_NOT_NULL(credentials);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(credentials), s_good_access_key_id);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_secret_access_key(credentials), s_good_secret_access_key);
-    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_session_token(credentials), s_good_session_token);
+    ASSERT_NOT_NULL(expected_credentials);
 
-    struct aws_date_time expiration;
-    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_expiration);
-    aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
-    ASSERT_TRUE(
-        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
+    ASSERT_BIN_ARRAYS_EQUALS(
+        aws_credentials_get_access_key_id(credentials).ptr,
+        aws_credentials_get_access_key_id(credentials).len,
+        aws_credentials_get_access_key_id(expected_credentials).ptr,
+        aws_credentials_get_access_key_id(expected_credentials).len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        aws_credentials_get_secret_access_key(credentials).ptr,
+        aws_credentials_get_secret_access_key(credentials).len,
+        aws_credentials_get_secret_access_key(expected_credentials).ptr,
+        aws_credentials_get_secret_access_key(expected_credentials).len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        aws_credentials_get_session_token(credentials).ptr,
+        aws_credentials_get_session_token(credentials).len,
+        aws_credentials_get_session_token(expected_credentials).ptr,
+        aws_credentials_get_session_token(expected_credentials).len);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        aws_credentials_get_account_id(credentials).ptr,
+        aws_credentials_get_account_id(credentials).len,
+        aws_credentials_get_account_id(expected_credentials).ptr,
+        aws_credentials_get_account_id(expected_credentials).len);
+
+    ASSERT_UINT_EQUALS(
+        aws_credentials_get_expiration_timepoint_seconds(credentials),
+        aws_credentials_get_expiration_timepoint_seconds(expected_credentials));
 
     return AWS_OP_SUCCESS;
 }
 
-static int s_test_command_expect_success(struct aws_allocator *allocator, const struct aws_string *command) {
+static int s_test_command_expect_success(
+    struct aws_allocator *allocator,
+    const struct aws_string *command,
+    struct aws_credentials *expected_credentials) {
     s_aws_process_tester_init(allocator);
 
     struct aws_byte_buf content_buf;
@@ -388,7 +427,7 @@ static int s_test_command_expect_success(struct aws_allocator *allocator, const 
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials, expected_credentials));
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
@@ -398,15 +437,56 @@ static int s_test_command_expect_success(struct aws_allocator *allocator, const 
 
 static int s_credentials_provider_process_basic_success(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    return s_test_command_expect_success(allocator, s_test_command);
+    struct aws_credentials *expected_credentials = aws_credentials_new_from_string(
+        allocator, s_good_access_key_id, s_good_secret_access_key, s_good_session_token, s_good_expiration);
+    ASSERT_SUCCESS(s_test_command_expect_success(allocator, s_test_command, expected_credentials));
+    aws_credentials_release(expected_credentials);
+    return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(credentials_provider_process_basic_success, s_credentials_provider_process_basic_success);
+
+static int s_credentials_provider_process_basic_success_without_session_token(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+    struct aws_credentials *expected_credentials = aws_credentials_new_from_string(
+        allocator, s_good_access_key_id, s_good_secret_access_key, NULL, s_good_expiration);
+    ASSERT_SUCCESS(s_test_command_expect_success(allocator, s_test_command_without_token, expected_credentials));
+    aws_credentials_release(expected_credentials);
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_process_basic_success_without_session_token,
+    s_credentials_provider_process_basic_success_without_session_token);
+
+static int s_credentials_provider_process_basic_success_with_account_id(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = aws_byte_cursor_from_string(s_good_access_key_id),
+        .secret_access_key_cursor = aws_byte_cursor_from_string(s_good_secret_access_key),
+        .session_token_cursor = aws_byte_cursor_from_string(s_good_session_token),
+        .account_id_cursor = aws_byte_cursor_from_string(s_good_account_id),
+        .expiration_timepoint_seconds = s_good_expiration,
+    };
+    struct aws_credentials *expected_credentials = aws_credentials_new_with_options(allocator, &creds_option);
+    ASSERT_SUCCESS(s_test_command_expect_success(allocator, s_test_command_with_account_id, expected_credentials));
+    aws_credentials_release(expected_credentials);
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_process_basic_success_with_account_id,
+    s_credentials_provider_process_basic_success_with_account_id);
 
 /* Test that stderr is ignored, if the process otherwise succeeds with exit code 0 and valid JSON to stdout.
  * Once upon a time stderr and stdout were merged, and mundane logging to stderr would break things. */
 static int s_credentials_provider_process_success_ignores_stderr(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
-    return s_test_command_expect_success(allocator, s_test_command_with_logging_on_stderr);
+    struct aws_credentials *expected_credentials = aws_credentials_new_from_string(
+        allocator, s_good_access_key_id, s_good_secret_access_key, s_good_session_token, s_good_expiration);
+    ASSERT_SUCCESS(
+        s_test_command_expect_success(allocator, s_test_command_with_logging_on_stderr, expected_credentials));
+    aws_credentials_release(expected_credentials);
+    return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(
     credentials_provider_process_success_ignores_stderr,
@@ -449,7 +529,10 @@ static int s_credentials_provider_process_basic_success_from_profile_provider(
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    struct aws_credentials *expected_credentials = aws_credentials_new_from_string(
+        allocator, s_good_access_key_id, s_good_secret_access_key, s_good_session_token, s_good_expiration);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials, expected_credentials));
+    aws_credentials_release(expected_credentials);
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
@@ -519,7 +602,10 @@ static int s_credentials_provider_process_basic_success_cached(struct aws_alloca
     s_aws_wait_for_credentials_result();
 
     ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
-    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    struct aws_credentials *expected_credentials = aws_credentials_new_from_string(
+        allocator, s_good_access_key_id, s_good_secret_access_key, s_good_session_token, s_good_expiration);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials, expected_credentials));
+    aws_credentials_release(expected_credentials);
 
     aws_string_destroy(config_file_path);
     aws_profile_collection_release(profile_collection);

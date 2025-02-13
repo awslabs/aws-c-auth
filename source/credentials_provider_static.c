@@ -50,14 +50,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_static(
     }
 
     AWS_ZERO_STRUCT(*provider);
-
-    struct aws_credentials *credentials = aws_credentials_new_with_account_id(
-        allocator,
-        options->access_key_id,
-        options->secret_access_key,
-        options->session_token,
-        options->account_id,
-        UINT64_MAX);
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = options->access_key_id,
+        .secret_access_key_cursor = options->secret_access_key,
+        .session_token_cursor = options->session_token,
+        .account_id_cursor = options->account_id,
+        .expiration_timepoint_seconds = UINT64_MAX,
+    };
+    struct aws_credentials *credentials = aws_credentials_new_with_options(allocator, &creds_option);
     if (credentials == NULL) {
         goto on_new_credentials_failure;
     }

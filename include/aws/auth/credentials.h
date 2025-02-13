@@ -715,6 +715,24 @@ struct aws_credentials_provider_cognito_options {
     struct aws_auth_http_system_vtable *function_table;
 };
 
+/**
+ * Configuration options for `aws_credentials_new_with_options`
+ */
+struct aws_credentials_options {
+
+    /* Value for the aws access key id field */
+    struct aws_byte_cursor access_key_id_cursor;
+    /* Value for the secret access key field */
+    struct aws_byte_cursor secret_access_key_cursor;
+    /* (Optional) security token associated with the credentials */
+    struct aws_byte_cursor session_token_cursor;
+    /* (Optional) account id associated with the credentials */
+    struct aws_byte_cursor account_id_cursor;
+    /* Time point, in seconds since epoch, that the credentials will no longer be valid.
+     * For credentials that do not expire, use UINT64_MAX. */
+    uint64_t expiration_timepoint_seconds;
+};
+
 AWS_EXTERN_C_BEGIN
 
 /*
@@ -758,13 +776,9 @@ struct aws_credentials *aws_credentials_new(
  * @return a valid credentials object, or NULL
  */
 AWS_AUTH_API
-struct aws_credentials *aws_credentials_new_with_account_id(
+struct aws_credentials *aws_credentials_new_with_options(
     struct aws_allocator *allocator,
-    struct aws_byte_cursor access_key_id_cursor,
-    struct aws_byte_cursor secret_access_key_cursor,
-    struct aws_byte_cursor session_token_cursor,
-    struct aws_byte_cursor account_id_cursor,
-    uint64_t expiration_timepoint_seconds);
+    const struct aws_credentials_options *options);
 
 /**
  * Creates a new set of aws anonymous credentials.

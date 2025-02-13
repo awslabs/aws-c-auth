@@ -682,7 +682,7 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "<AssumeRoleWithWebIdentityResponse>"
     "    <AssumeRoleWithWebIdentityResult>"
     "        <AssumedRoleUser>"
-    "            <Arn>arn:aws:sts::123456789012:assumed-role/FederatedWebIdentityRole/app1</Arn>"
+    "           <Arn>arn:aws:sts::123456789012:assumed-role/FederatedWebIdentityRole/app1</Arn>"
     "           <AssumedRoleId>AROACLKWSDQRAOEXAMPLE:app1</AssumedRoleId>"
     "        </AssumedRoleUser>"
     "        <Credentials>"
@@ -701,6 +701,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_good_access_key_id, "SuccessfulAccessKey");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_secret_access_key, "SuccessfulSecret");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_session_token, "TokenSuccess");
 AWS_STATIC_STRING_FROM_LITERAL(s_good_response_expiration, "2020-02-25T06:03:31Z");
+AWS_STATIC_STRING_FROM_LITERAL(s_good_account_id_response, "123456789012");
 
 static int s_verify_credentials(bool request_made, bool from_config, bool got_credentials, int expected_attempts) {
 
@@ -724,6 +725,8 @@ static int s_verify_credentials(bool request_made, bool from_config, bool got_cr
             aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
         ASSERT_CURSOR_VALUE_STRING_EQUALS(
             aws_credentials_get_session_token(s_tester.credentials), s_good_session_token);
+        ASSERT_CURSOR_VALUE_STRING_EQUALS(
+            aws_credentials_get_account_id(s_tester.credentials), s_good_account_id_response);
     } else {
         ASSERT_TRUE(s_tester.credentials == NULL);
     }

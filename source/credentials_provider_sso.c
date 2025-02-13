@@ -56,6 +56,7 @@ struct aws_sso_query_context {
     struct aws_retry_token *retry_token;
     struct aws_byte_buf path_and_query;
     struct aws_string *token;
+    struct aws_string *sso_account_id;
 
     int status_code;
     int error_code;
@@ -91,6 +92,7 @@ static void s_sso_query_context_destroy(struct aws_sso_query_context *sso_query_
     s_sso_query_context_reset_request_specific_data(sso_query_context);
     aws_byte_buf_clean_up(&sso_query_context->payload);
     aws_byte_buf_clean_up(&sso_query_context->path_and_query);
+    aws_string_destroy(sso_query_context->sso_account_id);
     aws_credentials_provider_release(sso_query_context->provider);
     aws_retry_token_release(sso_query_context->retry_token);
     aws_mem_release(sso_query_context->allocator, sso_query_context);
@@ -108,6 +110,7 @@ static struct aws_sso_query_context *s_sso_query_context_new(
     sso_query_context->provider = aws_credentials_provider_acquire(provider);
     sso_query_context->original_user_data = user_data;
     sso_query_context->original_callback = callback;
+    sso_query_context->sso_account_id = aws_string_new_from_string(provider->allocator, impl->sso_account_id);
 
     /* construct path and query */
     struct aws_byte_cursor account_id_cursor = aws_byte_cursor_from_string(impl->sso_account_id);
@@ -139,6 +142,7 @@ on_error:
  */
 static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_query_context) {
     struct aws_credentials *credentials = NULL;
+    struct aws_credentials *credentials_with_account_id = NULL;
 
     if (sso_query_context->error_code == AWS_ERROR_SUCCESS) {
         /* parse credentials */
@@ -162,6 +166,14 @@ static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_q
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p) successfully queried credentials",
             (void *)sso_query_context->provider);
+        struct aws_credentials_options creds_option = {
+            .access_key_id_cursor = aws_credentials_get_access_key_id(credentials),
+            .secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials),
+            .session_token_cursor = aws_credentials_get_session_token(credentials),
+            .account_id_cursor = aws_byte_cursor_from_string(sso_query_context->sso_account_id),
+            .expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials),
+        };
+        credentials_with_account_id = aws_credentials_new_with_options(sso_query_context->allocator, &creds_option);
     } else {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
@@ -175,11 +187,12 @@ static void s_finalize_get_credentials_query(struct aws_sso_query_context *sso_q
 
     /* pass the credentials back */
     sso_query_context->original_callback(
-        credentials, sso_query_context->error_code, sso_query_context->original_user_data);
+        credentials_with_account_id, sso_query_context->error_code, sso_query_context->original_user_data);
 
     /* clean up */
     s_sso_query_context_destroy(sso_query_context);
     aws_credentials_release(credentials);
+    aws_credentials_release(credentials_with_account_id);
 }
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data);
 

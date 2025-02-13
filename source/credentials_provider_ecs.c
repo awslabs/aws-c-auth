@@ -188,6 +188,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
         .access_key_id_name = "AccessKeyId",
         .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
+        .account_id_name = "AccountId",
         .expiration_name = "Expiration",
         .token_required = true,
         .expiration_required = true,
