@@ -399,6 +399,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_services_property, "services");
  * 2. The value provided by the global endpoint environment variable, `AWS_ENDPOINT_URL`.
  * 3. The value provided by a service-specific parameter from a services definition section referenced in a profile.
  * 4. The value provided by the global parameter from a profile in the shared configuration file.
+ *
+ * Returns NULL if there are no endpoint overrides configured
  */
 struct aws_string *s_get_override_endpoint(
     struct aws_allocator *allocator,
