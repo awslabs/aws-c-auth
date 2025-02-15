@@ -221,7 +221,6 @@ static int s_verify_fixed_ecc_key_public(struct aws_ecc_key_pair *key, struct aw
     ASSERT_SUCCESS(aws_byte_buf_init(&pub_coord_x, allocator, 128));
 
     ASSERT_SUCCESS(aws_hex_encode(&pub_x_cursor, &pub_coord_x));
-    pub_coord_x.len -= 1;
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_fixed_pub_x->bytes, s_expected_fixed_pub_x->len, pub_coord_x.buffer, pub_coord_x.len);
 
@@ -229,7 +228,6 @@ static int s_verify_fixed_ecc_key_public(struct aws_ecc_key_pair *key, struct aw
     ASSERT_SUCCESS(aws_byte_buf_init(&pub_coord_y, allocator, 128));
 
     ASSERT_SUCCESS(aws_hex_encode(&pub_y_cursor, &pub_coord_y));
-    pub_coord_y.len -= 1;
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_fixed_pub_y->bytes, s_expected_fixed_pub_y->len, pub_coord_y.buffer, pub_coord_y.len);
 
@@ -250,7 +248,6 @@ static int s_verify_fixed_ecc_key_private(struct aws_ecc_key_pair *key, struct a
     ASSERT_SUCCESS(aws_byte_buf_init(&private_buf, allocator, 128));
 
     ASSERT_SUCCESS(aws_hex_encode(&private_key_cursor, &private_buf));
-    private_buf.len -= 1;
     ASSERT_BIN_ARRAYS_EQUALS(
         s_expected_fixed_private_key->bytes, s_expected_fixed_private_key->len, private_buf.buffer, private_buf.len);
 
