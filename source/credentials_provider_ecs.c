@@ -751,11 +751,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs(
         sizeof(struct aws_credentials_provider),
         &impl,
         sizeof(struct aws_credentials_provider_ecs_impl));
-
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
