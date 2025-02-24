@@ -886,6 +886,7 @@ on_error:
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_env_name, "STS");
 
 static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_byte_buf *dst) {
 
@@ -1034,8 +1035,15 @@ static struct sts_web_identity_parameters *s_parameters_new(
     }
 
     /* determine endpoint */
-    if (aws_credentials_provider_construct_regional_endpoint(
-            allocator, &parameters->endpoint, region, s_sts_service_name)) {
+    if (aws_credentials_provider_construct_endpoint(
+            allocator,
+            &parameters->endpoint,
+            region,
+            s_sts_service_name,
+            s_sts_service_env_name,
+            s_sts_service_name,
+            config_profile,
+            profile)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sts endpoint with, probably region is missing.");
         goto on_finish;
