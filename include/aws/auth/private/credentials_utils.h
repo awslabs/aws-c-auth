@@ -167,15 +167,22 @@ AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
 /*
- * Constructs an endpoint in the format of service_name.region.amazonaws.com
+ * If an endpoint override is configured, use that. Otherwise do the following:
+ * Construct an endpoint in the format of service_name_host.region.amazonaws.com.
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.
+ * To configure the endpoint override, check the
+ * https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html.
  */
 AWS_AUTH_API
-int aws_credentials_provider_construct_regional_endpoint(
+int aws_credentials_provider_construct_endpoint(
     struct aws_allocator *allocator,
     struct aws_string **out_endpoint,
     const struct aws_string *region,
-    const struct aws_string *service_name);
+    const struct aws_string *service_name_host,
+    const struct aws_string *service_name_env,
+    const struct aws_string *service_name_property,
+    const struct aws_profile_collection *profile_collection,
+    const struct aws_profile *profile);
 
 /*
  * Loads an aws config profile collection

@@ -50,6 +50,8 @@ static struct aws_http_header s_content_type_header = {
 static struct aws_byte_cursor s_content_length = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("content-length");
 static struct aws_byte_cursor s_path = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("/");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_env_name, "STS");
+
 static const int s_max_retries = 3;
 
 const uint16_t aws_sts_assume_role_default_duration_secs = 900;
@@ -725,18 +727,35 @@ AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");
  * 1. Check `AWS_DEFAULT_REGION` environment variable
  * 2. check `region` config file property.
  */
-static struct aws_string *s_resolve_region(
-    struct aws_allocator *allocator,
-    const struct aws_credentials_provider_sts_options *options) {
+static struct aws_string *s_resolve_region(struct aws_allocator *allocator, const struct aws_profile *profile) {
     /* check environment variable first */
     struct aws_string *region = aws_credentials_provider_resolve_region_from_env(allocator);
-    if (region != NULL && region->len > 0) {
+    if (region != NULL) {
         return region;
     }
 
+    if (profile) {
+        const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
+        if (property) {
+            region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+        }
+    }
+
+    return region;
+}
+
+/*
+ * Try to construct an endpoint for the sts service
+ */
+void s_resolve_endpoint(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_options *options,
+    struct aws_string **out_endpoint,
+    struct aws_string **out_region) {
+
     struct aws_profile_collection *profile_collection = NULL;
     struct aws_string *profile_name = NULL;
-
+    const struct aws_profile *profile = NULL;
     /* check the config file */
     if (options->profile_collection_cached) {
         profile_collection = aws_profile_collection_acquire(options->profile_collection_cached);
@@ -744,25 +763,30 @@ static struct aws_string *s_resolve_region(
         profile_collection =
             aws_load_profile_collection_from_config_file(allocator, options->config_file_name_override);
     }
-    if (!profile_collection) {
+    if (profile_collection) {
+        profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
+        if (profile_name) {
+            profile = aws_profile_collection_get_profile(profile_collection, profile_name);
+        }
+    }
+
+    *out_region = s_resolve_region(allocator, profile);
+    /* even if out_region is NULL, we still want to check if there are any endpoint overrides set up */
+    if (aws_credentials_provider_construct_endpoint(
+            allocator,
+            out_endpoint,
+            *out_region,
+            s_sts_service_name,
+            s_sts_service_env_name,
+            s_sts_service_name,
+            profile_collection,
+            profile)) {
         goto cleanup;
     }
-    profile_name = aws_get_profile_name(allocator, &options->profile_name_override);
-    if (!profile_name) {
-        goto cleanup;
-    }
-    const struct aws_profile *profile = aws_profile_collection_get_profile(profile_collection, profile_name);
-    if (!profile) {
-        goto cleanup;
-    }
-    const struct aws_profile_property *property = aws_profile_get_property(profile, s_region_config);
-    if (property) {
-        region = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
-    }
+
 cleanup:
     aws_string_destroy(profile_name);
     aws_profile_collection_release(profile_collection);
-    return region;
 }
 
 struct aws_credentials_provider *aws_credentials_provider_new_sts(
@@ -882,18 +906,24 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
      * Construct a regional endpoint if we can resolve region from envrionment variable or the config file. Otherwise,
      * use the global endpoint.
      */
-    region = s_resolve_region(allocator, options);
-    if (region != NULL) {
-        if (aws_credentials_provider_construct_regional_endpoint(
-                allocator, &impl->endpoint, region, s_sts_service_name)) {
-            goto on_done;
-        }
-        impl->region = aws_string_new_from_string(allocator, region);
-    } else {
+    s_resolve_endpoint(allocator, options, &impl->endpoint, &impl->region);
+    if (!impl->endpoint) {
         /* use the global endpoint */
+        if (impl->region) {
+            aws_string_destroy(impl->region);
+        }
         impl->endpoint = aws_string_new_from_c_str(allocator, "sts.amazonaws.com");
         impl->region = aws_string_new_from_c_str(allocator, "us-east-1");
+    } else if (!impl->region) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Region must be configured if the endpoint_override is configured. Please configure the region "
+            "using the AWS_REGION environment variable or region property in the configuration file. %s",
+            (void *)provider,
+            aws_error_debug_str(aws_last_error()));
+        goto on_done;
     }
+
     struct aws_byte_cursor endpoint_cursor = aws_byte_cursor_from_string(impl->endpoint);
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
