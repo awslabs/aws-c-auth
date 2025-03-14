@@ -770,6 +770,8 @@ static int s_credentials_provider_cognito_success_dynamic_token_pairs_fn(struct 
     ASSERT_SUCCESS(aws_input_stream_read(request_body, &body_buffer));
     ASSERT_INT_EQUALS(body_length, (int64_t)body_buffer.len);
 
+    AWS_LOGF_DEBUG(AWS_LS_AUTH_GENERAL, "Request body: " PRInSTR, AWS_BYTE_BUF_PRI(body_buffer));
+
     struct aws_json_value *json_body =
         aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&body_buffer));
     ASSERT_NOT_NULL(json_body);
