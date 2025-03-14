@@ -122,10 +122,12 @@ static void s_user_data_destroy(struct cognito_user_data *user_data) {
 
     size_t dynamic_logins_count = aws_array_list_length(&user_data->dynamic_logins);
     for (size_t i = 0; i < dynamic_logins_count; ++i) {
-        struct aws_cognito_login *login = NULL;
+        struct aws_cognito_login login;
+        AWS_ZERO_STRUCT(login);
+
         aws_array_list_get_at(&user_data->dynamic_logins, &login, i);
 
-        s_aws_cognito_login_clean_up(login);
+        s_aws_cognito_login_clean_up(&login);
     }
     aws_array_list_clean_up(&user_data->dynamic_logins);
 
@@ -629,7 +631,10 @@ static void s_on_retry_token_acquired(
     struct aws_credentials_provider_cognito_impl *impl = wrapped_user_data->provider->impl;
 
     if (impl->get_token_pairs != NULL) {
-        (*impl->get_token_pairs)(impl->get_token_pairs_user_data, s_on_get_token_pairs_completion, wrapped_user_data);
+        if ((*impl->get_token_pairs)(
+                impl->get_token_pairs_user_data, s_on_get_token_pairs_completion, wrapped_user_data)) {
+            s_finalize_credentials_query(wrapped_user_data, aws_last_error());
+        }
     } else {
         s_on_get_token_pairs_completion(NULL, 0, AWS_ERROR_SUCCESS, wrapped_user_data);
     }

@@ -8,14 +8,16 @@
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/condition_variable.h>
-#include <aws/common/date_time.h>
 #include <aws/common/environment.h>
+#include <aws/common/json.h>
 #include <aws/common/string.h>
 #include <aws/http/request_response.h>
 #include <aws/io/channel_bootstrap.h>
 #include <aws/io/event_loop.h>
 #include <aws/io/socket.h>
 #include <aws/io/tls_channel_handler.h>
+
+#include "aws/io/stream.h"
 
 struct aws_mock_web_credential_provider_tester {
     struct aws_byte_buf request_uri;
@@ -45,6 +47,9 @@ struct aws_mock_web_credential_provider_tester {
 
     size_t current_request_attempt_number;
     struct aws_http_make_request_options request_callback_options;
+
+    struct aws_input_stream *request_body_stream;
+
     void (*manager_destructor_fn)(void *);
     void *manager_destructor_user_data;
 };
@@ -145,6 +150,15 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
 
     aws_byte_buf_append_dynamic(&s_tester.request_uri, &path);
     s_tester.request_callback_options = *options;
+
+    aws_input_stream_release(s_tester.request_body_stream);
+    s_tester.request_body_stream = NULL;
+
+    struct aws_input_stream *body_stream = aws_http_message_get_body_stream(options->request);
+    if (body_stream != NULL) {
+        s_tester.request_body_stream = body_stream;
+        aws_input_stream_acquire(body_stream);
+    }
 
     return s_tester.mock_stream;
 }
@@ -249,6 +263,7 @@ static void s_aws_cognito_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
+    aws_input_stream_release(s_tester.request_body_stream);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_host_resolver_release(s_tester.resolver);
@@ -579,3 +594,229 @@ static int s_credentials_provider_cognito_success_unauthenticated_fn(struct aws_
 AWS_TEST_CASE(
     credentials_provider_cognito_success_unauthenticated,
     s_credentials_provider_cognito_success_unauthenticated_fn);
+
+static int s_get_token_pairs_sync_failure(
+    void *get_token_pairs_user_data,
+    aws_credentials_provider_cognito_get_token_pairs_completion_fn *completion_callback,
+    void *completion_user_data) {
+
+    (void)get_token_pairs_user_data;
+    (void)completion_callback;
+    (void)completion_user_data;
+
+    return aws_raise_error(AWS_ERROR_UNKNOWN);
+}
+
+static int s_credentials_provider_cognito_failure_dynamic_token_pairs_fn(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_cognito_tester_init(allocator);
+
+    struct aws_credentials_provider_cognito_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .endpoint = aws_byte_cursor_from_c_str("somewhere.amazonaws.com"),
+        .identity = aws_byte_cursor_from_c_str("someone"),
+        .tls_ctx = s_tester.ctx,
+        .get_token_pairs = s_get_token_pairs_sync_failure,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.error_code == AWS_ERROR_UNKNOWN);
+    ASSERT_TRUE(s_tester.credentials == NULL);
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_cognito_tester_cleanup();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_cognito_failure_dynamic_token_pairs,
+    s_credentials_provider_cognito_failure_dynamic_token_pairs_fn);
+
+static int s_get_token_pairs_completion_failure(
+    void *get_token_pairs_user_data,
+    aws_credentials_provider_cognito_get_token_pairs_completion_fn *completion_callback,
+    void *completion_user_data) {
+
+    (void)get_token_pairs_user_data;
+
+    completion_callback(NULL, 0, AWS_ERROR_UNKNOWN, completion_user_data);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_cognito_failure_dynamic_token_pairs_completion_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_cognito_tester_init(allocator);
+
+    struct aws_credentials_provider_cognito_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .endpoint = aws_byte_cursor_from_c_str("somewhere.amazonaws.com"),
+        .identity = aws_byte_cursor_from_c_str("someone"),
+        .tls_ctx = s_tester.ctx,
+        .get_token_pairs = s_get_token_pairs_completion_failure,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.error_code == AWS_ERROR_UNKNOWN);
+    ASSERT_TRUE(s_tester.credentials == NULL);
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_cognito_tester_cleanup();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_cognito_failure_dynamic_token_pairs_completion,
+    s_credentials_provider_cognito_failure_dynamic_token_pairs_completion_fn);
+
+static int s_get_token_pairs_success(
+    void *get_token_pairs_user_data,
+    aws_credentials_provider_cognito_get_token_pairs_completion_fn *completion_callback,
+    void *completion_user_data) {
+
+    (void)get_token_pairs_user_data;
+
+    struct aws_cognito_identity_provider_token_pair pairs[] = {
+        {
+            .identity_provider_name = aws_byte_cursor_from_c_str("dynamic-name"),
+            .identity_provider_token = aws_byte_cursor_from_c_str("dynamic-value"),
+        },
+    };
+
+    completion_callback(pairs, AWS_ARRAY_SIZE(pairs), AWS_ERROR_SUCCESS, completion_user_data);
+
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_cognito_success_dynamic_token_pairs_fn(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_cognito_tester_init(allocator);
+
+    struct aws_byte_cursor good_document_cursor = aws_byte_cursor_from_string(s_good_document_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_document_cursor);
+
+    struct aws_cognito_identity_provider_token_pair static_pairs[] = {
+        {
+            .identity_provider_name = aws_byte_cursor_from_c_str("static-name"),
+            .identity_provider_token = aws_byte_cursor_from_c_str("static-value"),
+        },
+    };
+
+    struct aws_credentials_provider_cognito_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .endpoint = aws_byte_cursor_from_c_str("somewhere.amazonaws.com"),
+        .identity = aws_byte_cursor_from_c_str("someone"),
+        .tls_ctx = s_tester.ctx,
+        .logins = static_pairs,
+        .login_count = AWS_ARRAY_SIZE(static_pairs),
+        .get_token_pairs = s_get_token_pairs_success,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    ASSERT_SUCCESS(aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL));
+
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.error_code == AWS_ERROR_SUCCESS);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+
+    // Check the request body and verify both a static and dynamic login pair appear in the JSON blob appropriately
+    struct aws_input_stream *request_body = s_tester.request_body_stream;
+    ASSERT_NOT_NULL(request_body);
+
+    aws_input_stream_seek(request_body, 0, AWS_SSB_BEGIN);
+
+    int64_t body_length = 0;
+    ASSERT_SUCCESS(aws_input_stream_get_length(request_body, &body_length));
+
+    struct aws_byte_buf body_buffer;
+    AWS_ZERO_STRUCT(body_buffer);
+    aws_byte_buf_init(&body_buffer, allocator, (size_t)body_length);
+
+    ASSERT_SUCCESS(aws_input_stream_read(request_body, &body_buffer));
+    ASSERT_INT_EQUALS(body_length, (int64_t)body_buffer.len);
+
+    struct aws_json_value *json_body =
+        aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&body_buffer));
+    ASSERT_NOT_NULL(json_body);
+    aws_byte_buf_clean_up(&body_buffer);
+
+    struct aws_json_value *logins = aws_json_value_get_from_object(json_body, aws_byte_cursor_from_c_str("Logins"));
+    ASSERT_NOT_NULL(logins);
+
+    // Verify static login appears
+    struct aws_json_value *static_login =
+        aws_json_value_get_from_object(logins, aws_byte_cursor_from_c_str("static-name"));
+    ASSERT_NOT_NULL(static_login);
+    ASSERT_TRUE(aws_json_value_is_string(static_login));
+
+    struct aws_byte_cursor static_value_cursor;
+    ASSERT_SUCCESS(aws_json_value_get_string(static_login, &static_value_cursor));
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        static_pairs[0].identity_provider_token.ptr,
+        static_pairs[0].identity_provider_token.len,
+        static_value_cursor.ptr,
+        static_value_cursor.len);
+
+    // Verify dynamic login appears
+    struct aws_json_value *dynamic_login =
+        aws_json_value_get_from_object(logins, aws_byte_cursor_from_c_str("dynamic-name"));
+    ASSERT_NOT_NULL(dynamic_login);
+    ASSERT_TRUE(aws_json_value_is_string(dynamic_login));
+
+    struct aws_byte_cursor dynamic_value_cursor;
+    ASSERT_SUCCESS(aws_json_value_get_string(dynamic_login, &dynamic_value_cursor));
+
+    struct aws_byte_cursor expected_dynamic_value = aws_byte_cursor_from_c_str("dynamic-value");
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_dynamic_value.ptr, expected_dynamic_value.len, dynamic_value_cursor.ptr, dynamic_value_cursor.len);
+
+    aws_json_value_destroy(json_body);
+
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_cognito_tester_cleanup();
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_cognito_success_dynamic_token_pairs,
+    s_credentials_provider_cognito_success_dynamic_token_pairs_fn);
