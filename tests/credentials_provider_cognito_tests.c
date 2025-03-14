@@ -20,6 +20,7 @@
 #include "aws/io/stream.h"
 
 struct aws_mock_web_credential_provider_tester {
+    struct aws_allocator *allocator;
     struct aws_byte_buf request_uri;
 
     struct aws_array_list response_data_callbacks;
@@ -158,6 +159,23 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     if (body_stream != NULL) {
         s_tester.request_body_stream = body_stream;
         aws_input_stream_acquire(body_stream);
+
+        aws_input_stream_seek(body_stream, 0, AWS_SSB_BEGIN);
+
+        int64_t body_length = 0;
+        aws_input_stream_get_length(body_stream, &body_length);
+
+        AWS_LOGF_DEBUG(AWS_LS_AUTH_GENERAL, "Request body length: %d", (int)body_length);
+
+        struct aws_byte_buf body_buffer;
+        AWS_ZERO_STRUCT(body_buffer);
+        aws_byte_buf_init(&body_buffer, s_tester.allocator, (size_t)body_length);
+
+        aws_input_stream_read(body_stream, &body_buffer);
+
+        AWS_LOGF_DEBUG(AWS_LS_AUTH_GENERAL, "Request body: " PRInSTR, AWS_BYTE_BUF_PRI(body_buffer));
+
+        aws_byte_buf_clean_up(&body_buffer);
     }
 
     return s_tester.mock_stream;
@@ -206,6 +224,8 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
 
 static int s_aws_cognito_tester_init(struct aws_allocator *allocator) {
     aws_auth_library_init(allocator);
+
+    s_tester.allocator = allocator;
 
     if (aws_array_list_init_dynamic(&s_tester.response_data_callbacks, allocator, 10, sizeof(struct aws_byte_cursor))) {
         return AWS_OP_ERR;
