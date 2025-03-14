@@ -49,7 +49,7 @@ struct aws_mock_web_credential_provider_tester {
     size_t current_request_attempt_number;
     struct aws_http_make_request_options request_callback_options;
 
-    struct aws_input_stream *request_body_stream;
+    struct aws_byte_buf request_body;
 
     void (*manager_destructor_fn)(void *);
     void *manager_destructor_user_data;
@@ -152,14 +152,10 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     aws_byte_buf_append_dynamic(&s_tester.request_uri, &path);
     s_tester.request_callback_options = *options;
 
-    aws_input_stream_release(s_tester.request_body_stream);
-    s_tester.request_body_stream = NULL;
+    aws_byte_buf_reset(&s_tester.request_body, false);
 
     struct aws_input_stream *body_stream = aws_http_message_get_body_stream(options->request);
     if (body_stream != NULL) {
-        s_tester.request_body_stream = body_stream;
-        aws_input_stream_acquire(body_stream);
-
         aws_input_stream_seek(body_stream, 0, AWS_SSB_BEGIN);
 
         int64_t body_length = 0;
@@ -167,15 +163,9 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
 
         AWS_LOGF_DEBUG(AWS_LS_AUTH_GENERAL, "Request body length: %d", (int)body_length);
 
-        struct aws_byte_buf body_buffer;
-        AWS_ZERO_STRUCT(body_buffer);
-        aws_byte_buf_init(&body_buffer, s_tester.allocator, (size_t)body_length);
+        aws_byte_buf_reserve(&s_tester.request_body, (size_t)body_length);
 
-        aws_input_stream_read(body_stream, &body_buffer);
-
-        AWS_LOGF_DEBUG(AWS_LS_AUTH_GENERAL, "Request body: " PRInSTR, AWS_BYTE_BUF_PRI(body_buffer));
-
-        aws_byte_buf_clean_up(&body_buffer);
+        aws_input_stream_read(body_stream, &s_tester.request_body);
     }
 
     return s_tester.mock_stream;
@@ -274,6 +264,8 @@ static int s_aws_cognito_tester_init(struct aws_allocator *allocator) {
     s_tester.mock_connection = (void *)(&s_tester.mock_connection);
     s_tester.mock_stream = (void *)(&s_tester.mock_stream);
 
+    aws_byte_buf_init(&s_tester.request_body, allocator, 100);
+
     return AWS_OP_SUCCESS;
 }
 
@@ -283,7 +275,7 @@ static void s_aws_cognito_tester_cleanup(void) {
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
     aws_credentials_release(s_tester.credentials);
-    aws_input_stream_release(s_tester.request_body_stream);
+    aws_byte_buf_clean_up(&s_tester.request_body);
 
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_host_resolver_release(s_tester.resolver);
@@ -775,27 +767,9 @@ static int s_credentials_provider_cognito_success_dynamic_token_pairs_fn(struct 
     ASSERT_TRUE(s_tester.credentials != NULL);
 
     // Check the request body and verify both a static and dynamic login pair appear in the JSON blob appropriately
-    struct aws_input_stream *request_body = s_tester.request_body_stream;
-    ASSERT_NOT_NULL(request_body);
-
-    aws_input_stream_seek(request_body, 0, AWS_SSB_BEGIN);
-
-    int64_t body_length = 0;
-    ASSERT_SUCCESS(aws_input_stream_get_length(request_body, &body_length));
-
-    struct aws_byte_buf body_buffer;
-    AWS_ZERO_STRUCT(body_buffer);
-    aws_byte_buf_init(&body_buffer, allocator, (size_t)body_length);
-
-    ASSERT_SUCCESS(aws_input_stream_read(request_body, &body_buffer));
-    ASSERT_INT_EQUALS(body_length, (int64_t)body_buffer.len);
-
-    AWS_LOGF_DEBUG(AWS_LS_AUTH_GENERAL, "Request body: " PRInSTR, AWS_BYTE_BUF_PRI(body_buffer));
-
     struct aws_json_value *json_body =
-        aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&body_buffer));
+        aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&s_tester.request_body));
     ASSERT_NOT_NULL(json_body);
-    aws_byte_buf_clean_up(&body_buffer);
 
     struct aws_json_value *logins = aws_json_value_get_from_object(json_body, aws_byte_cursor_from_c_str("Logins"));
     ASSERT_NOT_NULL(logins);
