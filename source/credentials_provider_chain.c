@@ -146,6 +146,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
     const struct aws_credentials_provider_chain_options *options) {
 
     if (options->provider_count == 0) {
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         return NULL;
     }
 
@@ -159,10 +160,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
         sizeof(struct aws_credentials_provider),
         &impl,
         sizeof(struct aws_credentials_provider_chain_impl));
-
-    if (!provider) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
