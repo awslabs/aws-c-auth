@@ -574,9 +574,6 @@ static void s_on_get_token_pairs_completion(
     int error_code,
     void *completion_user_data) {
 
-    (void)logins;
-    (void)login_count;
-
     struct cognito_user_data *wrapped_user_data = completion_user_data;
     struct aws_credentials_provider_cognito_impl *impl = wrapped_user_data->provider->impl;
 
