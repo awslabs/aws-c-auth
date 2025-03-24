@@ -199,10 +199,8 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
+    // Only forbit this header if the signing algorithm is AWS_SIGNING_ALGORITHM_V4_S3EXPRESS
     s_amz_s3session_token_header_name = aws_byte_cursor_from_string(g_aws_signing_s3session_token_name);
-    if (aws_hash_table_put(&s_forbidden_headers, &s_amz_s3session_token_header_name, NULL, NULL)) {
-        return AWS_OP_ERR;
-    }
 
     if (aws_hash_table_init(
             &s_forbidden_params,
@@ -1378,7 +1376,7 @@ static int s_build_canonical_stable_header_list(
     return AWS_OP_SUCCESS;
 }
 
-static int s_validate_signable_header_list(struct aws_array_list *header_list) {
+static int s_validate_signable_header_list(struct aws_array_list *header_list, enum aws_signing_algorithm algo) {
     const size_t header_count = aws_array_list_length(header_list);
     for (size_t i = 0; i < header_count; ++i) {
         struct aws_signable_property_list_pair header;
@@ -1395,6 +1393,15 @@ static int s_validate_signable_header_list(struct aws_array_list *header_list) {
                 "AWS authorization header \"" PRInSTR "\" found in request while signing",
                 AWS_BYTE_CURSOR_PRI(header.name));
             return aws_raise_error(AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+        }
+        if (algo == AWS_SIGNING_ALGORITHM_V4_S3EXPRESS) {
+            if (aws_byte_cursor_eq_ignore_case(&header.name, &s_amz_s3session_token_header_name)) {
+                AWS_LOGF_ERROR(
+                    AWS_LS_AUTH_SIGNING,
+                    "AWS authorization header \"" PRInSTR "\" for S3Express found in request while signing",
+                    AWS_BYTE_CURSOR_PRI(header.name));
+                return aws_raise_error(AWS_AUTH_SIGNING_ILLEGAL_REQUEST_HEADER);
+            }
         }
     }
 
@@ -1415,7 +1422,7 @@ static int s_canonicalize_headers(struct aws_signing_state_aws *state) {
         return AWS_OP_ERR;
     }
 
-    if (s_validate_signable_header_list(signable_header_list)) {
+    if (s_validate_signable_header_list(signable_header_list, state->config.algorithm)) {
         return AWS_OP_ERR;
     }
 
