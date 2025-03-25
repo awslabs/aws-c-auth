@@ -64,9 +64,12 @@ struct aws_credentials_provider_cognito_impl {
 
     struct aws_string *identity;
 
-    struct aws_array_list logins;
+    struct aws_array_list static_logins;
 
     struct aws_string *custom_role_arn;
+
+    aws_credentials_provider_cognito_get_token_pairs_async_fn *get_token_pairs;
+    void *get_token_pairs_user_data;
 };
 
 struct cognito_user_data {
@@ -76,6 +79,8 @@ struct cognito_user_data {
 
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
+
+    struct aws_array_list dynamic_logins;
 
     struct aws_http_connection *connection;
     struct aws_http_message *get_credentials_request;
@@ -115,6 +120,17 @@ static void s_user_data_destroy(struct cognito_user_data *user_data) {
     aws_credentials_provider_release(user_data->provider);
     aws_credentials_release(user_data->credentials);
 
+    size_t dynamic_logins_count = aws_array_list_length(&user_data->dynamic_logins);
+    for (size_t i = 0; i < dynamic_logins_count; ++i) {
+        struct aws_cognito_login login;
+        AWS_ZERO_STRUCT(login);
+
+        aws_array_list_get_at(&user_data->dynamic_logins, &login, i);
+
+        s_aws_cognito_login_clean_up(&login);
+    }
+    aws_array_list_clean_up(&user_data->dynamic_logins);
+
     aws_mem_release(user_data->allocator, user_data);
 }
 
@@ -132,6 +148,8 @@ static struct cognito_user_data *s_user_data_new(
     cognito_user_data->provider = aws_credentials_provider_acquire(provider);
     cognito_user_data->original_callback = callback;
     cognito_user_data->original_user_data = user_data;
+
+    aws_array_list_init_dynamic(&cognito_user_data->dynamic_logins, allocator, 0, sizeof(struct aws_cognito_login));
 
     return cognito_user_data;
 }
@@ -291,6 +309,31 @@ static int s_on_incoming_body_fn(struct aws_http_stream *stream, const struct aw
     return aws_byte_buf_append_dynamic(&provider_user_data->response_body, data);
 }
 
+static int s_add_login_tokens_to_json(
+    struct aws_json_value *json_value,
+    struct aws_array_list *logins,
+    struct aws_allocator *allocator) {
+    size_t login_count = aws_array_list_length(logins);
+    for (size_t i = 0; i < login_count; ++i) {
+        struct aws_cognito_login login;
+        if (aws_array_list_get_at(logins, &login, i)) {
+            return AWS_OP_ERR;
+        }
+
+        struct aws_json_value *login_value_string = aws_json_value_new_string(allocator, login.identity_provider_token);
+        if (login_value_string == NULL) {
+            return AWS_OP_ERR;
+        }
+
+        if (aws_json_value_add_to_object(json_value, login.identity_provider_name, login_value_string)) {
+            aws_json_value_destroy(login_value_string);
+            return AWS_OP_ERR;
+        }
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 AWS_STATIC_STRING_FROM_LITERAL(s_identity_id_key, "IdentityId");
 AWS_STATIC_STRING_FROM_LITERAL(s_custom_role_arn_key, "CustomRoleArn");
 AWS_STATIC_STRING_FROM_LITERAL(s_logins_key, "Logins");
@@ -333,8 +376,9 @@ int s_create_get_credentials_for_identity_body_buffer(
         }
     }
 
-    size_t login_count = aws_array_list_length(&impl->logins);
-    if (login_count > 0) {
+    size_t static_login_count = aws_array_list_length(&impl->static_logins);
+    size_t dynamic_login_count = aws_array_list_length(&provider_user_data->dynamic_logins);
+    if (static_login_count + dynamic_login_count > 0) {
         struct aws_json_value *logins = aws_json_value_new_object(allocator);
         if (logins == NULL) {
             goto done;
@@ -345,22 +389,12 @@ int s_create_get_credentials_for_identity_body_buffer(
             goto done;
         }
 
-        for (size_t i = 0; i < login_count; ++i) {
-            struct aws_cognito_login login;
-            if (aws_array_list_get_at(&impl->logins, &login, i)) {
-                goto done;
-            }
+        if (s_add_login_tokens_to_json(logins, &impl->static_logins, allocator)) {
+            goto done;
+        }
 
-            struct aws_json_value *login_value_string =
-                aws_json_value_new_string(allocator, login.identity_provider_token);
-            if (login_value_string == NULL) {
-                goto done;
-            }
-
-            if (aws_json_value_add_to_object(logins, login.identity_provider_name, login_value_string)) {
-                aws_json_value_destroy(login_value_string);
-                goto done;
-            }
+        if (s_add_login_tokens_to_json(logins, &provider_user_data->dynamic_logins, allocator)) {
+            goto done;
         }
     }
 
@@ -534,6 +568,43 @@ on_error:
     s_finalize_credentials_query(wrapped_user_data, error_code);
 }
 
+static void s_on_get_token_pairs_completion(
+    struct aws_cognito_identity_provider_token_pair *logins,
+    size_t login_count,
+    int error_code,
+    void *completion_user_data) {
+
+    struct cognito_user_data *wrapped_user_data = completion_user_data;
+    struct aws_credentials_provider_cognito_impl *impl = wrapped_user_data->provider->impl;
+
+    if (error_code == AWS_ERROR_SUCCESS) {
+        for (size_t i = 0; i < login_count; i++) {
+            struct aws_cognito_identity_provider_token_pair *login_pair = &logins[i];
+
+            struct aws_cognito_login login;
+            AWS_ZERO_STRUCT(login);
+
+            s_aws_cognito_login_init(
+                &login,
+                wrapped_user_data->allocator,
+                login_pair->identity_provider_name,
+                login_pair->identity_provider_token);
+            aws_array_list_push_back(&wrapped_user_data->dynamic_logins, &login);
+        }
+
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_on_connection_setup_fn, wrapped_user_data);
+    } else {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): Cognito credentials provider failed to dynamically append token pairs on get credentials "
+            "invocation: %s",
+            (void *)wrapped_user_data->provider,
+            aws_error_debug_str(error_code));
+        s_finalize_credentials_query(wrapped_user_data, error_code);
+    }
+}
+
 static void s_on_retry_token_acquired(
     struct aws_retry_strategy *strategy,
     int error_code,
@@ -556,8 +627,14 @@ static void s_on_retry_token_acquired(
 
     struct aws_credentials_provider_cognito_impl *impl = wrapped_user_data->provider->impl;
 
-    impl->function_table->aws_http_connection_manager_acquire_connection(
-        impl->connection_manager, s_on_connection_setup_fn, wrapped_user_data);
+    if (impl->get_token_pairs != NULL) {
+        if ((*impl->get_token_pairs)(
+                impl->get_token_pairs_user_data, s_on_get_token_pairs_completion, wrapped_user_data)) {
+            s_finalize_credentials_query(wrapped_user_data, aws_last_error());
+        }
+    } else {
+        s_on_get_token_pairs_completion(NULL, 0, AWS_ERROR_SUCCESS, wrapped_user_data);
+    }
 }
 
 static int s_credentials_provider_cognito_get_credentials_async(
@@ -629,16 +706,16 @@ static void s_on_connection_manager_shutdown(void *user_data) {
     aws_string_destroy(impl->identity);
     aws_string_destroy(impl->custom_role_arn);
 
-    for (size_t i = 0; i < aws_array_list_length(&impl->logins); ++i) {
+    for (size_t i = 0; i < aws_array_list_length(&impl->static_logins); ++i) {
         struct aws_cognito_login login;
-        if (aws_array_list_get_at(&impl->logins, &login, i)) {
+        if (aws_array_list_get_at(&impl->static_logins, &login, i)) {
             continue;
         }
 
         s_aws_cognito_login_clean_up(&login);
     }
 
-    aws_array_list_clean_up(&impl->logins);
+    aws_array_list_clean_up(&impl->static_logins);
 
     aws_mem_release(provider->allocator, provider);
 }
@@ -763,7 +840,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito(
         impl->custom_role_arn = aws_string_new_from_cursor(allocator, options->custom_role_arn);
     }
 
-    aws_array_list_init_dynamic(&impl->logins, allocator, options->login_count, sizeof(struct aws_cognito_login));
+    aws_array_list_init_dynamic(
+        &impl->static_logins, allocator, options->login_count, sizeof(struct aws_cognito_login));
 
     for (size_t i = 0; i < options->login_count; ++i) {
         struct aws_cognito_identity_provider_token_pair *login_token_pair = &options->logins[i];
@@ -782,7 +860,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito(
             goto on_error;
         }
 
-        aws_array_list_push_back(&impl->logins, &login);
+        aws_array_list_push_back(&impl->static_logins, &login);
     }
 
     struct aws_standard_retry_options retry_options = {
@@ -806,6 +884,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito(
     provider->shutdown_options = options->shutdown_options;
 
     aws_tls_connection_options_clean_up(&tls_connection_options);
+
+    impl->get_token_pairs = options->get_token_pairs;
+    impl->get_token_pairs_user_data = options->get_token_pairs_user_data;
 
     return provider;
 

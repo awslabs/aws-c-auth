@@ -668,6 +668,17 @@ struct aws_cognito_identity_provider_token_pair {
     struct aws_byte_cursor identity_provider_token;
 };
 
+typedef void(aws_credentials_provider_cognito_get_token_pairs_completion_fn)(
+    struct aws_cognito_identity_provider_token_pair *logins,
+    size_t login_count,
+    int error_code,
+    void *completion_user_data);
+
+typedef int(aws_credentials_provider_cognito_get_token_pairs_async_fn)(
+    void *get_token_pairs_user_data,
+    aws_credentials_provider_cognito_get_token_pairs_completion_fn *completion_callback,
+    void *completion_user_data);
+
 /**
  * Configuration options needed to create a Cognito-based Credentials Provider
  */
@@ -695,12 +706,12 @@ struct aws_credentials_provider_cognito_options {
      */
     struct aws_byte_cursor *custom_role_arn;
 
-    /*
+    /**
      * Connection bootstrap to use for network connections made while sourcing credentials
      */
     struct aws_client_bootstrap *bootstrap;
 
-    /*
+    /**
      * Client TLS context to use when querying cognito credentials.
      * Required.
      */
@@ -713,6 +724,17 @@ struct aws_credentials_provider_cognito_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /**
+     * Optional async function to allow for dynamic augmentation of the token pair set on a per-request basis.
+     */
+    aws_credentials_provider_cognito_get_token_pairs_async_fn *get_token_pairs;
+
+    /**
+     * User data that should be passed in to the get_token_pairs function as the first parameter.  In practice, this
+     * will be a reference to a CRT binding object.
+     */
+    void *get_token_pairs_user_data;
 };
 
 /**
