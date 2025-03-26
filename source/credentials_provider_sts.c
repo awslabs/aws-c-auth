@@ -831,9 +831,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         sizeof(struct aws_credentials_provider_sts_impl));
 
     AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "static: creating STS credentials provider");
-    if (!provider) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
