@@ -22,7 +22,7 @@
 #        define AWS_AUTH_API __attribute__((visibility("default")))
 #    else
 #        define AWS_AUTH_API
-#    endif /* __GNUC__ >= 4 || defined(__clang__) */
+#    endif
 
 #endif /* defined(AWS_CRT_USE_WINDOWS_DLL_SEMANTICS) || defined(_WIN32) */
 
