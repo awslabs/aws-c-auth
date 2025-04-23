@@ -343,9 +343,6 @@ struct aws_signing_state_aws *aws_signing_state_new(
     }
 
     struct aws_signing_state_aws *state = aws_mem_calloc(allocator, 1, sizeof(struct aws_signing_state_aws));
-    if (!state) {
-        return NULL;
-    }
 
     state->allocator = allocator;
 
