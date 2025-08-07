@@ -100,6 +100,12 @@ static struct aws_byte_cursor s_amz_security_token_param_name;
 static struct aws_byte_cursor s_amz_expires_param_name;
 static struct aws_byte_cursor s_amz_region_set_param_name;
 
+static bool s_name_eq_ignore_case(const void *a, const void *b) {
+    const struct aws_byte_cursor *a_cursor = a;
+    const struct aws_byte_cursor *b_cursor = b;
+    return aws_byte_cursor_eq_ignore_case(a_cursor, b_cursor);
+}
+
 /*
  * Build a set of library-static tables for quick lookup.
  *
@@ -112,7 +118,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             allocator,
             10,
             aws_hash_byte_cursor_ptr_ignore_case,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            s_name_eq_ignore_case,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
@@ -168,7 +174,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             allocator,
             10,
             aws_hash_byte_cursor_ptr_ignore_case,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            s_name_eq_ignore_case,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
@@ -207,7 +213,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             allocator,
             10,
             aws_hash_byte_cursor_ptr_ignore_case,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            s_name_eq_ignore_case,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
