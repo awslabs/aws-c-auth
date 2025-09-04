@@ -88,7 +88,7 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
 
 static void s_aws_http_connection_manager_release_mock(struct aws_http_connection_manager *manager) {
     struct mock_connection_manager *mock_manager = (struct mock_connection_manager *)manager;
-    AWS_ASSERT(mock_manager->count == 0 && "count should dropped to zero when the manager is gone.");
+    AWS_FATAL_ASSERT(mock_manager->count == 0 && "count should dropped to zero when the manager is gone.");
     mock_manager->shutdown_complete_callback(mock_manager->shutdown_complete_user_data);
     aws_mem_release(mock_manager->allocator, mock_manager);
 }
@@ -113,9 +113,9 @@ static int s_aws_http_connection_manager_release_connection_mock(
 
     struct mock_connection_manager *mock_manager = (struct mock_connection_manager *)manager;
     mock_manager->count--;
-    AWS_ASSERT(
+    ASSERT_TRUE(
         connection == (struct aws_http_connection *)1 && "the released connection should be the same as vended one");
-    AWS_ASSERT(mock_manager->count >= 0 && "count should always be positive");
+    ASSERT_TRUE(mock_manager->count >= 0 && "count should always be positive");
 
     return AWS_OP_SUCCESS;
 }
