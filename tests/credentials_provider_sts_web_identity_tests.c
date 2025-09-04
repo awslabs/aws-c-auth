@@ -98,8 +98,9 @@ static void s_aws_http_connection_manager_acquire_connection_mock(
     aws_http_connection_manager_on_connection_setup_fn *callback,
     void *user_data) {
     struct mock_connection_manager *mock_manager = (struct mock_connection_manager *)manager;
-    mock_manager->count++;
+
     if (s_tester.is_connection_acquire_successful) {
+        mock_manager->count++;
         callback((struct aws_http_connection *)1, AWS_OP_SUCCESS, user_data);
     } else {
         aws_raise_error(AWS_ERROR_HTTP_UNKNOWN);
