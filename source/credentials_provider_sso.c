@@ -72,8 +72,7 @@ static void s_sso_query_context_reset_request_specific_data(struct aws_sso_query
         struct aws_credentials_provider_sso_impl *provider_impl = sso_query_context->provider->impl;
         int result = provider_impl->function_table->aws_http_connection_manager_release_connection(
             provider_impl->connection_manager, sso_query_context->connection);
-        (void)result;
-        AWS_ASSERT(result == AWS_OP_SUCCESS);
+        AWS_FATAL_ASSERT(result == AWS_OP_SUCCESS);
         sso_query_context->connection = NULL;
     }
     if (sso_query_context->token) {

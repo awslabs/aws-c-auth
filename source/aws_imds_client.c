@@ -236,8 +236,9 @@ static void s_user_data_destroy(struct imds_user_data *user_data) {
     struct aws_imds_client *client = user_data->client;
 
     if (user_data->connection) {
-        client->function_table->aws_http_connection_manager_release_connection(
+        int rt_code = client->function_table->aws_http_connection_manager_release_connection(
             client->connection_manager, user_data->connection);
+        AWS_FATAL_ASSERT(rt_code == AWS_OP_SUCCESS);
     }
 
     aws_byte_buf_clean_up(&user_data->current_result);
@@ -748,7 +749,9 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
 
     struct aws_http_connection *connection = client->function_table->aws_http_stream_get_connection(stream);
     client->function_table->aws_http_stream_release(stream);
-    client->function_table->aws_http_connection_manager_release_connection(client->connection_manager, connection);
+    int rt_code =
+        client->function_table->aws_http_connection_manager_release_connection(client->connection_manager, connection);
+    AWS_FATAL_ASSERT(rt_code == AWS_OP_SUCCESS);
 
     /* on encountering error, see if we could try again */
     /* TODO: check the status code as well? */

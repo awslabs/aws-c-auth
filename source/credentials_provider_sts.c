@@ -96,8 +96,9 @@ struct sts_creds_provider_user_data {
 static void s_reset_request_specific_data(struct sts_creds_provider_user_data *user_data) {
     if (user_data->connection) {
         struct aws_credentials_provider_sts_impl *provider_impl = user_data->provider->impl;
-        provider_impl->function_table->aws_http_connection_manager_release_connection(
+        int rt_code = provider_impl->function_table->aws_http_connection_manager_release_connection(
             provider_impl->connection_manager, user_data->connection);
+        AWS_FATAL_ASSERT(rt_code == AWS_OP_SUCCESS);
         user_data->connection = NULL;
     }
 

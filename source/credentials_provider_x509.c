@@ -66,8 +66,9 @@ static void s_aws_credentials_provider_x509_user_data_destroy(
     struct aws_credentials_provider_x509_impl *impl = user_data->x509_provider->impl;
 
     if (user_data->connection) {
-        impl->function_table->aws_http_connection_manager_release_connection(
+        int rt_code = impl->function_table->aws_http_connection_manager_release_connection(
             impl->connection_manager, user_data->connection);
+        AWS_FATAL_ASSERT(rt_code == AWS_OP_SUCCESS);
     }
 
     aws_byte_buf_clean_up(&user_data->response);

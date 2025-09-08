@@ -111,8 +111,9 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
 
     if (user_data->connection) {
-        impl->function_table->aws_http_connection_manager_release_connection(
+        int rt_code = impl->function_table->aws_http_connection_manager_release_connection(
             impl->connection_manager, user_data->connection);
+        AWS_FATAL_ASSERT(rt_code == AWS_OP_SUCCESS);
     }
     s_user_data_reset_request_and_response(user_data);
     aws_byte_buf_clean_up(&user_data->response);

@@ -85,8 +85,7 @@ static void s_ecs_user_data_reset_request_specific_data(struct aws_credentials_p
         struct aws_credentials_provider_ecs_impl *impl = user_data->ecs_provider->impl;
         int result = impl->function_table->aws_http_connection_manager_release_connection(
             impl->connection_manager, user_data->connection);
-        (void)result;
-        AWS_ASSERT(result == AWS_OP_SUCCESS);
+        AWS_FATAL_ASSERT(result == AWS_OP_SUCCESS);
         user_data->connection = NULL;
     }
     aws_byte_buf_reset(&user_data->current_result, false);
