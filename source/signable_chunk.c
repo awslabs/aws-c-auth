@@ -89,10 +89,6 @@ struct aws_signable *aws_signable_new_chunk(
     aws_mem_acquire_many(
         allocator, 2, &signable, sizeof(struct aws_signable), &impl, sizeof(struct aws_signable_chunk_impl));
 
-    if (signable == NULL || impl == NULL) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
 

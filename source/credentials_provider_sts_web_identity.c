@@ -972,9 +972,7 @@ static struct sts_web_identity_parameters *s_parameters_new(
 
     struct sts_web_identity_parameters *parameters =
         aws_mem_calloc(allocator, 1, sizeof(struct sts_web_identity_parameters));
-    if (parameters == NULL) {
-        return NULL;
-    }
+
     parameters->allocator = allocator;
 
     bool success = false;

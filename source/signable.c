@@ -139,10 +139,6 @@ struct aws_signable *aws_signable_new_canonical_request(
         &impl,
         sizeof(struct aws_signable_canonical_request_impl));
 
-    if (signable == NULL || impl == NULL) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*signable);
     AWS_ZERO_STRUCT(*impl);
 

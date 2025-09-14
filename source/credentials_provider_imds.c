@@ -71,10 +71,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
         &impl,
         sizeof(struct aws_credentials_provider_imds_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
@@ -133,9 +129,7 @@ static struct imds_provider_user_data *s_imds_provider_user_data_new(
 
     struct imds_provider_user_data *wrapped_user_data =
         aws_mem_calloc(imds_provider->allocator, 1, sizeof(struct imds_provider_user_data));
-    if (wrapped_user_data == NULL) {
-        goto on_error;
-    }
+
     if (aws_byte_buf_init(&wrapped_user_data->role, imds_provider->allocator, 100)) {
         goto on_error;
     }

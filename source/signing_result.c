@@ -130,9 +130,6 @@ static struct aws_array_list *s_get_or_create_property_list(
     }
 
     struct aws_array_list *properties = aws_mem_acquire(result->allocator, sizeof(struct aws_array_list));
-    if (properties == NULL) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*properties);
     struct aws_string *name_copy = aws_string_new_from_string(result->allocator, list_name);

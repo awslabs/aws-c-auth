@@ -776,10 +776,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito(
         &impl,
         sizeof(struct aws_credentials_provider_cognito_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 

@@ -258,10 +258,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
         &impl,
         sizeof(struct aws_credentials_provider_cached));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
