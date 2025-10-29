@@ -527,9 +527,7 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     struct sts_web_identity_user_data *user_data = data;
 
     struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
-    struct aws_http_connection *connection = impl->function_table->aws_http_stream_get_connection(stream);
     impl->function_table->aws_http_stream_release(stream);
-    impl->function_table->aws_http_connection_manager_release_connection(impl->connection_manager, connection);
 
     /*
      * On anything other than a 200, if we can retry the request based on
