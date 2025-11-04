@@ -531,6 +531,11 @@ struct aws_credentials_provider_sts_options {
     const struct aws_http_proxy_options *http_proxy_options;
 
     /**
+     * (Optional) Socks5 proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_socks5_proxy_options *socks5_proxy_options;
+
+    /**
      * (Optional)
      * Uses a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection,
      * which contains both a config file and a credentials file.
@@ -726,6 +731,11 @@ struct aws_credentials_provider_cognito_options {
      * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional) Socks5 proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_socks5_proxy_options *socks5_proxy_options;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
