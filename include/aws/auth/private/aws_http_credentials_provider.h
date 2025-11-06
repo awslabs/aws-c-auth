@@ -17,36 +17,36 @@ AWS_PUSH_SANE_WARNING_LEVEL
 struct aws_credentials_provider_http_options {
     struct aws_credentials_provider_shutdown_options shutdown_options;
     /*
+     * Required.
      * Connection bootstrap to use for any network connections
      * made while sourcing credentials.
-     * Required.
      */
     struct aws_client_bootstrap *bootstrap;
 
     /*
-     * Client TLS context to use when querying a http based provider.
      * Required.
+     * Client TLS context to use when querying a http based provider.
      */
     struct aws_tls_ctx *tls_ctx;
 
     /*
+     * Required
+     * Maximum number of connections the underlying manager is
+     * allowed to contain.
+     */
+    size_t max_connections;
+
+    /*
+     * Optional.
      * Endpoint override for service endpoint. Leave null
      * to use default endpoint.
      */
     struct aws_string *endpoint;
 
     /*
-     * account id associated with the credentials.
-     */
-    struct aws_string *account_id;
-
-    /*
-     * credentials provider that will be used a token in the underlying call.
-     */
-    struct aws_credentials_provider *token_provider;
-
-    /*
-     * Retry strategy override. If null default will be used.
+     * Optional
+     * Retry strategy override. Leave null
+     * to use default retry strategy.
      */
     struct aws_retry_strategy *retry_strategy;
 
@@ -70,20 +70,22 @@ struct aws_http_query_context {
     struct aws_byte_buf payload;
     struct aws_retry_token *retry_token;
     struct aws_byte_buf path_and_query;
-    struct aws_string *account_id;
-    struct aws_string *token;
 
     int status_code;
     int error_code;
-    // implementation-specific parameters and errors
+
+    // implementation-specific data and errors
     void *parameters;
+    void *request_data;
     enum aws_auth_errors error;
 };
 
-typedef int(make_request_fn)(struct aws_http_query_context *query_context);
-typedef int(create_headers_fn)(struct aws_http_query_context *query_context);
-typedef struct aws_byte_cursor(credentials_get_token_fn)(struct aws_credentials *credentials, void *user_data);
+typedef int(create_request_fn)(struct aws_http_query_context *query_context, void *user_data);
+typedef struct aws_credentials_options(
+    create_credentials_options_fn)(struct aws_credentials *credentials, struct aws_http_query_context *query_context);
 typedef void(clean_up_parameters_fn)(void *parameters);
+typedef void *(create_request_data_fn)(struct aws_allocator *allocator);
+typedef void(destroy_request_data_fn)(void *request_data);
 
 /**
  * A table to hold implementation specific values for
@@ -93,35 +95,38 @@ struct aws_http_credentials_provider_request_vtable {
     /*
      * Creates the request to be sent via the underlying http client.
      */
-    make_request_fn *make_request_fn;
+    create_request_fn *create_request_fn;
+
     /*
-     * Creates the headers that are send alongside
-     * the request to the underlying http client/
+     * Creates credentials options. This is used to create the
+     * credentials that are returned to the user
      */
-    create_headers_fn *create_headers_fn;
-    /*
-     * Fetches the authentication token to be used alongside the requst.
-     */
-    credentials_get_token_fn *credentials_get_token_fn;
+    create_credentials_options_fn *create_credentials_options_fn;
+
     /*
      * cleans up the parameters that are provided to the implemetatnion.
      */
     clean_up_parameters_fn *clean_up_parameters_fn;
+
+    /*
+     * implementation specific data that is created each request.
+     */
+    create_request_data_fn *create_request_data_fn;
+
+    /*
+     * implementation specific data that is destroyed each request.
+     */
+    destroy_request_data_fn *destroy_request_data_fn;
+
     /*
      * owning pointer to implementation specific data. i.e.e values that
      * could be used during request creation.
      */
     void *parameters;
-
-    /*
-     * error that will be emitted when a credentials call fails.
-     */
-    enum aws_auth_errors error;
 };
 
 AWS_EXTERN_C_BEGIN
 
-AWS_AUTH_API
 /**
  * Initializes a underlying http based credentials provider.
  *
@@ -133,6 +138,7 @@ AWS_AUTH_API
  * such as hot to create requests.
  * @return error code if encountered.
  */
+AWS_AUTH_API
 int aws_http_credentials_provider_init_base(
     struct aws_allocator *allocator,
     struct aws_credentials_provider *provider,

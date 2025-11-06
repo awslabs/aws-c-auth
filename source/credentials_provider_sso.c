@@ -36,6 +36,10 @@ struct sso_parameters {
     struct aws_credentials_provider *token_provider;
 };
 
+struct sso_request_data {
+    struct aws_string *token;
+};
+
 static void s_parameters_destroy(void *parameters) {
     if (!parameters) {
         return;
@@ -197,47 +201,145 @@ on_finish:
     return parameters;
 }
 
-static int s_sso_make_request_fn(struct aws_http_query_context *query_context) {
-    struct sso_parameters *parameters = query_context->parameters;
-    struct aws_byte_cursor account_id_cursor = aws_byte_cursor_from_string(query_context->account_id);
-    struct aws_byte_cursor role_name_cursor = aws_byte_cursor_from_string(parameters->sso_role_name);
-    struct aws_byte_cursor path_cursor = aws_byte_cursor_from_c_str("/federation/credentials?account_id=");
-    struct aws_byte_cursor role_name_param_cursor = aws_byte_cursor_from_c_str("&role_name=");
-    if (aws_byte_buf_init_copy_from_cursor(
-            &query_context->path_and_query, query_context->provider->allocator, path_cursor) ||
-        aws_byte_buf_append_encoding_uri_param(&query_context->path_and_query, &account_id_cursor) ||
-        aws_byte_buf_append_dynamic(&query_context->path_and_query, &role_name_param_cursor) ||
-        aws_byte_buf_append_encoding_uri_param(&query_context->path_and_query, &role_name_cursor)) {
-        return AWS_OP_ERR;
-    }
-    return AWS_OP_SUCCESS;
-}
-
-static struct aws_byte_cursor s_sso_credentials_get_token_fn(struct aws_credentials *credentials, void *user_data) {
-    (void)user_data;
-    return aws_credentials_get_token(credentials);
-}
-
 /* Request headers. */
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_token_header, "x-amz-sso_bearer_token");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header, "User-Agent");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header_value, "aws-sdk-crt/sso-credentials-provider");
 
-int s_sso_create_headers_fn(struct aws_http_query_context *query_context) {
+static void s_on_get_token_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
+    struct aws_http_query_context *http_query_context = user_data;
+    struct sso_parameters *parameters = http_query_context->parameters;
+
+    http_query_context->error = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
+
+    if (error_code) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: failed to acquire a token, error code %d(%s)",
+            (void *)http_query_context->provider,
+            error_code,
+            aws_error_str(error_code));
+        http_query_context->error_code = error_code;
+        return;
+    }
+
+    struct aws_byte_cursor token = aws_credentials_get_token(credentials);
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): successfully acquired a token",
+        (void *)http_query_context->provider);
+
+    struct sso_request_data *sso_request_data = http_query_context->request_data;
+    sso_request_data->token = aws_string_new_from_cursor(http_query_context->allocator, &token);
+
+    struct aws_byte_cursor account_id_cursor = aws_byte_cursor_from_string(parameters->sso_account_id);
+    struct aws_byte_cursor role_name_cursor = aws_byte_cursor_from_string(parameters->sso_role_name);
+    struct aws_byte_cursor path_cursor = aws_byte_cursor_from_c_str("/federation/credentials?account_id=");
+    struct aws_byte_cursor role_name_param_cursor = aws_byte_cursor_from_c_str("&role_name=");
+    if (aws_byte_buf_init_copy_from_cursor(
+            &http_query_context->path_and_query, http_query_context->provider->allocator, path_cursor) ||
+        aws_byte_buf_append_encoding_uri_param(&http_query_context->path_and_query, &account_id_cursor) ||
+        aws_byte_buf_append_dynamic(&http_query_context->path_and_query, &role_name_param_cursor) ||
+        aws_byte_buf_append_encoding_uri_param(&http_query_context->path_and_query, &role_name_cursor)) {
+        goto on_error;
+    }
+
+    struct aws_http_header host_header = {
+        .name = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("Host"),
+        .value = aws_byte_cursor_from_string(parameters->endpoint),
+    };
+
+    if (aws_http_message_add_header(http_query_context->request, host_header)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) failed to add http header with error: %s",
+            (void *)http_query_context->provider,
+            aws_error_debug_str(aws_last_error()));
+        goto on_error;
+    }
+
     struct aws_http_header auth_header = {
         .name = aws_byte_cursor_from_string(s_sso_token_header),
-        .value = aws_byte_cursor_from_string(query_context->token),
+        .value = aws_byte_cursor_from_string(sso_request_data->token),
     };
     struct aws_http_header user_agent_header = {
         .name = aws_byte_cursor_from_string(s_sso_user_agent_header),
         .value = aws_byte_cursor_from_string(s_sso_user_agent_header_value),
     };
 
-    if (aws_http_message_add_header(query_context->request, auth_header) ||
-        aws_http_message_add_header(query_context->request, user_agent_header)) {
+    if (aws_http_message_add_header(http_query_context->request, auth_header) ||
+        aws_http_message_add_header(http_query_context->request, user_agent_header)) {
+        goto on_error;
+    }
+
+    if (aws_http_message_set_request_method(http_query_context->request, aws_http_method_get)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) failed to set request method with error: %s",
+            (void *)http_query_context->provider,
+            aws_error_debug_str(aws_last_error()));
+        goto on_error;
+    }
+
+    if (aws_http_message_set_request_path(
+            http_query_context->request, aws_byte_cursor_from_buf(&http_query_context->path_and_query))) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) failed to set request path with error: %s",
+            (void *)http_query_context->provider,
+            aws_error_debug_str(aws_last_error()));
+        goto on_error;
+    }
+
+    return;
+on_error:
+    http_query_context->error_code = aws_last_error();
+}
+
+static int s_sso_create_request_fn(struct aws_http_query_context *http_query_context, void *user_data) {
+    struct sso_parameters *parameters = http_query_context->parameters;
+
+    if (aws_credentials_provider_get_credentials(parameters->token_provider, s_on_get_token_callback, user_data)) {
+        int last_error_code = aws_last_error();
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: failed to get a token, error code %d(%s)",
+            (void *)http_query_context->provider,
+            last_error_code,
+            aws_error_str(last_error_code));
+
+        http_query_context->error_code = last_error_code;
         return AWS_OP_ERR;
     }
     return AWS_OP_SUCCESS;
+}
+
+struct aws_credentials_options s_sso_create_credentials_option_fn(
+    struct aws_credentials *credentials,
+    struct aws_http_query_context *http_query_context) {
+    struct sso_parameters *parameters = http_query_context->parameters;
+    struct aws_credentials_options creds_option = {
+        .access_key_id_cursor = aws_credentials_get_access_key_id(credentials),
+        .secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials),
+        .session_token_cursor = aws_credentials_get_session_token(credentials),
+        .account_id_cursor = aws_byte_cursor_from_string(parameters->sso_account_id),
+        .expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials),
+    };
+    return creds_option;
+}
+
+static void *s_sso_request_data_create(struct aws_allocator *allocator) {
+    struct sso_request_data *request_data = aws_mem_acquire(allocator, sizeof(struct sso_request_data *));
+    AWS_ZERO_STRUCT(*request_data);
+    return request_data;
+}
+
+static void s_sso_request_data_destory(void *request_data) {
+    struct sso_request_data *sso_request_data = request_data;
+    if (sso_request_data->token) {
+        aws_string_destroy_secure(sso_request_data->token);
+        sso_request_data->token = NULL;
+    }
 }
 
 struct aws_credentials_provider *aws_credentials_provider_new_sso(
@@ -272,15 +374,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
     http_options->tls_ctx = options->tls_ctx;
     http_options->function_table = options->function_table;
     http_options->endpoint = parameters->endpoint;
-    http_options->token_provider = parameters->token_provider;
-    http_options->account_id = parameters->sso_account_id;
+    http_options->max_connections = 2;
 
-    sso_request_vtable->credentials_get_token_fn = s_sso_credentials_get_token_fn;
-    sso_request_vtable->create_headers_fn = s_sso_create_headers_fn;
-    sso_request_vtable->make_request_fn = s_sso_make_request_fn;
+    sso_request_vtable->create_request_fn = s_sso_create_request_fn;
+    sso_request_vtable->create_credentials_options_fn = s_sso_create_credentials_option_fn;
     sso_request_vtable->clean_up_parameters_fn = s_parameters_destroy;
     sso_request_vtable->parameters = parameters;
-    sso_request_vtable->error = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
+    sso_request_vtable->create_request_data_fn = s_sso_request_data_create;
+    sso_request_vtable->destroy_request_data_fn = s_sso_request_data_destory;
 
     if (aws_http_credentials_provider_init_base(allocator, provider, http_options, sso_request_vtable)) {
         goto on_error;
