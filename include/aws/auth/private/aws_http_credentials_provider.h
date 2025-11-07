@@ -41,7 +41,7 @@ struct aws_credentials_provider_http_options {
      * Endpoint override for service endpoint. Leave null
      * to use default endpoint.
      */
-    struct aws_string *endpoint;
+    struct aws_byte_cursor endpoint;
 
     /*
      * Optional
@@ -77,15 +77,30 @@ struct aws_http_query_context {
     // implementation-specific data and errors
     void *parameters;
     void *request_data;
-    enum aws_auth_errors error;
 };
 
 typedef int(create_request_fn)(struct aws_http_query_context *query_context, void *user_data);
-typedef struct aws_credentials_options(
-    create_credentials_options_fn)(struct aws_credentials *credentials, struct aws_http_query_context *query_context);
+typedef void(finalize_credentials_fn)(struct aws_http_query_context *query_context);
 typedef void(clean_up_parameters_fn)(void *parameters);
-typedef void *(create_request_data_fn)(struct aws_allocator *allocator);
-typedef void(destroy_request_data_fn)(void *request_data);
+typedef void(create_request_data_fn)(struct aws_http_query_context *query_context);
+typedef void(reset_request_data_fn)(struct aws_http_query_context *query_context);
+
+/**
+ * Implementation specific userdata for the http provider.
+ */
+struct aws_http_credentials_provider_user_data {
+    /*
+     * owning pointer to implementation specific data. i.e. values that
+     * could be used during request creation.
+     */
+    void *parameters;
+
+    /*
+     * implementation specific callbacks for creating and cleaning up
+     * the underlying http request,
+     */
+    struct aws_http_credentials_provider_request_vtable *request_vtable;
+};
 
 /**
  * A table to hold implementation specific values for
@@ -101,7 +116,7 @@ struct aws_http_credentials_provider_request_vtable {
      * Creates credentials options. This is used to create the
      * credentials that are returned to the user
      */
-    create_credentials_options_fn *create_credentials_options_fn;
+    finalize_credentials_fn *finalize_credentials_fn;
 
     /*
      * cleans up the parameters that are provided to the implemetatnion.
@@ -116,13 +131,7 @@ struct aws_http_credentials_provider_request_vtable {
     /*
      * implementation specific data that is destroyed each request.
      */
-    destroy_request_data_fn *destroy_request_data_fn;
-
-    /*
-     * owning pointer to implementation specific data. i.e.e values that
-     * could be used during request creation.
-     */
-    void *parameters;
+    reset_request_data_fn *reset_request_data_fn;
 };
 
 AWS_EXTERN_C_BEGIN
@@ -134,7 +143,7 @@ AWS_EXTERN_C_BEGIN
  * @param provider allocated instance of provider that will be initialized with
  * a http based credentials fetching implementation.
  * @param options standard http options.
- * @param request_vtable implementation specific branching for http based providers
+ * @param user_data implementation specific branching for http based providers
  * such as hot to create requests.
  * @return error code if encountered.
  */
@@ -143,7 +152,7 @@ int aws_http_credentials_provider_init_base(
     struct aws_allocator *allocator,
     struct aws_credentials_provider *provider,
     struct aws_credentials_provider_http_options *options,
-    struct aws_http_credentials_provider_request_vtable *request_vtable);
+    struct aws_http_credentials_provider_user_data *user_data);
 
 AWS_EXTERN_C_END
 AWS_POP_SANE_WARNING_LEVEL

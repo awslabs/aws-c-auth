@@ -206,11 +206,9 @@ AWS_STATIC_STRING_FROM_LITERAL(s_sso_token_header, "x-amz-sso_bearer_token");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header, "User-Agent");
 AWS_STATIC_STRING_FROM_LITERAL(s_sso_user_agent_header_value, "aws-sdk-crt/sso-credentials-provider");
 
-static void s_on_get_token_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
-    struct aws_http_query_context *http_query_context = user_data;
+static void s_on_get_token_callback(struct aws_credentials *credentials, int error_code, void *query_context) {
+    struct aws_http_query_context *http_query_context = query_context;
     struct sso_parameters *parameters = http_query_context->parameters;
-
-    http_query_context->error = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
 
     if (error_code) {
         AWS_LOGF_ERROR(
@@ -314,33 +312,84 @@ static int s_sso_create_request_fn(struct aws_http_query_context *http_query_con
     return AWS_OP_SUCCESS;
 }
 
-struct aws_credentials_options s_sso_create_credentials_option_fn(
-    struct aws_credentials *credentials,
-    struct aws_http_query_context *http_query_context) {
+static void s_sso_finalize_credentials_fn(struct aws_http_query_context *http_query_context) {
     struct sso_parameters *parameters = http_query_context->parameters;
-    struct aws_credentials_options creds_option = {
-        .access_key_id_cursor = aws_credentials_get_access_key_id(credentials),
-        .secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials),
-        .session_token_cursor = aws_credentials_get_session_token(credentials),
-        .account_id_cursor = aws_byte_cursor_from_string(parameters->sso_account_id),
-        .expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials),
-    };
-    return creds_option;
+    struct aws_credentials *credentials = NULL;
+    struct aws_credentials *creds_with_accound_id = NULL;
+
+    if (http_query_context->error_code == AWS_ERROR_SUCCESS) {
+        /* parse credentials */
+        struct aws_parse_credentials_from_json_doc_options parse_options = {
+            .access_key_id_name = "accessKeyId",
+            .secret_access_key_name = "secretAccessKey",
+            .token_name = "sessionToken",
+            .expiration_name = "expiration",
+            .top_level_object_name = "roleCredentials",
+            .token_required = true,
+            .expiration_required = true,
+            .expiration_format = AWS_PCEF_NUMBER_UNIX_EPOCH_MS,
+        };
+
+        credentials = aws_parse_credentials_from_json_document(
+            http_query_context->allocator, aws_byte_cursor_from_buf(&http_query_context->payload), &parse_options);
+    }
+
+    if (!credentials) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) failed to query credentials",
+            (void *)http_query_context->provider);
+
+        if (http_query_context->error_code == AWS_ERROR_SUCCESS) {
+            http_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
+        }
+    } else {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) successfully queried credentials",
+            (void *)http_query_context->provider);
+        struct aws_credentials_options creds_option = {
+            .access_key_id_cursor = aws_credentials_get_access_key_id(credentials),
+            .secret_access_key_cursor = aws_credentials_get_secret_access_key(credentials),
+            .session_token_cursor = aws_credentials_get_session_token(credentials),
+            .account_id_cursor = aws_byte_cursor_from_string(parameters->sso_account_id),
+            .expiration_timepoint_seconds = aws_credentials_get_expiration_timepoint_seconds(credentials),
+        };
+
+        creds_with_accound_id = aws_credentials_new_with_options(http_query_context->allocator, &creds_option);
+    }
+
+    /* pass the credentials back */
+    http_query_context->original_callback(
+        creds_with_accound_id, http_query_context->error_code, http_query_context->original_user_data);
+
+    /* clean up */
+    aws_credentials_release(credentials);
+    aws_credentials_release(creds_with_accound_id);
 }
 
-static void *s_sso_request_data_create(struct aws_allocator *allocator) {
-    struct sso_request_data *request_data = aws_mem_acquire(allocator, sizeof(struct sso_request_data *));
+static void s_sso_request_data_create(struct aws_http_query_context *query_context) {
+    struct sso_request_data *request_data =
+        aws_mem_acquire(query_context->allocator, sizeof(struct sso_request_data *));
     AWS_ZERO_STRUCT(*request_data);
-    return request_data;
+    query_context->request_data = request_data;
 }
 
-static void s_sso_request_data_destory(void *request_data) {
-    struct sso_request_data *sso_request_data = request_data;
+static void s_sso_request_data_reset(struct aws_http_query_context *query_context) {
+    struct sso_request_data *sso_request_data = query_context->request_data;
     if (sso_request_data->token) {
         aws_string_destroy_secure(sso_request_data->token);
         sso_request_data->token = NULL;
     }
 }
+
+static struct aws_http_credentials_provider_request_vtable s_sso_request_vtable = {
+    .clean_up_parameters_fn = s_parameters_destroy,
+    .finalize_credentials_fn = s_sso_finalize_credentials_fn,
+    .create_request_fn = s_sso_create_request_fn,
+    .create_request_data_fn = s_sso_request_data_create,
+    .reset_request_data_fn = s_sso_request_data_reset,
+};
 
 struct aws_credentials_provider *aws_credentials_provider_new_sso(
     struct aws_allocator *allocator,
@@ -353,7 +402,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_http_options *http_options = NULL;
-    struct aws_http_credentials_provider_request_vtable *sso_request_vtable = NULL;
+    struct aws_http_credentials_provider_user_data *sso_user_data = NULL;
 
     aws_mem_acquire_many(
         allocator,
@@ -362,28 +411,24 @@ struct aws_credentials_provider *aws_credentials_provider_new_sso(
         sizeof(struct aws_credentials_provider),
         &http_options,
         sizeof(struct aws_credentials_provider_http_options),
-        &sso_request_vtable,
-        sizeof(struct aws_http_credentials_provider_request_vtable));
+        &sso_user_data,
+        sizeof(struct aws_http_credentials_provider_user_data));
 
     AWS_ZERO_STRUCT(*http_options);
     AWS_ZERO_STRUCT(*provider);
-    AWS_ZERO_STRUCT(*sso_request_vtable);
+    AWS_ZERO_STRUCT(*sso_user_data);
 
     http_options->shutdown_options = options->shutdown_options;
     http_options->bootstrap = options->bootstrap;
     http_options->tls_ctx = options->tls_ctx;
     http_options->function_table = options->function_table;
-    http_options->endpoint = parameters->endpoint;
+    http_options->endpoint = aws_byte_cursor_from_string(parameters->endpoint);
     http_options->max_connections = 2;
 
-    sso_request_vtable->create_request_fn = s_sso_create_request_fn;
-    sso_request_vtable->create_credentials_options_fn = s_sso_create_credentials_option_fn;
-    sso_request_vtable->clean_up_parameters_fn = s_parameters_destroy;
-    sso_request_vtable->parameters = parameters;
-    sso_request_vtable->create_request_data_fn = s_sso_request_data_create;
-    sso_request_vtable->destroy_request_data_fn = s_sso_request_data_destory;
+    sso_user_data->parameters = parameters;
+    sso_user_data->request_vtable = &s_sso_request_vtable;
 
-    if (aws_http_credentials_provider_init_base(allocator, provider, http_options, sso_request_vtable)) {
+    if (aws_http_credentials_provider_init_base(allocator, provider, http_options, sso_user_data)) {
         goto on_error;
     }
 

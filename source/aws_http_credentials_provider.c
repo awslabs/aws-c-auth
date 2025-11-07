@@ -24,15 +24,14 @@ struct aws_credentials_provider_http_impl {
     const struct aws_auth_http_system_vtable *function_table;
     struct aws_string *endpoint;
     struct aws_retry_strategy *retry_strategy;
-    struct aws_http_credentials_provider_request_vtable *request_vtable;
+    struct aws_http_credentials_provider_user_data *user_data;
 };
 
 static void s_http_query_context_reset_request_specific_data(struct aws_http_query_context *http_query_context) {
     struct aws_credentials_provider_http_impl *impl = http_query_context->provider->impl;
-    impl->request_vtable->destroy_request_data_fn(http_query_context->request_data);
+    impl->user_data->request_vtable->reset_request_data_fn(http_query_context);
     if (http_query_context->request) {
-        aws_http_message_release(http_query_context->request);
-        http_query_context->request = NULL;
+        http_query_context->request = aws_http_message_release(http_query_context->request);
     }
     if (http_query_context->connection) {
         int result = impl->function_table->aws_http_connection_manager_release_connection(
@@ -71,7 +70,7 @@ static struct aws_http_query_context *s_http_query_context_new(
     http_query_context->provider = aws_credentials_provider_acquire(provider);
     http_query_context->original_user_data = user_data;
     http_query_context->original_callback = callback;
-    http_query_context->parameters = impl->request_vtable->parameters;
+    http_query_context->parameters = impl->user_data->parameters;
     aws_byte_buf_init(&http_query_context->payload, provider->allocator, HTTP_RESPONSE_SIZE_INITIAL);
 
     return http_query_context;
@@ -82,53 +81,10 @@ static struct aws_http_query_context *s_http_query_context_new(
  */
 static void s_finalize_get_credentials_query(struct aws_http_query_context *http_query_context) {
     struct aws_credentials_provider_http_impl *impl = http_query_context->provider->impl;
-    struct aws_credentials *credentials = NULL;
-    struct aws_credentials *credentials_with_account_id = NULL;
-
-    if (http_query_context->error_code == AWS_ERROR_SUCCESS) {
-        /* parse credentials */
-        struct aws_parse_credentials_from_json_doc_options parse_options = {
-            .access_key_id_name = "accessKeyId",
-            .secret_access_key_name = "secretAccessKey",
-            .token_name = "sessionToken",
-            .expiration_name = "expiration",
-            .top_level_object_name = "roleCredentials",
-            .token_required = true,
-            .expiration_required = true,
-            .expiration_format = AWS_PCEF_NUMBER_UNIX_EPOCH_MS,
-        };
-
-        credentials = aws_parse_credentials_from_json_document(
-            http_query_context->allocator, aws_byte_cursor_from_buf(&http_query_context->payload), &parse_options);
-    }
-
-    if (credentials) {
-        AWS_LOGF_INFO(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) successfully queried credentials",
-            (void *)http_query_context->provider);
-        struct aws_credentials_options creds_option =
-            impl->request_vtable->create_credentials_options_fn(credentials, http_query_context);
-        credentials_with_account_id = aws_credentials_new_with_options(http_query_context->allocator, &creds_option);
-    } else {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) failed to query credentials",
-            (void *)http_query_context->provider);
-
-        if (http_query_context->error_code == AWS_ERROR_SUCCESS) {
-            http_query_context->error_code = http_query_context->error;
-        }
-    }
-
-    /* pass the credentials back */
-    http_query_context->original_callback(
-        credentials_with_account_id, http_query_context->error_code, http_query_context->original_user_data);
+    impl->user_data->request_vtable->finalize_credentials_fn(http_query_context);
 
     /* clean up */
     s_http_query_context_destroy(http_query_context);
-    aws_credentials_release(credentials);
-    aws_credentials_release(credentials_with_account_id);
 }
 
 static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *user_data);
@@ -283,7 +239,7 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
     }
 
     struct aws_credentials_provider_http_impl *impl = http_query_context->provider->impl;
-    if (impl->request_vtable->create_request_fn(http_query_context, user_data)) {
+    if (impl->user_data->request_vtable->create_request_fn(http_query_context, user_data)) {
         goto on_error;
     }
     s_query_credentials(http_query_context);
@@ -350,7 +306,7 @@ static int s_aws_http_credentials_provider_get_credentials(
     struct aws_http_query_context *http_query_context = s_http_query_context_new(provider, callback, user_data);
 
     struct aws_credentials_provider_http_impl *impl = http_query_context->provider->impl;
-    http_query_context->request_data = impl->request_vtable->create_request_data_fn(provider->allocator);
+    impl->user_data->request_vtable->create_request_data_fn(http_query_context);
     if (aws_retry_strategy_acquire_retry_token(
             impl->retry_strategy, NULL, s_on_retry_token_acquired, http_query_context, HTTP_RETRY_TIMEOUT_MS)) {
         AWS_LOGF_ERROR(
@@ -373,7 +329,7 @@ static void s_on_connection_manager_shutdown(void *user_data) {
 
     aws_credentials_provider_invoke_shutdown_callback(provider);
     struct aws_credentials_provider_http_impl *impl = provider->impl;
-    impl->request_vtable->clean_up_parameters_fn(impl->request_vtable->parameters);
+    impl->user_data->request_vtable->clean_up_parameters_fn(impl->user_data->parameters);
     aws_mem_release(provider->allocator, provider->impl);
     aws_mem_release(provider->allocator, provider);
 }
@@ -409,13 +365,13 @@ int aws_http_credentials_provider_init_base(
     struct aws_allocator *allocator,
     struct aws_credentials_provider *provider,
     struct aws_credentials_provider_http_options *options,
-    struct aws_http_credentials_provider_request_vtable *request_vtable) {
+    struct aws_http_credentials_provider_user_data *user_data) {
 
     struct aws_credentials_provider_http_impl *impl =
         aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider_http_impl));
 
     AWS_ZERO_STRUCT(*impl);
-    impl->request_vtable = request_vtable;
+    impl->user_data = user_data;
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_http_vtable, impl);
 
@@ -435,10 +391,8 @@ int aws_http_credentials_provider_init_base(
         goto on_error;
     }
 
-    struct aws_byte_cursor host = aws_byte_cursor_from_string(options->endpoint);
-
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
-    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &host)) {
+    if (aws_tls_connection_options_set_server_name(&tls_connection_options, allocator, &options->endpoint)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "(id=%p): failed to create a tls connection options with error %s",
@@ -459,7 +413,7 @@ int aws_http_credentials_provider_init_base(
     manager_options.bootstrap = options->bootstrap;
     manager_options.initial_window_size = HTTP_RESPONSE_SIZE_LIMIT;
     manager_options.socket_options = &socket_options;
-    manager_options.host = host;
+    manager_options.host = options->endpoint;
     manager_options.port = 443;
     manager_options.max_connections = options->max_connections;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
@@ -471,7 +425,7 @@ int aws_http_credentials_provider_init_base(
         impl->function_table = g_aws_credentials_provider_http_function_table;
     }
 
-    impl->endpoint = aws_string_new_from_string(allocator, options->endpoint);
+    impl->endpoint = aws_string_new_from_cursor(allocator, &options->endpoint);
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (impl->connection_manager == NULL) {
         AWS_LOGF_ERROR(
@@ -511,5 +465,6 @@ int aws_http_credentials_provider_init_base(
     return AWS_OP_SUCCESS;
 on_error:
     aws_tls_connection_options_clean_up(&tls_connection_options);
+    aws_mem_release(allocator, impl);
     return aws_last_error();
 }
