@@ -182,7 +182,9 @@ static struct sso_parameters *s_parameters_new(
             s_sso_service_env_name,
             s_sso_service_name,
             config_profile_collection,
-            profile)) {
+            profile,
+            NULL,
+            false)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sso endpoint");
         goto on_finish;
     }
