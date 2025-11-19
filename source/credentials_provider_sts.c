@@ -780,7 +780,9 @@ void s_resolve_endpoint(
             s_sts_service_env_name,
             s_sts_service_name,
             profile_collection,
-            profile)) {
+            profile,
+            NULL,
+            false)) {
         goto cleanup;
     }
 

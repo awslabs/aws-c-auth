@@ -170,6 +170,10 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
  * If an endpoint override is configured, use that. Otherwise do the following:
  * Construct an endpoint in the format of service_name_host.region.amazonaws.com.
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.
+ * Suffix_override will override amazonaws.com to be the suffix of your choice i.e aws.amazon.com.
+ * swap_region_and_service_name will swap the service name and region (i.e., service.us-east-1 to us-east-1.service)
+ * when constructing the endpoint to address endpoint customization present in some services.
+ *
  * To configure the endpoint override, check the
  * https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html.
  */
@@ -182,7 +186,9 @@ int aws_credentials_provider_construct_endpoint(
     const struct aws_string *service_name_env,
     const struct aws_string *service_name_property,
     const struct aws_profile_collection *profile_collection,
-    const struct aws_profile *profile);
+    const struct aws_profile *profile,
+    const struct aws_byte_cursor *suffix_override,
+    bool swap_region_and_service_name);
 
 /*
  * Loads an aws config profile collection
