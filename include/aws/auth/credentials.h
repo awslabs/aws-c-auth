@@ -354,6 +354,11 @@ struct aws_credentials_provider_x509_options {
      */
     const struct aws_http_proxy_options *proxy_options;
 
+    /**
+     * (Optional) Socks5 proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_socks5_proxy_options *socks5_proxy_options;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };
@@ -524,6 +529,11 @@ struct aws_credentials_provider_sts_options {
      * (Optional) Http proxy configuration for the AssumeRole http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional) Socks5 proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_socks5_proxy_options *socks5_proxy_options;
 
     /**
      * (Optional)
@@ -721,6 +731,11 @@ struct aws_credentials_provider_cognito_options {
      * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional) Socks5 proxy configuration for the http request that fetches credentials
+     */
+    const struct aws_socks5_proxy_options *socks5_proxy_options;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
