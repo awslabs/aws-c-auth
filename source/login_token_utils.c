@@ -17,6 +17,7 @@
 #endif /* _MSC_VER */
 
 static int TOKEN_BUFFER_SIZE = 2500;
+static int PADDING_LENGTH = 32;
 
 /* Token JSON keys*/
 AWS_STATIC_STRING_FROM_LITERAL(s_login_access_token_key, "accessToken");
@@ -723,26 +724,6 @@ static int s_ecc_sign(struct aws_allocator *allocator, void *input, struct aws_b
     return aws_ecc_key_pair_sign_message(ecc_input->private_key, ecc_input->message, output);
 }
 
-struct private_key_rs_pair {
-    struct aws_byte_cursor *r;
-    struct aws_byte_cursor *s;
-};
-
-static void s_rs_buff(struct aws_allocator *allocator, void *input, struct aws_byte_buf *output) {
-    struct private_key_rs_pair *private_key_rs_pair = input;
-    aws_byte_buf_init(output, allocator, private_key_rs_pair->r->len + private_key_rs_pair->s->len);
-}
-
-static int s_rs_combine(struct aws_allocator *allocator, void *input, struct aws_byte_buf *output) {
-    (void)allocator;
-    struct private_key_rs_pair *private_key_rs_pair = input;
-    if (aws_byte_buf_append_dynamic(output, private_key_rs_pair->r) ||
-        aws_byte_buf_append_dynamic(output, private_key_rs_pair->s)) {
-        return AWS_OP_ERR;
-    }
-    return AWS_OP_SUCCESS;
-}
-
 static int s_encode_buff(
     struct aws_allocator *allocator,
     void *input,
@@ -1004,31 +985,21 @@ static int sign_message(
     }
 
     struct aws_byte_cursor signature_cursor = aws_byte_cursor_from_buf(&signature);
-    struct aws_byte_cursor r;
-    struct aws_byte_cursor s;
-    AWS_ZERO_STRUCT(r);
-    AWS_ZERO_STRUCT(s);
-    if (aws_ecc_decode_signature_der_to_raw(allocator, signature_cursor, &r, &s)) {
+    uint8_t decoded[64] = {0};
+    struct aws_byte_buf decoded_buf = aws_byte_buf_from_empty_array(decoded, 64);
+    if (aws_ecc_decode_signature_der_to_raw_padded(allocator, signature_cursor, &decoded_buf, PADDING_LENGTH)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login token: failed to decode signature");
         goto on_finish;
     }
 
-    struct private_key_rs_pair private_key_rs_pair = {.r = &r, .s = &s};
-    struct aws_byte_buf rs_combination;
-    AWS_ZERO_STRUCT(rs_combination);
-    if (s_encode_buff(allocator, &private_key_rs_pair, &rs_combination, s_rs_buff, s_rs_combine)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login token: failed combine r and s numbers");
-        goto on_finish;
-    }
-
-    struct aws_byte_cursor rs_combination_cursor = aws_byte_cursor_from_buf(&rs_combination);
+    struct aws_byte_cursor rs_combination_cursor = aws_byte_cursor_from_buf(&decoded_buf);
     s_encode_buff(allocator, &rs_combination_cursor, signature_encoded, s_base_64_url_length, s_encode_base64_url);
 
     success = true;
 on_finish:
     aws_byte_buf_clean_up_secure(&message_sha256);
     aws_byte_buf_clean_up_secure(&signature);
-    aws_byte_buf_clean_up_secure(&rs_combination);
+    aws_byte_buf_clean_up_secure(&decoded_buf);
     return success ? AWS_OP_SUCCESS : AWS_OP_ERR;
 }
 
@@ -1058,7 +1029,6 @@ int aws_login_token_get_dpop_header(
 
     if (build_header(allocator, private_key, &header_buf) || build_payload(allocator, &host, &payload_buf)) {
         goto on_error;
-        ;
     }
 
     struct aws_byte_cursor header_cursor = aws_byte_cursor_from_buf(&header_buf);
