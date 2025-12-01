@@ -379,6 +379,12 @@ static void s_login_finalize_credentials_fn(struct aws_http_query_context *http_
                 parameters->login_session,
                 parameters->login_directory_override,
                 &file_path_buf)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) failed to load login token with error: %s",
+                (void *)http_query_context->provider,
+                aws_error_debug_str(aws_last_error()));
+            goto on_finalize;
         }
         if (aws_login_token_write_token_file(request_data->token, http_query_context->allocator, &file_path_buf)) {
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login: failed to write to token file");
