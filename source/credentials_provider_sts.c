@@ -954,6 +954,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
         .socket_options = &socket_options,
         .tls_connection_options = &tls_connection_options,
         .proxy_options = options->http_proxy_options,
+        .proxy_ev_settings = options->proxy_ev_settings,
     };
 
     impl->connection_manager =

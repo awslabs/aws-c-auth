@@ -50,6 +50,12 @@ struct aws_credentials_provider_http_options {
      */
     struct aws_retry_strategy *retry_strategy;
 
+    /*
+     * Optional
+     * Proxy event-loop settings. Leave NULL to use default settings.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     const struct aws_auth_http_system_vtable *function_table;
 };

@@ -1166,6 +1166,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
     manager_options.tls_connection_options = &tls_connection_options;
+    manager_options.proxy_ev_settings = options->proxy_ev_settings;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

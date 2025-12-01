@@ -259,6 +259,11 @@ struct aws_credentials_provider_ecs_environment_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 };
@@ -310,6 +315,11 @@ struct aws_credentials_provider_ecs_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 
@@ -353,6 +363,11 @@ struct aws_credentials_provider_x509_options {
      * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *proxy_options;
+
+    /**
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -400,6 +415,11 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -526,6 +546,11 @@ struct aws_credentials_provider_sts_options {
     const struct aws_http_proxy_options *http_proxy_options;
 
     /**
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+
+    /**
      * (Optional)
      * Uses a cached config file profile collection (~/.aws/config). You can also pass a merged profile collection,
      * which contains both a config file and a credentials file.
@@ -628,6 +653,11 @@ struct aws_credentials_provider_chain_default_options {
      * If enabled, the Environment Credentials Provider is not added to the chain.
      */
     bool skip_environment_credentials_provider;
+
+    /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
@@ -721,6 +751,11 @@ struct aws_credentials_provider_cognito_options {
      * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;

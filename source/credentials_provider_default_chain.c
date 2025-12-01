@@ -35,13 +35,15 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_shutdown_options *shutdown_options,
     struct aws_client_bootstrap *bootstrap,
-    struct aws_tls_ctx *tls_ctx) {
+    struct aws_tls_ctx *tls_ctx,
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings) {
 
     /* Try to create the ECS provider. This will fail if its environment variables aren't set */
     struct aws_credentials_provider_ecs_environment_options ecs_options = {
         .shutdown_options = *shutdown_options,
         .bootstrap = bootstrap,
         .tls_ctx = tls_ctx,
+        .proxy_ev_settings = proxy_ev_settings,
     };
     struct aws_credentials_provider *ecs_provider =
         aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
@@ -64,6 +66,7 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
         struct aws_credentials_provider_imds_options imds_options = {
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
+            .proxy_ev_settings = proxy_ev_settings,
         };
         return aws_credentials_provider_new_imds(allocator, &imds_options);
     }
@@ -301,6 +304,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sts_options.shutdown_options = sub_provider_shutdown_options;
     sts_options.config_profile_collection_cached = options->profile_collection_cached;
     sts_options.profile_name_override = options->profile_name_override;
+    sts_options.proxy_ev_settings = options->proxy_ev_settings;
     sts_provider = aws_credentials_provider_new_sts_web_identity(allocator, &sts_options);
     if (sts_provider != NULL) {
         providers[index++] = sts_provider;
@@ -311,7 +315,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     /* Providers that will always make a network call unless explicitly disabled... */
 
     ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
-        allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx);
+        allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx, options->proxy_ev_settings);
     if (ecs_or_imds_provider != NULL) {
         providers[index++] = ecs_or_imds_provider;
         /* 1 shutdown call from the imds or ecs provider's shutdown */

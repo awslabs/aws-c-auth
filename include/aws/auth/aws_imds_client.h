@@ -44,6 +44,11 @@ struct aws_imds_client_options {
     struct aws_retry_strategy *retry_strategy;
 
     /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+
+    /*
      * What version of the imds protocol to use
      *
      * Defaults to IMDS_PROTOCOL_V2
