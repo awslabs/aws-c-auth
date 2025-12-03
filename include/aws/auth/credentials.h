@@ -494,6 +494,11 @@ struct aws_credentials_provider_sso_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
     aws_io_clock_fn *system_clock_fn;
@@ -833,6 +838,11 @@ struct aws_credentials_provider_login_options {
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;

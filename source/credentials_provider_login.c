@@ -463,6 +463,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_login(
     http_options.function_table = options->function_table;
     http_options.endpoint = aws_byte_cursor_from_string(parameters->endpoint);
     http_options.max_connections = 2;
+    http_options.proxy_ev_settings = options->proxy_ev_settings;
 
     login_user_data->parameters = parameters;
     login_user_data->request_vtable = &s_login_request_vtable;
