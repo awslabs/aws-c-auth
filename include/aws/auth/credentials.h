@@ -225,6 +225,9 @@ struct aws_credentials_provider_imds_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /* For customers to enable proxy settings for connection manager */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 /*

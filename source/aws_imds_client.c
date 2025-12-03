@@ -157,6 +157,15 @@ struct aws_imds_client *aws_imds_client_new(
     socket_options.connect_timeout_ms = (uint32_t)aws_timestamp_convert(
         IMDS_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_MILLIS, NULL);
 
+    struct proxy_env_var_settings proxy_ev_settings_default;
+    const struct proxy_env_var_settings *proxy_ev_settings = options->proxy_ev_settings;
+    /* Turn on environment variable for proxy by default */
+    if (proxy_ev_settings == NULL) {
+        AWS_ZERO_STRUCT(proxy_ev_settings_default);
+        proxy_ev_settings_default.env_var_type = AWS_HPEV_ENABLE;
+        proxy_ev_settings = &proxy_ev_settings_default;
+    }
+
     struct aws_http_connection_manager_options manager_options;
     AWS_ZERO_STRUCT(manager_options);
     manager_options.bootstrap = options->bootstrap;
@@ -168,7 +177,7 @@ struct aws_imds_client *aws_imds_client_new(
     manager_options.max_connections = 10;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = client;
-    manager_options.proxy_ev_settings.env_var_type = options->proxy_ev_settings.env_var_type;
+    manager_options.proxy_ev_settings = proxy_ev_settings;
 
     client->connection_manager = client->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (!client->connection_manager) {
