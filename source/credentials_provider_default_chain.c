@@ -36,7 +36,7 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
     const struct aws_credentials_provider_shutdown_options *shutdown_options,
     struct aws_client_bootstrap *bootstrap,
     struct aws_tls_ctx *tls_ctx,
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings) {
+    const struct proxy_env_var_settings *proxy_ev_settings) {
 
     /* Try to create the ECS provider. This will fail if its environment variables aren't set */
     struct aws_credentials_provider_ecs_environment_options ecs_options = {

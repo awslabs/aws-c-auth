@@ -10,6 +10,7 @@
 #include <aws/common/array_list.h>
 #include <aws/common/atomics.h>
 #include <aws/common/linked_list.h>
+#include <aws/http/proxy.h>
 #include <aws/io/io.h>
 
 AWS_PUSH_SANE_WARNING_LEVEL
@@ -262,7 +263,7 @@ struct aws_credentials_provider_ecs_environment_options {
     /*
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -318,7 +319,7 @@ struct aws_credentials_provider_ecs_options {
     /*
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -367,7 +368,7 @@ struct aws_credentials_provider_x509_options {
     /**
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -419,7 +420,7 @@ struct aws_credentials_provider_sts_web_identity_options {
     /*
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -548,7 +549,7 @@ struct aws_credentials_provider_sts_options {
     /**
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /**
      * (Optional)
@@ -657,7 +658,7 @@ struct aws_credentials_provider_chain_default_options {
     /*
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
@@ -755,7 +756,7 @@ struct aws_credentials_provider_cognito_options {
     /**
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;

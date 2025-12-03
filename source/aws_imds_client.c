@@ -168,7 +168,7 @@ struct aws_imds_client *aws_imds_client_new(
     manager_options.max_connections = 10;
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = client;
-    manager_options.proxy_ev_settings = options->proxy_ev_settings;
+    manager_options.proxy_ev_settings.env_var_type = options->proxy_ev_settings.env_var_type;
 
     client->connection_manager = client->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (!client->connection_manager) {

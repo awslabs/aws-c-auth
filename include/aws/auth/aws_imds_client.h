@@ -46,7 +46,7 @@ struct aws_imds_client_options {
     /*
      * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
      */
-    const struct aws_http_proxy_ev_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /*
      * What version of the imds protocol to use
