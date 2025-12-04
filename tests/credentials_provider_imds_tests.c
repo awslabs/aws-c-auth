@@ -1229,11 +1229,19 @@ static int s_credentials_provider_imds_proxy_routing_enabled_test(struct aws_all
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
-    // Not testing credential gets since provider cannot get credentials outside of EC2.
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
+
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
+    aws_mem_release(provider->allocator, provider);
 
     ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
@@ -1260,17 +1268,14 @@ static int s_credentials_provider_imds_proxy_routing_disabled_test(struct aws_al
 
     s_tester.proxy_config = &proxy_config;
 
-    struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &token_cursor);
-    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_200_OK;
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
 
-    struct aws_byte_cursor role_cursor = aws_byte_cursor_from_string(s_test_role_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &role_cursor);
-    s_tester.response_code[1] = AWS_HTTP_STATUS_CODE_200_OK;
+    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
 
-    struct aws_byte_cursor creds_cursor = aws_byte_cursor_from_string(s_good_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &creds_cursor);
-    s_tester.response_code[2] = AWS_HTTP_STATUS_CODE_200_OK;
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = s_tester.bootstrap,
@@ -1285,11 +1290,21 @@ static int s_credentials_provider_imds_proxy_routing_disabled_test(struct aws_al
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
-    // Not testing credential gets since provider cannot get credentials outside of EC2.
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_creds(3, true) == 0);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
+
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
+    aws_mem_release(provider->allocator, provider);
 
     ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
@@ -1310,17 +1325,14 @@ static int s_credentials_provider_imds_proxy_routing_null_test(struct aws_alloca
     aws_string_destroy(proxy_env);
     aws_string_destroy(proxy_val);
 
-    struct aws_byte_cursor token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &token_cursor);
-    s_tester.response_code[0] = AWS_HTTP_STATUS_CODE_200_OK;
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
 
-    struct aws_byte_cursor role_cursor = aws_byte_cursor_from_string(s_test_role_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &role_cursor);
-    s_tester.response_code[1] = AWS_HTTP_STATUS_CODE_200_OK;
+    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
 
-    struct aws_byte_cursor creds_cursor = aws_byte_cursor_from_string(s_good_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &creds_cursor);
-    s_tester.response_code[2] = AWS_HTTP_STATUS_CODE_200_OK;
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
 
     struct aws_credentials_provider_imds_options options = {
         .bootstrap = s_tester.bootstrap,
@@ -1335,11 +1347,21 @@ static int s_credentials_provider_imds_proxy_routing_null_test(struct aws_alloca
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
 
-    // Not testing credential gets since provider cannot get credentials outside of EC2.
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_creds(3, true) == 0);
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
 
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
+
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
+    aws_mem_release(provider->allocator, provider);
 
     ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
 
