@@ -101,6 +101,8 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
 
     if (s_tester.proxy_config != NULL) {
         AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
     }
 
     return (struct aws_http_connection_manager *)1;

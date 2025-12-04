@@ -226,7 +226,9 @@ struct aws_credentials_provider_imds_options {
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 
-    /* For customers to enable proxy settings for connection manager */
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     */
     const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
@@ -264,7 +266,7 @@ struct aws_credentials_provider_ecs_environment_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -320,7 +322,7 @@ struct aws_credentials_provider_ecs_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -369,7 +371,7 @@ struct aws_credentials_provider_x509_options {
     const struct aws_http_proxy_options *proxy_options;
 
     /**
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -421,7 +423,7 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -495,7 +497,7 @@ struct aws_credentials_provider_sso_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -555,7 +557,7 @@ struct aws_credentials_provider_sts_options {
     const struct aws_http_proxy_options *http_proxy_options;
 
     /**
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -664,7 +666,7 @@ struct aws_credentials_provider_chain_default_options {
     bool skip_environment_credentials_provider;
 
     /*
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 };
@@ -762,7 +764,7 @@ struct aws_credentials_provider_cognito_options {
     const struct aws_http_proxy_options *http_proxy_options;
 
     /**
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -840,7 +842,7 @@ struct aws_credentials_provider_login_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Http proxy event-loop settings to use for any network connections made while sourcing credentials.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 

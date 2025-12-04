@@ -90,7 +90,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
                 .shutdown_callback = s_on_imds_client_shutdown,
                 .shutdown_user_data = provider,
             },
-    };
+        .proxy_ev_settings = options->proxy_ev_settings};
 
     impl->client = aws_imds_client_new(allocator, &client_options);
     if (!impl->client) {
