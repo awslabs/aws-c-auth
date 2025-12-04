@@ -10,6 +10,7 @@
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/date_time.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/http/request_response.h>
@@ -36,6 +37,8 @@ struct aws_mock_x509_tester {
 
     struct aws_tls_ctx *ctx;
     struct aws_tls_connection_options tls_connection_options;
+
+    struct proxy_env_var_settings *proxy_config;
 };
 
 static struct aws_mock_x509_tester s_tester;
@@ -68,6 +71,10 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
 
     (void)allocator;
     (void)options;
+
+    if (s_tester.proxy_config != NULL) {
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+    }
 
     return (struct aws_http_connection_manager *)1;
 }
@@ -653,3 +660,163 @@ static int s_credentials_provider_x509_real_new_destroy(struct aws_allocator *al
 }
 
 AWS_TEST_CASE(credentials_provider_x509_real_new_destroy, s_credentials_provider_x509_real_new_destroy);
+
+static int s_credentials_provider_x509_proxy_routing_enabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_x509_tester_init(allocator);
+
+    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
+    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
+    aws_set_environment_value(proxy_env, proxy_val);
+    aws_string_destroy(proxy_env);
+    aws_string_destroy(proxy_val);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    struct aws_credentials_provider_x509_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_x509_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_x509_proxy_routing_enabled_test,
+    s_credentials_provider_x509_proxy_routing_enabled_test);
+
+static int s_credentials_provider_x509_proxy_routing_disabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_x509_tester_init(allocator);
+
+    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
+    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
+    aws_set_environment_value(proxy_env, proxy_val);
+    aws_string_destroy(proxy_env);
+    aws_string_destroy(proxy_val);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_DISABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_x509_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials != NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_x509_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_x509_proxy_routing_disabled_test,
+    s_credentials_provider_x509_proxy_routing_disabled_test);
+
+static int s_credentials_provider_x509_proxy_routing_null_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_x509_tester_init(allocator);
+
+    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
+    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
+    aws_set_environment_value(proxy_env, proxy_val);
+    aws_string_destroy(proxy_env);
+    aws_string_destroy(proxy_val);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_x509_options options = {
+        .bootstrap = NULL,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .endpoint = aws_byte_cursor_from_c_str("c2sakl5huz0afv.credentials.iot.us-east-1.amazonaws.com"),
+        .thing_name = aws_byte_cursor_from_c_str("my_iot_thing_name"),
+        .role_alias = aws_byte_cursor_from_c_str("my_test_role_alias"),
+        .tls_connection_options = &s_tester.tls_connection_options,
+        .proxy_ev_settings = NULL,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_x509(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials != NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_x509_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(credentials_provider_x509_proxy_routing_null_test, s_credentials_provider_x509_proxy_routing_null_test);
