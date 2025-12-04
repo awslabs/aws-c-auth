@@ -1457,9 +1457,7 @@ AWS_TEST_CASE(
     credentials_provider_sts_web_identity_proxy_routing_disabled_test,
     s_credentials_provider_sts_web_identity_proxy_routing_disabled_test);
 
-static int s_credentials_provider_sts_web_identity_proxy_routing_null_test(
-    struct aws_allocator *allocator,
-    void *ctx) {
+static int s_credentials_provider_sts_web_identity_proxy_routing_null_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     s_aws_sts_web_identity_tester_init(allocator);
