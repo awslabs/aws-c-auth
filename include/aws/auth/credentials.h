@@ -227,7 +227,7 @@ struct aws_credentials_provider_imds_options {
     struct aws_auth_http_system_vtable *function_table;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 };
@@ -266,7 +266,7 @@ struct aws_credentials_provider_ecs_environment_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -322,7 +322,7 @@ struct aws_credentials_provider_ecs_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -371,7 +371,7 @@ struct aws_credentials_provider_x509_options {
     const struct aws_http_proxy_options *proxy_options;
 
     /**
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -423,7 +423,7 @@ struct aws_credentials_provider_sts_web_identity_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -497,7 +497,7 @@ struct aws_credentials_provider_sso_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -557,7 +557,7 @@ struct aws_credentials_provider_sts_options {
     const struct aws_http_proxy_options *http_proxy_options;
 
     /**
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -666,7 +666,7 @@ struct aws_credentials_provider_chain_default_options {
     bool skip_environment_credentials_provider;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 };
@@ -764,7 +764,7 @@ struct aws_credentials_provider_cognito_options {
     const struct aws_http_proxy_options *http_proxy_options;
 
     /**
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
@@ -842,7 +842,7 @@ struct aws_credentials_provider_login_options {
     struct aws_tls_ctx *tls_ctx;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
