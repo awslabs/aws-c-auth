@@ -44,7 +44,8 @@ struct aws_imds_client_options {
     struct aws_retry_strategy *retry_strategy;
 
     /*
-     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read aws_http_credentials_provider.h for more information.
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
