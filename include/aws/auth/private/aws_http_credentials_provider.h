@@ -53,9 +53,9 @@ struct aws_credentials_provider_http_options {
     /*
      * Optional.
      * Configuration for fetching proxy configuration from environment for http connections.
-     * By Default proxy_ev_settings.aws_http_proxy_env_var_type is set to AWS_HPEV_DISABLE which means read proxy
-     * configuration from environment. If proxy_options exist for a particular credential provider and is set by the
-     * user, it overrides what is set from the environment.
+     * By Default proxy_ev_settings.aws_http_proxy_env_var_type is set to AWS_HPEV_DISABLE which means we don't read
+     * proxy configuration from environment. If proxy_options exist for a particular credential provider and is set by
+     * the user, it overrides what is set from the environment.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
 
