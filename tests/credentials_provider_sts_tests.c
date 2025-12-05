@@ -15,6 +15,7 @@
 
 #include <aws/http/connection.h>
 #include <aws/http/connection_manager.h>
+#include <aws/http/proxy.h>
 #include <aws/http/request_response.h>
 
 #include <aws/auth/private/credentials_utils.h>
@@ -66,6 +67,8 @@ struct aws_mock_sts_tester {
     struct aws_client_bootstrap *bootstrap;
 
     struct aws_tls_ctx *tls_ctx;
+
+    struct proxy_env_var_settings *proxy_config;
 };
 
 static struct aws_mock_sts_tester s_tester;
@@ -120,6 +123,13 @@ static void s_aws_wait_for_provider_shutdown_callback(void) {
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
     const struct aws_http_connection_manager_options *options) {
+
+    if (s_tester.proxy_config != NULL) {
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
+    }
+
     /* copy the shutdown callback */
     struct aws_shutdown_callback_options *shutdown_callback =
         aws_mem_calloc(allocator, 1, sizeof(struct aws_shutdown_callback_options));
@@ -2152,3 +2162,173 @@ static int s_credentials_provider_sts_cache_expiration_conflict(struct aws_alloc
 }
 
 AWS_TEST_CASE(credentials_provider_sts_cache_expiration_conflict, s_credentials_provider_sts_cache_expiration_conflict)
+
+static int s_credentials_provider_sts_proxy_routing_enabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
+    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
+    aws_set_environment_value(proxy_env, proxy_val);
+    aws_string_destroy(proxy_env);
+    aws_string_destroy(proxy_val);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+    s_tester.fail_connection = true;
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    mock_aws_set_system_time(0);
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_proxy_routing_enabled_test,
+    s_credentials_provider_sts_proxy_routing_enabled_test)
+
+static int s_credentials_provider_sts_proxy_routing_disabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
+    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
+    aws_set_environment_value(proxy_env, proxy_val);
+    aws_string_destroy(proxy_env);
+    aws_string_destroy(proxy_val);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_DISABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    mock_aws_set_system_time(0);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_proxy_routing_disabled_test,
+    s_credentials_provider_sts_proxy_routing_disabled_test)
+
+static int s_credentials_provider_sts_proxy_routing_null_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
+    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
+    aws_set_environment_value(proxy_env, proxy_val);
+    aws_string_destroy(proxy_env);
+    aws_string_destroy(proxy_val);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+        .proxy_ev_settings = NULL,
+    };
+
+    mock_aws_set_system_time(0);
+
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(credentials_provider_sts_proxy_routing_null_test, s_credentials_provider_sts_proxy_routing_null_test)
