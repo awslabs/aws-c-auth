@@ -43,6 +43,8 @@ static struct aws_mock_sts_web_identity_tester {
     int attempts;
     int response_code;
     int error_code;
+
+    struct proxy_env_var_settings *proxy_config;
 } s_tester;
 
 static void s_on_shutdown_complete(void *user_data) {
@@ -78,6 +80,12 @@ struct mock_connection_manager {
 static struct aws_http_connection_manager *s_aws_http_connection_manager_new_mock(
     struct aws_allocator *allocator,
     const struct aws_http_connection_manager_options *options) {
+
+    if (s_tester.proxy_config != NULL) {
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
+    }
 
     struct mock_connection_manager *mock_manager = aws_mem_calloc(allocator, 1, sizeof(struct mock_connection_manager));
     mock_manager->allocator = allocator;
@@ -1317,3 +1325,62 @@ static int s_credentials_provider_sts_web_identity_real_new_destroy(struct aws_a
 AWS_TEST_CASE(
     credentials_provider_sts_web_identity_real_new_destroy,
     s_credentials_provider_sts_web_identity_real_new_destroy);
+
+static int s_credentials_provider_sts_web_identity_proxy_routing_enabled_test(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(token_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
+
+    s_aws_sts_web_identity_test_init_env_parameters(
+        allocator,
+        "us-east-1",
+        "arn:aws:iam::1234567890:role/test-arn",
+        "9876543210",
+        aws_string_c_str(token_file_path_str));
+    aws_string_destroy(token_file_path_str);
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    s_aws_sts_web_identity_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_proxy_routing_enabled_test,
+    s_credentials_provider_sts_web_identity_proxy_routing_enabled_test);

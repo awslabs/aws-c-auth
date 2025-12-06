@@ -10,6 +10,7 @@
 #include <aws/common/array_list.h>
 #include <aws/common/atomics.h>
 #include <aws/common/linked_list.h>
+#include <aws/http/proxy.h>
 #include <aws/io/io.h>
 
 AWS_PUSH_SANE_WARNING_LEVEL
@@ -224,6 +225,12 @@ struct aws_credentials_provider_imds_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 /*
@@ -258,6 +265,12 @@ struct aws_credentials_provider_ecs_environment_options {
      * is set and starts with https
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -310,6 +323,12 @@ struct aws_credentials_provider_ecs_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 
@@ -353,6 +372,12 @@ struct aws_credentials_provider_x509_options {
      * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *proxy_options;
+
+    /**
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -400,6 +425,12 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -470,6 +501,12 @@ struct aws_credentials_provider_sso_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
     aws_io_clock_fn *system_clock_fn;
@@ -524,6 +561,12 @@ struct aws_credentials_provider_sts_options {
      * (Optional) Http proxy configuration for the AssumeRole http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /**
      * (Optional)
@@ -628,6 +671,12 @@ struct aws_credentials_provider_chain_default_options {
      * If enabled, the Environment Credentials Provider is not added to the chain.
      */
     bool skip_environment_credentials_provider;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
@@ -722,6 +771,12 @@ struct aws_credentials_provider_cognito_options {
      */
     const struct aws_http_proxy_options *http_proxy_options;
 
+    /**
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 
@@ -794,6 +849,12 @@ struct aws_credentials_provider_login_options {
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
