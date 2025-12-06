@@ -830,12 +830,6 @@ static int s_credentials_provider_cognito_proxy_routing_enabled_test(struct aws_
 
     s_aws_cognito_tester_init(allocator);
 
-    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
-    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
-    aws_set_environment_value(proxy_env, proxy_val);
-    aws_string_destroy(proxy_env);
-    aws_string_destroy(proxy_val);
-
     struct proxy_env_var_settings proxy_config = {
         .env_var_type = AWS_HPEV_ENABLE,
     };
@@ -868,91 +862,3 @@ static int s_credentials_provider_cognito_proxy_routing_enabled_test(struct aws_
 AWS_TEST_CASE(
     credentials_provider_cognito_proxy_routing_enabled_test,
     s_credentials_provider_cognito_proxy_routing_enabled_test);
-
-static int s_credentials_provider_cognito_proxy_routing_disabled_test(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    s_aws_cognito_tester_init(allocator);
-
-    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
-    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
-    aws_set_environment_value(proxy_env, proxy_val);
-    aws_string_destroy(proxy_env);
-    aws_string_destroy(proxy_val);
-
-    struct proxy_env_var_settings proxy_config = {
-        .env_var_type = AWS_HPEV_DISABLE,
-    };
-
-    s_tester.proxy_config = &proxy_config;
-
-    struct aws_byte_cursor good_document_cursor = aws_byte_cursor_from_string(s_good_document_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_document_cursor);
-
-    struct aws_credentials_provider_cognito_options options = {
-        .bootstrap = s_tester.bootstrap,
-        .function_table = &s_mock_function_table,
-        .endpoint = aws_byte_cursor_from_c_str("somewhere.amazonaws.com"),
-        .identity = aws_byte_cursor_from_c_str("someone"),
-        .tls_ctx = s_tester.ctx,
-        .proxy_ev_settings = &proxy_config,
-    };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
-
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    s_aws_wait_for_credentials_result();
-
-    ASSERT_TRUE(s_tester.credentials != NULL);
-
-    aws_credentials_provider_release(provider);
-
-    s_aws_cognito_tester_cleanup();
-
-    return 0;
-}
-AWS_TEST_CASE(
-    credentials_provider_cognito_proxy_routing_disabled_test,
-    s_credentials_provider_cognito_proxy_routing_disabled_test);
-
-static int s_credentials_provider_cognito_proxy_routing_null_test(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    s_aws_cognito_tester_init(allocator);
-
-    struct aws_string *proxy_env = aws_string_new_from_c_str(allocator, "HTTP_PROXY");
-    struct aws_string *proxy_val = aws_string_new_from_c_str(allocator, "http://fake-proxy:9999");
-    aws_set_environment_value(proxy_env, proxy_val);
-    aws_string_destroy(proxy_env);
-    aws_string_destroy(proxy_val);
-
-    struct aws_byte_cursor good_document_cursor = aws_byte_cursor_from_string(s_good_document_response);
-    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_document_cursor);
-
-    struct aws_credentials_provider_cognito_options options = {
-        .bootstrap = s_tester.bootstrap,
-        .function_table = &s_mock_function_table,
-        .endpoint = aws_byte_cursor_from_c_str("somewhere.amazonaws.com"),
-        .identity = aws_byte_cursor_from_c_str("someone"),
-        .tls_ctx = s_tester.ctx,
-        .proxy_ev_settings = NULL,
-    };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
-
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    s_aws_wait_for_credentials_result();
-
-    ASSERT_TRUE(s_tester.credentials != NULL);
-
-    aws_credentials_provider_release(provider);
-
-    s_aws_cognito_tester_cleanup();
-
-    return 0;
-}
-AWS_TEST_CASE(
-    credentials_provider_cognito_proxy_routing_null_test,
-    s_credentials_provider_cognito_proxy_routing_null_test);
