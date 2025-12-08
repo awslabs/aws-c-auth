@@ -115,6 +115,36 @@ static struct aws_error_info s_errors[] = {
         AWS_DEFINE_ERROR_INFO_AUTH(
     AWS_AUTH_CREDENTIALS_PROVIDER_ECS_INVALID_HOST,
         "Failed to establish connection. The specified host is not allowed. It must be a loopback address, ECS/EKS container host, or use HTTPS."),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_SESSION_MISSING,
+        "Credentials options are missing a required log in session"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_REGION_MISSING,
+        "Credentials options are missing a required region for log in call"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN_PATH,
+        "Login credentials providers was not able to calculate a path to the cached token on disk"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN,
+        "Failed to create a Login token from the cached token on disk"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED,
+        "The cached Login token is expired and we cannot complete a calll"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_INVALID_PEM,
+        "The PEM stored in the cached token file is not valid"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_REFRESH_TOKEN,
+        "Failed to create a refresh token from the response returned for the AWS sign in service"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_WRITE_TOKEN,
+        "Failed to write back a updated Login token to disk"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_DPOP_HEADER,
+        "Failed to create the needed dpop header for the AWS sign service in request"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_REQUEST_BODY,
+        "Failed to create the body for the AWS sign service in request")
 };
 /* clang-format on */
 

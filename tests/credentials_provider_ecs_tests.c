@@ -9,6 +9,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/byte_buf.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
 #include <aws/common/date_time.h>
@@ -16,6 +17,7 @@
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
 #include <aws/common/uri.h>
+#include <aws/http/proxy.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
@@ -56,6 +58,8 @@ struct aws_mock_ecs_tester {
     struct aws_host_resolver *host_resolver;
     struct aws_client_bootstrap *bootstrap;
     struct aws_tls_ctx *tls_ctx;
+
+    struct proxy_env_var_settings *proxy_config;
 };
 
 static struct aws_mock_ecs_tester s_tester;
@@ -94,6 +98,12 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
     s_tester.selected_port = options->port;
     s_tester.selected_tls = options->tls_connection_options != NULL;
     aws_mutex_unlock(&s_tester.lock);
+
+    if (s_tester.proxy_config != NULL) {
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
+    }
 
     return (struct aws_http_connection_manager *)1;
 }
@@ -1223,3 +1233,50 @@ static int s_credentials_provider_ecs_real_success(struct aws_allocator *allocat
 }
 
 AWS_TEST_CASE(credentials_provider_ecs_real_success, s_credentials_provider_ecs_real_success);
+
+static int s_credentials_provider_ecs_proxy_routing_enabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("127.0.0.1"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path"),
+        .tls_ctx = s_tester.tls_ctx,
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_ecs_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_ecs_proxy_routing_enabled_test,
+    s_credentials_provider_ecs_proxy_routing_enabled_test);

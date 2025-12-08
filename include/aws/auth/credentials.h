@@ -10,6 +10,7 @@
 #include <aws/common/array_list.h>
 #include <aws/common/atomics.h>
 #include <aws/common/linked_list.h>
+#include <aws/http/proxy.h>
 #include <aws/io/io.h>
 
 AWS_PUSH_SANE_WARNING_LEVEL
@@ -224,6 +225,12 @@ struct aws_credentials_provider_imds_options {
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 /*
@@ -258,6 +265,12 @@ struct aws_credentials_provider_ecs_environment_options {
      * is set and starts with https
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -310,6 +323,12 @@ struct aws_credentials_provider_ecs_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 
@@ -353,6 +372,12 @@ struct aws_credentials_provider_x509_options {
      * (Optional) Http proxy configuration for the http request that fetches credentials
      */
     const struct aws_http_proxy_options *proxy_options;
+
+    /**
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -400,6 +425,12 @@ struct aws_credentials_provider_sts_web_identity_options {
      * Required.
      */
     struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
@@ -470,6 +501,12 @@ struct aws_credentials_provider_sso_options {
      */
     struct aws_tls_ctx *tls_ctx;
 
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
     aws_io_clock_fn *system_clock_fn;
@@ -524,6 +561,12 @@ struct aws_credentials_provider_sts_options {
      * (Optional) Http proxy configuration for the AssumeRole http request that fetches credentials
      */
     const struct aws_http_proxy_options *http_proxy_options;
+
+    /**
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 
     /**
      * (Optional)
@@ -628,6 +671,12 @@ struct aws_credentials_provider_chain_default_options {
      * If enabled, the Environment Credentials Provider is not added to the chain.
      */
     bool skip_environment_credentials_provider;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
@@ -722,6 +771,12 @@ struct aws_credentials_provider_cognito_options {
      */
     const struct aws_http_proxy_options *http_proxy_options;
 
+    /**
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
     /* For mocking the http layer in tests, leave NULL otherwise */
     struct aws_auth_http_system_vtable *function_table;
 
@@ -735,6 +790,75 @@ struct aws_credentials_provider_cognito_options {
      * will be a reference to a CRT binding object.
      */
     void *get_token_pairs_user_data;
+};
+
+/*
+ * Configuration options for the AWS login credentials provider.
+ */
+struct aws_credentials_provider_login_options {
+    /*
+     * Optional shutdown callback and user data that is invoked during the shutdown of
+     * a credentials provider to destroy specific data that lives alongside the credenials
+     * provider.
+     */
+    struct aws_credentials_provider_shutdown_options shutdown_options;
+
+    /*
+     * Required
+     * Arn of the AWS login session.
+     */
+    struct aws_byte_cursor login_session;
+
+    /*
+     * Required
+     * Region the AWS login CreateOAuth2Token call
+     */
+    struct aws_byte_cursor login_region;
+
+    /*
+     * Optional.
+     * Directory where the login cache is located. Will use `.aws/login/cache` by default.
+     */
+    struct aws_byte_cursor login_cache_directory_override;
+
+    /*
+     * Override of what profile to use to source credentials from ('default' by default)
+     */
+    struct aws_byte_cursor profile_name_override;
+
+    /*
+     * Override path to the profile config file (~/.aws/config by default)
+     */
+    struct aws_byte_cursor config_file_name_override;
+
+    /*
+     * (Optional)
+     * Use a cached config profile collection. You can also pass a merged collection.
+     * config_file_name_override will be ignored if this option is provided.
+     */
+    struct aws_profile_collection *config_file_cached;
+
+    /*
+     * Connection bootstrap to use for any network connections made while sourcing credentials
+     * Required.
+     */
+    struct aws_client_bootstrap *bootstrap;
+
+    /*
+     * Client TLS context to use when querying the login provider.
+     * Required.
+     */
+    struct aws_tls_ctx *tls_ctx;
+
+    /*
+     * (Optional) Settings propagated down to http connection manager to choose proxy options from environment. Read
+     * aws_http_credentials_provider.h for more information.
+     */
+    const struct proxy_env_var_settings *proxy_ev_settings;
+
+    /* For mocking, leave NULL otherwise */
+    struct aws_auth_http_system_vtable *function_table;
+    aws_io_clock_fn *system_clock_fn;
 };
 
 /**
@@ -837,7 +961,7 @@ struct aws_credentials *aws_credentials_new_from_string(
  * Creates a set of AWS credentials that includes an ECC key pair.  These credentials do not have a value for
  * the secret access key; the ecc key takes over that field's role in sigv4a signing.
  *
- * @param allocator memory allocator to use for all memory allocation
+ * @param allocator memory allocator to use for all memory allocations
  * @param access_key_id access key id for the credential set
  * @param ecc_key ecc key to use during signing when using these credentials
  * @param session_token (optional) session token associated with the credentials
@@ -950,7 +1074,7 @@ bool aws_credentials_is_anonymous(const struct aws_credentials *credentials);
  * of a set of AWS credentials using an internal key derivation specification.  Used to perform sigv4a signing in
  * the hybrid mode based on AWS credentials.
  *
- * @param allocator memory allocator to use for all memory allocation
+ * @param allocator memory allocator to use for all memory allocations
  * @param credentials AWS credentials to derive the ECC key from using the AWS sigv4a key derivation specification
  * @return a new ecc key pair or NULL on failure
  */
@@ -1241,6 +1365,19 @@ AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_cognito_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_cognito_options *options);
+
+/**
+ * Creates a provider that sources credentials from AWS Login.
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_login(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_login_options *options);
 
 /**
  * Creates the default provider chain used by most AWS SDKs.

@@ -1041,7 +1041,9 @@ static struct sts_web_identity_parameters *s_parameters_new(
             s_sts_service_env_name,
             s_sts_service_name,
             config_profile,
-            profile)) {
+            profile,
+            NULL,
+            false)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct sts endpoint with, probably region is missing.");
         goto on_finish;
@@ -1164,6 +1166,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     manager_options.shutdown_complete_callback = s_on_connection_manager_shutdown;
     manager_options.shutdown_complete_user_data = provider;
     manager_options.tls_connection_options = &tls_connection_options;
+    manager_options.proxy_ev_settings = options->proxy_ev_settings;
 
     impl->function_table = options->function_table;
     if (impl->function_table == NULL) {

@@ -9,8 +9,10 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/condition_variable.h>
+#include <aws/common/environment.h>
 #include <aws/common/string.h>
 #include <aws/common/thread.h>
+#include <aws/http/proxy.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
 #include <aws/io/channel_bootstrap.h>
@@ -61,6 +63,8 @@ struct aws_mock_imds_tester {
     bool token_header_exist[IMDS_MAX_REQUESTS];
     bool token_header_expected[IMDS_MAX_REQUESTS];
     bool alternate_closed_connections;
+
+    struct proxy_env_var_settings *proxy_config;
 };
 
 static struct aws_mock_imds_tester s_tester;
@@ -97,6 +101,12 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
 
     (void)allocator;
     (void)options;
+
+    if (s_tester.proxy_config != NULL) {
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
+    }
 
     return (struct aws_http_connection_manager *)1;
 }
@@ -1188,3 +1198,49 @@ static int s_credentials_provider_imds_real_success(struct aws_allocator *alloca
 }
 
 AWS_TEST_CASE(credentials_provider_imds_real_success, s_credentials_provider_imds_real_success);
+
+static int s_credentials_provider_imds_proxy_routing_enabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    struct aws_credentials_provider_imds_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
+    aws_mem_release(provider->allocator, provider);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_imds_proxy_routing_enabled_test,
+    s_credentials_provider_imds_proxy_routing_enabled_test);

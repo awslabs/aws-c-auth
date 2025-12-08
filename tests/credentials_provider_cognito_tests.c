@@ -53,6 +53,8 @@ struct aws_mock_web_credential_provider_tester {
 
     void (*manager_destructor_fn)(void *);
     void *manager_destructor_user_data;
+
+    struct proxy_env_var_settings *proxy_config;
 };
 
 static struct aws_mock_web_credential_provider_tester s_tester;
@@ -63,6 +65,12 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
 
     (void)allocator;
     (void)options;
+
+    if (s_tester.proxy_config != NULL) {
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
+        AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
+    }
 
     s_tester.manager_destructor_fn = options->shutdown_complete_callback;
     s_tester.manager_destructor_user_data = options->shutdown_complete_user_data;
@@ -816,3 +824,41 @@ static int s_credentials_provider_cognito_success_dynamic_token_pairs_fn(struct 
 AWS_TEST_CASE(
     credentials_provider_cognito_success_dynamic_token_pairs,
     s_credentials_provider_cognito_success_dynamic_token_pairs_fn);
+
+static int s_credentials_provider_cognito_proxy_routing_enabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_cognito_tester_init(allocator);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+
+    struct aws_credentials_provider_cognito_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .endpoint = aws_byte_cursor_from_c_str("somewhere.amazonaws.com"),
+        .identity = aws_byte_cursor_from_c_str("someone"),
+        .tls_ctx = s_tester.ctx,
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_cognito(allocator, &options);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_cognito_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_cognito_proxy_routing_enabled_test,
+    s_credentials_provider_cognito_proxy_routing_enabled_test);
