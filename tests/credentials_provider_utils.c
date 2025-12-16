@@ -590,6 +590,9 @@ int aws_credentials_provider_http_mock_tester_init(struct aws_allocator *allocat
     credentials_provider_http_mock_tester.is_connection_acquire_successful = true;
     credentials_provider_http_mock_tester.is_request_successful = true;
 
+    /* cleanup */
+    aws_tls_ctx_options_clean_up(&tls_ctx_options);
+
     return AWS_OP_SUCCESS;
 }
 

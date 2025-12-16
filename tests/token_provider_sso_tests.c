@@ -149,6 +149,9 @@ static int s_aws_mock_token_provider_sso_tester_init(struct aws_allocator *alloc
     };
     s_tester.bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
+    /* cleanup */
+    aws_tls_ctx_options_clean_up(&tls_ctx_options);
+
     return AWS_OP_SUCCESS;
 }
 
