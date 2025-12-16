@@ -335,6 +335,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         .profile_collection_cached = options->profile_collection_cached,
         .duration_seconds = 0,
         .function_table = options->function_table,
+        .proxy_ev_settings = options->proxy_ev_settings,
     };
 
     if (source_profile_property) {
