@@ -66,7 +66,6 @@ static struct aws_credentials_provider *s_aws_credentials_provider_new_ecs_or_im
         struct aws_credentials_provider_imds_options imds_options = {
             .shutdown_options = *shutdown_options,
             .bootstrap = bootstrap,
-            .proxy_ev_settings = proxy_ev_settings,
         };
         return aws_credentials_provider_new_imds(allocator, &imds_options);
     }

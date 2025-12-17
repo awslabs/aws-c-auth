@@ -41,7 +41,6 @@ add_test_case(credentials_provider_imds_insecure_then_secure_success)
 add_test_case(credentials_provider_imds_success_multi_part_role_name)
 add_test_case(credentials_provider_imds_success_multi_part_doc)
 add_test_case(credentials_provider_imds_real_new_destroy)
-add_net_test_case(credentials_provider_imds_proxy_routing_enabled_test)
 
 if(AWS_BUILDING_ON_EC2)
     add_test_case(credentials_provider_imds_real_success)
