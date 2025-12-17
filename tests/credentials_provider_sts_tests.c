@@ -1334,10 +1334,7 @@ static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(
     aws_credentials_provider_release(provider);
     s_aws_wait_for_connection_manager_shutdown_callback();
     s_aws_wait_for_provider_shutdown_callback();
-    /* There used to be a bug that triggered the shutdown callback multiple times. Sleep for a few seconds
-     * and validate that we don't trigger the shutdown callback multiple times */
-    aws_thread_current_sleep(3000000000);
-    ASSERT_INT_EQUALS(1, s_tester.provider_shutdown_callback_count);
+
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;

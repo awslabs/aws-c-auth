@@ -416,6 +416,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
                 .tls_ctx = tls_ctx,
+                .proxy_ev_settings = options->proxy_ev_settings,
             };
             struct aws_credentials_provider *ecs_provider =
                 aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
