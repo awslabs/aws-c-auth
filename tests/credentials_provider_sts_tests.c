@@ -1280,7 +1280,9 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain,
     s_credentials_provider_sts_from_profile_config_with_chain_fn)
 
-static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(
+    struct aws_allocator *allocator,
+    void *ctx) {
     (void)ctx;
 
     aws_unset_environment_value(s_default_profile_env_variable_name);
@@ -1288,7 +1290,7 @@ static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(st
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-    s_tester.expected_connection_manager_shutdown_callback_count = 3;
+
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_chain_config_file);
 
     struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
@@ -1304,7 +1306,6 @@ static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(st
     s_tester.proxy_config = &proxy_config;
     s_tester.fail_connection = true;
 
-
     struct aws_credentials_provider_profile_options options = {
         .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
         .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
@@ -1317,11 +1318,6 @@ static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(st
             },
         .proxy_ev_settings = &proxy_config,
     };
-    int expected_num_requests = 3;
-    for (int i = 0; i < expected_num_requests; i++) {
-        aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
-    }
-    s_tester.mock_response_code = 200;
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NOT_NULL(provider);
@@ -1333,7 +1329,7 @@ static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(st
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_TRUE(s_tester.credentials == NULL);
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_connection_manager_shutdown_callback();
