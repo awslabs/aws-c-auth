@@ -12,7 +12,6 @@
 #include <aws/common/string.h>
 #include <aws/common/uuid.h>
 #include <aws/http/connection.h>
-#include <aws/http/http.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
 #include <aws/sdkutils/aws_profile.h>
