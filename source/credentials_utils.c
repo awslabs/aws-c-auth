@@ -306,7 +306,7 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
                                                : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
 
     // We are removing few error codes a legacy method used to assume as transient errors.
-    // Read PR for more information.
+    // Any retryable error from the http layer is a transient error for auth and other downstream libraries.
     if (aws_http_error_code_is_retryable(error_code)) {
         error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
     }
