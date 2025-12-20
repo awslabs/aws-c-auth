@@ -1290,6 +1290,7 @@ static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
+    s_tester.expected_connection_manager_shutdown_callback_count = 3;
 
     struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_chain_config_file);
 
