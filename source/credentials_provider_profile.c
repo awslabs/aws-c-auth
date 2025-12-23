@@ -380,6 +380,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             struct aws_credentials_provider_imds_options imds_options = {
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
+                .proxy_ev_settings = options->proxy_ev_settings,
             };
 
             struct aws_credentials_provider *imds_provider =
