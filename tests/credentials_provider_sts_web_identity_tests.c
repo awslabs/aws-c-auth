@@ -324,6 +324,9 @@ static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
     s_tester.is_connection_acquire_successful = true;
     s_tester.is_request_successful = true;
 
+    /* cleanup */
+    aws_tls_ctx_options_clean_up(&tls_options);
+
     return AWS_OP_SUCCESS;
 }
 

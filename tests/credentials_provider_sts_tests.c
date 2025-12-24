@@ -1280,6 +1280,70 @@ AWS_TEST_CASE(
     credentials_provider_sts_from_profile_config_with_chain,
     s_credentials_provider_sts_from_profile_config_with_chain_fn)
 
+static int s_credentials_provider_sts_from_profile_config_with_proxy_settings(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    aws_unset_environment_value(s_default_profile_env_variable_name);
+    aws_unset_environment_value(s_default_config_path_env_variable_name);
+    aws_unset_environment_value(s_default_credentials_path_env_variable_name);
+
+    s_aws_sts_tester_init(allocator);
+    s_tester.expected_connection_manager_shutdown_callback_count = 3;
+
+    struct aws_string *config_contents = aws_string_new_from_c_str(allocator, s_source_profile_chain_config_file);
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(creds_file_str, config_contents));
+    aws_string_destroy(config_contents);
+
+    struct proxy_env_var_settings proxy_config = {
+        .env_var_type = AWS_HPEV_ENABLE,
+    };
+
+    s_tester.proxy_config = &proxy_config;
+    s_tester.fail_connection = true;
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .profile_name_override = aws_byte_cursor_from_c_str("roletest"),
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_provider_shutdown,
+            },
+        .proxy_ev_settings = &proxy_config,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_tester.credentials == NULL);
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    s_aws_wait_for_provider_shutdown_callback();
+
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_from_profile_config_with_proxy_settings,
+    s_credentials_provider_sts_from_profile_config_with_proxy_settings)
+
 AWS_STATIC_STRING_FROM_LITERAL(s_ecs_creds_env_relative_uri, "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
 static const char *s_source_credentials_ecs_config_file = "[default]\n"
                                                           "role_arn=arn:aws:iam::67895:role/test_role\n"

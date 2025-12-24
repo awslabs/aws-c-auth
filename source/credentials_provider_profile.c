@@ -335,6 +335,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         .profile_collection_cached = options->profile_collection_cached,
         .duration_seconds = 0,
         .function_table = options->function_table,
+        .proxy_ev_settings = options->proxy_ev_settings,
     };
 
     if (source_profile_property) {
@@ -352,6 +353,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             .profile_collection_cached = merged_profiles,
             .tls_ctx = options->tls_ctx,
             .function_table = options->function_table,
+            .proxy_ev_settings = options->proxy_ev_settings,
         };
         sts_options.creds_provider =
             s_credentials_provider_new_profile_internal(allocator, &profile_provider_options, source_profiles_table);
@@ -378,6 +380,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             struct aws_credentials_provider_imds_options imds_options = {
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
+                .proxy_ev_settings = options->proxy_ev_settings,
             };
 
             struct aws_credentials_provider *imds_provider =
@@ -414,6 +417,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 .bootstrap = options->bootstrap,
                 .function_table = options->function_table,
                 .tls_ctx = tls_ctx,
+                .proxy_ev_settings = options->proxy_ev_settings,
             };
             struct aws_credentials_provider *ecs_provider =
                 aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
