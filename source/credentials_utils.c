@@ -299,22 +299,15 @@ done:
     return credentials;
 }
 
-static bool s_is_transient_network_error(int error_code) {
-    return error_code == AWS_ERROR_HTTP_CONNECTION_CLOSED || error_code == AWS_ERROR_HTTP_SERVER_CLOSED ||
-           error_code == AWS_IO_SOCKET_CLOSED || error_code == AWS_IO_SOCKET_CONNECT_ABORTED ||
-           error_code == AWS_IO_SOCKET_CONNECTION_REFUSED || error_code == AWS_IO_SOCKET_NETWORK_DOWN ||
-           error_code == AWS_IO_DNS_QUERY_FAILED || error_code == AWS_IO_DNS_NO_ADDRESS_FOR_HOST ||
-           error_code == AWS_IO_SOCKET_TIMEOUT || error_code == AWS_IO_TLS_NEGOTIATION_TIMEOUT ||
-           error_code == AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT;
-}
-
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code) {
 
     enum aws_retry_error_type error_type = response_code >= 400 && response_code < 500
                                                ? AWS_RETRY_ERROR_TYPE_CLIENT_ERROR
                                                : AWS_RETRY_ERROR_TYPE_SERVER_ERROR;
 
-    if (s_is_transient_network_error(error_code)) {
+    // We are removing few error codes a legacy method used to assume as transient errors.
+    // Any retryable error from the http layer is a transient error for auth and other downstream libraries.
+    if (aws_http_error_code_is_retryable(error_code)) {
         error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
     }
 
