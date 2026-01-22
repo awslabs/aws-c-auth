@@ -148,10 +148,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
         &impl,
         sizeof(struct aws_credentials_provider_mock_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
@@ -330,10 +326,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
         &impl,
         sizeof(struct aws_credentials_provider_mock_async_impl));
 
-    if (!provider) {
-        return NULL;
-    }
-
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
@@ -458,9 +450,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_null(
     struct aws_credentials_provider_shutdown_options *shutdown_options) {
     struct aws_credentials_provider *provider =
         (struct aws_credentials_provider *)aws_mem_acquire(allocator, sizeof(struct aws_credentials_provider));
-    if (provider == NULL) {
-        return NULL;
-    }
 
     AWS_ZERO_STRUCT(*provider);
 
