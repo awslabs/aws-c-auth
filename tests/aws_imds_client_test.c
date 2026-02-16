@@ -52,6 +52,11 @@ struct aws_mock_imds_client_tester {
     struct aws_byte_buf resource;
 
     int successful_requests;
+
+    /* Endpoint verification fields */
+    struct aws_byte_buf expected_host;
+    uint16_t expected_port;
+    bool verify_endpoint_host;
 };
 
 static struct aws_mock_imds_client_tester s_tester;
@@ -83,7 +88,26 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
     const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
-    (void)options;
+
+    /* Verify endpoint configuration if verification is enabled */
+    if (s_tester.verify_endpoint_host) {
+        struct aws_byte_cursor expected_host_cursor = aws_byte_cursor_from_buf(&s_tester.expected_host);
+        if (!aws_byte_cursor_eq(&options->host, &expected_host_cursor)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_IMDS_CLIENT,
+                "Host mismatch: expected '" PRInSTR "' but got '" PRInSTR "'",
+                AWS_BYTE_CURSOR_PRI(expected_host_cursor),
+                AWS_BYTE_CURSOR_PRI(options->host));
+            /* Fail the test */
+            AWS_FATAL_ASSERT(false);
+        }
+        if (options->port != s_tester.expected_port) {
+            AWS_LOGF_ERROR(
+                AWS_LS_IMDS_CLIENT, "Port mismatch: expected %d but got %d", s_tester.expected_port, options->port);
+            /* Fail the test */
+            AWS_FATAL_ASSERT(false);
+        }
+    }
 
     return (struct aws_http_connection_manager *)1;
 }
@@ -294,6 +318,11 @@ static int s_aws_imds_tester_cleanup(void) {
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_release(s_tester.el_group);
     aws_byte_buf_clean_up(&s_tester.resource);
+
+    /* Clean up endpoint verification buffer if it was used */
+    if (s_tester.expected_host.buffer) {
+        aws_byte_buf_clean_up(&s_tester.expected_host);
+    }
 
     aws_auth_library_clean_up();
 
@@ -1551,3 +1580,156 @@ static int s_imds_client_cache_token_refresh(struct aws_allocator *allocator, vo
     return 0;
 }
 AWS_TEST_CASE(imds_client_cache_token_refresh, s_imds_client_cache_token_refresh);
+
+static int s_imds_client_ipv4_endpoint_mode(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    /* Enable endpoint verification for IPv4 default endpoint */
+    s_tester.verify_endpoint_host = true;
+    aws_byte_buf_init(&s_tester.expected_host, allocator, 20);
+    struct aws_byte_cursor host_cursor = aws_byte_cursor_from_c_str("169.254.169.254");
+    aws_byte_buf_append_dynamic(&s_tester.expected_host, &host_cursor);
+    s_tester.expected_port = 80;
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .imds_endpoint_mode = AWS_IMDS_ENDPOINT_MODE_IPV4,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    ASSERT_NOT_NULL(client);
+
+    aws_imds_client_get_resource_async(
+        client, aws_byte_cursor_from_string(s_expected_imds_resource_uri), s_get_resource_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_resource(2, true /*got resource*/) == 0);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_good_response);
+
+    aws_imds_client_release(client);
+    s_aws_wait_for_imds_client_shutdown_callback();
+    aws_mem_release(allocator, client);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(imds_client_ipv4_endpoint_mode, s_imds_client_ipv4_endpoint_mode);
+
+static int s_imds_client_ipv6_endpoint_mode(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    /* Enable endpoint verification for IPv6 default endpoint */
+    s_tester.verify_endpoint_host = true;
+    aws_byte_buf_init(&s_tester.expected_host, allocator, 20);
+    struct aws_byte_cursor host_cursor = aws_byte_cursor_from_c_str("fd00:ec2::254");
+    aws_byte_buf_append_dynamic(&s_tester.expected_host, &host_cursor);
+    s_tester.expected_port = 80;
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .imds_endpoint_mode = AWS_IMDS_ENDPOINT_MODE_IPV6,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    ASSERT_NOT_NULL(client);
+
+    aws_imds_client_get_resource_async(
+        client, aws_byte_cursor_from_string(s_expected_imds_resource_uri), s_get_resource_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_resource(2, true /*got resource*/) == 0);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_good_response);
+
+    aws_imds_client_release(client);
+    s_aws_wait_for_imds_client_shutdown_callback();
+    aws_mem_release(allocator, client);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(imds_client_ipv6_endpoint_mode, s_imds_client_ipv6_endpoint_mode);
+
+static int s_imds_client_custom_endpoint(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &good_response_cursor);
+
+    /* Enable endpoint verification */
+    s_tester.verify_endpoint_host = true;
+    aws_byte_buf_init(&s_tester.expected_host, allocator, 20);
+    struct aws_byte_cursor host_cursor = aws_byte_cursor_from_c_str("127.0.0.1");
+    aws_byte_buf_append_dynamic(&s_tester.expected_host, &host_cursor);
+    s_tester.expected_port = 8080;
+
+    struct aws_imds_client_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .imds_endpoint = aws_byte_cursor_from_c_str("http://127.0.0.1:8080"),
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
+    ASSERT_NOT_NULL(client);
+
+    aws_imds_client_get_resource_async(
+        client, aws_byte_cursor_from_string(s_expected_imds_resource_uri), s_get_resource_callback, NULL);
+
+    s_aws_wait_for_resource_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_resource(2, true /*got resource*/) == 0);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_byte_cursor_from_buf(&s_tester.resource), s_good_response);
+
+    aws_imds_client_release(client);
+    s_aws_wait_for_imds_client_shutdown_callback();
+    aws_mem_release(allocator, client);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(imds_client_custom_endpoint, s_imds_client_custom_endpoint);

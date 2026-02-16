@@ -14,6 +14,18 @@
 
 AWS_PUSH_SANE_WARNING_LEVEL
 
+/**
+ * IP address mode for IMDS connections
+ */
+enum aws_imds_endpoint_mode {
+    /* Use default behavior (IPv4), or check environment variable if not explicitly set */
+    AWS_IMDS_ENDPOINT_MODE_DEFAULT = 0,
+    /* Explicitly use IPv4 */
+    AWS_IMDS_ENDPOINT_MODE_IPV4,
+    /* Explicitly use IPv6 */
+    AWS_IMDS_ENDPOINT_MODE_IPV6,
+};
+
 typedef void(aws_imds_client_shutdown_completed_fn)(void *user_data);
 
 /**
@@ -60,6 +72,25 @@ struct aws_imds_client_options {
      * If true, fallback from v2 to v1 will be disabled for all cases
      */
     bool ec2_metadata_v1_disabled;
+
+    /*
+     * (Optional) Override the default IMDS endpoint.
+     * If this cursor is empty (ptr == NULL or len == 0), uses the default endpoint "http://169.254.169.254"
+     * Should be a valid URI string. Supports both HTTP and HTTPS schemes:
+     * - HTTP: Uses default port 80 if not specified
+     * - HTTPS: Uses default port 443 if not specified, with automatic TLS configuration
+     * HTTPS connections use default client TLS settings with SNI hostname set automatically.
+     * Example: aws_byte_cursor_from_c_str("http://127.0.0.1:8080")
+     */
+    struct aws_byte_cursor imds_endpoint;
+
+    /*
+     * IP address mode for IMDS connections.
+     * AWS_IMDS_ENDPOINT_MODE_DEFAULT (0) - Use IPv4 or check environment variable
+     * AWS_IMDS_ENDPOINT_MODE_IPV4 - Explicitly use IPv4
+     * AWS_IMDS_ENDPOINT_MODE_IPV6 - Explicitly use IPv6
+     */
+    enum aws_imds_endpoint_mode imds_endpoint_mode;
 
     /*
      * Table holding all cross-system functional dependencies for an imds client.
