@@ -546,7 +546,7 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     if (role_arn_property && (first_profile_in_chain || !profile_contains_credentials)) {
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profiles_table);
-    } else if (process_property) {
+    } else if (process_property && !profile_contains_credentials) {
         provider = s_create_process_based_provider(allocator, profile_name, merged_profiles);
     } else {
         provider = s_create_profile_based_provider(
