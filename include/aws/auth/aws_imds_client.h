@@ -63,7 +63,10 @@ struct aws_imds_client_options {
 
     /*
      * (Optional) Override the default IMDS endpoint.
-     * If this cursor is empty (ptr == NULL or len == 0), uses the default endpoint "http://169.254.169.254"
+     * If this cursor is empty (ptr == NULL or len == 0), the endpoint will be determined by:
+     * 1. AWS_EC2_METADATA_SERVICE_ENDPOINT environment variable (if set)
+     * 2. Default endpoint based on imds_endpoint_mode (IPv4: "http://169.254.169.254", IPv6: "http://[fd00:ec2::254]")
+     *
      * Should be a valid URI string. Supports both HTTP and HTTPS schemes:
      * - HTTP: Uses default port 80 if not specified
      * - HTTPS: Uses default port 443 if not specified, with automatic TLS configuration
@@ -73,8 +76,12 @@ struct aws_imds_client_options {
     struct aws_byte_cursor imds_endpoint;
 
     /*
-     * IP address mode for IMDS connections.
-     * AWS_IMDS_ENDPOINT_MODE_DEFAULT (0) - Use IPv4 or check environment variable
+     * (Optional) IP address mode for IMDS connections.
+     * If set to AWS_IMDS_ENDPOINT_MODE_DEFAULT (0), the mode will be determined by:
+     * 1. AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE environment variable (if set to "IPv4" or "IPv6")
+     * 2. Default mode (IPv4)
+     *
+     * AWS_IMDS_ENDPOINT_MODE_DEFAULT (0) - Use environment variable or default to IPv4
      * AWS_IMDS_ENDPOINT_MODE_IPV4 - Explicitly use IPv4
      * AWS_IMDS_ENDPOINT_MODE_IPV6 - Explicitly use IPv6
      */
