@@ -79,7 +79,7 @@ struct aws_imds_client {
 
     /* endpoint configuration - extracted from URI if override was provided */
     struct aws_string *endpoint_host;
-    uint16_t endpoint_port;
+    uint32_t endpoint_port;
     bool endpoint_uses_tls;
 
     struct aws_atomic_var ref_count;
