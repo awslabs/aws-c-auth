@@ -14,18 +14,6 @@
 
 AWS_PUSH_SANE_WARNING_LEVEL
 
-/**
- * IP address mode for IMDS connections
- */
-enum aws_imds_endpoint_mode {
-    /* Use default behavior (IPv4), or check environment variable if not explicitly set */
-    AWS_IMDS_ENDPOINT_MODE_DEFAULT = 0,
-    /* Explicitly use IPv4 */
-    AWS_IMDS_ENDPOINT_MODE_IPV4,
-    /* Explicitly use IPv6 */
-    AWS_IMDS_ENDPOINT_MODE_IPV6,
-};
-
 typedef void(aws_imds_client_shutdown_completed_fn)(void *user_data);
 
 /**

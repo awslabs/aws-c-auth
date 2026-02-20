@@ -1050,7 +1050,7 @@ static int s_imds_client_real_success(struct aws_allocator *allocator, void *ctx
     struct aws_client_bootstrap *bootstrap = aws_client_bootstrap_new(allocator, &bootstrap_options);
 
     struct aws_imds_client_options options = {
-        .bootstrap = s_tester.bootstrap,
+        .bootstrap = bootstrap,
         .shutdown_options =
             {
                 .shutdown_callback = s_on_shutdown_complete,
