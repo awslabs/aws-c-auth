@@ -37,8 +37,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_imds_host, "169.254.169.254");
 AWS_STATIC_STRING_FROM_LITERAL(s_imds_host_ipv6, "fd00:ec2::254");
 AWS_STATIC_STRING_FROM_LITERAL(s_ec2_metadata_service_endpoint_env, "AWS_EC2_METADATA_SERVICE_ENDPOINT");
 AWS_STATIC_STRING_FROM_LITERAL(s_ec2_metadata_service_endpoint_mode_env, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
-AWS_STATIC_STRING_FROM_LITERAL(s_ec2_metadata_service_endpoint_mode_ipv4, "IPv4");
-AWS_STATIC_STRING_FROM_LITERAL(s_ec2_metadata_service_endpoint_mode_ipv6, "IPv6");
+static struct aws_byte_cursor s_ec2_metadata_service_endpoint_mode_ipv4 = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("IPv4");
+static struct aws_byte_cursor s_ec2_metadata_service_endpoint_mode_ipv6 = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("IPv6");
 
 enum imds_token_state {
     AWS_IMDS_TS_INVALID,
@@ -87,9 +87,8 @@ struct aws_imds_client {
 
 /**
  * Resolve the IMDS endpoint configuration from options and environment variables for the client.
- * Returns AWS_OP_SUCCESS on success, AWS_OP_ERR on failure.
  */
-static int s_resolve_imds_endpoint(
+static void s_resolve_imds_endpoint(
     struct aws_imds_client *client,
     const struct aws_imds_client_options *options,
     enum aws_socket_domain *out_socket_domain) {
@@ -99,7 +98,6 @@ static int s_resolve_imds_endpoint(
     struct aws_uri env_endpoint;
     AWS_ZERO_STRUCT(env_endpoint);
     bool env_endpoint_initialized = false;
-    int result = AWS_OP_ERR;
 
     /* Check environment variables if not explicitly provided in options */
     if (options->imds_endpoint.ptr == NULL || options->imds_endpoint.len == 0) {
@@ -126,11 +124,9 @@ static int s_resolve_imds_endpoint(
             aws_get_env_nonempty(allocator, aws_string_c_str(s_ec2_metadata_service_endpoint_mode_env));
         if (mode_env) {
             struct aws_byte_cursor mode_cursor = aws_byte_cursor_from_string(mode_env);
-            struct aws_byte_cursor ipv6_cursor = aws_byte_cursor_from_string(s_ec2_metadata_service_endpoint_mode_ipv6);
-            struct aws_byte_cursor ipv4_cursor = aws_byte_cursor_from_string(s_ec2_metadata_service_endpoint_mode_ipv4);
-            if (aws_byte_cursor_eq_ignore_case(&mode_cursor, &ipv6_cursor)) {
+            if (aws_byte_cursor_eq_ignore_case(&mode_cursor, &s_ec2_metadata_service_endpoint_mode_ipv6)) {
                 endpoint_mode = AWS_IMDS_ENDPOINT_MODE_IPV6;
-            } else if (aws_byte_cursor_eq_ignore_case(&mode_cursor, &ipv4_cursor)) {
+            } else if (aws_byte_cursor_eq_ignore_case(&mode_cursor, &s_ec2_metadata_service_endpoint_mode_ipv4)) {
                 endpoint_mode = AWS_IMDS_ENDPOINT_MODE_IPV4;
             }
             /* If environment variable is set but not valid, keep DEFAULT (which becomes IPv4) */
@@ -165,28 +161,17 @@ static int s_resolve_imds_endpoint(
     } else {
         /* Use default endpoint (HTTP) - IPv4 or IPv6 based on endpoint mode */
         if (endpoint_mode == AWS_IMDS_ENDPOINT_MODE_IPV6) {
-            client->endpoint_host = aws_string_new_from_string(allocator, s_imds_host_ipv6);
+            client->endpoint_host = aws_string_clone_or_reuse(allocator, s_imds_host_ipv6);
         } else {
-            client->endpoint_host = aws_string_new_from_string(allocator, s_imds_host);
+            client->endpoint_host = aws_string_clone_or_reuse(allocator, s_imds_host);
         }
         client->endpoint_port = 80;
         client->endpoint_uses_tls = false;
     }
-
-    /* Always store a copy of the host in the client as the source of truth */
-    if (!client->endpoint_host) {
-        goto cleanup;
-    }
-
-    result = AWS_OP_SUCCESS;
-
-cleanup:
     /* Clean up environment endpoint if it was initialized */
     if (env_endpoint_initialized) {
         aws_uri_clean_up(&env_endpoint);
     }
-
-    return result;
 }
 
 static void s_aws_imds_client_destroy(struct aws_imds_client *client) {
@@ -276,9 +261,7 @@ struct aws_imds_client *aws_imds_client_new(
     /* Resolve endpoint configuration using helper function */
     enum aws_socket_domain socket_domain;
 
-    if (s_resolve_imds_endpoint(client, options, &socket_domain)) {
-        goto on_error;
-    }
+    s_resolve_imds_endpoint(client, options, &socket_domain);
 
     struct aws_socket_options socket_options;
     AWS_ZERO_STRUCT(socket_options);
