@@ -91,6 +91,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
                 .shutdown_user_data = provider,
             },
         .proxy_ev_settings = options->proxy_ev_settings,
+        .imds_endpoint = options->imds_endpoint,
+        .imds_endpoint_mode = options->imds_endpoint_mode,
     };
 
     impl->client = aws_imds_client_new(allocator, &client_options);
