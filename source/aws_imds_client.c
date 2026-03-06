@@ -287,6 +287,11 @@ struct aws_imds_client *aws_imds_client_new(
 
     /* Initialize TLS if HTTPS is being used */
     if (client->endpoint_uses_tls) {
+#ifdef BYO_CRYPTO
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "TLS IMDS endpoint is not supported.");
+        goto on_error;
+#else
         struct aws_tls_ctx_options tls_ctx_options;
         aws_tls_ctx_options_init_default_client(&tls_ctx_options, allocator);
 
@@ -307,6 +312,7 @@ struct aws_imds_client *aws_imds_client_new(
             AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to set SNI hostname for TLS connection");
             goto on_error;
         }
+#endif /* BYO_CRYPTO */
     }
 
     client->connection_manager = client->function_table->aws_http_connection_manager_new(allocator, &manager_options);
