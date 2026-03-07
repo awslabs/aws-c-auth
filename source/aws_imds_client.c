@@ -196,8 +196,10 @@ static void s_aws_imds_client_destroy(struct aws_imds_client *client) {
 
 static void s_on_connection_manager_shutdown(void *user_data) {
     struct aws_imds_client *client = user_data;
-
-    if (client && client->shutdown_options.shutdown_callback) {
+    if (!client) {
+        return;
+    }
+    if (client->shutdown_options.shutdown_callback) {
         client->shutdown_options.shutdown_callback(client->shutdown_options.shutdown_user_data);
     }
 
