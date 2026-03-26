@@ -62,6 +62,32 @@ struct aws_imds_client_options {
     bool ec2_metadata_v1_disabled;
 
     /*
+     * (Optional) Override the default IMDS endpoint.
+     * If this cursor is empty (ptr == NULL or len == 0), the endpoint will be determined by:
+     * 1. AWS_EC2_METADATA_SERVICE_ENDPOINT environment variable (if set)
+     * 2. Default endpoint based on imds_endpoint_mode (IPv4: "http://169.254.169.254", IPv6: "http://[fd00:ec2::254]")
+     *
+     * Should be a valid URI string. Supports both HTTP and HTTPS schemes:
+     * - HTTP: Uses default port 80 if not specified
+     * - HTTPS: Uses default port 443 if not specified, with automatic TLS configuration
+     * HTTPS connections use default client TLS settings with SNI hostname set automatically.
+     * Example: aws_byte_cursor_from_c_str("http://127.0.0.1:8080")
+     */
+    struct aws_byte_cursor imds_endpoint;
+
+    /*
+     * (Optional) IP address mode for IMDS connections.
+     * If set to AWS_IMDS_ENDPOINT_MODE_DEFAULT (0), the mode will be determined by:
+     * 1. AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE environment variable (if set to "IPv4" or "IPv6")
+     * 2. Default mode (IPv4)
+     *
+     * AWS_IMDS_ENDPOINT_MODE_DEFAULT (0) - Use environment variable or default to IPv4
+     * AWS_IMDS_ENDPOINT_MODE_IPV4 - Explicitly use IPv4
+     * AWS_IMDS_ENDPOINT_MODE_IPV6 - Explicitly use IPv6
+     */
+    enum aws_imds_endpoint_mode imds_endpoint_mode;
+
+    /*
      * Table holding all cross-system functional dependencies for an imds client.
      *
      * For mocking the http layer in tests, leave NULL otherwise

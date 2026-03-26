@@ -65,6 +65,11 @@ struct aws_mock_imds_tester {
     bool alternate_closed_connections;
 
     struct proxy_env_var_settings *proxy_config;
+
+    /* Endpoint verification fields */
+    struct aws_byte_buf expected_host;
+    uint16_t expected_port;
+    bool verify_endpoint_host;
 };
 
 static struct aws_mock_imds_tester s_tester;
@@ -100,7 +105,26 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
     const struct aws_http_connection_manager_options *options) {
 
     (void)allocator;
-    (void)options;
+
+    /* Verify endpoint configuration if verification is enabled */
+    if (s_tester.verify_endpoint_host) {
+        struct aws_byte_cursor expected_host_cursor = aws_byte_cursor_from_buf(&s_tester.expected_host);
+        if (!aws_byte_cursor_eq(&options->host, &expected_host_cursor)) {
+            AWS_LOGF_ERROR(
+                AWS_LS_IMDS_CLIENT,
+                "Host mismatch: expected '" PRInSTR "' but got '" PRInSTR "'",
+                AWS_BYTE_CURSOR_PRI(expected_host_cursor),
+                AWS_BYTE_CURSOR_PRI(options->host));
+            /* Fail the test */
+            AWS_FATAL_ASSERT(false);
+        }
+        if (options->port != s_tester.expected_port) {
+            AWS_LOGF_ERROR(
+                AWS_LS_IMDS_CLIENT, "Port mismatch: expected %d but got %d", s_tester.expected_port, options->port);
+            /* Fail the test */
+            AWS_FATAL_ASSERT(false);
+        }
+    }
 
     if (s_tester.proxy_config != NULL) {
         AWS_FATAL_ASSERT(options->proxy_ev_settings->env_var_type == s_tester.proxy_config->env_var_type);
@@ -312,6 +336,11 @@ static int s_aws_imds_tester_cleanup(void) {
 
     aws_client_bootstrap_release(s_tester.bootstrap);
     aws_event_loop_group_release(s_tester.el_group);
+
+    /* Clean up endpoint verification buffer if it was used */
+    if (s_tester.expected_host.buffer) {
+        aws_byte_buf_clean_up(&s_tester.expected_host);
+    }
 
     aws_auth_library_clean_up();
 
@@ -1244,3 +1273,119 @@ static int s_credentials_provider_imds_proxy_routing_enabled_test(struct aws_all
 AWS_TEST_CASE(
     credentials_provider_imds_proxy_routing_enabled_test,
     s_credentials_provider_imds_proxy_routing_enabled_test);
+
+static int s_credentials_provider_imds_ipv6_endpoint_mode(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
+
+    /* Enable endpoint verification for IPv4 default endpoint */
+    s_tester.verify_endpoint_host = true;
+    aws_byte_buf_init(&s_tester.expected_host, allocator, 20);
+    struct aws_byte_cursor host_cursor = aws_byte_cursor_from_c_str("fd00:ec2::254");
+    aws_byte_buf_append_dynamic(&s_tester.expected_host, &host_cursor);
+    s_tester.expected_port = 80;
+
+    struct aws_credentials_provider_imds_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .imds_endpoint_mode = AWS_IMDS_ENDPOINT_MODE_IPV6,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_creds(3, true /*got creds*/) == 0);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
+    aws_mem_release(provider->allocator, provider);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_imds_ipv6_endpoint_mode, s_credentials_provider_imds_ipv6_endpoint_mode);
+
+static int s_credentials_provider_imds_custom_endpoint(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_imds_tester_init(allocator);
+
+    struct aws_byte_cursor test_token_cursor = aws_byte_cursor_from_string(s_test_imds_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[0], &test_token_cursor);
+
+    struct aws_byte_cursor test_role_cursor = aws_byte_cursor_from_string(s_test_role_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[1], &test_role_cursor);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks[2], &good_response_cursor);
+
+    /* Enable endpoint verification */
+    s_tester.verify_endpoint_host = true;
+    aws_byte_buf_init(&s_tester.expected_host, allocator, 20);
+    struct aws_byte_cursor host_cursor = aws_byte_cursor_from_c_str("127.0.0.1");
+    aws_byte_buf_append_dynamic(&s_tester.expected_host, &host_cursor);
+    s_tester.expected_port = 8080;
+
+    struct aws_credentials_provider_imds_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .imds_endpoint = aws_byte_cursor_from_c_str("http://127.0.0.1:8080"),
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_imds(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_TRUE(s_validate_uri_path_and_creds(3, true /*got creds*/) == 0);
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    /* Because we mock the http connection manager, we never get a callback back from it */
+    struct aws_credentials_provider_imds_impl *impl = provider->impl;
+    aws_mem_release(provider->allocator, impl->client);
+    aws_mem_release(provider->allocator, provider);
+
+    ASSERT_SUCCESS(s_aws_imds_tester_cleanup());
+
+    return 0;
+}
+
+AWS_TEST_CASE(credentials_provider_imds_custom_endpoint, s_credentials_provider_imds_custom_endpoint);
