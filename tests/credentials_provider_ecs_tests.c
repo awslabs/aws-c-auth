@@ -757,6 +757,68 @@ static int s_credentials_provider_ecs_basic_success(struct aws_allocator *alloca
 
 AWS_TEST_CASE(credentials_provider_ecs_basic_success, s_credentials_provider_ecs_basic_success);
 
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_good_response_no_token,
+    "{\"AccessKeyId\":\"SuccessfulAccessKey\", \n  \"SecretAccessKey\":\"SuccessfulSecret\", \n  "
+    "\"Expiration\":\"2020-02-25T06:03:31Z\"}");
+
+static int s_credentials_provider_ecs_basic_success_no_session_token(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_ecs_tester_init(allocator);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response_no_token);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    struct aws_credentials_provider_ecs_options options = {
+        .bootstrap = s_tester.bootstrap,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .host = aws_byte_cursor_from_c_str("www.xxx123321testmocknonexsitingawsservice.com"),
+        .path_and_query = aws_byte_cursor_from_c_str("/path/to/resource/?a=b&c=d"),
+        .auth_token = aws_byte_cursor_from_c_str("test-token-1234-abcd"),
+        .tls_ctx = s_tester.tls_ctx,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_ecs(allocator, &options);
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+    s_aws_wait_for_credentials_result();
+
+    aws_mutex_lock(&s_tester.lock);
+    ASSERT_SUCCESS(s_check_ecs_tester_request_uri_and_authorization(
+        "https://www.xxx123321testmocknonexsitingawsservice.com:443/path/to/resource/?a=b&c=d",
+        "test-token-1234-abcd"));
+    ASSERT_TRUE(s_tester.has_received_credentials_callback == true);
+    ASSERT_TRUE(s_tester.credentials != NULL);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(aws_credentials_get_access_key_id(s_tester.credentials), s_good_access_key_id);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_secret_access_key(s_tester.credentials), s_good_secret_access_key);
+    ASSERT_TRUE(aws_credentials_get_session_token(s_tester.credentials).len == 0);
+
+    struct aws_date_time expiration;
+    struct aws_byte_cursor date_cursor = aws_byte_cursor_from_string(s_good_response_expiration);
+    aws_date_time_init_from_str_cursor(&expiration, &date_cursor, AWS_DATE_FORMAT_ISO_8601);
+    ASSERT_TRUE(
+        aws_credentials_get_expiration_timepoint_seconds(s_tester.credentials) == (uint64_t)expiration.timestamp);
+    aws_mutex_unlock(&s_tester.lock);
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+    aws_mem_release(provider->allocator, provider);
+
+    s_aws_ecs_tester_cleanup();
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_ecs_basic_success_no_session_token,
+    s_credentials_provider_ecs_basic_success_no_session_token);
+
 static int s_credentials_provider_ecs_basic_success_with_account_id(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
