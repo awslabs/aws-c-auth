@@ -134,10 +134,7 @@ static int s_profile_file_credentials_provider_get_credentials_async(
 
     int error_code = AWS_ERROR_SUCCESS;
     if (credentials == NULL) {
-        error_code = aws_last_error();
-        if (error_code == AWS_ERROR_SUCCESS) {
-            error_code = AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE;
-        }
+        error_code = AWS_AUTH_CREDENTIALS_PROVIDER_PROFILE_SOURCE_FAILURE;
     }
 
     if (error_code == AWS_ERROR_SUCCESS) {
