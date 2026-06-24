@@ -1277,7 +1277,7 @@ static void s_process_credentials_resource(const struct aws_byte_buf *resource, 
         .secret_access_key_name = "SecretAccessKey",
         .token_name = "Token",
         .expiration_name = "Expiration",
-        .token_required = true,
+        .token_required = false,
         .expiration_required = true,
     };
 
