@@ -486,7 +486,8 @@ done:
  *   4. Profile: web identity token (web_identity_token_file)
  *   5. Profile: SSO (not yet supported from profile provider)
  *   6. Profile: legacy SSO (not yet supported from profile provider)
- *   7. Profile: process (credential_process)
+ *   7. Profile: login (not yet supported from profile provider)
+ *   8. Profile: process (credential_process)
  */
 static struct aws_credentials_provider *s_credentials_provider_new_profile_internal(
     struct aws_allocator *allocator,
@@ -594,6 +595,9 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
         provider = s_create_sts_based_provider(
             allocator, role_arn_property, profile, options, merged_profiles, source_profiles_table);
     } else if (process_property && !profile_contains_credentials) {
+        /* TODO: SSO (priority 9), legacy SSO (priority 10), and login (priority 11) credentials providers
+         * are not yet supported within the profile credentials provider. They should be resolved here
+         * before falling through to credential_process (priority 12) per the credentials-provider-chain SEP. */
         provider = s_create_process_based_provider(allocator, profile_name, merged_profiles);
     } else {
         provider = s_create_profile_based_provider(
