@@ -29,6 +29,7 @@ AWS_STRING_FROM_LITERAL(s_source_profile_name, "source_profile");
 AWS_STRING_FROM_LITERAL(s_access_key_id_profile_var, "aws_access_key_id");
 AWS_STRING_FROM_LITERAL(s_secret_access_key_profile_var, "aws_secret_access_key");
 AWS_STATIC_STRING_FROM_LITERAL(s_credentials_process, "credential_process");
+AWS_STATIC_STRING_FROM_LITERAL(s_web_identity_token_file_name, "web_identity_token_file");
 
 static struct aws_byte_cursor s_default_session_name_pfx =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("aws-common-runtime-profile-config");
@@ -431,6 +432,32 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 "static: invalid credential_source property: %s",
                 aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
             aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        }
+    } else {
+        /*
+         * Neither source_profile nor credential_source is set.
+         * Check if web_identity_token_file is available as the credential source.
+         */
+        const struct aws_profile_property *web_identity_token_file_property =
+            aws_profile_get_property(profile, s_web_identity_token_file_name);
+
+        if (web_identity_token_file_property) {
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "static: profile %s has role_arn and web_identity_token_file, attempting to create an STS web identity "
+                "credentials provider.",
+                aws_string_c_str(aws_profile_get_name(profile)));
+
+            struct aws_credentials_provider_sts_web_identity_options web_identity_options = {
+                .bootstrap = options->bootstrap,
+                .tls_ctx = tls_ctx,
+                .function_table = options->function_table,
+                .proxy_ev_settings = options->proxy_ev_settings,
+                .config_profile_collection_cached = merged_profiles,
+                .profile_name_override = aws_byte_cursor_from_string(aws_profile_get_name(profile)),
+                .shutdown_options = options->shutdown_options,
+            };
+            provider = aws_credentials_provider_new_sts_web_identity(allocator, &web_identity_options);
         }
     }
 done:

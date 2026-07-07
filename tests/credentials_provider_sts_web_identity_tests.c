@@ -1387,3 +1387,96 @@ static int s_credentials_provider_sts_web_identity_proxy_routing_enabled_test(
 AWS_TEST_CASE(
     credentials_provider_sts_web_identity_proxy_routing_enabled_test,
     s_credentials_provider_sts_web_identity_proxy_routing_enabled_test);
+
+/*
+ * aws_credentials_provider_new_profile should support web_identity_token_file
+ * in a profile's configuration (without source_profile or credential_source).
+ *
+ * This is the same scenario as basic_success_config above, but exercises the
+ * code path through the profile provider rather than calling
+ * aws_credentials_provider_new_sts_web_identity directly.
+ *
+ * Config:
+ *   [profile foo]
+ *   region = us-west-2
+ *   role_arn = arn:aws:iam::3333333333:role/test-arn
+ *   role_session_name = 4444444444
+ *   web_identity_token_file = <path>
+ *
+ * Expected: profile provider detects web_identity_token_file, creates an STS
+ *           web identity provider internally, and returns credentials.
+ */
+static int s_credentials_provider_profile_with_web_identity_config(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+
+    /* Create a real token file on disk */
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(token_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
+
+    /* Build config file content with the token file path */
+    struct aws_byte_buf content_buf;
+    struct aws_byte_buf existing_content =
+        aws_byte_buf_from_c_str(aws_string_c_str(s_sts_web_identity_config_file_contents));
+    aws_byte_buf_init_copy(&content_buf, allocator, &existing_content);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_string(token_file_path_str);
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
+    aws_string_destroy(token_file_path_str);
+
+    struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
+    ASSERT_TRUE(config_file_contents != NULL);
+    aws_byte_buf_clean_up(&content_buf);
+
+    /* Write config file and set environment to point to it */
+    struct aws_string *config_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_TRUE(config_file_path_str != NULL);
+    ASSERT_TRUE(aws_create_profile_file(config_file_path_str, config_file_contents) == AWS_OP_SUCCESS);
+    aws_string_destroy(config_file_contents);
+
+    /* Push the mock response for AssumeRoleWithWebIdentity */
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &good_response_cursor);
+
+    /* Use aws_credentials_provider_new_profile instead of aws_credentials_provider_new_sts_web_identity */
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_path_str),
+        .profile_name_override = aws_byte_cursor_from_c_str("foo"),
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(
+        s_verify_credentials(true /*request made*/, true /*from config*/, true /*get creds*/, 1 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_string_destroy(config_file_path_str);
+    s_aws_sts_web_identity_tester_cleanup();
+
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_profile_with_web_identity_config,
+    s_credentials_provider_profile_with_web_identity_config);
