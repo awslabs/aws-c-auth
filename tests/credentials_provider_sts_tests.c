@@ -210,7 +210,6 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     const struct aws_http_make_request_options *options) {
 
     (void)client_connection;
-    (void)options;
     struct aws_mock_http_request *mocked_request = &s_tester.mocked_requests[s_tester.num_request++];
     AWS_ZERO_STRUCT(*mocked_request);
     struct aws_byte_cursor path;
@@ -252,18 +251,15 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
         aws_byte_buf_init(&mocked_request->body, s_tester.allocator, (size_t)body_len);
         aws_input_stream_read(input_stream, &mocked_request->body);
     }
-    bool fail_request = false;
 
     if (s_tester.fail_operations) {
-        fail_request = true;
         s_tester.fail_operations--;
         mocked_request->response_code = s_tester.mock_failure_code;
     } else {
         mocked_request->response_code = s_tester.mock_response_code;
     }
-    s_invoke_mock_request_callbacks(options, !fail_request);
 
-    return (struct aws_http_stream *)1;
+    return (struct aws_http_stream *)options;
 }
 
 static int s_aws_http_stream_get_incoming_response_status_mock(
@@ -277,7 +273,9 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
 }
 
 static int s_aws_http_stream_activate_mock(struct aws_http_stream *stream) {
-    (void)stream;
+    struct aws_http_make_request_options *options = (struct aws_http_make_request_options *)stream;
+    bool fail_request = s_tester.fail_operations;
+    s_invoke_mock_request_callbacks(options, !fail_request);
     return AWS_OP_SUCCESS;
 }
 
