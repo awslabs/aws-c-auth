@@ -2294,14 +2294,14 @@ AWS_TEST_CASE(
  * Expected: provider construction succeeds (two-hop chain: web_identity -> STS assume -> STS assume).
  */
 static const char *s_source_profile_web_identity_config_file =
+    "[profile default]\n"
+    "role_arn=arn:aws:iam::111122223333:role/customer-role\n"
+    "source_profile=irsa-hop1\n"
+    "\n"
     "[profile irsa-hop1]\n"
     "role_arn=arn:aws:iam::111122223333:role/intermediary-role\n"
     "region=us-east-1\n"
-    "web_identity_token_file=WEB_IDENTITY_TOKEN_FILE_PATH\n"
-    "\n"
-    "[profile default]\n"
-    "role_arn=arn:aws:iam::111122223333:role/customer-role\n"
-    "source_profile=irsa-hop1\n";
+    "web_identity_token_file=";
 
 static int s_credentials_provider_sts_from_profile_config_with_web_identity_source_fn(
     struct aws_allocator *allocator,
@@ -2313,39 +2313,23 @@ static int s_credentials_provider_sts_from_profile_config_with_web_identity_sour
     aws_unset_environment_value(s_default_credentials_path_env_variable_name);
 
     s_aws_sts_tester_init(allocator);
-    /* Two STS assume-role hops expected when the bug is fixed:
-     * hop 1: web_identity -> STS AssumeRoleWithWebIdentity (for irsa-hop1)
-     * hop 2: STS AssumeRole with creds from hop 1 (for default) */
     s_tester.expected_connection_manager_shutdown_callback_count = 2;
 
-    /* Create a fake token file that the web identity provider would read */
+    /* Create a fake token file */
     struct aws_string *token_file_path = aws_create_process_unique_file_name(allocator);
     struct aws_string *token_contents = aws_string_new_from_c_str(allocator, "fake-oidc-token-12345");
     ASSERT_SUCCESS(aws_create_profile_file(token_file_path, token_contents));
     aws_string_destroy(token_contents);
 
-    /* Build config contents with the real token file path */
+    /* Build config: static prefix + token_file_path + newline */
     struct aws_byte_buf config_buf;
     aws_byte_buf_init(&config_buf, allocator, 512);
-    struct aws_byte_cursor template_cur = aws_byte_cursor_from_c_str(s_source_profile_web_identity_config_file);
-    struct aws_byte_cursor placeholder = aws_byte_cursor_from_c_str("WEB_IDENTITY_TOKEN_FILE_PATH");
-
-    /* Find and replace placeholder with actual token path */
-    const uint8_t *found =
-        (const uint8_t *)strstr(s_source_profile_web_identity_config_file, "WEB_IDENTITY_TOKEN_FILE_PATH");
-    size_t prefix_len = (size_t)(found - (const uint8_t *)s_source_profile_web_identity_config_file);
-
-    struct aws_byte_cursor prefix = {.ptr = template_cur.ptr, .len = prefix_len};
-    aws_byte_buf_append_dynamic(&config_buf, &prefix);
-
-    struct aws_byte_cursor token_path_cur = aws_byte_cursor_from_string(token_file_path);
-    aws_byte_buf_append_dynamic(&config_buf, &token_path_cur);
-
-    struct aws_byte_cursor suffix = {
-        .ptr = template_cur.ptr + prefix_len + placeholder.len,
-        .len = template_cur.len - prefix_len - placeholder.len,
-    };
-    aws_byte_buf_append_dynamic(&config_buf, &suffix);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_c_str(s_source_profile_web_identity_config_file);
+    ASSERT_SUCCESS(aws_byte_buf_append_dynamic(&config_buf, &cursor));
+    cursor = aws_byte_cursor_from_string(token_file_path);
+    ASSERT_SUCCESS(aws_byte_buf_append_dynamic(&config_buf, &cursor));
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_SUCCESS(aws_byte_buf_append_dynamic(&config_buf, &cursor));
 
     struct aws_string *config_contents = aws_string_new_from_array(allocator, config_buf.buffer, config_buf.len);
     aws_byte_buf_clean_up(&config_buf);
@@ -2400,10 +2384,6 @@ static int s_credentials_provider_sts_from_profile_config_with_web_identity_sour
     struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
     ASSERT_NOT_NULL(provider);
 
-    aws_string_destroy(token_file_path);
-    aws_string_destroy(config_file_str);
-    aws_string_destroy(creds_file_str);
-
     aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
 
     s_aws_wait_for_credentials_result();
@@ -2413,6 +2393,13 @@ static int s_credentials_provider_sts_from_profile_config_with_web_identity_sour
     aws_credentials_provider_release(provider);
     s_aws_wait_for_connection_manager_shutdown_callback();
     s_aws_wait_for_provider_shutdown_callback();
+
+    aws_file_delete(token_file_path);
+    aws_file_delete(config_file_str);
+
+    aws_string_destroy(token_file_path);
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
     ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
 
     return AWS_OP_SUCCESS;

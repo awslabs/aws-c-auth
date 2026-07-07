@@ -1427,7 +1427,6 @@ static int s_credentials_provider_profile_with_web_identity_config(struct aws_al
     ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
     cursor = aws_byte_cursor_from_c_str("\n");
     ASSERT_TRUE(aws_byte_buf_append_dynamic(&content_buf, &cursor) == AWS_OP_SUCCESS);
-    aws_string_destroy(token_file_path_str);
 
     struct aws_string *config_file_contents = aws_string_new_from_array(allocator, content_buf.buffer, content_buf.len);
     ASSERT_TRUE(config_file_contents != NULL);
@@ -1472,7 +1471,10 @@ static int s_credentials_provider_profile_with_web_identity_config(struct aws_al
 
     s_aws_wait_for_provider_shutdown_callback();
 
+    aws_file_delete(config_file_path_str);
+    aws_file_delete(token_file_path_str);
     aws_string_destroy(config_file_path_str);
+    aws_string_destroy(token_file_path_str);
     s_aws_sts_web_identity_tester_cleanup();
 
     return 0;

@@ -241,7 +241,18 @@ static struct aws_credentials_provider *s_credentials_provider_new_profile_inter
     const struct aws_credentials_provider_profile_options *options,
     struct aws_hash_table *source_profiles_table);
 
-/* use the selected property that specifies a role_arn to load an STS based provider. */
+/*
+ * Create a credentials provider for a profile that has role_arn set.
+ *
+ * The credential source for the assume-role operation is resolved in the following
+ * priority order:
+ *
+ *   2. Profile: assume role with source_profile
+ *   3. Profile: assume role with credential_source (Ec2InstanceMetadata, Environment, EcsContainer)
+ *   4. Profile: web identity token (web_identity_token_file)
+ *
+ * If none of these are present, the function returns NULL.
+ */
 static struct aws_credentials_provider *s_create_sts_based_provider(
     struct aws_allocator *allocator,
     const struct aws_profile_property *role_arn_property,
@@ -465,6 +476,18 @@ done:
     return provider;
 }
 
+/*
+ * Resolve credentials from a profile. The credential source is determined by the following
+ * priority order:
+ *
+ *   1. Profile: static credentials (aws_access_key_id / aws_secret_access_key)
+ *   2. Profile: assume role with source_profile
+ *   3. Profile: assume role with credential_source
+ *   4. Profile: web identity token (web_identity_token_file)
+ *   5. Profile: SSO (not yet supported from profile provider)
+ *   6. Profile: legacy SSO (not yet supported from profile provider)
+ *   7. Profile: process (credential_process)
+ */
 static struct aws_credentials_provider *s_credentials_provider_new_profile_internal(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_profile_options *options,
