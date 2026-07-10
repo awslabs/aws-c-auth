@@ -274,6 +274,8 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         aws_profile_get_property(profile, s_source_profile_name);
     const struct aws_profile_property *credential_source_property =
         aws_profile_get_property(profile, s_credential_source_name);
+    const struct aws_profile_property *web_identity_token_file_property =
+        aws_profile_get_property(profile, s_web_identity_token_file_name);
 
     /* role_session_name */
     const struct aws_profile_property *role_session_name = aws_profile_get_property(profile, s_role_session_name_name);
@@ -444,32 +446,27 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
                 aws_string_c_str(aws_profile_property_get_value(credential_source_property)));
             aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
         }
-    } else {
+    } else if (web_identity_token_file_property) {
         /*
          * Neither source_profile nor credential_source is set.
          * Check if web_identity_token_file is available as the credential source.
          */
-        const struct aws_profile_property *web_identity_token_file_property =
-            aws_profile_get_property(profile, s_web_identity_token_file_name);
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "static: profile %s has role_arn and web_identity_token_file, attempting to create an STS web identity "
+            "credentials provider.",
+            aws_string_c_str(aws_profile_get_name(profile)));
 
-        if (web_identity_token_file_property) {
-            AWS_LOGF_INFO(
-                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-                "static: profile %s has role_arn and web_identity_token_file, attempting to create an STS web identity "
-                "credentials provider.",
-                aws_string_c_str(aws_profile_get_name(profile)));
-
-            struct aws_credentials_provider_sts_web_identity_options web_identity_options = {
-                .bootstrap = options->bootstrap,
-                .tls_ctx = tls_ctx,
-                .function_table = options->function_table,
-                .proxy_ev_settings = options->proxy_ev_settings,
-                .config_profile_collection_cached = merged_profiles,
-                .profile_name_override = aws_byte_cursor_from_string(aws_profile_get_name(profile)),
-                .shutdown_options = options->shutdown_options,
-            };
-            provider = aws_credentials_provider_new_sts_web_identity(allocator, &web_identity_options);
-        }
+        struct aws_credentials_provider_sts_web_identity_options web_identity_options = {
+            .bootstrap = options->bootstrap,
+            .tls_ctx = tls_ctx,
+            .function_table = options->function_table,
+            .proxy_ev_settings = options->proxy_ev_settings,
+            .config_profile_collection_cached = merged_profiles,
+            .profile_name_override = aws_byte_cursor_from_string(aws_profile_get_name(profile)),
+            .shutdown_options = options->shutdown_options,
+        };
+        provider = aws_credentials_provider_new_sts_web_identity(allocator, &web_identity_options);
     }
 done:
     aws_tls_ctx_release(tls_ctx);
