@@ -78,9 +78,8 @@ static void s_on_connection_manager_shutdown_complete(void *user_data) {
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.mocked_connection_manager_shutdown_callback_count++;
-    aws_mutex_unlock(&s_tester.lock);
-
     aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
 }
 
 static bool s_has_tester_received_connection_manager_shutdown_callback(void *user_data) {
@@ -102,9 +101,8 @@ static void s_on_provider_shutdown(void *user_data) {
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.provider_shutdown_callback_count++;
-    aws_mutex_unlock(&s_tester.lock);
-
     aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
 }
 
 static bool s_has_tester_received_provider_shutdown_callback(void *user_data) {

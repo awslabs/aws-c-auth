@@ -91,9 +91,8 @@ static void s_on_shutdown_complete(void *user_data) {
 
     aws_mutex_lock(&s_shutdown_checker.lock);
     s_shutdown_checker.is_shutdown_complete = true;
-    aws_mutex_unlock(&s_shutdown_checker.lock);
-
     aws_condition_variable_notify_one(&s_shutdown_checker.signal);
+    aws_mutex_unlock(&s_shutdown_checker.lock);
 }
 
 static bool s_has_tester_received_shutdown_callback(void *user_data) {
