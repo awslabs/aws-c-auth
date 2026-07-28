@@ -30,9 +30,8 @@ static void s_on_shutdown_complete(void *user_data) {
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.has_received_shutdown_callback = true;
-    aws_mutex_unlock(&s_tester.lock);
-
     aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
 }
 
 static bool s_has_tester_received_shutdown_callback(void *user_data) {
