@@ -1339,7 +1339,7 @@ static int s_parse_iam_profile(struct aws_json_value *document_root, struct aws_
     }
 
     if (last_updated_cursor.len == 0 || profile_arn_cursor.len == 0 || profile_id_cursor.len == 0) {
-        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Parsed an unexpected Json document fro iam profile.");
+        AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Parsed an unexpected Json document for iam profile.");
         goto done;
     }
 

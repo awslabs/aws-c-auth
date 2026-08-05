@@ -17,7 +17,7 @@
 struct aws_login_token;
 
 /*
- * A refresh response retuned by the aws sign in service when the operation CreateOAuth2Token is called successfully.
+ * A refresh response returned by the aws sign in service when the operation CreateOAuth2Token is called successfully.
  * This response will contain valid AWS sigv4 credentials alongside a refresh token that can be used in further calls
  * to the service to refresh the credentials again. Owns a pointer to serialized_token that all byte cursors point to.
  * an owned token needs to be destroyed with aws_login_token_destroy when leaving scope.
