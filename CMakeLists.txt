@@ -54,6 +54,7 @@ aws_check_headers(${PROJECT_NAME} ${AWS_AUTH_ROOT_HEADERS})
 aws_add_sanitizers(${PROJECT_NAME})
 
 # We are not ABI stable yet
+# TODO: switch to VERSION derived from the VERSION file (via aws_get_version) once SOVERSION is set explicitly, to avoid changing the SONAME.
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION 1.0.0)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE -DCJSON_HIDE_SYMBOLS)
