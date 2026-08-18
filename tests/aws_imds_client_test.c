@@ -1456,7 +1456,7 @@ static int s_assert_get_credentials_info(const struct aws_credentials *creds) {
     return 0;
 }
 
-static void s_get_credentails_callback(const struct aws_credentials *creds, int error_code, void *user_data) {
+static void s_get_credentials_callback(const struct aws_credentials *creds, int error_code, void *user_data) {
     (void)user_data;
     (void)error_code;
     aws_mutex_lock(&s_tester.lock);
@@ -1487,7 +1487,7 @@ static int s_imds_client_get_credentials_success(struct aws_allocator *allocator
     };
 
     struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
-    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentials_callback, NULL);
 
     s_aws_wait_for_resource_result();
 
@@ -1544,7 +1544,7 @@ static int s_imds_client_cache_token_refresh(struct aws_allocator *allocator, vo
 
     struct aws_imds_client *client = aws_imds_client_new(allocator, &options);
     /* 1. request a resource */
-    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentials_callback, NULL);
     s_aws_wait_for_resource_result();
     /* Currently have 2 requests, one to get the token, the other to fetch resource */
     ASSERT_UINT_EQUALS(2, s_tester.current_request);
@@ -1552,7 +1552,7 @@ static int s_imds_client_cache_token_refresh(struct aws_allocator *allocator, vo
 
     /* 2. Request another resource without change the timestamp. So that the cached token should be used */
     s_tester.has_received_resource_callback = false;
-    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentials_callback, NULL);
     s_aws_wait_for_resource_result();
     /* Currently have 3 requests, only one more to fetch the resource as the cached token being used. */
     ASSERT_UINT_EQUALS(3, s_tester.current_request);
@@ -1562,7 +1562,7 @@ static int s_imds_client_cache_token_refresh(struct aws_allocator *allocator, vo
      * token should be expired, and will fetch another token. */
     s_tester.has_received_resource_callback = false;
     s_tester.timestamp = aws_timestamp_convert(21600, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
-    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentails_callback, NULL);
+    aws_imds_client_get_credentials(client, aws_byte_cursor_from_c_str("test_role"), s_get_credentials_callback, NULL);
     s_aws_wait_for_resource_result();
     /* Currently have 3 requests, only one more to fetch the resource as the cached token being used. */
     ASSERT_UINT_EQUALS(5, s_tester.current_request);

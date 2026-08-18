@@ -38,7 +38,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_secret_buffer_prefix, "AWS4A");
 
 /*
  * This constructs the fixed input byte sequence of the Sigv4a key derivation specification.  It also includes the
- * value (0x01 as a 32-bit big endian value) that is pre-pended to the fixed input before invoking the hmac to
+ * value (0x01 as a 32-bit big endian value) that is prepended to the fixed input before invoking the hmac to
  * generate the candidate key value.
  *
  * The final output looks like
@@ -117,7 +117,7 @@ static int s_aws_build_fixed_input_buffer(
  *  Intuitively these ideas match the standard way of comparing magnitude equality by considering digit count and
  *  digits from most significant to least significant.
  *
- *  Let l and r be the the two digits that we are
+ *  Let l and r be the two digits that we are
  *  comparing between lhs and rhs.  Assume 0 <= l, r <= 255 seated in 32-bit integers
  *
  *  gt is maintained by the following bit trick:

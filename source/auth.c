@@ -129,7 +129,7 @@ static struct aws_error_info s_errors[] = {
         "Failed to create a Login token from the cached token on disk"),
         AWS_DEFINE_ERROR_INFO_AUTH(
     AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED,
-        "The cached Login token is expired and we cannot complete a calll"),
+        "The cached Login token is expired and we cannot complete a call"),
         AWS_DEFINE_ERROR_INFO_AUTH(
     AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_INVALID_PEM,
         "The PEM stored in the cached token file is not valid"),
