@@ -507,6 +507,10 @@ error:
 static void s_start_make_request(
     struct aws_credentials_provider *provider,
     struct sts_creds_provider_user_data *provider_user_data) {
+    if (!provider_user_data) {
+        goto error;
+    }
+
     provider_user_data->message = aws_http_message_new_request(provider->allocator);
     struct aws_credentials_provider_sts_impl *impl = provider->impl;
 
@@ -601,12 +605,10 @@ error:
     AWS_LOGF_ERROR(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "(id=%p): error occurred while creating an http request for signing: %s",
-        (void *)provider_user_data->provider,
+        provider_user_data ? (void *)provider_user_data->provider : NULL,
         aws_error_debug_str(aws_last_error()));
     if (provider_user_data) {
         s_clean_up_user_data(provider_user_data);
-    } else {
-        provider_user_data->callback(NULL, provider_user_data->error_code, provider_user_data->user_data);
     }
 }
 
