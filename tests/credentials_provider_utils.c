@@ -614,9 +614,8 @@ void aws_credentials_provider_http_mock_on_shutdown_complete(void *user_data) {
     (void)user_data;
     aws_mutex_lock(&credentials_provider_http_mock_tester.lock);
     credentials_provider_http_mock_tester.has_received_shutdown_callback = true;
-    aws_mutex_unlock(&credentials_provider_http_mock_tester.lock);
-
     aws_condition_variable_notify_one(&credentials_provider_http_mock_tester.signal);
+    aws_mutex_unlock(&credentials_provider_http_mock_tester.lock);
 }
 
 bool aws_credentials_provider_http_mock_has_received_shutdown_callback(void *user_data) {

@@ -190,7 +190,7 @@ static void s_ecs_finalize_get_credentials_query(struct aws_credentials_provider
         .token_name = "Token",
         .account_id_name = "AccountId",
         .expiration_name = "Expiration",
-        .token_required = true,
+        .token_required = false,
         .expiration_required = true,
     };
     if (aws_byte_buf_append_null_terminator(&ecs_user_data->current_result) == AWS_OP_SUCCESS) {

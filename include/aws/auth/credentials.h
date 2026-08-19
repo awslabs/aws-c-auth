@@ -433,7 +433,7 @@ struct aws_credentials_provider_x509_options {
  * identity provider like Elastic Kubernetes Service
  * https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html
  * The required parameters used in the request (region, roleArn, sessionName, tokenFilePath) are automatically resolved
- * by SDK from envrionment variables or config file if not set.
+ * by SDK from environment variables or config file if not set.
  ---------------------------------------------------------------------------------
  | Parameter           | Environment Variable Name    | Config File Property Name |
  ----------------------------------------------------------------------------------

@@ -94,7 +94,7 @@ AWS_STRING_FROM_LITERAL(s_sso_region_name, "sso_region");
 AWS_STRING_FROM_LITERAL(s_sso_start_url_name, "sso_start_url");
 
 /**
- * Parses the config file to validate and construct a token path. A valid profile with sso session is as follow
+ * Parses the config file to validate and construct a token path. A valid profile with sso session is as follows
  * [profile sso-profile]
  *   sso_session = dev
  *   sso_account_id = 012345678901

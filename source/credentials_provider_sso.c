@@ -55,7 +55,7 @@ static void s_parameters_destroy(void *parameters) {
 /**
  * Read the config file and construct profile or sso_session token provider based on sso_session property.
  *
- * If the profile contains sso_session property, a valid config example is as follow.
+ * If the profile contains sso_session property, a valid config example is as follows.
  * [profile sso-profile]
  *   sso_session = dev
  *   sso_account_id = 012345678901
@@ -65,7 +65,7 @@ static void s_parameters_destroy(void *parameters) {
  *   sso_region = us-east-1
  *   sso_start_url = https://d-abc123.awsapps.com/start
  *
- * If the profile does't contains sso_session, the legacy valid config example is as follow.
+ * If the profile doesn't contain sso_session, the legacy valid config example is as follows.
  * [profile sso-profile]
  *  sso_account_id = 012345678901
  *  sso_region = us-east-1

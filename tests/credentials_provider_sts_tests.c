@@ -78,9 +78,8 @@ static void s_on_connection_manager_shutdown_complete(void *user_data) {
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.mocked_connection_manager_shutdown_callback_count++;
-    aws_mutex_unlock(&s_tester.lock);
-
     aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
 }
 
 static bool s_has_tester_received_connection_manager_shutdown_callback(void *user_data) {
@@ -102,9 +101,8 @@ static void s_on_provider_shutdown(void *user_data) {
 
     aws_mutex_lock(&s_tester.lock);
     s_tester.provider_shutdown_callback_count++;
-    aws_mutex_unlock(&s_tester.lock);
-
     aws_condition_variable_notify_one(&s_tester.signal);
+    aws_mutex_unlock(&s_tester.lock);
 }
 
 static bool s_has_tester_received_provider_shutdown_callback(void *user_data) {
@@ -210,7 +208,6 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     const struct aws_http_make_request_options *options) {
 
     (void)client_connection;
-    (void)options;
     struct aws_mock_http_request *mocked_request = &s_tester.mocked_requests[s_tester.num_request++];
     AWS_ZERO_STRUCT(*mocked_request);
     struct aws_byte_cursor path;
@@ -252,18 +249,15 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
         aws_byte_buf_init(&mocked_request->body, s_tester.allocator, (size_t)body_len);
         aws_input_stream_read(input_stream, &mocked_request->body);
     }
-    bool fail_request = false;
 
     if (s_tester.fail_operations) {
-        fail_request = true;
         s_tester.fail_operations--;
         mocked_request->response_code = s_tester.mock_failure_code;
     } else {
         mocked_request->response_code = s_tester.mock_response_code;
     }
-    s_invoke_mock_request_callbacks(options, !fail_request);
 
-    return (struct aws_http_stream *)1;
+    return (struct aws_http_stream *)options;
 }
 
 static int s_aws_http_stream_get_incoming_response_status_mock(
@@ -277,7 +271,9 @@ static int s_aws_http_stream_get_incoming_response_status_mock(
 }
 
 static int s_aws_http_stream_activate_mock(struct aws_http_stream *stream) {
-    (void)stream;
+    struct aws_http_make_request_options *options = (struct aws_http_make_request_options *)stream;
+    bool fail_request = s_tester.fail_operations;
+    s_invoke_mock_request_callbacks(options, !fail_request);
     return AWS_OP_SUCCESS;
 }
 
@@ -2278,3 +2274,132 @@ static int s_credentials_provider_sts_proxy_routing_enabled_test(struct aws_allo
 AWS_TEST_CASE(
     credentials_provider_sts_proxy_routing_enabled_test,
     s_credentials_provider_sts_proxy_routing_enabled_test)
+
+/*
+ * Profile chaining with web_identity_token_file in source_profile fails.
+ *
+ * Config:
+ *   [default]
+ *   role_arn = <customer-role>
+ *   source_profile = irsa-hop1
+ *
+ *   [irsa-hop1]
+ *   role_arn = <intermediary-role>
+ *   web_identity_token_file = /path/to/token
+ *
+ * Expected: provider construction succeeds (two-hop chain: web_identity -> STS assume -> STS assume).
+ */
+static const char *s_source_profile_web_identity_config_file =
+    "[profile default]\n"
+    "role_arn=arn:aws:iam::111122223333:role/customer-role\n"
+    "source_profile=irsa-hop1\n"
+    "\n"
+    "[profile irsa-hop1]\n"
+    "role_arn=arn:aws:iam::111122223333:role/intermediary-role\n"
+    "region=us-east-1\n"
+    "web_identity_token_file=";
+
+static int s_credentials_provider_sts_from_profile_config_with_web_identity_source_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    aws_unset_environment_value(s_default_profile_env_variable_name);
+    aws_unset_environment_value(s_default_config_path_env_variable_name);
+    aws_unset_environment_value(s_default_credentials_path_env_variable_name);
+
+    s_aws_sts_tester_init(allocator);
+    s_tester.expected_connection_manager_shutdown_callback_count = 2;
+
+    /* Create a fake token file */
+    struct aws_string *token_file_path = aws_create_process_unique_file_name(allocator);
+    struct aws_string *token_contents = aws_string_new_from_c_str(allocator, "fake-oidc-token-12345");
+    ASSERT_SUCCESS(aws_create_profile_file(token_file_path, token_contents));
+    aws_string_destroy(token_contents);
+
+    /* Build config: static prefix + token_file_path + newline */
+    struct aws_byte_buf config_buf;
+    aws_byte_buf_init(&config_buf, allocator, 512);
+    struct aws_byte_cursor cursor = aws_byte_cursor_from_c_str(s_source_profile_web_identity_config_file);
+    ASSERT_SUCCESS(aws_byte_buf_append_dynamic(&config_buf, &cursor));
+    cursor = aws_byte_cursor_from_string(token_file_path);
+    ASSERT_SUCCESS(aws_byte_buf_append_dynamic(&config_buf, &cursor));
+    cursor = aws_byte_cursor_from_c_str("\n");
+    ASSERT_SUCCESS(aws_byte_buf_append_dynamic(&config_buf, &cursor));
+
+    struct aws_string *config_contents = aws_string_new_from_array(allocator, config_buf.buffer, config_buf.len);
+    aws_byte_buf_clean_up(&config_buf);
+
+    struct aws_string *config_file_str = aws_create_process_unique_file_name(allocator);
+    struct aws_string *creds_file_str = aws_create_process_unique_file_name(allocator);
+
+    ASSERT_SUCCESS(aws_create_profile_file(config_file_str, config_contents));
+    aws_string_destroy(config_contents);
+
+    struct aws_credentials_provider_profile_options options = {
+        .config_file_name_override = aws_byte_cursor_from_string(config_file_str),
+        .credentials_file_name_override = aws_byte_cursor_from_string(creds_file_str),
+        .profile_name_override = aws_byte_cursor_from_c_str("default"),
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_provider_shutdown,
+            },
+    };
+
+    /* Push response data for the two STS calls:
+     * 1st: AssumeRoleWithWebIdentity response (for irsa-hop1's web identity provider)
+     * 2nd: AssumeRole response (for default's STS provider) */
+    static struct aws_byte_cursor s_web_identity_response_doc =
+        AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("<AssumeRoleWithWebIdentityResponse>"
+                                              "    <AssumeRoleWithWebIdentityResult>"
+                                              "        <AssumedRoleUser>"
+                                              "            <Arn>arn:aws:sts::123456789012:assumed-role/role/app</Arn>"
+                                              "            <AssumedRoleId>AROA:app</AssumedRoleId>"
+                                              "        </AssumedRoleUser>"
+                                              "        <Credentials>"
+                                              "            <AccessKeyId>accessKey12345</AccessKeyId>"
+                                              "            <SecretAccessKey>secretKey12345</SecretAccessKey>"
+                                              "            <SessionToken>sessionToken123456789</SessionToken>"
+                                              "            <Expiration>2099-01-01T00:00:00Z</Expiration>"
+                                              "        </Credentials>"
+                                              "    </AssumeRoleWithWebIdentityResult>"
+                                              "</AssumeRoleWithWebIdentityResponse>");
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_web_identity_response_doc);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+    s_tester.mock_response_code = 200;
+
+    /*
+     * With the fix in place, the profile provider detects web_identity_token_file in irsa-hop1
+     * and creates an STS web identity provider. The chain is:
+     *   1. AssumeRoleWithWebIdentity (using the token file) for irsa-hop1's role_arn
+     *   2. AssumeRole (using creds from step 1) for default's role_arn
+     */
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_profile(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    s_aws_wait_for_provider_shutdown_callback();
+
+    aws_file_delete(token_file_path);
+    aws_file_delete(config_file_str);
+
+    aws_string_destroy(token_file_path);
+    aws_string_destroy(config_file_str);
+    aws_string_destroy(creds_file_str);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_from_profile_config_with_web_identity_source,
+    s_credentials_provider_sts_from_profile_config_with_web_identity_source_fn)

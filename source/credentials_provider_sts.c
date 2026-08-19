@@ -905,7 +905,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     aws_credentials_provider_acquire(impl->provider);
 
     /*
-     * Construct a regional endpoint if we can resolve region from envrionment variable or the config file. Otherwise,
+     * Construct a regional endpoint if we can resolve region from environment variable or the config file. Otherwise,
      * use the global endpoint.
      */
     s_resolve_endpoint(allocator, options, &impl->endpoint, &impl->region);

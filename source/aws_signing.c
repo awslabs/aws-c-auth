@@ -205,7 +205,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
         return AWS_OP_ERR;
     }
 
-    // Only forbit this header if the signing algorithm is AWS_SIGNING_ALGORITHM_V4_S3EXPRESS
+    // Only forbid this header if the signing algorithm is AWS_SIGNING_ALGORITHM_V4_S3EXPRESS
     s_amz_s3session_token_header_name = aws_byte_cursor_from_string(g_aws_signing_s3session_token_name);
 
     if (aws_hash_table_init(
@@ -602,7 +602,7 @@ static int s_append_canonical_path(const struct aws_uri *uri, struct aws_signing
         struct aws_byte_cursor path_cursor;
 
         /*
-         * We need to transform the the normalized path, so we can't just append it into the canonical
+         * We need to transform the normalized path, so we can't just append it into the canonical
          * request.  Instead we append it into a temporary buffer and perform the transformation from
          * it.
          *
@@ -1364,7 +1364,7 @@ static int s_build_canonical_stable_header_list(
     } else if (
         state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
         aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
-        /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
+        /* NOTES: TEMPORARY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
         /* Add unsigned payload as `x-amz-content-sha256` header to the canonical request when signing through query
          * params.  */
         if (s_add_authorization_header(
@@ -1548,7 +1548,7 @@ static int s_build_canonical_payload(struct aws_signing_state_aws *state) {
     int result = AWS_OP_ERR;
     if (state->config.signature_type == AWS_ST_HTTP_REQUEST_QUERY_PARAMS &&
         aws_byte_cursor_eq_c_str(&state->config.service, "vpc-lattice-svcs")) {
-        /* NOTES: TEMPORAY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
+        /* NOTES: TEMPORARY WORKAROUND FOR VPC Lattice. SHALL BE REMOVED IN NEAR FUTURE */
         /* ALWAYS USE UNSIGNED-PAYLOAD FOR VPC Lattice.  */
         if (aws_byte_buf_append_dynamic(payload_hash_buffer, &g_aws_signed_body_value_unsigned_payload) ==
             AWS_OP_SUCCESS) {
