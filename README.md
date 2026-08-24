@@ -5,6 +5,12 @@ C99 library implementation of AWS client-side authentication: standard credentia
 From a cryptographic perspective, only functions with the suffix "_constant_time" should be considered constant
 time.
 
+## Versioning
+
+This library uses a three-part `Major.Minor.Patch` version scheme. See
+[VERSIONING.md](VERSIONING.md) for what each part means and our API/ABI
+stability policy.
+
 ## License
 
 This library is licensed under the Apache 2.0 License.
