@@ -2265,7 +2265,7 @@ static int s_compute_sigv4_signing_key(struct aws_signing_state_aws *state, stru
 
 cleanup:
     aws_byte_buf_clean_up_secure(&secret_key);
-    aws_byte_buf_clean_up(&output);
+    aws_byte_buf_clean_up_secure(&output);
     aws_byte_buf_clean_up(&date_buf);
 
     return result;
@@ -2308,7 +2308,7 @@ static int s_calculate_sigv4_signature_value(struct aws_signing_state_aws *state
 
 cleanup:
 
-    aws_byte_buf_clean_up(&key);
+    aws_byte_buf_clean_up_secure(&key);
     aws_byte_buf_clean_up(&digest);
 
     return result;
