@@ -112,7 +112,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             allocator,
             10,
             aws_hash_byte_cursor_ptr_ignore_case,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            aws_byte_cursor_eq_ignore_case_cb,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
@@ -168,7 +168,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             allocator,
             10,
             aws_hash_byte_cursor_ptr_ignore_case,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            aws_byte_cursor_eq_ignore_case_cb,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
@@ -207,7 +207,7 @@ int aws_signing_init_signing_tables(struct aws_allocator *allocator) {
             allocator,
             10,
             aws_hash_byte_cursor_ptr_ignore_case,
-            (aws_hash_callback_eq_fn *)aws_byte_cursor_eq_ignore_case,
+            aws_byte_cursor_eq_ignore_case_cb,
             NULL,
             NULL)) {
         return AWS_OP_ERR;
