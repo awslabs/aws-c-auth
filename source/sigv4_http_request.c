@@ -117,8 +117,8 @@ done:
 
     aws_array_list_clean_up(&query_params);
 
-    aws_uri_clean_up(&new_uri);
-    aws_uri_clean_up(&old_uri);
+    aws_uri_clean_up_secure(&new_uri);
+    aws_uri_clean_up_secure(&old_uri);
 
     return result;
 }
