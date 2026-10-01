@@ -120,16 +120,16 @@ static void s_reset_request_specific_data(struct sts_creds_provider_user_data *u
 
     aws_byte_buf_clean_up(&user_data->output_buf);
 
-    aws_string_destroy(user_data->access_key_id);
+    aws_string_destroy_secure(user_data->access_key_id);
     user_data->access_key_id = NULL;
 
     aws_string_destroy_secure(user_data->secret_access_key);
     user_data->secret_access_key = NULL;
 
-    aws_string_destroy(user_data->session_token);
+    aws_string_destroy_secure(user_data->session_token);
     user_data->session_token = NULL;
 
-    aws_string_destroy(user_data->account_id);
+    aws_string_destroy_secure(user_data->account_id);
     user_data->account_id = NULL;
 }
 static void s_clean_up_user_data(struct sts_creds_provider_user_data *user_data) {
