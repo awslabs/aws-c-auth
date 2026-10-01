@@ -90,7 +90,7 @@ static void s_user_data_reset_request_and_response(struct sts_web_identity_user_
     aws_http_message_destroy(user_data->request);
     user_data->request = NULL;
 
-    aws_string_destroy(user_data->access_key_id);
+    aws_string_destroy_secure(user_data->access_key_id);
     user_data->access_key_id = NULL;
 
     aws_string_destroy_secure(user_data->secret_access_key);
@@ -99,7 +99,7 @@ static void s_user_data_reset_request_and_response(struct sts_web_identity_user_
     aws_string_destroy_secure(user_data->session_token);
     user_data->session_token = NULL;
 
-    aws_string_destroy(user_data->account_id);
+    aws_string_destroy_secure(user_data->account_id);
     user_data->account_id = NULL;
 }
 
@@ -117,7 +117,7 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     s_user_data_reset_request_and_response(user_data);
     aws_byte_buf_clean_up(&user_data->response);
 
-    aws_string_destroy(user_data->access_key_id);
+    aws_string_destroy_secure(user_data->access_key_id);
     aws_string_destroy_secure(user_data->secret_access_key);
     aws_string_destroy_secure(user_data->session_token);
 

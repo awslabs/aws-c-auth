@@ -63,10 +63,10 @@ static int s_credentials_provider_environment_get_credentials_async(
     callback(credentials, error_code, user_data);
 
     aws_credentials_release(credentials);
-    aws_string_destroy(account_id);
-    aws_string_destroy(session_token);
+    aws_string_destroy_secure(account_id);
+    aws_string_destroy_secure(session_token);
     aws_string_destroy_secure(secret_access_key);
-    aws_string_destroy(access_key_id);
+    aws_string_destroy_secure(access_key_id);
 
     return AWS_OP_SUCCESS;
 }
