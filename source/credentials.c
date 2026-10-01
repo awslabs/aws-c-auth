@@ -188,13 +188,13 @@ static void s_aws_credentials_destroy(struct aws_credentials *credentials) {
     }
     switch (credentials->identity_type) {
         case AWS_CREDENTIALS_IDENTITY:
-            aws_string_destroy(credentials->identity.credentials_identity.access_key_id);
+            aws_string_destroy_secure(credentials->identity.credentials_identity.access_key_id);
             aws_string_destroy_secure(credentials->identity.credentials_identity.secret_access_key);
             aws_string_destroy_secure(credentials->identity.credentials_identity.session_token);
             aws_string_destroy_secure(credentials->identity.credentials_identity.account_id);
             break;
         case ECC_IDENTITY:
-            aws_string_destroy(credentials->identity.ecc_identity.access_key_id);
+            aws_string_destroy_secure(credentials->identity.ecc_identity.access_key_id);
             aws_string_destroy_secure(credentials->identity.ecc_identity.session_token);
             aws_ecc_key_pair_release(credentials->identity.ecc_identity.ecc_key);
             break;
