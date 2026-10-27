@@ -97,6 +97,16 @@ int aws_login_token_get_dpop_header(
     struct aws_byte_buf *header_value);
 
 /*
+ * Reads the signInRegion recorded in a cached login token, which names the region the refresh token was issued in.
+ * Returns NULL if the file cannot be read or the field is absent or empty. The token's other fields are not validated,
+ * so this also works for a token whose credentials have expired.
+ */
+AWS_AUTH_API
+struct aws_string *aws_login_token_read_sign_in_region(
+    struct aws_allocator *allocator,
+    const struct aws_byte_buf *file_path);
+
+/*
  * Constructs a path to a login cached credential i.e.
  *
  * ~/.aws/login/cache/${SHA_256_OF_LOGIN_SESSION}.json
