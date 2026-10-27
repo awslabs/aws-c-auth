@@ -10,6 +10,7 @@
 
 #include <aws/common/clock.h>
 #include <aws/common/environment.h>
+#include <aws/common/json.h>
 #include <aws/http/status_code.h>
 
 AWS_STATIC_STRING_FROM_LITERAL(s_login_profile, "login");
@@ -704,6 +705,192 @@ static int s_credentials_provider_login_basic_success(struct aws_allocator *allo
     return 0;
 }
 AWS_TEST_CASE(credentials_provider_login_basic_success, s_credentials_provider_login_basic_success);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_login_token_with_unmodeled_fields,
+    "{\"accessToken\":{\"accessKeyId\":\"shinji\",\"secretAccessKey\":\"rei\",\"sessionToken\":\"asuka\",\"accountId\":"
+    "\"123456789012\",\"expiresAt\":\"3000-09-13T00:00:00Z\",\"unmodeledNested\":\"Misato\"},\"tokenType\":\"urn:aws:"
+    "params:oauth:token-type:access_token_sigv4\",\"clientId\":\"arn:aws:signin:::devtools/"
+    "same-device\",\"refreshToken\":\"Kaworu\",\"idToken\":\"toji\",\"signInRegion\":\"eu-west-1\",\"dpopKey\":\"-----"
+    "BEGIN EC PRIVATE KEY-----\nMHcCAQEEIBDOA9C+wyEeYZYLa9fPAzzZLi43suMHc7GqUSD2wP9VoAoGCCqGSM49\nAwEHoUQDQgAE8p+"
+    "kv53xQZSVnOvFFQZgYXafB8IQXc0boBiNwruEaIzNEi5/7m0I\nP8t5hwdP1bEyoLcHx9sIDcPy8W9str/Kow==\n-----END EC PRIVATE "
+    "KEY-----\n\"}");
+
+static int s_assert_string_member(const struct aws_json_value *object, const char *key, const char *expected) {
+    struct aws_json_value *member = aws_json_value_get_from_object_c_str(object, key);
+    ASSERT_NOT_NULL(member);
+    struct aws_byte_cursor value;
+    ASSERT_SUCCESS(aws_json_value_get_string(member, &value));
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(value, expected);
+    return AWS_OP_SUCCESS;
+}
+
+typedef int(written_token_check_fn)(const struct aws_json_value *written);
+
+/* Refreshes the given cached token through the provider, then checks the token file it wrote back. */
+static int s_refresh_and_check_token_file(
+    struct aws_allocator *allocator,
+    const struct aws_string *cached_token,
+    struct aws_byte_cursor login_region,
+    written_token_check_fn *check) {
+
+    aws_credentials_provider_http_mock_tester_init(allocator);
+
+    struct aws_string *tmp_home;
+    ASSERT_SUCCESS(aws_create_random_home_directory(allocator, &tmp_home));
+
+    struct aws_byte_buf token_path;
+    AWS_ZERO_STRUCT(token_path);
+    aws_login_token_construct_token_path(allocator, s_login_session, tmp_home, &token_path);
+    struct aws_string *token_path_string = aws_string_new_from_buf(allocator, &token_path);
+    ASSERT_SUCCESS(aws_create_directory_components(allocator, token_path_string));
+    ASSERT_SUCCESS(aws_create_profile_file(token_path_string, cached_token));
+
+    s_aws_credentials_provider_login_test_init_config_profile(allocator, s_login_config_contents);
+
+    struct aws_byte_cursor good_response_cursor = aws_byte_cursor_from_string(s_good_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &good_response_cursor);
+
+    mock_aws_set_system_time(0);
+    struct aws_credentials_provider_login_options options = {
+        .bootstrap = credentials_provider_http_mock_tester.bootstrap,
+        .tls_ctx = credentials_provider_http_mock_tester.tls_ctx,
+        .function_table = &aws_credentials_provider_http_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = aws_credentials_provider_http_mock_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+        .system_clock_fn = mock_aws_get_system_time,
+        .login_cache_directory_override = aws_byte_cursor_from_string(tmp_home),
+        .login_region = login_region,
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_login(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+
+    aws_credentials_provider_get_credentials(
+        provider, aws_credentials_provider_http_mock_get_credentials_callback, NULL);
+    aws_credentials_provider_http_mock_wait_for_credentials_result();
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, true /*get creds*/, 1 /*expected attempts*/));
+
+    aws_credentials_provider_release(provider);
+    aws_credentials_provider_http_mock_wait_for_shutdown_callback();
+
+    struct aws_byte_buf contents;
+    ASSERT_SUCCESS(aws_byte_buf_init_from_file(&contents, allocator, aws_string_c_str(token_path_string)));
+    struct aws_json_value *written = aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&contents));
+    ASSERT_NOT_NULL(written);
+    ASSERT_SUCCESS(check(written));
+
+    aws_json_value_destroy(written);
+    aws_byte_buf_clean_up(&contents);
+    aws_credentials_provider_http_mock_tester_cleanup();
+    aws_directory_delete(tmp_home, true);
+    aws_string_destroy(tmp_home);
+    aws_byte_buf_clean_up(&token_path);
+    aws_string_destroy(token_path_string);
+    return AWS_OP_SUCCESS;
+}
+
+static int s_check_unmodeled_fields_preserved(const struct aws_json_value *written) {
+    /* fields this library does not model survive the rewrite, and refreshed fields are not overwritten by them */
+    ASSERT_SUCCESS(s_assert_string_member(written, "signInRegion", "eu-west-1"));
+    ASSERT_SUCCESS(s_assert_string_member(written, "refreshToken", "Kensuke"));
+    struct aws_json_value *access_token = aws_json_value_get_from_object_c_str(written, "accessToken");
+    ASSERT_NOT_NULL(access_token);
+    ASSERT_SUCCESS(s_assert_string_member(access_token, "unmodeledNested", "Misato"));
+    ASSERT_SUCCESS(s_assert_string_member(access_token, "accessKeyId", "Ritsuko"));
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_login_refresh_preserves_unmodeled_fields(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    return s_refresh_and_check_token_file(
+        allocator,
+        s_login_token_with_unmodeled_fields,
+        (struct aws_byte_cursor){0},
+        s_check_unmodeled_fields_preserved);
+}
+AWS_TEST_CASE(
+    credentials_provider_login_refresh_preserves_unmodeled_fields,
+    s_credentials_provider_login_refresh_preserves_unmodeled_fields);
+
+static int s_check_sign_in_region_not_added(const struct aws_json_value *written) {
+    ASSERT_FALSE(aws_json_value_has_key_c_str(written, "signInRegion"));
+    ASSERT_SUCCESS(s_assert_string_member(written, "refreshToken", "Kensuke"));
+    return AWS_OP_SUCCESS;
+}
+
+static int s_credentials_provider_login_refresh_does_not_add_sign_in_region(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+    return s_refresh_and_check_token_file(
+        allocator, s_login_token_good, (struct aws_byte_cursor){0}, s_check_sign_in_region_not_added);
+}
+AWS_TEST_CASE(
+    credentials_provider_login_refresh_does_not_add_sign_in_region,
+    s_credentials_provider_login_refresh_does_not_add_sign_in_region);
+
+static int s_check_host(const char *expected) {
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected,
+        strlen(expected),
+        credentials_provider_http_mock_tester.endpoint_host.buffer,
+        credentials_provider_http_mock_tester.endpoint_host.len);
+    return AWS_OP_SUCCESS;
+}
+
+static int s_check_host_eu_west_1(const struct aws_json_value *written) {
+    (void)written;
+    return s_check_host("eu-west-1.signin.aws.amazon.com");
+}
+
+static int s_check_host_us_west_2(const struct aws_json_value *written) {
+    (void)written;
+    return s_check_host("us-west-2.signin.aws.amazon.com");
+}
+
+static int s_check_host_us_east_1(const struct aws_json_value *written) {
+    (void)written;
+    return s_check_host("us-east-1.signin.aws.amazon.com");
+}
+
+static int s_credentials_provider_login_refresh_uses_sign_in_region(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    /* the token's region wins over both the configured option and the profile */
+    return s_refresh_and_check_token_file(
+        allocator,
+        s_login_token_with_unmodeled_fields,
+        aws_byte_cursor_from_c_str("us-west-2"),
+        s_check_host_eu_west_1);
+}
+AWS_TEST_CASE(
+    credentials_provider_login_refresh_uses_sign_in_region,
+    s_credentials_provider_login_refresh_uses_sign_in_region);
+
+static int s_credentials_provider_login_refresh_falls_back_to_option_region(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+    return s_refresh_and_check_token_file(
+        allocator, s_login_token_good, aws_byte_cursor_from_c_str("us-west-2"), s_check_host_us_west_2);
+}
+AWS_TEST_CASE(
+    credentials_provider_login_refresh_falls_back_to_option_region,
+    s_credentials_provider_login_refresh_falls_back_to_option_region);
+
+static int s_credentials_provider_login_refresh_falls_back_to_profile_region(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+    return s_refresh_and_check_token_file(
+        allocator, s_login_token_good, (struct aws_byte_cursor){0}, s_check_host_us_east_1);
+}
+AWS_TEST_CASE(
+    credentials_provider_login_refresh_falls_back_to_profile_region,
+    s_credentials_provider_login_refresh_falls_back_to_profile_region);
 
 static int s_credentials_provider_login_basic_success_after_failure(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
