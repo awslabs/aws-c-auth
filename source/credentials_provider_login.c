@@ -105,22 +105,6 @@ static struct login_parameters *s_parameters_new(
         goto on_finish;
     }
 
-    if (options->login_region.len > 0) {
-        parameters->login_region = aws_string_new_from_cursor(allocator, &options->login_region);
-    } else {
-        const struct aws_profile_property *login_region = aws_profile_get_property(profile, s_login_region);
-        if (login_region) {
-            parameters->login_region =
-                aws_string_new_from_string(allocator, aws_profile_property_get_value(login_region));
-        }
-    }
-
-    if (!parameters->login_region) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login: region is missing");
-        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_REGION_MISSING);
-        goto on_finish;
-    }
-
     if (options->login_cache_directory_override.len > 0) {
         parameters->login_directory_override =
             aws_string_new_from_cursor(allocator, &options->login_cache_directory_override);
@@ -130,14 +114,44 @@ static struct login_parameters *s_parameters_new(
         }
     }
 
+    /*
+     * Refresh tokens are regional, so prefer the region the cached token was issued in. Fall back to the configured
+     * region for tokens that do not record one.
+     */
+    struct aws_byte_buf token_path;
+    AWS_ZERO_STRUCT(token_path);
+    if (aws_login_token_construct_token_path(
+            allocator, parameters->login_session, parameters->login_directory_override, &token_path) ==
+        AWS_OP_SUCCESS) {
+        parameters->login_region = aws_login_token_read_sign_in_region(allocator, &token_path);
+    }
+    aws_byte_buf_clean_up(&token_path);
+
+    if (!parameters->login_region) {
+        if (options->login_region.len > 0) {
+            parameters->login_region = aws_string_new_from_cursor(allocator, &options->login_region);
+        } else {
+            const struct aws_profile_property *login_region = aws_profile_get_property(profile, s_login_region);
+            if (login_region) {
+                parameters->login_region =
+                    aws_string_new_from_string(allocator, aws_profile_property_get_value(login_region));
+            }
+        }
+    }
+
+    if (!parameters->login_region) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login: region is missing");
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_REGION_MISSING);
+        goto on_finish;
+    }
+
     const struct aws_byte_cursor suffix_override = aws_byte_cursor_from_c_str("aws.amazon.com");
-    struct aws_string *region = aws_string_new_from_cursor(allocator, &options->login_region);
 
     /* determine endpoint */
     if (aws_credentials_provider_construct_endpoint(
             allocator,
             &parameters->endpoint,
-            region,
+            parameters->login_region,
             s_login_service_host_prefix,
             s_login_service_env_name,
             s_login_service_name,
@@ -146,13 +160,11 @@ static struct login_parameters *s_parameters_new(
             &suffix_override,
             true)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "Failed to construct login endpoint");
-        aws_string_destroy(region);
         goto on_finish;
     }
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
         "Successfully loaded all required parameters for login credentials provider.");
-    aws_string_destroy(region);
     success = true;
 
 on_finish:
