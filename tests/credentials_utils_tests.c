@@ -29,6 +29,13 @@ static int s_credentials_utils_construct_endpoint_test(struct aws_allocator *all
     aws_string_destroy(endpoint);
     aws_string_destroy(region);
 
+    region = aws_string_new_from_c_str(allocator, "eusc-de-east-1");
+    ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
+        allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL, NULL, false));
+    ASSERT_STR_EQUALS("sts.eusc-de-east-1.amazonaws.eu", aws_string_c_str(endpoint));
+    aws_string_destroy(endpoint);
+    aws_string_destroy(region);
+
     region = aws_string_new_from_c_str(allocator, "us-iso-east-1");
     ASSERT_SUCCESS(aws_credentials_provider_construct_endpoint(
         allocator, &endpoint, region, service_name, service_name, service_name, NULL, NULL, NULL, false));
