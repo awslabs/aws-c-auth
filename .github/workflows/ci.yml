@@ -144,7 +144,11 @@ jobs:
         python .\aws-c-auth\build\deps\aws-c-common\scripts\appverifier_ctest.py --build_directory .\aws-c-auth\build\aws-c-auth
 
   macos:
-    runs-on: macos-15 # latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-latest]
     steps:
     - uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -157,7 +161,11 @@ jobs:
         ./builder build -p ${{ env.PACKAGE_NAME }}
 
   macos-x64:
-    runs-on: macos-15-large # latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15-large, macos-latest-large]
     steps:
     - uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -170,7 +178,11 @@ jobs:
         ./builder build -p ${{ env.PACKAGE_NAME }} --cmake-extra=-DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON
 
   macos-s2n:
-    runs-on: macos-15 # latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-latest]
     env:
       AWS_CRT_USE_NON_FIPS_TLS_13: 1
     steps:
@@ -185,7 +197,11 @@ jobs:
         ./builder build -p ${{ env.PACKAGE_NAME }}
 
   macos-x64-s2n:
-    runs-on: macos-15-large # latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15-large, macos-latest-large]
     env:
       AWS_CRT_USE_NON_FIPS_TLS_13: 1
     steps:
