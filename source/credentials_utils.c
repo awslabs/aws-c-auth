@@ -363,6 +363,10 @@ static struct aws_byte_cursor s_aws_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_L
 static struct aws_byte_cursor s_cn_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("cn-");
 static struct aws_byte_cursor s_aws_cn_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.com.cn");
 
+/* AWS EUSC */
+static struct aws_byte_cursor s_eusc_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("eusc-");
+static struct aws_byte_cursor s_aws_eusc_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("amazonaws.eu");
+
 /* AWS ISO */
 static struct aws_byte_cursor s_iso_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-iso-");
 static struct aws_byte_cursor s_aws_iso_dns_suffix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("c2s.ic.gov");
@@ -520,6 +524,10 @@ int aws_credentials_provider_construct_endpoint(
         }
     } else if (aws_byte_cursor_starts_with(&region_cur, &s_cn_region_prefix)) { /* AWS CN partition */
         if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_cn_dns_suffix)) {
+            goto on_error;
+        }
+    } else if (aws_byte_cursor_starts_with(&region_cur, &s_eusc_region_prefix)) { /* AWS EUSC partition */
+        if (aws_byte_buf_append_dynamic(&endpoint, &s_aws_eusc_dns_suffix)) {
             goto on_error;
         }
     } else if (aws_byte_cursor_starts_with(&region_cur, &s_iso_region_prefix)) { /* AWS ISO partition */
