@@ -604,6 +604,7 @@ void aws_credentials_provider_http_mock_tester_cleanup(void) {
     aws_array_list_clean_up(&credentials_provider_http_mock_tester.response_data_callbacks);
     aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_path);
     aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.request_body);
+    aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.endpoint_host);
     aws_condition_variable_clean_up(&credentials_provider_http_mock_tester.signal);
     aws_mutex_clean_up(&credentials_provider_http_mock_tester.lock);
     aws_credentials_release(credentials_provider_http_mock_tester.credentials);
@@ -648,6 +649,8 @@ struct aws_http_connection_manager *aws_credentials_provider_http_mock_connectio
     mock_manager->allocator = allocator;
     mock_manager->shutdown_complete_callback = options->shutdown_complete_callback;
     mock_manager->shutdown_complete_user_data = options->shutdown_complete_user_data;
+    aws_byte_buf_clean_up(&credentials_provider_http_mock_tester.endpoint_host);
+    aws_byte_buf_init_copy_from_cursor(&credentials_provider_http_mock_tester.endpoint_host, allocator, options->host);
     return (struct aws_http_connection_manager *)mock_manager;
 }
 
