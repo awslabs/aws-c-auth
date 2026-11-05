@@ -216,6 +216,13 @@ struct aws_login_token *aws_login_token_new_from_file(struct aws_allocator *allo
     AWS_ZERO_STRUCT(file_contents_buf);
     struct aws_string *file_path_str = aws_string_new_from_buf(allocator, file_path);
     if (aws_byte_buf_init_from_file(&file_contents_buf, allocator, aws_string_c_str(file_path_str))) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "login token: failed to load token file %s with error %s",
+            aws_string_c_str(file_path_str),
+            aws_error_debug_str(aws_last_error()));
+        /* A missing or unreadable cached token is non-recoverable until the customer logs in again */
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN);
         goto on_finish;
     }
 

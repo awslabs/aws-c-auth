@@ -1023,8 +1023,10 @@ static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_
 
     s_aws_wait_for_credentials_result();
 
+    /* InvalidIdentityToken is not retried and is reported as non-recoverable */
     ASSERT_SUCCESS(s_verify_credentials(
-        true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
+        true /*request made*/, false /*from config*/, false /*get creds*/, 1 /*expected attempts*/));
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE, s_tester.error_code);
 
     aws_credentials_provider_release(provider);
 

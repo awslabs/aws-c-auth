@@ -326,6 +326,10 @@ bool aws_credentials_provider_is_non_recoverable_error(int error_code) {
         case AWS_AUTH_SSO_TOKEN_INVALID:
         case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED:
         case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_SSO_UNAUTHORIZED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_ACCESS_DENIED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_VALIDATION_FAILED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE:
             return true;
         default:
             return false;

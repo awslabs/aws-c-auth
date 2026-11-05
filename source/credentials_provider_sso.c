@@ -13,6 +13,7 @@
 
 #include <aws/common/clock.h>
 #include <aws/common/uri.h>
+#include <aws/http/status_code.h>
 #include <aws/io/socket.h>
 
 #if defined(_MSC_VER)
@@ -342,7 +343,14 @@ static void s_sso_finalize_credentials_fn(struct aws_http_query_context *http_qu
             "(id=%p) failed to query credentials",
             (void *)http_query_context->provider);
 
-        if (http_query_context->error_code == AWS_ERROR_SUCCESS) {
+        if (http_query_context->status_code == AWS_HTTP_STATUS_CODE_401_UNAUTHORIZED) {
+            /* GetRoleCredentials returns UnauthorizedException, and only that error, with HTTP 401 */
+            http_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_UNAUTHORIZED;
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) SSO GetRoleCredentials returned UnauthorizedException, the cached SSO token was rejected",
+                (void *)http_query_context->provider);
+        } else if (http_query_context->error_code == AWS_ERROR_SUCCESS) {
             http_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE;
         }
     } else {

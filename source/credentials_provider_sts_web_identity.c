@@ -7,6 +7,7 @@
 
 #include <aws/auth/private/aws_profile.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/auth/private/sts_utils.h>
 #include <aws/common/clock.h>
 #include <aws/common/date_time.h>
 #include <aws/common/environment.h>
@@ -37,7 +38,6 @@
 #define STS_WEB_IDENTITY_MAX_ATTEMPTS 3
 
 static void s_on_connection_manager_shutdown(void *user_data);
-static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *, void *);
 static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResponse_child(struct aws_xml_node *, void *);
 static int s_stswebid_200_xml_on_AssumeRoleWithWebIdentityResult_child(struct aws_xml_node *, void *);
 static int s_stswebid_200_xml_on_Credentials_child(struct aws_xml_node *, void *);
@@ -187,55 +187,22 @@ on_error:
   </ResponseMetadata>
 </AssumeRoleWithWebIdentityResponse>
 
-Error Response looks like:
-<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>ExceptionName</Code>
-  <Message>XXX</Message>
-  <Resource>YYY</Resource>
+Error Response (AWS Query protocol) looks like:
+<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <Error>
+    <Type>Sender</Type>
+    <Code>ExceptionName</Code>
+    <Message>XXX</Message>
+  </Error>
   <RequestId>4442587FB7D0A2F9</RequestId>
-</Error>
+</ErrorResponse>
+An <Error> root without <ErrorResponse> is also accepted.
 */
-
-static int s_stswebid_error_xml_on_root(struct aws_xml_node *node, void *user_data) {
-    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Error")) {
-        return aws_xml_node_traverse(node, s_stswebid_error_xml_on_Error_child, user_data);
-    }
-
-    return AWS_OP_SUCCESS;
-}
-
-static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *node, void *user_data) {
-    bool *get_retryable_error = user_data;
-
-    struct aws_byte_cursor node_name = aws_xml_node_get_name(node);
-    if (aws_byte_cursor_eq_c_str_ignore_case(&node_name, "Code")) {
-
-        struct aws_byte_cursor data_cursor = {0};
-        if (aws_xml_node_as_body(node, &data_cursor)) {
-            return AWS_OP_ERR;
-        }
-
-        if (aws_byte_cursor_eq_c_str_ignore_case(&data_cursor, "IDPCommunicationError") ||
-            aws_byte_cursor_eq_c_str_ignore_case(&data_cursor, "InvalidIdentityToken")) {
-            *get_retryable_error = true;
-        }
-    }
-
-    return AWS_OP_SUCCESS;
-}
 
 static bool s_parse_retryable_error_from_response(struct aws_allocator *allocator, struct aws_byte_buf *response) {
 
-    bool get_retryable_error = false;
-    struct aws_xml_parser_options options = {
-        .doc = aws_byte_cursor_from_buf(response),
-        .on_root_encountered = s_stswebid_error_xml_on_root,
-        .user_data = &get_retryable_error,
-    };
-
-    if (aws_xml_parse(allocator, &options)) {
+    struct aws_byte_cursor sts_error_code;
+    if (aws_credentials_provider_parse_sts_error_code(allocator, aws_byte_cursor_from_buf(response), &sts_error_code)) {
         AWS_LOGF_ERROR(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
             "Failed to parse xml error response for sts web identity with error %s",
@@ -243,7 +210,7 @@ static bool s_parse_retryable_error_from_response(struct aws_allocator *allocato
         return false;
     }
 
-    return get_retryable_error;
+    return aws_credentials_provider_is_retryable_sts_web_identity_error_code(sts_error_code);
 }
 
 static int s_stswebid_200_xml_on_root(struct aws_xml_node *node, void *user_data) {
@@ -432,6 +399,23 @@ static void s_finalize_get_credentials_query(struct sts_web_identity_user_data *
 
         if (user_data->error_code == AWS_ERROR_SUCCESS) {
             user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_WEB_IDENTITY_SOURCE_FAILURE;
+        }
+
+        /* After the last attempt, report an STS error code that retrying will not fix */
+        struct aws_byte_cursor sts_error_code;
+        if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK && user_data->response.len > 0 &&
+            aws_credentials_provider_parse_sts_error_code(
+                user_data->allocator, aws_byte_cursor_from_buf(&user_data->response), &sts_error_code) ==
+                AWS_OP_SUCCESS &&
+            aws_credentials_provider_is_non_recoverable_sts_error_code(sts_error_code)) {
+
+            user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE;
+            AWS_LOGF_ERROR(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) STS_WEB_IDENTITY failed with http status %d and non-recoverable STS error code " PRInSTR,
+                (void *)user_data->sts_web_identity_provider,
+                user_data->status_code,
+                AWS_BYTE_CURSOR_PRI(sts_error_code));
         }
     }
 

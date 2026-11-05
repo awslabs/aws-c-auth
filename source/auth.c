@@ -144,7 +144,19 @@ static struct aws_error_info s_errors[] = {
         "Failed to create the needed dpop header for the AWS sign service in request"),
         AWS_DEFINE_ERROR_INFO_AUTH(
     AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_REQUEST_BODY,
-        "Failed to create the body for the AWS sign service in request")
+        "Failed to create the body for the AWS sign service in request"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_SSO_UNAUTHORIZED,
+        "The SSO service rejected the cached SSO token. Run 'aws sso login' to refresh it"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_ACCESS_DENIED,
+        "The AWS sign-in service denied the login token. Log in again to refresh it"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_VALIDATION_FAILED,
+        "The AWS sign-in service rejected the login token request as invalid. Log in again to refresh it"),
+        AWS_DEFINE_ERROR_INFO_AUTH(
+    AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE,
+        "STS rejected the request with an error that retrying will not fix, such as AccessDenied or InvalidIdentityToken")
 };
 /* clang-format on */
 

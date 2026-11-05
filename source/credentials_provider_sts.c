@@ -4,6 +4,7 @@
  */
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/auth/private/sts_utils.h>
 #include <aws/auth/signable.h>
 #include <aws/auth/signing.h>
 #include <aws/auth/signing_config.h>
@@ -295,6 +296,35 @@ static int s_sts_xml_on_Credentials_child(struct aws_xml_node *node, void *user_
     return AWS_OP_SUCCESS;
 }
 
+/* Sets STS_NON_RECOVERABLE when the error response carries a code that retrying will not fix */
+static void s_set_non_recoverable_error_from_response(
+    struct sts_creds_provider_user_data *provider_user_data,
+    int http_response_code) {
+
+    struct aws_byte_cursor sts_error_code;
+    if (aws_credentials_provider_parse_sts_error_code(
+            provider_user_data->provider->allocator,
+            aws_byte_cursor_from_buf(&provider_user_data->output_buf),
+            &sts_error_code)) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): failed to parse AssumeRole error response with error %s",
+            (void *)provider_user_data->provider,
+            aws_error_debug_str(aws_last_error()));
+        return;
+    }
+
+    if (aws_credentials_provider_is_non_recoverable_sts_error_code(sts_error_code)) {
+        provider_user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE;
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): AssumeRole failed with http status %d and non-recoverable STS error code " PRInSTR,
+            (void *)provider_user_data->provider,
+            http_response_code,
+            AWS_BYTE_CURSOR_PRI(sts_error_code));
+    }
+}
+
 static void s_start_make_request(
     struct aws_credentials_provider *provider,
     struct sts_creds_provider_user_data *provider_user_data);
@@ -342,6 +372,11 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     if (error_code || http_response_code != AWS_HTTP_STATUS_CODE_200_OK) {
         /* prevent connection reuse. */
         provider_impl->function_table->aws_http_connection_close(provider_user_data->connection);
+
+        /* Read the STS error code now, s_reset_request_specific_data below releases the response body */
+        if (!error_code) {
+            s_set_non_recoverable_error_from_response(provider_user_data, http_response_code);
+        }
 
         enum aws_retry_error_type error_type =
             aws_credentials_provider_compute_retry_error_type(http_response_code, error_code);
