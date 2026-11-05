@@ -6,15 +6,22 @@
 #include <aws/auth/credentials.h>
 
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/common/atomics.h>
+
+/* pinned_index value until a member returns credentials */
+#define CHAIN_MEMBER_NOT_PINNED SIZE_MAX
 
 struct aws_credentials_provider_chain_impl {
     struct aws_array_list providers;
+    bool enable_new_cred_refresh_strategy;
+    struct aws_atomic_var pinned_index;
 };
 
 struct aws_credentials_provider_chain_user_data {
     struct aws_allocator *allocator;
     struct aws_credentials_provider *provider_chain;
     size_t current_provider_index;
+    bool pinned_query;
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
 };
@@ -25,6 +32,32 @@ static void s_aws_provider_chain_member_callback(struct aws_credentials *credent
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
     size_t provider_count = aws_array_list_length(&impl->providers);
+
+    /* A pinned member's result is returned as is, never falling through to other members */
+    if (wrapped_user_data->pinned_query) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Credentials provider chain pinned member #%zu returned %s credentials and error code %d",
+            (void *)provider,
+            wrapped_user_data->current_provider_index + 1,
+            (credentials != NULL) ? "valid" : "invalid",
+            error_code);
+
+        goto on_terminate_chain;
+    }
+
+    /* Pin the first member that returns credentials */
+    if (credentials != NULL && impl->enable_new_cred_refresh_strategy) {
+        size_t expected = CHAIN_MEMBER_NOT_PINNED;
+        if (aws_atomic_compare_exchange_int(
+                &impl->pinned_index, &expected, wrapped_user_data->current_provider_index)) {
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Credentials provider chain pinned member #%zu",
+                (void *)provider,
+                wrapped_user_data->current_provider_index + 1);
+        }
+    }
 
     if (credentials != NULL || wrapped_user_data->current_provider_index + 1 >= provider_count) {
         AWS_LOGF_INFO(
@@ -81,8 +114,19 @@ static int s_credentials_provider_chain_get_credentials_async(
 
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
+    /* Once a member is pinned, query only that member */
+    size_t start_index = 0;
+    bool pinned_query = false;
+    if (impl->enable_new_cred_refresh_strategy) {
+        size_t pinned_index = aws_atomic_load_int(&impl->pinned_index);
+        if (pinned_index != CHAIN_MEMBER_NOT_PINNED) {
+            start_index = pinned_index;
+            pinned_query = true;
+        }
+    }
+
     struct aws_credentials_provider *first_provider = NULL;
-    if (aws_array_list_get_at(&impl->providers, &first_provider, 0)) {
+    if (aws_array_list_get_at(&impl->providers, &first_provider, start_index)) {
         return AWS_OP_ERR;
     }
 
@@ -96,7 +140,8 @@ static int s_credentials_provider_chain_get_credentials_async(
 
     wrapped_user_data->allocator = provider->allocator;
     wrapped_user_data->provider_chain = provider;
-    wrapped_user_data->current_provider_index = 0;
+    wrapped_user_data->current_provider_index = start_index;
+    wrapped_user_data->pinned_query = pinned_query;
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
 
@@ -168,6 +213,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_chain_vtable, impl);
+
+    impl->enable_new_cred_refresh_strategy = options->enable_new_cred_refresh_strategy;
+    aws_atomic_init_int(&impl->pinned_index, CHAIN_MEMBER_NOT_PINNED);
 
     if (aws_array_list_init_dynamic(
             &impl->providers, allocator, options->provider_count, sizeof(struct aws_credentials_provider *))) {

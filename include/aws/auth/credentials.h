@@ -170,6 +170,13 @@ struct aws_credentials_provider_cached_options {
     /* For mocking, leave NULL otherwise */
     aws_io_clock_fn *high_res_clock_fn;
     aws_io_clock_fn *system_clock_fn;
+
+    /*
+     * (Optional) If true, use the new credential refresh strategy: advisory and mandatory refresh windows,
+     * cached credentials kept on refresh failure with backoff, and non-recoverable errors raised to the caller.
+     * Defaults to false, which keeps the existing behavior.
+     */
+    bool enable_new_cred_refresh_strategy;
 };
 
 /**
@@ -189,6 +196,12 @@ struct aws_credentials_provider_chain_options {
      * Number of elements in the array of credentials providers
      */
     size_t provider_count;
+
+    /*
+     * (Optional) If true, the first provider that returns credentials is pinned and every later query goes only
+     * to that provider. Defaults to false, which walks the chain from the first provider on every query.
+     */
+    bool enable_new_cred_refresh_strategy;
 };
 
 /*
@@ -718,6 +731,12 @@ struct aws_credentials_provider_chain_default_options {
      * aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
+
+    /*
+     * (Optional) If true, the chain pins the first provider that returns credentials and its cache uses the new
+     * credential refresh strategy. Defaults to false, which keeps the existing behavior.
+     */
+    bool enable_new_cred_refresh_strategy;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
@@ -831,6 +850,12 @@ struct aws_credentials_provider_cognito_options {
      * will be a reference to a CRT binding object.
      */
     void *get_token_pairs_user_data;
+
+    /**
+     * (Optional) If true, aws_credentials_provider_new_cognito_caching uses the new credential refresh strategy.
+     * Defaults to false, which keeps the existing behavior.
+     */
+    bool enable_new_cred_refresh_strategy;
 };
 
 /*

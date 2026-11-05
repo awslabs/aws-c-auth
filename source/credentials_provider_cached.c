@@ -7,6 +7,8 @@
 
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/common/clock.h>
+#include <aws/common/device_random.h>
+#include <aws/common/math.h>
 #include <aws/common/mutex.h>
 #include <aws/common/time.h>
 
@@ -22,6 +24,14 @@ AWS_STATIC_STRING_FROM_LITERAL(s_credential_expiration_env_var, "AWS_CREDENTIAL_
 
 #define REFRESH_CREDENTIALS_EARLY_DURATION_SECONDS 60 * 5 /* 5 minutes */
 
+/* Values used by the new credential refresh strategy */
+#define MANDATORY_REFRESH_WINDOW_SECS 60
+#define REFRESH_BACKOFF_MIN_SECS 60
+#define REFRESH_BACKOFF_FLOOR_SECS 90
+#define REFRESH_BACKOFF_CAP_SECS 600
+#define NON_RECOVERABLE_ERROR_CACHE_MIN_MS 1000
+#define NON_RECOVERABLE_ERROR_CACHE_MAX_MS 5000
+
 struct aws_credentials_provider_cached {
     struct aws_credentials_provider *source;
     struct aws_credentials *cached_credentials;
@@ -31,6 +41,15 @@ struct aws_credentials_provider_cached {
     aws_io_clock_fn *high_res_clock_fn;
     aws_io_clock_fn *system_clock_fn;
     struct aws_linked_list pending_queries;
+
+    /* State used only by the new credential refresh strategy, all high_res nanoseconds */
+    uint64_t expiration_ns;         /* UINT64_MAX = no expiration */
+    uint64_t advisory_window_ns;    /* fixed per credential set */
+    uint64_t next_paced_refresh_ns; /* existing refresh_time_in_milliseconds schedule */
+    uint64_t backoff_until_ns;      /* 0 = not rate limited */
+    int cached_error_code;          /* 0 = no cached non-recoverable error */
+    uint64_t cached_error_until_ns;
+    bool refresh_in_flight;
 };
 
 static void s_aws_credentials_query_list_notify_and_clean_up(
@@ -216,6 +235,363 @@ static int s_cached_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
+/*
+ * New credential refresh strategy.
+ */
+
+static uint64_t s_secs_to_ns(uint64_t secs) {
+    return aws_timestamp_convert(secs, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+}
+
+static uint64_t s_millis_to_ns(uint64_t millis) {
+    return aws_timestamp_convert(millis, AWS_TIMESTAMP_MILLIS, AWS_TIMESTAMP_NANOS, NULL);
+}
+
+static uint64_t s_ns_to_secs(uint64_t ns) {
+    return aws_timestamp_convert(ns, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL);
+}
+
+/* Uniform random value in [low_ns, high_ns] */
+static uint64_t s_uniform_ns(uint64_t low_ns, uint64_t high_ns) {
+    if (high_ns <= low_ns) {
+        return low_ns;
+    }
+
+    uint64_t random_value = 0;
+    aws_device_random_u64(&random_value);
+    return low_ns + (random_value % (high_ns - low_ns + 1));
+}
+
+/* Converts the credentials' epoch expiration to a high_res deadline, once, when they arrive */
+static uint64_t s_get_expiration_deadline_ns(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *credentials,
+    uint64_t high_res_now) {
+
+    struct aws_credentials_provider_cached *impl = provider->impl;
+
+    uint64_t expiration_secs = aws_credentials_get_expiration_timepoint_seconds(credentials);
+    if (expiration_secs == UINT64_MAX) {
+        return UINT64_MAX;
+    }
+
+    uint64_t system_now = 0;
+    if (impl->system_clock_fn(&system_now)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider failed to read the system clock, ignoring credentials expiration",
+            (void *)provider);
+        return UINT64_MAX;
+    }
+
+    uint64_t system_now_secs = s_ns_to_secs(system_now);
+    if (expiration_secs <= system_now_secs) {
+        return high_res_now;
+    }
+
+    return aws_add_u64_saturating(high_res_now, s_secs_to_ns(expiration_secs - system_now_secs));
+}
+
+/* Advisory refresh window: lifetime <= 20 min -> 5 min, < 90 min -> 15 min, otherwise 60 min */
+static uint64_t s_get_advisory_window_ns(uint64_t lifetime_ns) {
+    if (lifetime_ns <= s_secs_to_ns(20 * 60)) {
+        return s_secs_to_ns(5 * 60);
+    }
+    if (lifetime_ns < s_secs_to_ns(90 * 60)) {
+        return s_secs_to_ns(15 * 60);
+    }
+    return s_secs_to_ns(60 * 60);
+}
+
+/* Refresh backoff: uniform(60 s, max(90 s, min(remaining / 2, 600 s))) */
+static uint64_t s_get_backoff_ns(const struct aws_credentials_provider_cached *impl, uint64_t now) {
+    uint64_t remaining_ns = aws_sub_u64_saturating(impl->expiration_ns, now);
+    uint64_t upper_ns = aws_min_u64(remaining_ns / 2, s_secs_to_ns(REFRESH_BACKOFF_CAP_SECS));
+    upper_ns = aws_max_u64(upper_ns, s_secs_to_ns(REFRESH_BACKOFF_FLOOR_SECS));
+    return s_uniform_ns(s_secs_to_ns(REFRESH_BACKOFF_MIN_SECS), upper_ns);
+}
+
+/* Refresh is due at the earlier of the paced schedule and the start of the advisory window */
+static bool s_is_refresh_needed(const struct aws_credentials_provider_cached *impl, uint64_t now) {
+    if (now >= impl->next_paced_refresh_ns) {
+        return true;
+    }
+    if (impl->expiration_ns == UINT64_MAX) {
+        return false;
+    }
+
+    uint64_t advisory_start_ns = aws_sub_u64_saturating(impl->expiration_ns, impl->advisory_window_ns);
+    return now >= advisory_start_ns;
+}
+
+/* A previous refresh failed and the backoff has not elapsed. backoff_until_ns is 0 when not rate limited. */
+static bool s_is_refresh_rate_limited(const struct aws_credentials_provider_cached *impl, uint64_t now) {
+    return now < impl->backoff_until_ns;
+}
+
+static bool s_is_mandatory_refresh_needed(const struct aws_credentials_provider_cached *impl, uint64_t now) {
+    if (impl->expiration_ns == UINT64_MAX) {
+        return false;
+    }
+    return aws_add_u64_saturating(now, s_secs_to_ns(MANDATORY_REFRESH_WINDOW_SECS)) >= impl->expiration_ns;
+}
+
+static void s_new_strategy_cached_credentials_provider_source_callback(
+    struct aws_credentials *credentials,
+    int error_code,
+    void *user_data) {
+
+    struct aws_credentials_provider *provider = user_data;
+    struct aws_credentials_provider_cached *impl = provider->impl;
+
+    if (credentials == NULL && error_code == AWS_ERROR_SUCCESS) {
+        error_code = AWS_ERROR_UNKNOWN;
+    }
+
+    uint64_t now = 0;
+    impl->high_res_clock_fn(&now);
+
+    struct aws_linked_list pending_queries;
+    aws_linked_list_init(&pending_queries);
+
+    struct aws_credentials *result_credentials = NULL;
+    int result_error_code = AWS_ERROR_SUCCESS;
+
+    aws_mutex_lock(&impl->lock);
+
+    /* Move pending queries so that we can do notifications outside the lock */
+    aws_linked_list_swap_contents(&pending_queries, &impl->pending_queries);
+    impl->refresh_in_flight = false;
+
+    bool is_initial_fetch = impl->cached_credentials == NULL;
+    uint64_t deadline_ns = (credentials != NULL) ? s_get_expiration_deadline_ns(provider, credentials, now) : 0;
+
+    if (credentials != NULL && (is_initial_fetch || deadline_ns > now)) {
+        /* Success. The initial fetch accepts credentials even if they are already expired. */
+        s_swap_cached_credentials(provider, credentials);
+        impl->expiration_ns = deadline_ns;
+        impl->advisory_window_ns = (deadline_ns == UINT64_MAX) ? 0 : s_get_advisory_window_ns(deadline_ns - now);
+        impl->next_paced_refresh_ns =
+            (impl->refresh_interval_in_ns > 0) ? aws_add_u64_saturating(now, impl->refresh_interval_in_ns) : UINT64_MAX;
+        impl->backoff_until_ns = 0;
+        impl->cached_error_code = 0;
+        result_credentials = credentials;
+
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider expiration set to %" PRIu64 ", advisory window %" PRIu64
+            " seconds, next paced refresh %" PRIu64,
+            (void *)provider,
+            impl->expiration_ns,
+            s_ns_to_secs(impl->advisory_window_ns),
+            impl->next_paced_refresh_ns);
+
+    } else if (credentials == NULL && aws_credentials_provider_is_non_recoverable_error(error_code)) {
+        /* Non-recoverable: raise it, cache it for 1 to 5 s, no backoff, keep any cached credentials */
+        impl->cached_error_code = error_code;
+        uint64_t error_cache_ns = s_uniform_ns(
+            s_millis_to_ns(NON_RECOVERABLE_ERROR_CACHE_MIN_MS), s_millis_to_ns(NON_RECOVERABLE_ERROR_CACHE_MAX_MS));
+        impl->cached_error_until_ns = aws_add_u64_saturating(now, error_cache_ns);
+        result_error_code = error_code;
+
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Credential refresh failed with a non-recoverable error: %s",
+            (void *)provider,
+            aws_error_debug_str(error_code));
+
+    } else if (is_initial_fetch) {
+        /* Recoverable initial fetch failure: nothing cached, no backoff */
+        result_error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider failed to source credentials with error %d(%s)",
+            (void *)provider,
+            error_code,
+            aws_error_debug_str(error_code));
+
+    } else {
+        /* Recoverable refresh failure, or expired credentials on refresh: keep cached credentials, back off */
+        uint64_t backoff_ns = s_get_backoff_ns(impl, now);
+        impl->backoff_until_ns = aws_add_u64_saturating(now, backoff_ns);
+        result_credentials = impl->cached_credentials;
+
+        const char *failure_reason = (credentials != NULL) ? "the credentials source returned expired credentials"
+                                                           : aws_error_debug_str(error_code);
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Credential refresh failed: %s. The SDK will continue using cached credentials. A refresh of "
+            "these credentials will be attempted again after %" PRIu64 " seconds.",
+            (void *)provider,
+            failure_reason,
+            s_ns_to_secs(backoff_ns));
+    }
+
+    /* Hold the result across the unlock, NULL is a no-op */
+    aws_credentials_acquire(result_credentials);
+
+    aws_mutex_unlock(&impl->lock);
+
+    s_aws_credentials_query_list_notify_and_clean_up(
+        &pending_queries, provider->allocator, result_credentials, result_error_code);
+
+    aws_credentials_release(result_credentials);
+}
+
+/* What get_credentials does for one caller, decided under impl->lock */
+enum aws_cached_refresh_outcome {
+    AWS_CACHED_REFRESH_RETURN_CACHED,
+    AWS_CACHED_REFRESH_RETURN_ERROR,
+    AWS_CACHED_REFRESH_WAIT,
+};
+
+struct aws_cached_refresh_request {
+    struct aws_credentials_provider *provider;
+    aws_on_get_credentials_callback_fn *callback;
+    void *user_data;
+    uint64_t now;
+    int error_code;          /* set for AWS_CACHED_REFRESH_RETURN_ERROR */
+    bool should_call_source; /* this caller starts the refresh */
+};
+
+static bool s_is_error_cached(const struct aws_credentials_provider_cached *impl, uint64_t now) {
+    return impl->cached_error_code != 0 && now < impl->cached_error_until_ns;
+}
+
+/* Queues the caller on the single in-flight refresh, starting it if none is in flight */
+static enum aws_cached_refresh_outcome s_wait_on_refresh(struct aws_cached_refresh_request *request) {
+    struct aws_credentials_provider *provider = request->provider;
+    struct aws_credentials_provider_cached *impl = provider->impl;
+
+    struct aws_credentials_query *query = aws_mem_acquire(provider->allocator, sizeof(struct aws_credentials_query));
+    aws_credentials_query_init(query, provider, request->callback, request->user_data);
+    /* every caller waits here */
+    aws_linked_list_push_back(&impl->pending_queries, &query->node);
+
+    /* only the first caller gets the lock */
+    if (!impl->refresh_in_flight) {
+        impl->refresh_in_flight = true;
+        request->should_call_source = true;
+    }
+
+    return AWS_CACHED_REFRESH_WAIT;
+}
+
+/* State 1: no credentials yet. Callers block, and concurrent callers reuse one fetch. */
+static enum aws_cached_refresh_outcome s_fetch_initial_credentials(struct aws_cached_refresh_request *request) {
+    struct aws_credentials_provider_cached *impl = request->provider->impl;
+
+    if (s_is_error_cached(impl, request->now)) {
+        /* previous attempt returned a non-recoverable error that is still cached. Raise it without calling the source
+         */
+        request->error_code = impl->cached_error_code;
+        return AWS_CACHED_REFRESH_RETURN_ERROR;
+    }
+
+    /* Acquire lock */
+    return s_wait_on_refresh(request);
+}
+
+/* State 3: advisory refresh. If a refresh is already in flight, return the cached credentials without waiting. */
+static enum aws_cached_refresh_outcome s_attempt_advisory_refresh(struct aws_cached_refresh_request *request) {
+    struct aws_credentials_provider_cached *impl = request->provider->impl;
+
+    if (impl->refresh_in_flight) {
+        return AWS_CACHED_REFRESH_RETURN_CACHED;
+    }
+
+    if (s_is_error_cached(impl, request->now)) {
+        request->error_code = impl->cached_error_code;
+        return AWS_CACHED_REFRESH_RETURN_ERROR;
+    }
+
+    return s_wait_on_refresh(request);
+}
+
+/* States 4 and 5: mandatory refresh or expired. Callers block, and concurrent callers reuse one refresh. */
+static enum aws_cached_refresh_outcome s_attempt_mandatory_refresh(struct aws_cached_refresh_request *request) {
+    struct aws_credentials_provider_cached *impl = request->provider->impl;
+
+    if (impl->refresh_in_flight) {
+        return s_wait_on_refresh(request);
+    }
+
+    if (s_is_error_cached(impl, request->now)) {
+        request->error_code = impl->cached_error_code;
+        return AWS_CACHED_REFRESH_RETURN_ERROR;
+    }
+
+    return s_wait_on_refresh(request);
+}
+
+static int s_new_strategy_cached_credentials_provider_get_credentials_async(
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+
+    struct aws_credentials_provider_cached *impl = provider->impl;
+
+    struct aws_cached_refresh_request request = {
+        .provider = provider,
+        .callback = callback,
+        .user_data = user_data,
+        .error_code = AWS_ERROR_SUCCESS,
+        .should_call_source = false,
+    };
+    impl->high_res_clock_fn(&request.now);
+
+    struct aws_credentials *credentials = NULL;
+    enum aws_cached_refresh_outcome outcome = AWS_CACHED_REFRESH_RETURN_CACHED;
+
+    /* Guards the cached state only. It is never held while the source is called. */
+    aws_mutex_lock(&impl->lock);
+
+    if (impl->cached_credentials == NULL) {
+        outcome = s_fetch_initial_credentials(&request);
+    } else if (!s_is_refresh_needed(impl, request.now)) {
+        /**
+         * State 2: valid credentials, no refresh needed
+         * Return cached credentials.
+         */
+        outcome = AWS_CACHED_REFRESH_RETURN_CACHED;
+    } else if (s_is_refresh_rate_limited(impl, request.now)) {
+        /* Backoff gate: return cached credentials without calling the source */
+        outcome = AWS_CACHED_REFRESH_RETURN_CACHED;
+    } else if (!s_is_mandatory_refresh_needed(impl, request.now)) {
+        outcome = s_attempt_advisory_refresh(&request);
+    } else {
+        outcome = s_attempt_mandatory_refresh(&request);
+    }
+
+    if (outcome == AWS_CACHED_REFRESH_RETURN_CACHED) {
+        credentials = impl->cached_credentials;
+        aws_credentials_acquire(credentials);
+    }
+
+    aws_mutex_unlock(&impl->lock);
+
+    if (request.should_call_source) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider refreshing credentials",
+            (void *)provider);
+
+        if (aws_credentials_provider_get_credentials(
+                impl->source, s_new_strategy_cached_credentials_provider_source_callback, provider)) {
+            /* The source failed synchronously and will not invoke the callback */
+            s_new_strategy_cached_credentials_provider_source_callback(NULL, aws_last_error(), provider);
+        }
+    }
+
+    if (outcome != AWS_CACHED_REFRESH_WAIT) {
+        callback(credentials, request.error_code, user_data);
+        aws_credentials_release(credentials);
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 static void s_cached_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_cached *impl = provider->impl;
     if (impl == NULL) {
@@ -238,6 +614,11 @@ static void s_cached_credentials_provider_destroy(struct aws_credentials_provide
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_vtable = {
     .get_credentials = s_cached_credentials_provider_get_credentials_async,
+    .destroy = s_cached_credentials_provider_destroy,
+};
+
+static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_new_strategy_vtable = {
+    .get_credentials = s_new_strategy_cached_credentials_provider_get_credentials_async,
     .destroy = s_cached_credentials_provider_destroy,
 };
 
@@ -265,7 +646,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
     AWS_ZERO_STRUCT(*provider);
     AWS_ZERO_STRUCT(*impl);
 
-    aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_cached_vtable, impl);
+    /* The refresh strategy is fixed here, before any refresh */
+    struct aws_credentials_provider_vtable *vtable = &s_aws_credentials_provider_cached_vtable;
+    if (options->enable_new_cred_refresh_strategy) {
+        vtable = &s_aws_credentials_provider_cached_new_strategy_vtable;
+    }
+
+    aws_credentials_provider_init_base(provider, allocator, vtable, impl);
 
     if (aws_mutex_init(&impl->lock)) {
         goto on_error;

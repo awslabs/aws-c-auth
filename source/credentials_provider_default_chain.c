@@ -327,6 +327,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_chain_options chain_options = {
         .provider_count = index,
         .providers = providers,
+        .enable_new_cred_refresh_strategy = options->enable_new_cred_refresh_strategy,
     };
 
     chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);
@@ -345,6 +346,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_cached_options cached_options = {
         .source = chain_provider,
         .refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS,
+        .enable_new_cred_refresh_strategy = options->enable_new_cred_refresh_strategy,
     };
 
     cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);

@@ -320,6 +320,18 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
     return error_type;
 }
 
+bool aws_credentials_provider_is_non_recoverable_error(int error_code) {
+    switch (error_code) {
+        case AWS_AUTH_SSO_TOKEN_EXPIRED:
+        case AWS_AUTH_SSO_TOKEN_INVALID:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN:
+            return true;
+        default:
+            return false;
+    }
+}
+
 struct aws_profile_collection *aws_load_profile_collection_from_config_file(
     struct aws_allocator *allocator,
     struct aws_byte_cursor config_file_name_override) {

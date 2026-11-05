@@ -167,6 +167,12 @@ AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
 
 /*
+ * Returns true if a credentials source error emits a non-recoverable error.
+ */
+AWS_AUTH_API
+bool aws_credentials_provider_is_non_recoverable_error(int error_code);
+
+/*
  * If an endpoint override is configured, use that. Otherwise do the following:
  * Construct an endpoint in the format of service_name_host.region.amazonaws.com.
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.
