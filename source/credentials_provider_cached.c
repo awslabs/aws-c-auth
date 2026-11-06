@@ -592,6 +592,50 @@ static int s_new_strategy_cached_credentials_provider_get_credentials_async(
     return AWS_OP_SUCCESS;
 }
 
+/* Marks the cached credentials for a mandatory refresh if they are the ones a service rejected */
+static int s_new_strategy_cached_credentials_provider_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials) {
+
+    struct aws_credentials_provider_cached *impl = provider->impl;
+
+    if (rejected_credentials == NULL) {
+        return AWS_OP_SUCCESS;
+    }
+
+    uint64_t now = 0;
+    impl->high_res_clock_fn(&now);
+
+    aws_mutex_lock(&impl->lock);
+
+    /* A refresh in flight will replace the credentials, nothing to do */
+    if (!impl->refresh_in_flight && impl->cached_credentials != NULL) {
+        struct aws_byte_cursor cached_id = aws_credentials_get_access_key_id(impl->cached_credentials);
+        struct aws_byte_cursor rejected_id = aws_credentials_get_access_key_id(rejected_credentials);
+
+        /* Only invalidate if the cache still holds the identity that signed the rejected request. Token and
+         * anonymous credentials have no access key ID, so they never match. */
+        if (cached_id.len > 0 && aws_byte_cursor_eq(&cached_id, &rejected_id)) {
+            /* Next get_credentials takes the mandatory path. Cached credentials and backoff are kept. */
+            impl->expiration_ns = now;
+
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Cached credentials provider invalidated credentials rejected by a service",
+                (void *)provider);
+        } else {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Cached credentials provider ignored a stale invalidate",
+                (void *)provider);
+        }
+    }
+
+    aws_mutex_unlock(&impl->lock);
+
+    return AWS_OP_SUCCESS;
+}
+
 static void s_cached_credentials_provider_destroy(struct aws_credentials_provider *provider) {
     struct aws_credentials_provider_cached *impl = provider->impl;
     if (impl == NULL) {
@@ -620,6 +664,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_new_strategy_vtable = {
     .get_credentials = s_new_strategy_cached_credentials_provider_get_credentials_async,
     .destroy = s_cached_credentials_provider_destroy,
+    .invalidate = s_new_strategy_cached_credentials_provider_invalidate,
 };
 
 struct aws_credentials_provider *aws_credentials_provider_new_cached(

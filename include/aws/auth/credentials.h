@@ -34,6 +34,9 @@ typedef int(aws_credentials_provider_get_credentials_fn)(
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
 typedef void(aws_credentials_provider_destroy_fn)(struct aws_credentials_provider *provider);
+typedef int(aws_credentials_provider_invalidate_fn)(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials);
 
 /*
  * Common function table that all credentials provider implementations must support
@@ -41,6 +44,9 @@ typedef void(aws_credentials_provider_destroy_fn)(struct aws_credentials_provide
 struct aws_credentials_provider_vtable {
     aws_credentials_provider_get_credentials_fn *get_credentials;
     aws_credentials_provider_destroy_fn *destroy;
+
+    /* Optional. Marks cached credentials for refresh after a service rejects them. NULL if not supported. */
+    aws_credentials_provider_invalidate_fn *invalidate;
 };
 
 typedef void(aws_credentials_provider_shutdown_completed_fn)(void *user_data);
@@ -1185,6 +1191,23 @@ int aws_credentials_provider_get_credentials(
     struct aws_credentials_provider *provider,
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
+
+/**
+ * Tells a credentials provider that a service rejected requests signed with these credentials (for example with
+ * ExpiredToken), so cached credentials can be refreshed on the next query.
+ *
+ * Only the cached provider with enable_new_cred_refresh_strategy set acts on this. For every other provider this is a
+ * no-op that returns AWS_OP_SUCCESS.
+ *
+ * @param provider credentials provider that produced the rejected credentials
+ * @param rejected_credentials credentials that signed the rejected request
+ *
+ * @return AWS_OP_SUCCESS, or AWS_OP_ERR if the provider failed to process the call
+ */
+AWS_AUTH_API
+int aws_credentials_provider_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials);
 
 /*
  * Credentials provider variant creation

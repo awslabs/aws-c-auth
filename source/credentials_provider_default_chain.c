@@ -163,6 +163,19 @@ static int s_credentials_provider_default_chain_get_credentials_async(
     return result;
 }
 
+/*
+ * The default chain holds its credentials in the wrapped cached provider, so invalidation is forwarded here.
+ * The cached provider decides whether to act (it only does so when the new refresh strategy is enabled).
+ */
+static int s_credentials_provider_default_chain_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials) {
+
+    struct aws_credentials_provider_default_chain_impl *impl = provider->impl;
+
+    return aws_credentials_provider_invalidate(impl->cached_provider, rejected_credentials);
+}
+
 static void s_on_sub_provider_shutdown_completed(void *user_data) {
     struct aws_credentials_provider *provider = user_data;
     struct aws_credentials_provider_default_chain_impl *impl = provider->impl;
@@ -192,6 +205,7 @@ static void s_credentials_provider_default_chain_destroy(struct aws_credentials_
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_default_chain_vtable = {
     .get_credentials = s_credentials_provider_default_chain_get_credentials_async,
     .destroy = s_credentials_provider_default_chain_destroy,
+    .invalidate = s_credentials_provider_default_chain_invalidate,
 };
 
 /*
