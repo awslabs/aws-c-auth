@@ -120,11 +120,17 @@ static struct login_parameters *s_parameters_new(
      */
     struct aws_byte_buf token_path;
     AWS_ZERO_STRUCT(token_path);
+    struct aws_byte_buf sign_in_region;
+    AWS_ZERO_STRUCT(sign_in_region);
     if (aws_login_token_construct_token_path(
             allocator, parameters->login_session, parameters->login_directory_override, &token_path) ==
-        AWS_OP_SUCCESS) {
-        parameters->login_region = aws_login_token_read_sign_in_region(allocator, &token_path);
+            AWS_OP_SUCCESS &&
+        aws_login_token_read_sign_in_region(allocator, aws_byte_cursor_from_buf(&token_path), &sign_in_region) ==
+            AWS_OP_SUCCESS &&
+        sign_in_region.len > 0) {
+        parameters->login_region = aws_string_new_from_buf(allocator, &sign_in_region);
     }
+    aws_byte_buf_clean_up(&sign_in_region);
     aws_byte_buf_clean_up(&token_path);
 
     if (!parameters->login_region) {

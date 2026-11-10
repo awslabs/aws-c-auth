@@ -70,6 +70,8 @@ struct aws_login_token {
     struct aws_byte_cursor id_token;
     struct aws_byte_cursor client_id;
     struct aws_byte_cursor dpop_key;
+    /* optional, empty when the token file does not record it */
+    struct aws_byte_cursor sign_in_region;
 };
 
 struct aws_login_refresh_response {
@@ -140,33 +142,42 @@ struct aws_login_refresh_response *aws_login_refresh_destroy(struct aws_login_re
     return refresh_token;
 }
 
-struct aws_string *aws_login_token_read_sign_in_region(
+int aws_login_token_read_sign_in_region(
     struct aws_allocator *allocator,
-    const struct aws_byte_buf *file_path) {
-    struct aws_string *sign_in_region = NULL;
+    struct aws_byte_cursor file_path,
+    struct aws_byte_buf *out_region) {
+    int result = AWS_OP_ERR;
     struct aws_json_value *document = NULL;
+    struct aws_json_value *value = NULL;
+    struct aws_byte_cursor region;
+    AWS_ZERO_STRUCT(region);
     struct aws_byte_buf contents;
     AWS_ZERO_STRUCT(contents);
 
-    struct aws_string *file_path_string = aws_string_new_from_buf(allocator, file_path);
+    struct aws_string *file_path_string = aws_string_new_from_cursor(allocator, &file_path);
     if (aws_byte_buf_init_from_file(&contents, allocator, aws_string_c_str(file_path_string))) {
         goto on_finish;
     }
 
     document = aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&contents));
-    struct aws_json_value *value =
-        aws_json_value_get_from_object(document, aws_byte_cursor_from_string(s_login_sign_in_region_key));
-    struct aws_byte_cursor region;
-    if (!value || aws_json_value_get_string(value, &region) || region.len == 0) {
+    if (!document) {
         goto on_finish;
     }
-    sign_in_region = aws_string_new_from_cursor(allocator, &region);
+
+    value = aws_json_value_get_from_object(document, aws_byte_cursor_from_string(s_login_sign_in_region_key));
+    if (value && aws_json_value_is_string(value) && aws_json_value_get_string(value, &region) == AWS_OP_SUCCESS &&
+        region.len > 0) {
+        if (aws_byte_buf_init_copy_from_cursor(out_region, allocator, region)) {
+            goto on_finish;
+        }
+    }
+    result = AWS_OP_SUCCESS;
 
 on_finish:
     aws_json_value_destroy(document);
     aws_byte_buf_clean_up_secure(&contents);
     aws_string_destroy(file_path_string);
-    return sign_in_region;
+    return result;
 }
 
 int aws_login_token_construct_token_path(
@@ -408,6 +419,13 @@ struct aws_login_token *aws_login_token_new_from_json_document(
         goto on_error;
     }
 
+    AWS_ZERO_STRUCT(token->sign_in_region);
+    struct aws_json_value *sign_in_region =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_login_sign_in_region_key));
+    if (sign_in_region && aws_json_value_is_string(sign_in_region)) {
+        aws_json_value_get_string(sign_in_region, &token->sign_in_region);
+    }
+
     // check that the token has not expired yet
     struct aws_date_time now;
     aws_date_time_init_now(&now);
@@ -575,36 +593,6 @@ on_finish:
     return *node ? AWS_OP_SUCCESS : AWS_OP_ERR;
 }
 
-static int s_copy_member_if_missing(
-    const struct aws_byte_cursor *key,
-    const struct aws_json_value *value,
-    bool *out_should_continue,
-    void *user_data) {
-    (void)out_should_continue;
-    struct aws_json_value *target = user_data;
-    if (aws_json_value_has_key(target, *key)) {
-        return AWS_OP_SUCCESS;
-    }
-
-    struct aws_json_value *copy = aws_json_value_duplicate(value);
-    if (!copy) {
-        return AWS_OP_ERR;
-    }
-    if (aws_json_value_add_to_object(target, *key, copy)) {
-        aws_json_value_destroy(copy);
-        return AWS_OP_ERR;
-    }
-    return AWS_OP_SUCCESS;
-}
-
-/* Carries over members of the token file that this library does not model, so a rewrite does not drop them. */
-static int s_copy_unmodeled_members(const struct aws_json_value *source, struct aws_json_value *target) {
-    if (!source || !aws_json_value_is_object(source)) {
-        return AWS_OP_SUCCESS;
-    }
-    return aws_json_const_iterate_object(source, s_copy_member_if_missing, target);
-}
-
 int aws_login_token_write_token_file(
     const struct aws_login_token *token,
     struct aws_allocator *allocator,
@@ -659,11 +647,7 @@ int aws_login_token_write_token_file(
             s_new_string_json_value_from_date_time,
             s_add_json_value_to_parent,
             aws_string_c_str(s_login_expires_at_key),
-            &token->expires_at) ||
-        s_copy_unmodeled_members(
-            aws_json_value_get_from_object(
-                token->serialized_token, aws_byte_cursor_from_string(s_login_access_token_key)),
-            access_token)) {
+            &token->expires_at)) {
         aws_json_value_destroy(access_token);
         goto on_error;
     }
@@ -711,7 +695,13 @@ int aws_login_token_write_token_file(
         goto on_error;
     }
 
-    if (s_copy_unmodeled_members(token->serialized_token, login_json)) {
+    if (token->sign_in_region.len > 0 && s_write_to_json_node(
+                                             allocator,
+                                             login_json,
+                                             s_new_string_from_cursor_json_value,
+                                             s_add_json_value_to_parent,
+                                             aws_string_c_str(s_login_sign_in_region_key),
+                                             &token->sign_in_region)) {
         aws_json_value_destroy(login_json);
         goto on_error;
     }

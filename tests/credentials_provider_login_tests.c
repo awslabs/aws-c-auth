@@ -707,9 +707,9 @@ static int s_credentials_provider_login_basic_success(struct aws_allocator *allo
 AWS_TEST_CASE(credentials_provider_login_basic_success, s_credentials_provider_login_basic_success);
 
 AWS_STATIC_STRING_FROM_LITERAL(
-    s_login_token_with_unmodeled_fields,
+    s_login_token_with_sign_in_region,
     "{\"accessToken\":{\"accessKeyId\":\"shinji\",\"secretAccessKey\":\"rei\",\"sessionToken\":\"asuka\",\"accountId\":"
-    "\"123456789012\",\"expiresAt\":\"3000-09-13T00:00:00Z\",\"unmodeledNested\":\"Misato\"},\"tokenType\":\"urn:aws:"
+    "\"123456789012\",\"expiresAt\":\"3000-09-13T00:00:00Z\"},\"tokenType\":\"urn:aws:"
     "params:oauth:token-type:access_token_sigv4\",\"clientId\":\"arn:aws:signin:::devtools/"
     "same-device\",\"refreshToken\":\"Kaworu\",\"idToken\":\"toji\",\"signInRegion\":\"eu-west-1\",\"dpopKey\":\"-----"
     "BEGIN EC PRIVATE KEY-----\nMHcCAQEEIBDOA9C+wyEeYZYLa9fPAzzZLi43suMHc7GqUSD2wP9VoAoGCCqGSM49\nAwEHoUQDQgAE8p+"
@@ -793,28 +793,24 @@ static int s_refresh_and_check_token_file(
     return AWS_OP_SUCCESS;
 }
 
-static int s_check_unmodeled_fields_preserved(const struct aws_json_value *written) {
-    /* fields this library does not model survive the rewrite, and refreshed fields are not overwritten by them */
+static int s_check_sign_in_region_preserved(const struct aws_json_value *written) {
+    /* signInRegion survives the rewrite, alongside the refreshed fields */
     ASSERT_SUCCESS(s_assert_string_member(written, "signInRegion", "eu-west-1"));
     ASSERT_SUCCESS(s_assert_string_member(written, "refreshToken", "Kensuke"));
     struct aws_json_value *access_token = aws_json_value_get_from_object_c_str(written, "accessToken");
     ASSERT_NOT_NULL(access_token);
-    ASSERT_SUCCESS(s_assert_string_member(access_token, "unmodeledNested", "Misato"));
     ASSERT_SUCCESS(s_assert_string_member(access_token, "accessKeyId", "Ritsuko"));
     return AWS_OP_SUCCESS;
 }
 
-static int s_credentials_provider_login_refresh_preserves_unmodeled_fields(struct aws_allocator *allocator, void *ctx) {
+static int s_credentials_provider_login_refresh_preserves_sign_in_region(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     return s_refresh_and_check_token_file(
-        allocator,
-        s_login_token_with_unmodeled_fields,
-        (struct aws_byte_cursor){0},
-        s_check_unmodeled_fields_preserved);
+        allocator, s_login_token_with_sign_in_region, (struct aws_byte_cursor){0}, s_check_sign_in_region_preserved);
 }
 AWS_TEST_CASE(
-    credentials_provider_login_refresh_preserves_unmodeled_fields,
-    s_credentials_provider_login_refresh_preserves_unmodeled_fields);
+    credentials_provider_login_refresh_preserves_sign_in_region,
+    s_credentials_provider_login_refresh_preserves_sign_in_region);
 
 static int s_check_sign_in_region_not_added(const struct aws_json_value *written) {
     ASSERT_FALSE(aws_json_value_has_key_c_str(written, "signInRegion"));
@@ -861,10 +857,7 @@ static int s_credentials_provider_login_refresh_uses_sign_in_region(struct aws_a
     (void)ctx;
     /* the token's region wins over both the configured option and the profile */
     return s_refresh_and_check_token_file(
-        allocator,
-        s_login_token_with_unmodeled_fields,
-        aws_byte_cursor_from_c_str("us-west-2"),
-        s_check_host_eu_west_1);
+        allocator, s_login_token_with_sign_in_region, aws_byte_cursor_from_c_str("us-west-2"), s_check_host_eu_west_1);
 }
 AWS_TEST_CASE(
     credentials_provider_login_refresh_uses_sign_in_region,
