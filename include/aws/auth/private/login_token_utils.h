@@ -39,6 +39,12 @@ AWS_AUTH_API
 struct aws_byte_cursor aws_login_token_get_account_id(struct aws_login_token *token);
 
 /*
+ * Returns the token's signInRegion, or an empty cursor if the token does not record one.
+ */
+AWS_AUTH_API
+struct aws_byte_cursor aws_login_token_get_sign_in_region(struct aws_login_token *token);
+
+/*
  * Setter for access key id.
  */
 AWS_AUTH_API
@@ -95,6 +101,18 @@ int aws_login_token_get_dpop_header(
     const struct aws_login_token *token,
     struct aws_byte_cursor host,
     struct aws_byte_buf *header_value);
+
+/*
+ * Reads the signInRegion recorded in a cached login token, which names the region the refresh token was issued in,
+ * into out_region. The caller must clean up out_region. If the field is absent or empty, out_region is left empty and
+ * the call still succeeds. Fails if the file cannot be read or parsed. The token's other fields are not validated, so
+ * this also works for a token whose credentials have expired.
+ */
+AWS_AUTH_API
+int aws_login_token_read_sign_in_region(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor file_path,
+    struct aws_byte_buf *out_region);
 
 /*
  * Constructs a path to a login cached credential i.e.

@@ -851,8 +851,9 @@ struct aws_credentials_provider_login_options {
     struct aws_byte_cursor login_session;
 
     /*
-     * Required
-     * Region the AWS login CreateOAuth2Token call
+     * Optional.
+     * Region for the AWS login CreateOAuth2Token call. The provider uses the first of: the cached token's
+     * signInRegion, this option, then the profile's region.
      */
     struct aws_byte_cursor login_region;
 
