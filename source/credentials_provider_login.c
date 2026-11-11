@@ -122,13 +122,18 @@ static struct login_parameters *s_parameters_new(
     AWS_ZERO_STRUCT(token_path);
     struct aws_byte_buf sign_in_region;
     AWS_ZERO_STRUCT(sign_in_region);
+    const char *region_source = NULL;
     if (aws_login_token_construct_token_path(
-            allocator, parameters->login_session, parameters->login_directory_override, &token_path) ==
-            AWS_OP_SUCCESS &&
-        aws_login_token_read_sign_in_region(allocator, aws_byte_cursor_from_buf(&token_path), &sign_in_region) ==
-            AWS_OP_SUCCESS &&
-        sign_in_region.len > 0) {
+            allocator, parameters->login_session, parameters->login_directory_override, &token_path) ||
+        aws_login_token_read_sign_in_region(allocator, aws_byte_cursor_from_buf(&token_path), &sign_in_region)) {
+        /* a missing token file is normal before the first login, so this is not an error */
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "login: could not read signInRegion from the cached token: %s",
+            aws_error_debug_str(aws_last_error()));
+    } else if (sign_in_region.len > 0) {
         parameters->login_region = aws_string_new_from_buf(allocator, &sign_in_region);
+        region_source = "cached token";
     }
     aws_byte_buf_clean_up(&sign_in_region);
     aws_byte_buf_clean_up(&token_path);
@@ -136,11 +141,13 @@ static struct login_parameters *s_parameters_new(
     if (!parameters->login_region) {
         if (options->login_region.len > 0) {
             parameters->login_region = aws_string_new_from_cursor(allocator, &options->login_region);
+            region_source = "provider options";
         } else {
             const struct aws_profile_property *login_region = aws_profile_get_property(profile, s_login_region);
             if (login_region) {
                 parameters->login_region =
                     aws_string_new_from_string(allocator, aws_profile_property_get_value(login_region));
+                region_source = "profile";
             }
         }
     }
@@ -150,6 +157,11 @@ static struct login_parameters *s_parameters_new(
         aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_REGION_MISSING);
         goto on_finish;
     }
+    AWS_LOGF_DEBUG(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "login: using region %s from the %s",
+        aws_string_c_str(parameters->login_region),
+        region_source);
 
     const struct aws_byte_cursor suffix_override = aws_byte_cursor_from_c_str("aws.amazon.com");
 
@@ -240,6 +252,20 @@ int s_login_create_request_fn(struct aws_http_query_context *http_query_context,
 
     struct login_request_data *request_data = http_query_context->request_data;
     request_data->token = token;
+
+    /*
+     * The endpoint is fixed when the provider is created, so a later login in another region is not picked up.
+     */
+    struct aws_byte_cursor token_region = aws_login_token_get_sign_in_region(token);
+    if (token_region.len > 0 && !aws_string_eq_byte_cursor(parameters->login_region, &token_region)) {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) login: the cached token was issued in " PRInSTR
+            " but this provider refreshes in %s. Recreate the provider to refresh in the token's region.",
+            (void *)http_query_context->provider,
+            AWS_BYTE_CURSOR_PRI(token_region),
+            aws_string_c_str(parameters->login_region));
+    }
 
     /* Set path and query */
     struct aws_byte_cursor path_cursor = aws_byte_cursor_from_string(s_login_endpoint);

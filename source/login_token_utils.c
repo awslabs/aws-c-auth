@@ -87,6 +87,10 @@ struct aws_byte_cursor aws_login_token_get_account_id(struct aws_login_token *to
     return token->account_id;
 }
 
+struct aws_byte_cursor aws_login_token_get_sign_in_region(struct aws_login_token *token) {
+    return token->sign_in_region;
+}
+
 void aws_login_token_set_access_key_id(struct aws_login_token *token, struct aws_byte_cursor value) {
     token->access_key_id = value;
 }
@@ -161,6 +165,7 @@ int aws_login_token_read_sign_in_region(
 
     document = aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&contents));
     if (!document) {
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN);
         goto on_finish;
     }
 

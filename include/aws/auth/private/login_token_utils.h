@@ -39,6 +39,12 @@ AWS_AUTH_API
 struct aws_byte_cursor aws_login_token_get_account_id(struct aws_login_token *token);
 
 /*
+ * Returns the token's signInRegion, or an empty cursor if the token does not record one.
+ */
+AWS_AUTH_API
+struct aws_byte_cursor aws_login_token_get_sign_in_region(struct aws_login_token *token);
+
+/*
  * Setter for access key id.
  */
 AWS_AUTH_API
