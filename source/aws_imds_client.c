@@ -312,6 +312,8 @@ struct aws_imds_client *aws_imds_client_new(
             AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to set SNI hostname for TLS connection");
             goto on_error;
         }
+
+        manager_options.tls_connection_options = &tls_connection_options;
 #endif /* BYO_CRYPTO */
     }
 
