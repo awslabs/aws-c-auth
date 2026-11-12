@@ -32,6 +32,7 @@ AWS_STATIC_STRING_FROM_LITERAL(s_login_refresh_token_key, "refreshToken");
 AWS_STATIC_STRING_FROM_LITERAL(s_login_id_token_key, "idToken");
 AWS_STATIC_STRING_FROM_LITERAL(s_login_client_id_key, "clientId");
 AWS_STATIC_STRING_FROM_LITERAL(s_login_dpop_key, "dpopKey");
+AWS_STATIC_STRING_FROM_LITERAL(s_login_sign_in_region_key, "signInRegion");
 AWS_STATIC_STRING_FROM_LITERAL(s_login_grant_type_key, "grantType");
 AWS_STATIC_STRING_FROM_LITERAL(s_login_grant_type_value, "refresh_token");
 
@@ -69,6 +70,8 @@ struct aws_login_token {
     struct aws_byte_cursor id_token;
     struct aws_byte_cursor client_id;
     struct aws_byte_cursor dpop_key;
+    /* optional, empty when the token file does not record it */
+    struct aws_byte_cursor sign_in_region;
 };
 
 struct aws_login_refresh_response {
@@ -82,6 +85,10 @@ struct aws_login_refresh_response {
 
 struct aws_byte_cursor aws_login_token_get_account_id(struct aws_login_token *token) {
     return token->account_id;
+}
+
+struct aws_byte_cursor aws_login_token_get_sign_in_region(struct aws_login_token *token) {
+    return token->sign_in_region;
 }
 
 void aws_login_token_set_access_key_id(struct aws_login_token *token, struct aws_byte_cursor value) {
@@ -137,6 +144,45 @@ struct aws_login_refresh_response *aws_login_refresh_destroy(struct aws_login_re
     }
     aws_json_value_destroy(refresh_token->serialized_token);
     return refresh_token;
+}
+
+int aws_login_token_read_sign_in_region(
+    struct aws_allocator *allocator,
+    struct aws_byte_cursor file_path,
+    struct aws_byte_buf *out_region) {
+    int result = AWS_OP_ERR;
+    struct aws_json_value *document = NULL;
+    struct aws_json_value *value = NULL;
+    struct aws_byte_cursor region;
+    AWS_ZERO_STRUCT(region);
+    struct aws_byte_buf contents;
+    AWS_ZERO_STRUCT(contents);
+
+    struct aws_string *file_path_string = aws_string_new_from_cursor(allocator, &file_path);
+    if (aws_byte_buf_init_from_file(&contents, allocator, aws_string_c_str(file_path_string))) {
+        goto on_finish;
+    }
+
+    document = aws_json_value_new_from_string(allocator, aws_byte_cursor_from_buf(&contents));
+    if (!document) {
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN);
+        goto on_finish;
+    }
+
+    value = aws_json_value_get_from_object(document, aws_byte_cursor_from_string(s_login_sign_in_region_key));
+    if (value && aws_json_value_is_string(value) && aws_json_value_get_string(value, &region) == AWS_OP_SUCCESS &&
+        region.len > 0) {
+        if (aws_byte_buf_init_copy_from_cursor(out_region, allocator, region)) {
+            goto on_finish;
+        }
+    }
+    result = AWS_OP_SUCCESS;
+
+on_finish:
+    aws_json_value_destroy(document);
+    aws_byte_buf_clean_up_secure(&contents);
+    aws_string_destroy(file_path_string);
+    return result;
 }
 
 int aws_login_token_construct_token_path(
@@ -376,6 +422,13 @@ struct aws_login_token *aws_login_token_new_from_json_document(
             &token->dpop_key)) {
         AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login token: failed to parse login token");
         goto on_error;
+    }
+
+    AWS_ZERO_STRUCT(token->sign_in_region);
+    struct aws_json_value *sign_in_region =
+        aws_json_value_get_from_object(document_root, aws_byte_cursor_from_string(s_login_sign_in_region_key));
+    if (sign_in_region && aws_json_value_is_string(sign_in_region)) {
+        aws_json_value_get_string(sign_in_region, &token->sign_in_region);
     }
 
     // check that the token has not expired yet
@@ -644,6 +697,17 @@ int aws_login_token_write_token_file(
             &token->dpop_key)) {
         aws_json_value_destroy(login_json);
         aws_json_value_destroy(access_token);
+        goto on_error;
+    }
+
+    if (token->sign_in_region.len > 0 && s_write_to_json_node(
+                                             allocator,
+                                             login_json,
+                                             s_new_string_from_cursor_json_value,
+                                             s_add_json_value_to_parent,
+                                             aws_string_c_str(s_login_sign_in_region_key),
+                                             &token->sign_in_region)) {
+        aws_json_value_destroy(login_json);
         goto on_error;
     }
 
