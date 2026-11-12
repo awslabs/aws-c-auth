@@ -304,8 +304,7 @@ struct aws_imds_client *aws_imds_client_new(
         struct aws_tls_ctx *tls_ctx = aws_tls_client_ctx_new(allocator, &tls_ctx_options);
         aws_tls_ctx_options_clean_up(&tls_ctx_options);
 
-        if (tls_ctx) {
-            aws_tls_ctx_release(tls_ctx);
+        if (!tls_ctx) {
             AWS_LOGF_ERROR(AWS_LS_IMDS_CLIENT, "Failed to create TLS context for HTTPS endpoint");
             goto on_error;
         }
