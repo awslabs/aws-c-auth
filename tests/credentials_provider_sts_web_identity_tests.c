@@ -233,17 +233,19 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_foo_profile, "foo");
-AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_region_env, "AWS_DEFAULT_REGION");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_default_region_env, "AWS_DEFAULT_REGION");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_role_arn_env, "AWS_ROLE_ARN");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_role_session_name_env, "AWS_ROLE_SESSION_NAME");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_token_file_path_env, "AWS_WEB_IDENTITY_TOKEN_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_token_contents, "my-test-token-contents-123-abc-xyz");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_region_env, "AWS_REGION");
 
 static int s_aws_sts_web_identity_test_unset_env_parameters(void) {
-    ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_region_env) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_default_region_env) == AWS_OP_SUCCESS);
     ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_role_arn_env) == AWS_OP_SUCCESS);
     ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_role_session_name_env) == AWS_OP_SUCCESS);
     ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_token_file_path_env) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_region_env) == AWS_OP_SUCCESS);
 
     return AWS_OP_SUCCESS;
 }
@@ -257,7 +259,7 @@ static int s_aws_sts_web_identity_test_init_env_parameters(
 
     struct aws_string *region_str = aws_string_new_from_c_str(allocator, region);
     ASSERT_TRUE(region_str != NULL);
-    ASSERT_TRUE(aws_set_environment_value(s_sts_web_identity_region_env, region_str) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_set_environment_value(s_sts_web_identity_default_region_env, region_str) == AWS_OP_SUCCESS);
     aws_string_destroy(region_str);
 
     struct aws_string *role_arn_str = aws_string_new_from_c_str(allocator, role_arn);
