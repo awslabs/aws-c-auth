@@ -327,6 +327,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider_chain_options chain_options = {
         .provider_count = index,
         .providers = providers,
+        .pin_credential_provider = options->pin_credential_provider,
     };
 
     chain_provider = aws_credentials_provider_new_chain(allocator, &chain_options);

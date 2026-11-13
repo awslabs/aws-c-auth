@@ -67,6 +67,9 @@ struct aws_credentials_provider *aws_credentials_provider_new_mock(
     size_t result_count,
     struct aws_credentials_provider_shutdown_options *shutdown_options);
 
+/* Number of get_credentials calls a synchronous mock has served */
+size_t aws_credentials_provider_mock_get_call_count(struct aws_credentials_provider *provider);
+
 struct aws_credentials_provider *aws_credentials_provider_new_mock_async(
     struct aws_allocator *allocator,
     struct get_credentials_mock_result *results,
