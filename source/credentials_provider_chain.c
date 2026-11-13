@@ -225,6 +225,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
 
     provider->shutdown_options = options->shutdown_options;
     impl->pin_credential_provider = options->pin_credential_provider;
+    aws_atomic_init_ptr(&impl->pinned_provider, NULL);
 
     return provider;
 
