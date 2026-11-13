@@ -28,7 +28,7 @@ static struct aws_mock_sts_web_identity_tester {
     struct aws_tls_ctx *tls_ctx;
 
     /* host the provider passed to the connection manager */
-    char host[256];
+    struct aws_byte_buf host;
 
     struct aws_byte_buf request_body;
 
@@ -89,9 +89,7 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
         AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
     }
 
-    AWS_FATAL_ASSERT(options->host.len < sizeof(s_tester.host));
-    memcpy(s_tester.host, options->host.ptr, options->host.len);
-    s_tester.host[options->host.len] = '\0';
+    aws_byte_buf_init_copy_from_cursor(&s_tester.host, allocator, options->host);
 
     struct mock_connection_manager *mock_manager = aws_mem_calloc(allocator, 1, sizeof(struct mock_connection_manager));
     mock_manager->allocator = allocator;
@@ -305,6 +303,8 @@ static int s_aws_sts_web_identity_test_init_config_profile(
 static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
     aws_auth_library_init(allocator);
 
+    AWS_ZERO_STRUCT(s_tester);
+
     struct aws_tls_ctx_options tls_options;
     aws_tls_ctx_options_init_default_client(&tls_options, allocator);
     s_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
@@ -339,6 +339,7 @@ static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
 static void s_aws_sts_web_identity_tester_cleanup(void) {
     aws_tls_ctx_release(s_tester.tls_ctx);
     aws_array_list_clean_up(&s_tester.response_data_callbacks);
+    aws_byte_buf_clean_up(&s_tester.host);
     aws_byte_buf_clean_up(&s_tester.request_body);
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
@@ -1117,8 +1118,7 @@ static int s_sts_web_identity_check_host(
     const char *expected_host) {
 
     s_aws_sts_web_identity_tester_init(allocator);
-    s_tester.has_received_shutdown_callback = false;
-    s_tester.host[0] = '\0';
+
     s_aws_sts_web_identity_test_unset_env_parameters();
     ASSERT_SUCCESS(aws_unset_environment_value(s_sts_web_identity_use_fips_env));
     ASSERT_SUCCESS(aws_unset_environment_value(s_sts_web_identity_endpoint_url_sts_env));
@@ -1158,7 +1158,11 @@ static int s_sts_web_identity_check_host(
 
     struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
     ASSERT_NOT_NULL(provider);
-    ASSERT_STR_EQUALS(expected_host, s_tester.host);
+    struct aws_byte_cursor expected_host_cursor = aws_byte_cursor_from_c_str(expected_host);
+    struct aws_byte_cursor actual_host_cursor = aws_byte_cursor_from_buf(&s_tester.host);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_host_cursor.ptr, expected_host_cursor.len, actual_host_cursor.ptr, actual_host_cursor.len);
 
     aws_credentials_provider_release(provider);
     s_aws_wait_for_provider_shutdown_callback();
