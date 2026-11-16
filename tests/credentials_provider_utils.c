@@ -180,6 +180,11 @@ on_init_result_list_failure:
     return NULL;
 }
 
+size_t aws_credentials_provider_mock_get_call_count(struct aws_credentials_provider *provider) {
+    struct aws_credentials_provider_mock_impl *impl = provider->impl;
+    return impl->next_result;
+}
+
 /*
  * Mock async provider
  */

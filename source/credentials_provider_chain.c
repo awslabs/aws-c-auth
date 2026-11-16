@@ -9,6 +9,9 @@
 
 struct aws_credentials_provider_chain_impl {
     struct aws_array_list providers;
+    bool pin_credential_provider;
+    /* Provider that returned credentials first; NULL until then */
+    struct aws_atomic_var pinned_provider;
 };
 
 struct aws_credentials_provider_chain_user_data {
@@ -17,6 +20,8 @@ struct aws_credentials_provider_chain_user_data {
     size_t current_provider_index;
     aws_on_get_credentials_callback_fn *original_callback;
     void *original_user_data;
+    /* Query sent only to the pinned provider */
+    bool pinned_query;
 };
 
 static void s_aws_provider_chain_member_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
@@ -25,6 +30,32 @@ static void s_aws_provider_chain_member_callback(struct aws_credentials *credent
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
     size_t provider_count = aws_array_list_length(&impl->providers);
+
+    /* Pinned query: return the result as is, never fall through */
+    if (wrapped_user_data->pinned_query) {
+        AWS_LOGF_DEBUG(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Credentials provider chain pinned provider returned %s credentials and error code %d",
+            (void *)provider,
+            (credentials != NULL) ? "valid" : "invalid",
+            error_code);
+
+        goto on_terminate_chain;
+    }
+
+    /* Pin the first member that returns credentials */
+    if (credentials != NULL && impl->pin_credential_provider) {
+        struct aws_credentials_provider *member = NULL;
+        void *expected = NULL;
+        if (!aws_array_list_get_at(&impl->providers, &member, wrapped_user_data->current_provider_index) &&
+            aws_atomic_compare_exchange_ptr(&impl->pinned_provider, &expected, member)) {
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Credentials provider chain pinned member #%zu",
+                (void *)provider,
+                wrapped_user_data->current_provider_index + 1);
+        }
+    }
 
     if (credentials != NULL || wrapped_user_data->current_provider_index + 1 >= provider_count) {
         AWS_LOGF_INFO(
@@ -82,7 +113,14 @@ static int s_credentials_provider_chain_get_credentials_async(
     struct aws_credentials_provider_chain_impl *impl = provider->impl;
 
     struct aws_credentials_provider *first_provider = NULL;
-    if (aws_array_list_get_at(&impl->providers, &first_provider, 0)) {
+    bool pinned_query = false;
+    if (impl->pin_credential_provider) {
+        first_provider = aws_atomic_load_ptr(&impl->pinned_provider);
+        pinned_query = first_provider != NULL;
+    }
+
+    /* Nothing pinned: walk from the first member */
+    if (first_provider == NULL && aws_array_list_get_at(&impl->providers, &first_provider, 0)) {
         return AWS_OP_ERR;
     }
 
@@ -99,13 +137,15 @@ static int s_credentials_provider_chain_get_credentials_async(
     wrapped_user_data->current_provider_index = 0;
     wrapped_user_data->original_user_data = user_data;
     wrapped_user_data->original_callback = callback;
+    wrapped_user_data->pinned_query = pinned_query;
 
     aws_credentials_provider_acquire(provider);
 
     AWS_LOGF_DEBUG(
         AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-        "(id=%p) Credentials provider chain get credentials dispatch",
-        (void *)provider);
+        "(id=%p) Credentials provider chain get credentials dispatch%s",
+        (void *)provider,
+        pinned_query ? " to pinned provider" : "");
 
     aws_credentials_provider_get_credentials(first_provider, s_aws_provider_chain_member_callback, wrapped_user_data);
 
@@ -184,6 +224,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain(
     }
 
     provider->shutdown_options = options->shutdown_options;
+    impl->pin_credential_provider = options->pin_credential_provider;
+    aws_atomic_init_ptr(&impl->pinned_provider, NULL);
 
     return provider;
 

@@ -1361,6 +1361,212 @@ static int s_credentials_provider_null_chain_test(struct aws_allocator *allocato
 
 AWS_TEST_CASE(credentials_provider_null_chain_test, s_credentials_provider_null_chain_test);
 
+/* Builds a two-member chain from mocks; the caller keeps its references to the mocks */
+static struct aws_credentials_provider *s_new_two_member_chain(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *provider1,
+    struct aws_credentials_provider *provider2,
+    bool pin_credential_provider) {
+
+    struct aws_credentials_provider *providers[2] = {provider1, provider2};
+
+    struct aws_credentials_provider_chain_options options;
+    AWS_ZERO_STRUCT(options);
+    options.providers = providers;
+    options.provider_count = 2;
+    options.shutdown_options.shutdown_callback = s_on_shutdown_complete;
+    options.pin_credential_provider = pin_credential_provider;
+
+    return aws_credentials_provider_new_chain(allocator, &options);
+}
+
+/* Runs one get_credentials on a chain of synchronous mocks */
+static int s_get_chain_credentials_once(
+    struct aws_credentials_provider *chain,
+    struct aws_get_credentials_test_callback_result *callback_results) {
+
+    ASSERT_SUCCESS(s_invoke_get_credentials(chain, callback_results, 1));
+    ASSERT_SUCCESS(s_wait_for_get_credentials(callback_results));
+    ASSERT_INT_EQUALS(1, callback_results->count);
+    return AWS_OP_SUCCESS;
+}
+
+/* Pinned member is the only one asked later, and its failure is returned without fallback */
+static int s_credentials_provider_chain_pin_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_credentials_shutdown_checker_init();
+
+    struct aws_credentials *creds = aws_credentials_new_from_string(
+        allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2, UINT64_MAX);
+
+    /* Member 1 has one result, so asking it again would fail the test */
+    struct get_credentials_mock_result results1[] = {
+        {.error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE, .credentials = NULL},
+    };
+    struct get_credentials_mock_result results2[] = {
+        {.error_code = 0, .credentials = creds},
+        {.error_code = AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, .credentials = NULL},
+    };
+
+    struct aws_credentials_provider *mock1 = aws_credentials_provider_new_mock(allocator, results1, 1, NULL);
+    struct aws_credentials_provider *mock2 = aws_credentials_provider_new_mock(allocator, results2, 2, NULL);
+    struct aws_credentials_provider *chain = s_new_two_member_chain(allocator, mock1, mock2, true);
+    ASSERT_NOT_NULL(chain);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+
+    /* First call walks past member 1 and pins member 2 */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NOT_NULL(callback_results.credentials);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_access_key_id(callback_results.credentials), s_access_key_id_2);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Second call asks only member 2 and returns its error */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NULL(callback_results.credentials);
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, callback_results.last_error);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Member 1 was asked only on the first walk; member 2 served both calls */
+    ASSERT_UINT_EQUALS(1, aws_credentials_provider_mock_get_call_count(mock1));
+    ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock2));
+
+    aws_credentials_provider_release(mock1);
+    aws_credentials_provider_release(mock2);
+    aws_credentials_provider_release(chain);
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    aws_credentials_release(creds);
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(credentials_provider_chain_pin_test, s_credentials_provider_chain_pin_test);
+
+/* With the flag off, every call walks from the first member as before */
+static int s_credentials_provider_chain_pin_disabled_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_credentials_shutdown_checker_init();
+
+    struct aws_credentials *creds1 = aws_credentials_new_from_string(
+        allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, UINT64_MAX);
+    struct aws_credentials *creds2 = aws_credentials_new_from_string(
+        allocator, s_access_key_id_2, s_secret_access_key_2, s_session_token_2, UINT64_MAX);
+
+    struct get_credentials_mock_result results1[] = {
+        {.error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE, .credentials = NULL},
+        {.error_code = 0, .credentials = creds1},
+    };
+    struct get_credentials_mock_result results2[] = {
+        {.error_code = 0, .credentials = creds2},
+    };
+
+    struct aws_credentials_provider *mock1 = aws_credentials_provider_new_mock(allocator, results1, 2, NULL);
+    struct aws_credentials_provider *mock2 = aws_credentials_provider_new_mock(allocator, results2, 1, NULL);
+    struct aws_credentials_provider *chain = s_new_two_member_chain(allocator, mock1, mock2, false);
+    ASSERT_NOT_NULL(chain);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+
+    /* First call falls through to member 2 */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NOT_NULL(callback_results.credentials);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_access_key_id(callback_results.credentials), s_access_key_id_2);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Second call starts at member 1 again */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NOT_NULL(callback_results.credentials);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_access_key_id(callback_results.credentials), s_access_key_id_1);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Member 1 was asked on both walks; member 2 only on the first */
+    ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock1));
+    ASSERT_UINT_EQUALS(1, aws_credentials_provider_mock_get_call_count(mock2));
+
+    aws_credentials_provider_release(mock1);
+    aws_credentials_provider_release(mock2);
+    aws_credentials_provider_release(chain);
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    aws_credentials_release(creds2);
+    aws_credentials_release(creds1);
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(credentials_provider_chain_pin_disabled_test, s_credentials_provider_chain_pin_disabled_test);
+
+/* When every member fails nothing is pinned, the last error is returned and the next call walks again */
+static int s_credentials_provider_chain_pin_all_fail_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_credentials_shutdown_checker_init();
+
+    struct aws_credentials *creds1 = aws_credentials_new_from_string(
+        allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, UINT64_MAX);
+
+    struct get_credentials_mock_result results1[] = {
+        {.error_code = AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE, .credentials = NULL},
+        {.error_code = 0, .credentials = creds1},
+        {.error_code = 0, .credentials = creds1},
+    };
+    /* Member 2 has one result, so asking it after member 1 is pinned would fail the test */
+    struct get_credentials_mock_result results2[] = {
+        {.error_code = AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, .credentials = NULL},
+    };
+
+    struct aws_credentials_provider *mock1 = aws_credentials_provider_new_mock(allocator, results1, 3, NULL);
+    struct aws_credentials_provider *mock2 = aws_credentials_provider_new_mock(allocator, results2, 1, NULL);
+    struct aws_credentials_provider *chain = s_new_two_member_chain(allocator, mock1, mock2, true);
+    ASSERT_NOT_NULL(chain);
+
+    struct aws_get_credentials_test_callback_result callback_results;
+
+    /* First call: both members fail, the last member's error is returned */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NULL(callback_results.credentials);
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, callback_results.last_error);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Second call walks from member 1, which succeeds and is pinned */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NOT_NULL(callback_results.credentials);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_access_key_id(callback_results.credentials), s_access_key_id_1);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Third call goes only to pinned member 1 */
+    ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
+    ASSERT_NOT_NULL(callback_results.credentials);
+    ASSERT_CURSOR_VALUE_STRING_EQUALS(
+        aws_credentials_get_access_key_id(callback_results.credentials), s_access_key_id_1);
+    aws_get_credentials_test_callback_result_clean_up(&callback_results);
+
+    /* Member 1 served all three calls; member 2 was asked only on the failed walk */
+    ASSERT_UINT_EQUALS(3, aws_credentials_provider_mock_get_call_count(mock1));
+    ASSERT_UINT_EQUALS(1, aws_credentials_provider_mock_get_call_count(mock2));
+
+    aws_credentials_provider_release(mock1);
+    aws_credentials_provider_release(mock2);
+    aws_credentials_provider_release(chain);
+    s_aws_wait_for_provider_shutdown_callback();
+    s_aws_credentials_shutdown_checker_clean_up();
+
+    aws_credentials_release(creds1);
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(credentials_provider_chain_pin_all_fail_test, s_credentials_provider_chain_pin_all_fail_test);
+
 static int s_credentials_provider_default_test(struct aws_allocator *allocator, bool manual_tls) {
     aws_auth_library_init(allocator);
 

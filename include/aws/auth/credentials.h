@@ -189,6 +189,14 @@ struct aws_credentials_provider_chain_options {
      * Number of elements in the array of credentials providers
      */
     size_t provider_count;
+
+    /*
+     * (Optional)
+     * If enabled, the chain remembers the first provider that returns credentials and only queries that provider
+     * afterwards. A failure from that provider is returned to the caller; the chain does not fall back to other
+     * providers. Defaults to false.
+     */
+    bool pin_credential_provider;
 };
 
 /*
@@ -718,6 +726,13 @@ struct aws_credentials_provider_chain_default_options {
      * aws_http_credentials_provider.h for more information.
      */
     const struct proxy_env_var_settings *proxy_ev_settings;
+
+    /*
+     * (Optional)
+     * If enabled, the chain remembers the first provider that returns credentials and only queries that provider
+     * afterwards. See aws_credentials_provider_chain_options. Defaults to false.
+     */
+    bool pin_credential_provider;
 };
 
 typedef int(aws_credentials_provider_delegate_get_credentials_fn)(
