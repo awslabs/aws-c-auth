@@ -796,6 +796,7 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_web_identity_vtable = {
     .get_credentials = s_credentials_provider_sts_web_identity_get_credentials_async,
     .destroy = s_credentials_provider_sts_web_identity_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 static void s_on_connection_manager_shutdown(void *user_data) {

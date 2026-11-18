@@ -754,6 +754,7 @@ void s_destroy(struct aws_credentials_provider *provider) {
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_sts_vtable = {
     .get_credentials = s_sts_get_creds,
     .destroy = s_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 AWS_STATIC_STRING_FROM_LITERAL(s_region_config, "region");

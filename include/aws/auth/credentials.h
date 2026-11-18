@@ -39,6 +39,14 @@ typedef int(aws_credentials_provider_invalidate_fn)(
     const struct aws_credentials *rejected_credentials);
 
 /*
+ * Refreshable providers use the refresh cache behavior; standard providers keep the existing caching behavior.
+ */
+enum aws_credentials_provider_refresh_type {
+    AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_STANDARD = 0,
+    AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
+};
+
+/*
  * Common function table that all credentials provider implementations must support
  */
 struct aws_credentials_provider_vtable {
@@ -47,6 +55,9 @@ struct aws_credentials_provider_vtable {
 
     /* Optional. NULL means the provider has nothing to invalidate. */
     aws_credentials_provider_invalidate_fn *invalidate;
+
+    /* Defaults to STANDARD when not set. */
+    enum aws_credentials_provider_refresh_type refresh_type;
 };
 
 typedef void(aws_credentials_provider_shutdown_completed_fn)(void *user_data);

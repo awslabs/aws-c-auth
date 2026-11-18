@@ -48,6 +48,7 @@ static void s_on_imds_client_shutdown(void *user_data) {
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_imds_vtable = {
     .get_credentials = s_credentials_provider_imds_get_credentials_async,
     .destroy = s_credentials_provider_imds_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
