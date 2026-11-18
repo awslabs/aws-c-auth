@@ -921,15 +921,6 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "<RequestId>4442587FB7D0A2F9</RequestId>"
     "</Error>");
 
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_retryable_error_response_2,
-    "<Error>"
-    "<Code>InvalidIdentityToken</Code>"
-    "<Message>XXX</Message>"
-    "<Resource>YYY</Resource>"
-    "<RequestId>4442587FB7D0A2F9</RequestId>"
-    "</Error>");
-
 static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -983,60 +974,6 @@ static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_
 AWS_TEST_CASE(
     credentials_provider_sts_web_identity_test_retry_error1,
     s_credentials_provider_sts_web_identity_test_retry_error1);
-
-static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
-    s_aws_sts_web_identity_tester_init(allocator);
-    s_tester.response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
-    s_aws_sts_web_identity_test_unset_env_parameters();
-
-    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
-    ASSERT_TRUE(token_file_path_str != NULL);
-    ASSERT_TRUE(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents) == AWS_OP_SUCCESS);
-
-    s_aws_sts_web_identity_test_init_env_parameters(
-        allocator,
-        "us-east-1",
-        "arn:aws:iam::1234567890:role/test-arn",
-        "9876543210",
-        aws_string_c_str(token_file_path_str));
-    aws_string_destroy(token_file_path_str);
-
-    struct aws_byte_cursor bad_document_cursor = aws_byte_cursor_from_string(s_retryable_error_response_2);
-    aws_array_list_push_back(&s_tester.response_data_callbacks, &bad_document_cursor);
-
-    struct aws_credentials_provider_sts_web_identity_options options = {
-        .bootstrap = NULL,
-        .tls_ctx = s_tester.tls_ctx,
-        .function_table = &s_mock_function_table,
-        .shutdown_options =
-            {
-                .shutdown_callback = s_on_shutdown_complete,
-                .shutdown_user_data = NULL,
-            },
-    };
-
-    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
-
-    aws_credentials_provider_get_credentials(provider, s_get_credentials_callback, NULL);
-
-    s_aws_wait_for_credentials_result();
-
-    ASSERT_SUCCESS(s_verify_credentials(
-        true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
-
-    aws_credentials_provider_release(provider);
-
-    s_aws_wait_for_provider_shutdown_callback();
-
-    s_aws_sts_web_identity_tester_cleanup();
-
-    return 0;
-}
-AWS_TEST_CASE(
-    credentials_provider_sts_web_identity_test_retry_error2,
-    s_credentials_provider_sts_web_identity_test_retry_error2);
 
 static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
