@@ -290,6 +290,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     profile_options.shutdown_options = sub_provider_shutdown_options;
     profile_options.profile_collection_cached = options->profile_collection_cached;
     profile_options.profile_name_override = options->profile_name_override;
+    profile_options.proxy_ev_settings = options->proxy_ev_settings;
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
     if (profile_provider != NULL) {
         providers[index++] = profile_provider;
