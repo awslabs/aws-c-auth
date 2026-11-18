@@ -247,6 +247,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
 
     AWS_ASSERT(options->source != NULL);
 
+    /* Refreshable sources get the refresh cache; standard sources keep the existing cache */
+    if (options->source->vtable->refresh_type == AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE) {
+        return aws_credentials_provider_new_refresh_cached(allocator, options);
+    }
+
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_cached *impl = NULL;
 

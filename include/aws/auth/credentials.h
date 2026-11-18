@@ -181,6 +181,7 @@ struct aws_credentials_provider_cached_options {
      * An optional expiration time period for sourced credentials.  For a given set of cached credentials,
      * the refresh time period will be the minimum of this time and any expiration timestamp on the credentials
      * themselves.
+     * Not used when the source is refreshable (IMDS, ECS, STS, STS web identity, SSO, Login, Cognito).
      */
     uint64_t refresh_time_in_milliseconds;
 
@@ -1264,6 +1265,8 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(
  * CachedProvider -> ProviderChain(EnvironmentProvider -> ProfileProvider -> ECS/EC2IMD etc...)
  *
  * A reference is taken on the target provider
+ *
+ * A refreshable source gets a cache that keeps credentials after a failed refresh and supports invalidate.
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options
