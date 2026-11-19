@@ -835,6 +835,8 @@ AWS_STATIC_STRING_FROM_LITERAL(s_role_session_name_config, "role_session_name");
 AWS_STATIC_STRING_FROM_LITERAL(s_role_session_name_env, "AWS_ROLE_SESSION_NAME");
 AWS_STATIC_STRING_FROM_LITERAL(s_token_file_path_config, "web_identity_token_file");
 AWS_STATIC_STRING_FROM_LITERAL(s_token_file_path_env, "AWS_WEB_IDENTITY_TOKEN_FILE");
+AWS_STATIC_STRING_FROM_LITERAL(s_use_fips_endpoint_config, "use_fips_endpoint");
+AWS_STATIC_STRING_FROM_LITERAL(s_use_fips_endpoint_env, "AWS_USE_FIPS_ENDPOINT");
 
 struct sts_web_identity_parameters {
     struct aws_allocator *allocator;
@@ -884,7 +886,48 @@ on_error:
 }
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_name, "sts");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_fips_service_name, "sts-fips");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_service_env_name, "STS");
+
+static struct aws_byte_cursor s_us_gov_region_prefix = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("us-gov-");
+
+/*
+ * AWS_USE_FIPS_ENDPOINT wins over the profile's use_fips_endpoint, as in the other SDKs.
+ * The profile is only consulted when it has been loaded.
+ */
+static bool s_resolve_use_fips_endpoint(struct aws_allocator *allocator, const struct aws_profile *profile) {
+    struct aws_string *value = NULL;
+    aws_get_environment_value(allocator, s_use_fips_endpoint_env, &value);
+    if (value == NULL || value->len == 0) {
+        aws_string_destroy(value);
+        value = NULL;
+        if (profile) {
+            const struct aws_profile_property *property = aws_profile_get_property(profile, s_use_fips_endpoint_config);
+            if (property) {
+                value = aws_string_new_from_string(allocator, aws_profile_property_get_value(property));
+            }
+        }
+    }
+
+    bool use_fips = value != NULL && aws_string_eq_c_str_ignore_case(value, "true");
+    aws_string_destroy(value);
+    return use_fips;
+}
+
+/*
+ * STS FIPS hosts are sts-fips.<region>.<suffix>. In the aws-us-gov partition the regular
+ * sts.<region>.amazonaws.com host is the FIPS endpoint, so keep the plain service name there.
+ */
+static const struct aws_string *s_sts_host_service_name(const struct aws_string *region, bool use_fips) {
+    if (!use_fips || region == NULL) {
+        return s_sts_service_name;
+    }
+    struct aws_byte_cursor region_cur = aws_byte_cursor_from_string(region);
+    if (aws_byte_cursor_starts_with(&region_cur, &s_us_gov_region_prefix)) {
+        return s_sts_service_name;
+    }
+    return s_sts_fips_service_name;
+}
 
 static int s_generate_uuid_to_buf(struct aws_allocator *allocator, struct aws_byte_buf *dst) {
 
@@ -1032,12 +1075,12 @@ static struct sts_web_identity_parameters *s_parameters_new(
         }
     }
 
-    /* determine endpoint */
+    /* determine endpoint. An AWS_ENDPOINT_URL_STS / endpoint_url override still wins over FIPS. */
     if (aws_credentials_provider_construct_endpoint(
             allocator,
             &parameters->endpoint,
             region,
-            s_sts_service_name,
+            s_sts_host_service_name(region, s_resolve_use_fips_endpoint(allocator, profile)),
             s_sts_service_env_name,
             s_sts_service_name,
             config_profile,
