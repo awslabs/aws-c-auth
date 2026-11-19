@@ -107,6 +107,16 @@ void aws_credentials_query_init(
 AWS_AUTH_API
 void aws_credentials_query_clean_up(struct aws_credentials_query *query);
 
+/*
+ * Answers every query in the list with the same result, then cleans up and frees each query.
+ */
+AWS_AUTH_API
+void aws_credentials_query_list_notify_and_clean_up(
+    struct aws_linked_list *query_list,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials,
+    int error_code);
+
 AWS_AUTH_API
 void aws_credentials_provider_init_base(
     struct aws_credentials_provider *provider,

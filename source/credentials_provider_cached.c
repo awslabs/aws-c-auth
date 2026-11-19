@@ -33,21 +33,6 @@ struct aws_credentials_provider_cached {
     struct aws_linked_list pending_queries;
 };
 
-static void s_aws_credentials_query_list_notify_and_clean_up(
-    struct aws_linked_list *query_list,
-    struct aws_allocator *allocator,
-    struct aws_credentials *credentials,
-    int error_code) {
-
-    while (!aws_linked_list_empty(query_list)) {
-        struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
-        struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
-        query->callback(credentials, error_code, query->user_data);
-        aws_credentials_query_clean_up(query);
-        aws_mem_release(allocator, query);
-    }
-}
-
 static void s_swap_cached_credentials(
     struct aws_credentials_provider *provider,
     struct aws_credentials *new_credentials) {
@@ -144,7 +129,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         "(id=%p) Cached credentials provider notifying pending queries of new credentials",
         (void *)provider);
 
-    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials, error_code);
+    aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials, error_code);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(

@@ -183,6 +183,15 @@ struct aws_credentials_provider_cached_options {
      * themselves.
      * Not used when the source is refreshable (IMDS, ECS, STS, STS web identity, SSO, Login, Cognito).
      */
+    /*
+     * ==========================
+     * DOUBT: refreshable sources ignore this value, so a caller-set refresh time (Cognito 15 min, C++
+     * CachedCredentialTTL, Swift refreshTime) no longer refreshes early. Credential Refresh SEP L739-741 keeps an
+     * earlier schedule only when it belongs to a specific provider (such as IMDS), and L743-747 covers only
+     * advisory/mandatory window settings, so neither seems to apply to this generic cache setting.
+     * Should a caller-set value still trigger an early advisory refresh?
+     * ============================
+    */
     uint64_t refresh_time_in_milliseconds;
 
     /* For mocking, leave NULL otherwise */

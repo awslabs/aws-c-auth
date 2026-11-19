@@ -208,21 +208,6 @@ static bool s_has_same_access_key_id(const struct aws_credentials *a, const stru
     return a_access_key_id.len > 0 && aws_byte_cursor_eq(&a_access_key_id, &b_access_key_id);
 }
 
-static void s_notify_pending_queries(
-    struct aws_credentials_provider *provider,
-    struct aws_linked_list *query_list,
-    struct aws_credentials *credentials,
-    int error_code) {
-
-    while (!aws_linked_list_empty(query_list)) {
-        struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
-        struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
-        query->callback(credentials, error_code, query->user_data);
-        aws_credentials_query_clean_up(query);
-        aws_mem_release(provider->allocator, query);
-    }
-}
-
 /* Handles the answer of one source call; every waiting request gets the same result */
 static void s_on_credential_source_result(struct aws_credentials *credentials, int error_code, void *user_data) {
     struct aws_credentials_provider *provider = user_data;
@@ -286,7 +271,8 @@ static void s_on_credential_source_result(struct aws_credentials *credentials, i
 
     aws_mutex_unlock(&impl->lock);
 
-    s_notify_pending_queries(provider, &pending_queries, result_credentials, result_error_code);
+    aws_credentials_query_list_notify_and_clean_up(
+        &pending_queries, provider->allocator, result_credentials, result_error_code);
     aws_credentials_release(result_credentials);
 
     /* Taken in s_call_credential_source */
