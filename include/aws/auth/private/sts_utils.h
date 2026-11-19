@@ -12,20 +12,26 @@
 AWS_EXTERN_C_BEGIN
 
 /*
- * Reads the <Code> of an STS error response (<ErrorResponse><Error><Code> or <Error><Code>).
- * out_error_code points into error_document, and is empty if there is no <Code>.
+ * Reads the <Code> element of an STS error response, rooted at <ErrorResponse><Error> or <Error>.
+ * out_error_code points into error_document and is empty when there is no <Code>.
  */
 AWS_AUTH_API
-int aws_sts_parse_error_code(
+int aws_credentials_provider_parse_sts_error_code(
     struct aws_allocator *allocator,
     struct aws_byte_cursor error_document,
     struct aws_byte_cursor *out_error_code);
 
 /*
- * Returns true if an STS error code means retrying will not succeed.
+ * Returns true if an AssumeRoleWithWebIdentity error code (the <Code> element) should be retried within the attempt.
  */
 AWS_AUTH_API
-bool aws_sts_is_non_recoverable_error_code(struct aws_byte_cursor error_code);
+bool aws_credentials_provider_is_retryable_sts_web_identity_error_code(struct aws_byte_cursor error_code);
+
+/*
+ * Returns true if an STS error response code (the <Code> element) means retrying will not succeed.
+ */
+AWS_AUTH_API
+bool aws_credentials_provider_is_non_recoverable_sts_error_code(struct aws_byte_cursor error_code);
 
 AWS_EXTERN_C_END
 

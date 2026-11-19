@@ -379,9 +379,11 @@ on_finish:
 }
 
 /*
- * Sets a non-recoverable error code from a failed CreateOAuth2Token response. The body looks like
- * {"error": "TOKEN_EXPIRED", "message": "..."}. AccessDeniedException carries TOKEN_EXPIRED, AUTHCODE_EXPIRED,
- * USER_CREDENTIALS_CHANGED or INSUFFICIENT_PERMISSIONS. Any other HTTP 400 is a ValidationException.
+ * CreateOAuth2Token (rest-json) error body carries an "error" member, for example:
+ * {"error": "TOKEN_EXPIRED", "message": "..."}
+ * AccessDeniedException uses TOKEN_EXPIRED, AUTHCODE_EXPIRED, USER_CREDENTIALS_CHANGED or INSUFFICIENT_PERMISSIONS.
+ * ValidationException is the only error the operation returns with HTTP 400.
+ * Ref: https://docs.aws.amazon.com/signin/latest/APIReference/API_dataplane-signin_CreateOAuth2Token.html
  */
 static void s_set_non_recoverable_error_from_response(struct aws_http_query_context *http_query_context) {
     if (http_query_context->status_code == 0 || http_query_context->status_code == AWS_HTTP_STATUS_CODE_200_OK) {

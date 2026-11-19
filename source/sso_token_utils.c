@@ -100,7 +100,7 @@ struct aws_sso_token *aws_sso_token_new_from_file(struct aws_allocator *allocato
             "sso token: failed to load token file %s with error %s",
             aws_string_c_str(file_path),
             aws_error_debug_str(aws_last_error()));
-        /* A missing or unreadable token needs the customer to log in again */
+        /* A missing or unreadable cached token is non-recoverable until the customer logs in again */
         aws_raise_error(AWS_AUTH_SSO_TOKEN_INVALID);
         goto cleanup;
     }
