@@ -27,6 +27,9 @@
 static struct aws_mock_sts_web_identity_tester {
     struct aws_tls_ctx *tls_ctx;
 
+    /* host the provider passed to the connection manager */
+    struct aws_byte_buf host;
+
     struct aws_byte_buf request_body;
 
     struct aws_array_list response_data_callbacks;
@@ -85,6 +88,8 @@ static struct aws_http_connection_manager *s_aws_http_connection_manager_new_moc
         AWS_FATAL_ASSERT(options->proxy_ev_settings->connection_type == s_tester.proxy_config->connection_type);
         AWS_FATAL_ASSERT(options->proxy_ev_settings->tls_options == s_tester.proxy_config->tls_options);
     }
+
+    aws_byte_buf_init_copy_from_cursor(&s_tester.host, allocator, options->host);
 
     struct mock_connection_manager *mock_manager = aws_mem_calloc(allocator, 1, sizeof(struct mock_connection_manager));
     mock_manager->allocator = allocator;
@@ -228,17 +233,19 @@ static struct aws_auth_http_system_vtable s_mock_function_table = {
     .aws_http_connection_close = s_aws_http_connection_close_mock};
 
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_foo_profile, "foo");
-AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_region_env, "AWS_DEFAULT_REGION");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_default_region_env, "AWS_DEFAULT_REGION");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_role_arn_env, "AWS_ROLE_ARN");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_role_session_name_env, "AWS_ROLE_SESSION_NAME");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_token_file_path_env, "AWS_WEB_IDENTITY_TOKEN_FILE");
 AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_token_contents, "my-test-token-contents-123-abc-xyz");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_region_env, "AWS_REGION");
 
 static int s_aws_sts_web_identity_test_unset_env_parameters(void) {
-    ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_region_env) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_default_region_env) == AWS_OP_SUCCESS);
     ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_role_arn_env) == AWS_OP_SUCCESS);
     ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_role_session_name_env) == AWS_OP_SUCCESS);
     ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_token_file_path_env) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_unset_environment_value(s_sts_web_identity_region_env) == AWS_OP_SUCCESS);
 
     return AWS_OP_SUCCESS;
 }
@@ -252,7 +259,7 @@ static int s_aws_sts_web_identity_test_init_env_parameters(
 
     struct aws_string *region_str = aws_string_new_from_c_str(allocator, region);
     ASSERT_TRUE(region_str != NULL);
-    ASSERT_TRUE(aws_set_environment_value(s_sts_web_identity_region_env, region_str) == AWS_OP_SUCCESS);
+    ASSERT_TRUE(aws_set_environment_value(s_sts_web_identity_default_region_env, region_str) == AWS_OP_SUCCESS);
     aws_string_destroy(region_str);
 
     struct aws_string *role_arn_str = aws_string_new_from_c_str(allocator, role_arn);
@@ -298,6 +305,8 @@ static int s_aws_sts_web_identity_test_init_config_profile(
 static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
     aws_auth_library_init(allocator);
 
+    AWS_ZERO_STRUCT(s_tester);
+
     struct aws_tls_ctx_options tls_options;
     aws_tls_ctx_options_init_default_client(&tls_options, allocator);
     s_tester.tls_ctx = aws_tls_client_ctx_new(allocator, &tls_options);
@@ -332,6 +341,7 @@ static int s_aws_sts_web_identity_tester_init(struct aws_allocator *allocator) {
 static void s_aws_sts_web_identity_tester_cleanup(void) {
     aws_tls_ctx_release(s_tester.tls_ctx);
     aws_array_list_clean_up(&s_tester.response_data_callbacks);
+    aws_byte_buf_clean_up(&s_tester.host);
     aws_byte_buf_clean_up(&s_tester.request_body);
     aws_condition_variable_clean_up(&s_tester.signal);
     aws_mutex_clean_up(&s_tester.lock);
@@ -1094,6 +1104,100 @@ static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_
 
     return 0;
 }
+
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_use_fips_env, "AWS_USE_FIPS_ENDPOINT");
+AWS_STATIC_STRING_FROM_LITERAL(s_sts_web_identity_endpoint_url_sts_env, "AWS_ENDPOINT_URL_STS");
+
+/*
+ * Builds a provider from env (region, role arn, token file) plus the given AWS_USE_FIPS_ENDPOINT and
+ * AWS_ENDPOINT_URL_STS values (NULL leaves the variable unset) and checks the STS host it connects to.
+ */
+static int s_sts_web_identity_check_host(
+    struct aws_allocator *allocator,
+    const char *region,
+    const char *use_fips,
+    const char *endpoint_url_sts,
+    const char *expected_host) {
+
+    s_aws_sts_web_identity_tester_init(allocator);
+
+    s_aws_sts_web_identity_test_unset_env_parameters();
+    ASSERT_SUCCESS(aws_unset_environment_value(s_sts_web_identity_use_fips_env));
+    ASSERT_SUCCESS(aws_unset_environment_value(s_sts_web_identity_endpoint_url_sts_env));
+
+    struct aws_string *token_file_path_str = aws_create_process_unique_file_name(allocator);
+    ASSERT_NOT_NULL(token_file_path_str);
+    ASSERT_SUCCESS(aws_create_profile_file(token_file_path_str, s_sts_web_identity_token_contents));
+    s_aws_sts_web_identity_test_init_env_parameters(
+        allocator,
+        region,
+        "arn:aws:iam::1234567890:role/test-arn",
+        "9876543210",
+        aws_string_c_str(token_file_path_str));
+    aws_string_destroy(token_file_path_str);
+
+    if (use_fips) {
+        struct aws_string *value = aws_string_new_from_c_str(allocator, use_fips);
+        ASSERT_SUCCESS(aws_set_environment_value(s_sts_web_identity_use_fips_env, value));
+        aws_string_destroy(value);
+    }
+    if (endpoint_url_sts) {
+        struct aws_string *value = aws_string_new_from_c_str(allocator, endpoint_url_sts);
+        ASSERT_SUCCESS(aws_set_environment_value(s_sts_web_identity_endpoint_url_sts_env, value));
+        aws_string_destroy(value);
+    }
+
+    struct aws_credentials_provider_sts_web_identity_options options = {
+        .bootstrap = NULL,
+        .tls_ctx = s_tester.tls_ctx,
+        .function_table = &s_mock_function_table,
+        .shutdown_options =
+            {
+                .shutdown_callback = s_on_shutdown_complete,
+                .shutdown_user_data = NULL,
+            },
+    };
+
+    struct aws_credentials_provider *provider = aws_credentials_provider_new_sts_web_identity(allocator, &options);
+    ASSERT_NOT_NULL(provider);
+    struct aws_byte_cursor expected_host_cursor = aws_byte_cursor_from_c_str(expected_host);
+    struct aws_byte_cursor actual_host_cursor = aws_byte_cursor_from_buf(&s_tester.host);
+
+    ASSERT_BIN_ARRAYS_EQUALS(
+        expected_host_cursor.ptr, expected_host_cursor.len, actual_host_cursor.ptr, actual_host_cursor.len);
+
+    aws_credentials_provider_release(provider);
+    s_aws_wait_for_provider_shutdown_callback();
+
+    ASSERT_SUCCESS(aws_unset_environment_value(s_sts_web_identity_use_fips_env));
+    ASSERT_SUCCESS(aws_unset_environment_value(s_sts_web_identity_endpoint_url_sts_env));
+    s_aws_sts_web_identity_tester_cleanup();
+
+    return 0;
+}
+
+static int s_credentials_provider_sts_web_identity_fips_endpoint(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    ASSERT_SUCCESS(s_sts_web_identity_check_host(allocator, "us-east-2", NULL, NULL, "sts.us-east-2.amazonaws.com"));
+    ASSERT_SUCCESS(s_sts_web_identity_check_host(allocator, "us-east-2", "false", NULL, "sts.us-east-2.amazonaws.com"));
+    ASSERT_SUCCESS(
+        s_sts_web_identity_check_host(allocator, "us-east-2", "true", NULL, "sts-fips.us-east-2.amazonaws.com"));
+    ASSERT_SUCCESS(
+        s_sts_web_identity_check_host(allocator, "us-east-2", "TRUE", NULL, "sts-fips.us-east-2.amazonaws.com"));
+    /* the regular aws-us-gov STS host is already FIPS */
+    ASSERT_SUCCESS(
+        s_sts_web_identity_check_host(allocator, "us-gov-west-1", "true", NULL, "sts.us-gov-west-1.amazonaws.com"));
+    /* an explicit endpoint override wins */
+    ASSERT_SUCCESS(s_sts_web_identity_check_host(
+        allocator, "us-east-2", "true", "custom.sts.example.com", "custom.sts.example.com"));
+
+    return 0;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_fips_endpoint,
+    s_credentials_provider_sts_web_identity_fips_endpoint);
 
 AWS_TEST_CASE(
     credentials_provider_sts_web_identity_basic_success_env,
