@@ -17,8 +17,10 @@
 #include <aws/http/connection_manager.h>
 #include <aws/http/request_response.h>
 #include <aws/http/status_code.h>
+#include <aws/io/channel_bootstrap.h>
 #include <aws/io/file_utils.h>
 #include <aws/io/logging.h>
+#include <aws/io/retry_strategy.h>
 #include <aws/io/socket.h>
 #include <aws/io/stream.h>
 #include <aws/io/tls_channel_handler.h>
@@ -34,7 +36,16 @@
 #define STS_WEB_IDENTITY_RESPONSE_SIZE_LIMIT 10000
 #define STS_WEB_IDENTITY_CONNECT_TIMEOUT_DEFAULT_IN_SECONDS 2
 #define STS_WEB_IDENTITY_CREDS_DEFAULT_DURATION_SECONDS 900
-#define STS_WEB_IDENTITY_MAX_ATTEMPTS 3
+/*
+ *  STS resiliency options.
+ *
+ *  These are changes we have made over time in order to avoid job failure due to missing
+ *  or expired STS tokens (which often happened under load).
+ */
+/* Start with a delay of 0.588s, ramping up to 2^(MAX_RETRIES-1) * SCALE_FACTOR = 150 seconds. */
+#define STS_WEB_IDENTITY_SCALE_FACTOR_MS 588
+#define STS_WEB_IDENTITY_MAX_RETRIES 9
+#define STS_WEB_IDENTITY_MAX_BACKOFF_SECS 150
 
 static void s_on_connection_manager_shutdown(void *user_data);
 static int s_stswebid_error_xml_on_Error_child(struct aws_xml_node *, void *);
@@ -45,6 +56,7 @@ static int s_stswebid_xml_on_AssumedRoleUser_child(struct aws_xml_node *, void *
 
 struct aws_credentials_provider_sts_web_identity_impl {
     struct aws_http_connection_manager *connection_manager;
+    struct aws_retry_strategy *retry_strategy;
     const struct aws_auth_http_system_vtable *function_table;
     struct aws_string *role_arn;
     struct aws_string *role_session_name;
@@ -66,6 +78,7 @@ struct sts_web_identity_user_data {
     struct aws_http_connection *connection;
     struct aws_http_message *request;
     struct aws_byte_buf response;
+    struct aws_retry_token *retry_token;
 
     struct aws_string *access_key_id;
     struct aws_string *secret_access_key;
@@ -77,13 +90,13 @@ struct sts_web_identity_user_data {
 
     int status_code;
     int error_code;
-    int attempt_count;
 };
 
 static void s_user_data_reset_request_and_response(struct sts_web_identity_user_data *user_data) {
     aws_byte_buf_reset(&user_data->response, true /*zero out*/);
     aws_byte_buf_reset(&user_data->payload_buf, true /*zero out*/);
     user_data->status_code = 0;
+    user_data->error_code = 0;
     if (user_data->request) {
         aws_input_stream_destroy(aws_http_message_get_body_stream(user_data->request));
     }
@@ -116,6 +129,7 @@ static void s_user_data_destroy(struct sts_web_identity_user_data *user_data) {
     }
     s_user_data_reset_request_and_response(user_data);
     aws_byte_buf_clean_up(&user_data->response);
+    aws_retry_token_release(user_data->retry_token);
 
     aws_string_destroy_secure(user_data->access_key_id);
     aws_string_destroy_secure(user_data->secret_access_key);
@@ -521,25 +535,79 @@ static int s_on_incoming_headers_fn(
     return AWS_OP_SUCCESS;
 }
 
-static void s_query_credentials(struct sts_web_identity_user_data *user_data);
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *wrapped_user_data);
 
 static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *data) {
     struct sts_web_identity_user_data *user_data = data;
 
     struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
-    impl->function_table->aws_http_stream_release(stream);
 
-    /*
-     * On anything other than a 200, if we can retry the request based on
-     * error response, retry it, otherwise, call the finalize function.
-     */
-    if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
-        if (++user_data->attempt_count < STS_WEB_IDENTITY_MAX_ATTEMPTS && user_data->response.len) {
-            if (s_parse_retryable_error_from_response(user_data->allocator, &user_data->response)) {
-                s_query_credentials(user_data);
-                return;
+    user_data->error_code = error_code;
+    if (user_data->status_code != 0 && user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        user_data->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_HTTP_STATUS_FAILURE;
+    }
+
+    AWS_LOGF_INFO(
+        AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+        "(id=%p): AssumeRoleWithWebIdentity call completed with http status %d and code %d",
+        (void *)impl, user_data->status_code, error_code);
+
+    if (stream != NULL) {
+        impl->function_table->aws_http_stream_release(stream);
+    }
+
+    if (error_code || user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        enum aws_retry_error_type error_type =
+                aws_credentials_provider_compute_retry_error_type(user_data->status_code, error_code);
+        /*
+         * XML error bodies returned on 400 Bad Request responses:
+         * https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html#API_AssumeRoleWithWebIdentity_Errors
+         */
+        if (user_data->response.len > 0 &&
+            s_parse_retryable_error_from_response(user_data->allocator, &user_data->response)) {
+            error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
+        }
+
+        if (error_type == AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
+            /*
+             * The C++ SDK also considers these client errors as retryable.
+             * See src/aws-cpp-sdk-core/include/aws/core/http/HttpResponse.h
+             */
+            switch (user_data->status_code) {
+                case AWS_HTTP_STATUS_CODE_408_REQUEST_TIMEOUT:
+                case 419 /* Authentication Timeout (no enum value defined). */:
+                case 440 /* Login Timeout (no enum value defined). */:
+                    error_type = AWS_RETRY_ERROR_TYPE_TRANSIENT;
+                    break;
             }
         }
+
+        /* aws-c-io does not retry AWS_RETRY_ERROR_TYPE_CLIENT_ERROR at all. */
+        if (error_type != AWS_RETRY_ERROR_TYPE_CLIENT_ERROR) {
+            if (user_data->connection) {
+                /* Prevent connection reuse. */
+                impl->function_table->aws_http_connection_close(user_data->connection);
+                impl->function_table->aws_http_connection_manager_release_connection(impl->connection_manager,
+                                                                                     user_data->connection);
+                user_data->connection = NULL;
+            }
+
+            if (!aws_retry_strategy_schedule_retry(user_data->retry_token, error_type, s_on_retry_ready, user_data)) {
+                return;
+            }
+
+            AWS_LOGF_WARN(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p): STS failed to schedule retry: %s",
+                (void *)impl,
+                aws_error_str(aws_last_error()));
+        }
+    } else if (aws_retry_token_record_success(user_data->retry_token)) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): STS failed to register retry success: %s",
+            (void *)impl,
+            aws_error_str(aws_last_error()));
     }
 
     s_finalize_get_credentials_query(user_data);
@@ -754,13 +822,60 @@ static void s_on_acquire_connection(struct aws_http_connection *connection, int 
             error_code,
             aws_error_str(error_code));
 
-        s_finalize_get_credentials_query(user_data);
+        /* Retry all connection errors: */
+        s_user_data_reset_request_and_response(user_data);
+        s_on_stream_complete_fn(NULL, error_code, user_data);
         return;
     }
 
     user_data->connection = connection;
 
     s_query_credentials(user_data);
+}
+
+static void s_on_retry_token_acquired(
+    struct aws_retry_strategy *strategy,
+    int error_code,
+    struct aws_retry_token *token,
+    void *wrapped_user_data) {
+    (void)strategy;
+    struct sts_web_identity_user_data *user_data = wrapped_user_data;
+    struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
+
+    user_data->retry_token = token;
+
+    if (!error_code) {
+        AWS_LOGF_DEBUG(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "id=%p: STS Client successfully acquired retry token.", (void *)impl);
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_on_acquire_connection, user_data);
+    } else {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "id=%p: STS Client failed to acquire retry token, error code %d(%s)",
+            (void *)impl, error_code, aws_error_str(error_code));
+        user_data->error_code = error_code;
+
+        s_finalize_get_credentials_query(user_data);
+    }
+}
+
+static void s_on_retry_ready(struct aws_retry_token *token, int error_code, void *wrapped_user_data) {
+    (void)token;
+    struct sts_web_identity_user_data *user_data = wrapped_user_data;
+    struct aws_credentials_provider_sts_web_identity_impl *impl = user_data->sts_web_identity_provider->impl;
+
+    if (!error_code) {
+        impl->function_table->aws_http_connection_manager_acquire_connection(
+            impl->connection_manager, s_on_acquire_connection, user_data);
+    } else {
+        AWS_LOGF_WARN(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p): STS retry task failed: %s",
+            (void *)impl, aws_error_str(error_code));
+        user_data->error_code = error_code;
+
+        s_finalize_get_credentials_query(user_data);
+    }
 }
 
 static int s_credentials_provider_sts_web_identity_get_credentials_async(
@@ -780,12 +895,15 @@ static int s_credentials_provider_sts_web_identity_get_credentials_async(
         goto error;
     }
 
-    impl->function_table->aws_http_connection_manager_acquire_connection(
-        impl->connection_manager, s_on_acquire_connection, wrapped_user_data);
+    if (aws_retry_strategy_acquire_retry_token(
+            impl->retry_strategy, NULL, s_on_retry_token_acquired, wrapped_user_data, 100)) {
+        goto error;
+    }
 
     return AWS_OP_SUCCESS;
 
 error:
+    callback(NULL, aws_last_error(), user_data);
     s_user_data_destroy(wrapped_user_data);
     return AWS_OP_ERR;
 }
@@ -795,6 +913,8 @@ static void s_credentials_provider_sts_web_identity_destroy(struct aws_credentia
     if (impl == NULL) {
         return;
     }
+
+    aws_retry_strategy_release(impl->retry_strategy);
 
     aws_string_destroy(impl->role_arn);
     aws_string_destroy(impl->role_session_name);
@@ -1101,6 +1221,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sts_web_identity_options *options) {
 
+    if (!options->bootstrap) {
+        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "a client bootstrap is necessary for querying STS");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
+    if (!options->tls_ctx) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "a TLS context must be provided to the STS web identity credentials provider");
+        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
+        return NULL;
+    }
+
     struct sts_web_identity_parameters *parameters = s_parameters_new(allocator, options);
     if (!parameters) {
         return NULL;
@@ -1128,14 +1262,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     AWS_ZERO_STRUCT(*impl);
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_sts_web_identity_vtable, impl);
-
-    if (!options->tls_ctx) {
-        AWS_LOGF_ERROR(
-            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "a TLS context must be provided to the STS web identity credentials provider");
-        aws_raise_error(AWS_ERROR_INVALID_ARGUMENT);
-        return NULL;
-    }
 
     aws_tls_connection_options_init_from_ctx(&tls_connection_options, options->tls_ctx);
     struct aws_byte_cursor host = aws_byte_cursor_from_string(parameters->endpoint);
@@ -1175,6 +1301,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
 
     impl->connection_manager = impl->function_table->aws_http_connection_manager_new(allocator, &manager_options);
     if (impl->connection_manager == NULL) {
+        goto on_error;
+    }
+
+    /* STS retry strategy: see comments above constants at the top of this file. */
+    struct aws_exponential_backoff_retry_options retry_options = {
+        .el_group = options->bootstrap->event_loop_group,
+        .max_retries = STS_WEB_IDENTITY_MAX_RETRIES,
+        .backoff_scale_factor_ms = STS_WEB_IDENTITY_SCALE_FACTOR_MS,
+        .max_backoff_secs = STS_WEB_IDENTITY_MAX_BACKOFF_SECS,
+        .jitter_mode = AWS_EXPONENTIAL_BACKOFF_JITTER_NONE,
+    };
+
+    impl->retry_strategy = aws_retry_strategy_new_exponential_backoff(allocator, &retry_options);
+    if (!impl->retry_strategy) {
         goto on_error;
     }
 
