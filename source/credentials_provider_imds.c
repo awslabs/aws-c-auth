@@ -109,6 +109,26 @@ on_error:
     return NULL;
 }
 
+struct aws_credentials_provider *aws_credentials_provider_new_imds_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_imds_options *options) {
+
+    struct aws_credentials_provider *source = aws_credentials_provider_new_imds(allocator, options);
+    if (source == NULL) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options = {
+        .source = source,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(source);
+
+    return cached;
+}
+
 /*
  * Tracking structure for each outstanding async query to an imds provider
  */

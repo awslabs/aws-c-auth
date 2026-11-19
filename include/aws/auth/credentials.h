@@ -1317,6 +1317,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     const struct aws_credentials_provider_sts_options *options);
 
 /**
+ * Creates an STS AssumeRole provider that has a caching layer wrapped around it
+ * (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_options *options);
+
+/**
  * Creates a provider that sources credentials from an ordered sequence of providers, with the overall result
  * being from the first provider to return a valid set of credentials
  *
@@ -1346,6 +1360,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     const struct aws_credentials_provider_imds_options *options);
 
 /**
+ * Creates an IMDS provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_imds_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_imds_options *options);
+
+/**
  * Creates a provider that sources credentials from the ecs role credentials service and reads the required params from
  * environment variables
  *
@@ -1356,6 +1383,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_environment_options *options);
+
+/**
+ * Creates an ECS provider configured from environment variables, with a caching layer wrapped around it
+ * (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_environment_options *options);
 
@@ -1371,6 +1412,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_options *options);
+
+/**
+ * Creates an ECS provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
 
@@ -1401,6 +1455,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     const struct aws_credentials_provider_sts_web_identity_options *options);
 
 /**
+ * Creates an STS AssumeRoleWithWebIdentity provider that has a caching layer wrapped around it
+ * (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_web_identity_options *options);
+
+/**
  * Creates a provider that sources credentials from SSO using a SSOToken.
  *
  * @param allocator memory allocator to use for all memory allocation
@@ -1410,6 +1478,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sso(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sso_options *options);
+
+/**
+ * Creates an SSO provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sso_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sso_options *options);
 
@@ -1476,6 +1557,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito_caching(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_login(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_login_options *options);
+
+/**
+ * Creates an AWS Login provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_login_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_login_options *options);
 
