@@ -368,6 +368,9 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
         };
         sts_options.creds_provider =
             s_credentials_provider_new_profile_internal(allocator, &profile_provider_options, source_profiles_table);
+        /* A refreshable source gets its own cache, so STS can still sign its refresh during a source outage */
+        sts_options.creds_provider =
+            aws_credentials_provider_wrap_if_refreshable(allocator, sts_options.creds_provider);
 
         if (!sts_options.creds_provider) {
             goto done;
@@ -396,6 +399,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
 
             struct aws_credentials_provider *imds_provider =
                 aws_credentials_provider_new_imds(allocator, &imds_options);
+            imds_provider = aws_credentials_provider_wrap_if_refreshable(allocator, imds_provider);
 
             if (!imds_provider) {
                 goto done;
@@ -432,6 +436,7 @@ static struct aws_credentials_provider *s_create_sts_based_provider(
             };
             struct aws_credentials_provider *ecs_provider =
                 aws_credentials_provider_new_ecs_from_environment(allocator, &ecs_options);
+            ecs_provider = aws_credentials_provider_wrap_if_refreshable(allocator, ecs_provider);
             if (!ecs_provider) {
                 goto done;
             }

@@ -13,8 +13,6 @@
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
 
-#define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
-
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
 /*
@@ -109,7 +107,7 @@ static void s_destroy_callback_data(struct default_chain_callback_data *callback
 
 struct aws_credentials_provider_default_chain_impl {
     struct aws_atomic_var shutdowns_remaining;
-    struct aws_credentials_provider *cached_provider;
+    struct aws_credentials_provider *chain_provider;
 };
 
 static void s_aws_provider_default_chain_callback(
@@ -155,7 +153,7 @@ static int s_credentials_provider_default_chain_get_credentials_async(
     }
 
     int result = aws_credentials_provider_get_credentials(
-        impl->cached_provider, s_aws_provider_default_chain_callback, callback_data);
+        impl->chain_provider, s_aws_provider_default_chain_callback, callback_data);
     if (result != AWS_OP_SUCCESS) {
         s_destroy_callback_data(callback_data);
     }
@@ -184,14 +182,23 @@ static void s_credentials_provider_default_chain_destroy(struct aws_credentials_
         return;
     }
 
-    aws_credentials_provider_release(impl->cached_provider);
+    aws_credentials_provider_release(impl->chain_provider);
 
     s_on_sub_provider_shutdown_completed(provider);
+}
+
+static int s_credentials_provider_default_chain_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials) {
+
+    struct aws_credentials_provider_default_chain_impl *impl = provider->impl;
+    return aws_credentials_provider_invalidate(impl->chain_provider, rejected_credentials);
 }
 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_default_chain_vtable = {
     .get_credentials = s_credentials_provider_default_chain_get_credentials_async,
     .destroy = s_credentials_provider_default_chain_destroy,
+    .invalidate = s_credentials_provider_default_chain_invalidate,
 };
 
 /*
@@ -236,7 +243,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     struct aws_credentials_provider *sts_provider = NULL;
     struct aws_credentials_provider *ecs_or_imds_provider = NULL;
     struct aws_credentials_provider *chain_provider = NULL;
-    struct aws_credentials_provider *cached_provider = NULL;
 
     if (options->tls_ctx) {
         tls_ctx = aws_tls_ctx_acquire(options->tls_ctx);
@@ -292,9 +298,14 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     profile_options.profile_name_override = options->profile_name_override;
     profile_provider = aws_credentials_provider_new_profile(allocator, &profile_options);
     if (profile_provider != NULL) {
-        providers[index++] = profile_provider;
         /* 1 shutdown call from the profile provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+        /* STS or web identity results get a refresh cache; static and process results stay as they are */
+        profile_provider = aws_credentials_provider_wrap_if_refreshable(allocator, profile_provider);
+        if (profile_provider == NULL) {
+            goto on_error;
+        }
+        providers[index++] = profile_provider;
     }
 
     struct aws_credentials_provider_sts_web_identity_options sts_options;
@@ -307,9 +318,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     sts_options.proxy_ev_settings = options->proxy_ev_settings;
     sts_provider = aws_credentials_provider_new_sts_web_identity(allocator, &sts_options);
     if (sts_provider != NULL) {
-        providers[index++] = sts_provider;
         /* 1 shutdown call from the web identity provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+        sts_provider = aws_credentials_provider_wrap_if_refreshable(allocator, sts_provider);
+        if (sts_provider == NULL) {
+            goto on_error;
+        }
+        providers[index++] = sts_provider;
     }
 
     /* Providers that will always make a network call unless explicitly disabled... */
@@ -317,9 +332,13 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     ecs_or_imds_provider = s_aws_credentials_provider_new_ecs_or_imds(
         allocator, &sub_provider_shutdown_options, options->bootstrap, tls_ctx, options->proxy_ev_settings);
     if (ecs_or_imds_provider != NULL) {
-        providers[index++] = ecs_or_imds_provider;
         /* 1 shutdown call from the imds or ecs provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
+        ecs_or_imds_provider = aws_credentials_provider_wrap_if_refreshable(allocator, ecs_or_imds_provider);
+        if (ecs_or_imds_provider == NULL) {
+            goto on_error;
+        }
+        providers[index++] = ecs_or_imds_provider;
     }
 
     AWS_FATAL_ASSERT(index <= providers_size);
@@ -343,22 +362,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     aws_credentials_provider_release(sts_provider);
     aws_credentials_provider_release(ecs_or_imds_provider);
 
-    struct aws_credentials_provider_cached_options cached_options = {
-        .source = chain_provider,
-        .refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS,
-    };
-
-    cached_provider = aws_credentials_provider_new_cached(allocator, &cached_options);
-    if (cached_provider == NULL) {
-        goto on_error;
-    }
-
-    /*
-     * Transfer ownership
-     */
-    aws_credentials_provider_release(chain_provider);
-
-    impl->cached_provider = cached_provider;
+    impl->chain_provider = chain_provider;
 
     /* Subproviders have their own reference to the tls_ctx now */
     aws_tls_ctx_release(tls_ctx);
@@ -368,15 +372,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
 on_error:
 
     /*
-     * Have to be a bit more careful than normal with this clean up pattern since the chain/cache will
+     * Have to be a bit more careful than normal with this clean up pattern since the chain will
      * recursively destroy the other providers via ref release.
-     *
-     * Technically, the cached_provider can never be non-null here, but let's handle it anyways
-     * in case someone does something weird in the future.
      */
-    if (cached_provider) {
-        aws_credentials_provider_release(cached_provider);
-    } else if (chain_provider) {
+    if (chain_provider) {
         aws_credentials_provider_release(chain_provider);
     } else {
         aws_credentials_provider_release(ecs_or_imds_provider);

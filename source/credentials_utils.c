@@ -71,6 +71,25 @@ void aws_credentials_query_list_notify_and_clean_up(
     }
 }
 
+struct aws_credentials_provider *aws_credentials_provider_wrap_if_refreshable(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *provider) {
+
+    if (provider == NULL || provider->vtable->refresh_type != AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE) {
+        return provider;
+    }
+
+    struct aws_credentials_provider_cached_options options = {
+        .source = provider,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_refresh_cached(allocator, &options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(provider);
+
+    return cached;
+}
+
 void aws_credentials_provider_init_base(
     struct aws_credentials_provider *provider,
     struct aws_allocator *allocator,

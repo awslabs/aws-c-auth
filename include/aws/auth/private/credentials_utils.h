@@ -191,6 +191,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_refresh_cached(
     const struct aws_credentials_provider_cached_options *options);
 
 /*
+ * Wraps a refreshable provider in a refresh cache and releases the caller's reference to it.
+ * NULL and standard providers are returned unchanged.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_wrap_if_refreshable(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *provider);
+
+/*
  * If an endpoint override is configured, use that. Otherwise do the following:
  * Construct an endpoint in the format of service_name_host.region.amazonaws.com.
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.
