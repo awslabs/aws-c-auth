@@ -961,6 +961,117 @@ AWS_TEST_CASE(
     credentials_provider_sts_direct_config_succeeds_after_retry,
     s_credentials_provider_sts_direct_config_succeeds_after_retry_fn)
 
+static struct aws_byte_cursor s_access_denied_error_doc = AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL(
+    "<ErrorResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\"><Error><Type>Sender</Type>"
+    "<Code>AccessDenied</Code><Message>not authorized</Message></Error><RequestId>id</RequestId></ErrorResponse>");
+
+/* AccessDenied from AssumeRole is not retried and is reported as non-recoverable */
+static int s_credentials_provider_sts_direct_config_non_recoverable_error_fn(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    mock_aws_set_system_time(0);
+    s_tester.mock_response_code = 403;
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_access_denied_error_doc);
+
+    struct aws_credentials_provider *sts_provider = aws_credentials_provider_new_sts(allocator, &options);
+
+    aws_credentials_provider_get_credentials(sts_provider, s_get_credentials_callback, NULL);
+
+    s_aws_wait_for_credentials_result();
+
+    ASSERT_NULL(s_tester.credentials);
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE, s_tester.error_code);
+    ASSERT_INT_EQUALS(1, s_tester.num_request);
+
+    aws_credentials_provider_release(sts_provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(
+    credentials_provider_sts_direct_config_non_recoverable_error,
+    s_credentials_provider_sts_direct_config_non_recoverable_error_fn)
+
+/* new_sts_caching returns the refresh cache, so a second call within the lifetime makes no request */
+static int s_credentials_provider_sts_caching_fn(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    s_aws_sts_tester_init(allocator);
+
+    struct aws_credentials_provider_static_options static_options = {
+        .access_key_id = s_access_key_cur,
+        .secret_access_key = s_secret_key_cur,
+        .session_token = s_session_token_cur,
+    };
+    struct aws_credentials_provider *static_provider = aws_credentials_provider_new_static(allocator, &static_options);
+
+    struct aws_credentials_provider_sts_options options = {
+        .creds_provider = static_provider,
+        .bootstrap = s_tester.bootstrap,
+        .tls_ctx = s_tester.tls_ctx,
+        .role_arn = s_role_arn_cur,
+        .session_name = s_session_name_cur,
+        .duration_seconds = 0,
+        .function_table = &s_mock_function_table,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+
+    /* The caching constructor uses the real clock, so STS sees real time too */
+    uint64_t now_ns = 0;
+    aws_sys_clock_get_ticks(&now_ns);
+    mock_aws_set_system_time(now_ns);
+    s_tester.mock_response_code = 200;
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &s_success_creds_doc);
+
+    struct aws_credentials_provider *caching_provider = aws_credentials_provider_new_sts_caching(allocator, &options);
+    ASSERT_NOT_NULL(caching_provider);
+    ASSERT_TRUE(aws_credentials_provider_is_refresh_cached(caching_provider));
+
+    aws_credentials_provider_get_credentials(caching_provider, s_get_credentials_callback, NULL);
+    s_aws_wait_for_credentials_result();
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+
+    s_cleanup_creds_callback_data();
+    aws_credentials_provider_get_credentials(caching_provider, s_get_credentials_callback, NULL);
+    s_aws_wait_for_credentials_result();
+    ASSERT_SUCCESS(s_verify_credentials(s_tester.credentials));
+    ASSERT_INT_EQUALS(1, s_tester.num_request);
+
+    aws_credentials_provider_release(caching_provider);
+    s_aws_wait_for_connection_manager_shutdown_callback();
+    aws_credentials_provider_release(static_provider);
+    ASSERT_SUCCESS(s_aws_sts_tester_cleanup());
+
+    return AWS_OP_SUCCESS;
+}
+
+AWS_TEST_CASE(credentials_provider_sts_caching, s_credentials_provider_sts_caching_fn)
+
 static struct aws_byte_cursor s_malformed_creds_doc =
     AWS_BYTE_CUR_INIT_FROM_STRING_LITERAL("<AssumeRoleResponse xmlns=\"who cares\">\n"
                                           "     <AssumeRoleResult>\n"

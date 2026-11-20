@@ -691,6 +691,7 @@ static void s_credentials_provider_cognito_destroy(struct aws_credentials_provid
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_cognito_vtable = {
     .get_credentials = s_credentials_provider_cognito_get_credentials_async,
     .destroy = s_credentials_provider_cognito_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 static void s_on_connection_manager_shutdown(void *user_data) {

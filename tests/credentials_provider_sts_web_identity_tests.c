@@ -921,15 +921,6 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "<RequestId>4442587FB7D0A2F9</RequestId>"
     "</Error>");
 
-AWS_STATIC_STRING_FROM_LITERAL(
-    s_retryable_error_response_2,
-    "<Error>"
-    "<Code>InvalidIdentityToken</Code>"
-    "<Message>XXX</Message>"
-    "<Resource>YYY</Resource>"
-    "<RequestId>4442587FB7D0A2F9</RequestId>"
-    "</Error>");
-
 static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -984,9 +975,8 @@ AWS_TEST_CASE(
     credentials_provider_sts_web_identity_test_retry_error1,
     s_credentials_provider_sts_web_identity_test_retry_error1);
 
-static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_allocator *allocator, void *ctx) {
-    (void)ctx;
-
+/* Runs one web identity query against a 400 response with this body */
+static int s_do_sts_web_identity_400_test(struct aws_allocator *allocator, const struct aws_string *error_response) {
     s_aws_sts_web_identity_tester_init(allocator);
     s_tester.response_code = AWS_HTTP_STATUS_CODE_400_BAD_REQUEST;
     s_aws_sts_web_identity_test_unset_env_parameters();
@@ -1003,8 +993,8 @@ static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_
         aws_string_c_str(token_file_path_str));
     aws_string_destroy(token_file_path_str);
 
-    struct aws_byte_cursor bad_document_cursor = aws_byte_cursor_from_string(s_retryable_error_response_2);
-    aws_array_list_push_back(&s_tester.response_data_callbacks, &bad_document_cursor);
+    struct aws_byte_cursor error_cursor = aws_byte_cursor_from_string(error_response);
+    aws_array_list_push_back(&s_tester.response_data_callbacks, &error_cursor);
 
     struct aws_credentials_provider_sts_web_identity_options options = {
         .bootstrap = NULL,
@@ -1023,20 +1013,58 @@ static int s_credentials_provider_sts_web_identity_test_retry_error2(struct aws_
 
     s_aws_wait_for_credentials_result();
 
-    ASSERT_SUCCESS(s_verify_credentials(
-        true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
-
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
 
-    s_aws_sts_web_identity_tester_cleanup();
+    return AWS_OP_SUCCESS;
+}
 
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expired_token_error_response,
+    "<ErrorResponse><Error><Type>Sender</Type><Code>ExpiredToken</Code><Message>XXX</Message></Error>"
+    "<RequestId>4442587FB7D0A2F9</RequestId></ErrorResponse>");
+
+/* ExpiredToken is retried within the attempt, with the token file read again each time */
+static int s_credentials_provider_sts_web_identity_test_retry_expired_token(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    ASSERT_SUCCESS(s_do_sts_web_identity_400_test(allocator, s_expired_token_error_response));
+    ASSERT_SUCCESS(s_verify_credentials(
+        true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
+    ASSERT_TRUE(s_tester.error_code != AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE);
+
+    s_aws_sts_web_identity_tester_cleanup();
     return 0;
 }
 AWS_TEST_CASE(
-    credentials_provider_sts_web_identity_test_retry_error2,
-    s_credentials_provider_sts_web_identity_test_retry_error2);
+    credentials_provider_sts_web_identity_test_retry_expired_token,
+    s_credentials_provider_sts_web_identity_test_retry_expired_token);
+
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_invalid_identity_token_error_response,
+    "<ErrorResponse><Error><Type>Sender</Type><Code>InvalidIdentityToken</Code><Message>XXX</Message></Error>"
+    "<RequestId>4442587FB7D0A2F9</RequestId></ErrorResponse>");
+
+/* InvalidIdentityToken is not retried and is reported as non-recoverable */
+static int s_credentials_provider_sts_web_identity_test_non_recoverable_error(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    ASSERT_SUCCESS(s_do_sts_web_identity_400_test(allocator, s_invalid_identity_token_error_response));
+    ASSERT_SUCCESS(s_verify_credentials(
+        true /*request made*/, false /*from config*/, false /*get creds*/, 1 /*expected attempts*/));
+    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE, s_tester.error_code);
+
+    s_aws_sts_web_identity_tester_cleanup();
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_test_non_recoverable_error,
+    s_credentials_provider_sts_web_identity_test_non_recoverable_error);
 
 static int s_credentials_provider_sts_web_identity_basic_success_env(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;

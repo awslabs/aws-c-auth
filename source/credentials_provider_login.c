@@ -10,6 +10,8 @@
 #include <aws/auth/private/credentials_utils.h>
 #include <aws/auth/private/login_token_utils.h>
 #include <aws/common/environment.h>
+#include <aws/common/json.h>
+#include <aws/http/status_code.h>
 #include <aws/io/socket.h>
 #include <aws/io/stream.h>
 
@@ -376,6 +378,58 @@ on_finish:
     return success ? AWS_OP_SUCCESS : AWS_OP_ERR;
 }
 
+/*
+ * CreateOAuth2Token (rest-json) returns AccessDeniedException and ValidationException, both with HTTP 400 and
+ * an "error" member, for example: {"error": "TOKEN_EXPIRED", "message": "..."}
+ * Only the x-amzn-errortype header names the exception, and it is not read here, so every 400 is treated as
+ * non-recoverable except AUTHCODE_EXPIRED.
+ * Ref: https://docs.aws.amazon.com/signin/latest/APIReference/API_dataplane-signin_CreateOAuth2Token.html
+ */
+static void s_set_non_recoverable_error_from_response(struct aws_http_query_context *http_query_context) {
+    if (http_query_context->status_code == 0 || http_query_context->status_code == AWS_HTTP_STATUS_CODE_200_OK) {
+        return;
+    }
+
+    struct aws_byte_cursor error_member;
+    AWS_ZERO_STRUCT(error_member);
+
+    struct aws_json_value *document = aws_json_value_new_from_string(
+        http_query_context->allocator, aws_byte_cursor_from_buf(&http_query_context->payload));
+    if (document != NULL) {
+        struct aws_json_value *error_value =
+            aws_json_value_get_from_object(document, aws_byte_cursor_from_c_str("error"));
+        if (error_value != NULL) {
+            aws_json_value_get_string(error_value, &error_member);
+        }
+    }
+
+    if (aws_byte_cursor_eq_c_str(&error_member, "TOKEN_EXPIRED") ||
+        aws_byte_cursor_eq_c_str(&error_member, "USER_CREDENTIALS_CHANGED") ||
+        aws_byte_cursor_eq_c_str(&error_member, "INSUFFICIENT_PERMISSIONS")) {
+
+        http_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_ACCESS_DENIED;
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) login: CreateOAuth2Token returned AccessDeniedException with error " PRInSTR,
+            (void *)http_query_context->provider,
+            AWS_BYTE_CURSOR_PRI(error_member));
+
+    } else if (
+        http_query_context->status_code == AWS_HTTP_STATUS_CODE_400_BAD_REQUEST &&
+        !aws_byte_cursor_eq_c_str(&error_member, "AUTHCODE_EXPIRED")) {
+
+        http_query_context->error_code = AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_VALIDATION_FAILED;
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) login: CreateOAuth2Token returned ValidationException with error " PRInSTR,
+            (void *)http_query_context->provider,
+            AWS_BYTE_CURSOR_PRI(error_member));
+    }
+
+    /* error_member points into document, so destroy it last */
+    aws_json_value_destroy(document);
+}
+
 static void s_login_finalize_credentials_fn(struct aws_http_query_context *http_query_context) {
     struct login_parameters *parameters = http_query_context->parameters;
     struct aws_credentials *credentials = NULL;
@@ -434,6 +488,8 @@ static void s_login_finalize_credentials_fn(struct aws_http_query_context *http_
             AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login: failed to write to token file");
         }
         aws_byte_buf_clean_up(&file_path_buf);
+    } else {
+        s_set_non_recoverable_error_from_response(http_query_context);
     }
 
 on_finalize:
@@ -520,4 +576,24 @@ struct aws_credentials_provider *aws_credentials_provider_new_login(
 on_error:
     aws_credentials_provider_destroy(provider);
     return NULL;
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_login_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_login_options *options) {
+
+    struct aws_credentials_provider *source = aws_credentials_provider_new_login(allocator, options);
+    if (source == NULL) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options = {
+        .source = source,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(source);
+
+    return cached;
 }

@@ -48,6 +48,7 @@ static void s_on_imds_client_shutdown(void *user_data) {
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_imds_vtable = {
     .get_credentials = s_credentials_provider_imds_get_credentials_async,
     .destroy = s_credentials_provider_imds_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 struct aws_credentials_provider *aws_credentials_provider_new_imds(
@@ -106,6 +107,26 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
 on_error:
     aws_credentials_provider_destroy(provider);
     return NULL;
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_imds_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_imds_options *options) {
+
+    struct aws_credentials_provider *source = aws_credentials_provider_new_imds(allocator, options);
+    if (source == NULL) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options = {
+        .source = source,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(source);
+
+    return cached;
 }
 
 /*

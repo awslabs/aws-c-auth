@@ -1634,21 +1634,20 @@ static int s_credentials_provider_default_test(struct aws_allocator *allocator, 
             s_session_token_test_value,
             NULL) == AWS_OP_SUCCESS);
 
-    /*
-     * Verify that there's some caching before the environment by modifying the environment and requerying
-     */
+    /* The environment member is not cached, so a changed environment is used on the next call */
     aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_1);
     aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_1);
     aws_set_environment_value(s_session_token_env_var, s_session_token_1);
 
     ASSERT_TRUE(
-        s_do_basic_provider_test(
-            provider,
-            1,
-            s_access_key_id_test_value,
-            s_secret_access_key_test_value,
-            s_session_token_test_value,
-            NULL) == AWS_OP_SUCCESS);
+        s_do_basic_provider_test(provider, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, NULL) ==
+        AWS_OP_SUCCESS);
+
+    /* invalidate is forwarded through the default chain and the chain */
+    struct aws_credentials *rejected = aws_credentials_new_from_string(
+        allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, UINT64_MAX);
+    ASSERT_SUCCESS(aws_credentials_provider_invalidate(provider, rejected));
+    aws_credentials_release(rejected);
 
     aws_credentials_provider_release(provider);
 

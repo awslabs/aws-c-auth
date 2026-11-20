@@ -107,6 +107,16 @@ void aws_credentials_query_init(
 AWS_AUTH_API
 void aws_credentials_query_clean_up(struct aws_credentials_query *query);
 
+/*
+ * Answers every query in the list with the same result, then cleans up and frees each query.
+ */
+AWS_AUTH_API
+void aws_credentials_query_list_notify_and_clean_up(
+    struct aws_linked_list *query_list,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials,
+    int error_code);
+
 AWS_AUTH_API
 void aws_credentials_provider_init_base(
     struct aws_credentials_provider *provider,
@@ -165,6 +175,41 @@ struct aws_credentials *aws_parse_credentials_from_json_document(
 
 AWS_AUTH_API
 enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int response_code, int error_code);
+
+/*
+ * Returns true if a credentials provider error means retrying will not succeed without customer action.
+ */
+AWS_AUTH_API
+bool aws_credentials_provider_is_non_recoverable_error(int error_code);
+
+/*
+ * Refresh cache for a refreshable source. Used by aws_credentials_provider_new_cached.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_refresh_cached(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_cached_options *options);
+
+/*
+ * Wraps a refreshable provider in a refresh cache and releases the caller's reference to it.
+ * NULL and standard providers are returned unchanged.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_wrap_if_refreshable(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *provider);
+
+/*
+ * Returns true if the provider is a refresh cache.
+ */
+AWS_AUTH_API
+bool aws_credentials_provider_is_refresh_cached(const struct aws_credentials_provider *provider);
+
+/*
+ * Returns true if the provider is a credential_process provider.
+ */
+AWS_AUTH_API
+bool aws_credentials_provider_is_process(const struct aws_credentials_provider *provider);
 
 /*
  * If an endpoint override is configured, use that. Otherwise do the following:

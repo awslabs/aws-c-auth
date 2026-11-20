@@ -722,6 +722,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_ecs_vtable = {
     .get_credentials = s_credentials_provider_ecs_get_credentials_async,
     .destroy = s_credentials_provider_ecs_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 static void s_on_connection_manager_shutdown(void *user_data) {
@@ -958,4 +959,44 @@ cleanup:
 
     aws_uri_clean_up(&full_uri);
     return provider;
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_options *options) {
+
+    struct aws_credentials_provider *source = aws_credentials_provider_new_ecs(allocator, options);
+    if (source == NULL) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options = {
+        .source = source,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(source);
+
+    return cached;
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_environment_options *options) {
+
+    struct aws_credentials_provider *source = aws_credentials_provider_new_ecs_from_environment(allocator, options);
+    if (source == NULL) {
+        return NULL;
+    }
+
+    struct aws_credentials_provider_cached_options cached_options = {
+        .source = source,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_cached(allocator, &cached_options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(source);
+
+    return cached;
 }
