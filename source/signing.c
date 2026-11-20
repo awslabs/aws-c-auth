@@ -7,6 +7,7 @@
 
 #include <aws/auth/credentials.h>
 #include <aws/auth/private/aws_signing.h>
+#include <aws/auth/private/credentials_utils.h>
 #include <aws/io/uri.h>
 
 /*
@@ -106,7 +107,10 @@ static void s_aws_signing_on_get_credentials(struct aws_credentials *credentials
             error_code,
             aws_error_debug_str(error_code));
 
-        state->error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+        /* Non-recoverable errors (e.g. SSO or Login sign-in needed) reach the caller as is */
+        state->error_code = aws_credentials_provider_is_non_recoverable_error(error_code)
+                                ? error_code
+                                : AWS_AUTH_SIGNING_NO_CREDENTIALS;
     } else {
         if (state->config.algorithm == AWS_SIGNING_ALGORITHM_V4_ASYMMETRIC &&
             !aws_credentials_is_anonymous(credentials)) {

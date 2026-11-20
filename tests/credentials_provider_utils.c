@@ -185,6 +185,26 @@ size_t aws_credentials_provider_mock_get_call_count(struct aws_credentials_provi
     return impl->next_result;
 }
 
+static struct aws_credentials_provider_vtable s_aws_credentials_provider_mock_refreshable_vtable = {
+    .get_credentials = s_mock_credentials_provider_get_credentials_async,
+    .destroy = s_mock_credentials_provider_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
+};
+
+struct aws_credentials_provider *aws_credentials_provider_new_mock_refreshable(
+    struct aws_allocator *allocator,
+    struct get_credentials_mock_result *results,
+    size_t result_count,
+    struct aws_credentials_provider_shutdown_options *shutdown_options) {
+
+    struct aws_credentials_provider *provider =
+        aws_credentials_provider_new_mock(allocator, results, result_count, shutdown_options);
+    if (provider != NULL) {
+        provider->vtable = &s_aws_credentials_provider_mock_refreshable_vtable;
+    }
+    return provider;
+}
+
 /*
  * Mock async provider
  */

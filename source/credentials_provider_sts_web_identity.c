@@ -707,6 +707,16 @@ static void s_query_credentials(struct sts_web_identity_user_data *user_data) {
     }
 
     if (aws_byte_buf_init_from_file(&token_buf, user_data->allocator, aws_string_c_str(impl->token_file_path))) {
+        /* Any token file read error is retryable, since the file is rotated externally (e.g. by Kubernetes) */
+        if (++user_data->attempt_count < STS_WEB_IDENTITY_MAX_ATTEMPTS) {
+            AWS_LOGF_DEBUG(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) STS_WEB_IDENTITY failed to read the token file with error %s, retrying",
+                (void *)user_data->sts_web_identity_provider,
+                aws_error_debug_str(aws_last_error()));
+            s_query_credentials(user_data);
+            return;
+        }
         goto on_finish;
     }
     work_cursor = aws_byte_cursor_from_buf(&token_buf);

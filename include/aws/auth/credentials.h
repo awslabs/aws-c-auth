@@ -191,7 +191,7 @@ struct aws_credentials_provider_cached_options {
      * advisory/mandatory window settings, so neither seems to apply to this generic cache setting.
      * Should a caller-set value still trigger an early advisory refresh?
      * ============================
-    */
+     */
     uint64_t refresh_time_in_milliseconds;
 
     /* For mocking, leave NULL otherwise */

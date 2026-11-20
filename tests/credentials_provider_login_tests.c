@@ -256,13 +256,21 @@ AWS_STATIC_STRING_FROM_LITERAL(
     "\"123456789012\",\"expiresAt\":\"2000-09-13T00:00:00Z\"},\"tokenType\":\"urn:aws:params:oauth:token-type:access_"
     "token_sigv4\",\"clientId\":\"arn:aws:signin:::devtools/"
     "same-device\",\"refreshToken\":\"Kaworu\",\"idToken\":\"toji\",\"dpopKey\":\"-----BEGIN EC PRIVATE "
-    "KEY-----\nGendo\n-----END EC PRIVATE KEY-----\n\"}");
+    "KEY-----\nMHcCAQEEIBDOA9C+wyEeYZYLa9fPAzzZLi43suMHc7GqUSD2wP9VoAoGCCqGSM49\nAwEHoUQDQgAE8p+"
+    "kv53xQZSVnOvFFQZgYXafB8IQXc0boBiNwruEaIzNEi5/7m0I\nP8t5hwdP1bEyoLcHx9sIDcPy8W9str/Kow==\n-----END EC PRIVATE "
+    "KEY-----\n\"}");
 
-static int s_credentials_provider_login_failure_token_expired(struct aws_allocator *allocator, void *ctx) {
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expired_token_refresh_response,
+    "{\"accessToken\":{\"accessKeyId\":\"Ritsuko\",\"secretAccessKey\":\"Ryoji\",\"sessionToken\":\"PenPen\"},"
+    "\"tokenType\":\"urn:aws:params:oauth:token-type:access_token_sigv4\",\"expiresIn\":900,\"refreshToken\":"
+    "\"Kensuke\"}");
+
+/* An expired access token in the cache file is refreshed with the refresh token */
+static int s_credentials_provider_login_expired_access_token_refreshes(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
     aws_credentials_provider_http_mock_tester_init(allocator);
-    credentials_provider_http_mock_tester.is_request_successful = false;
 
     /* redirect $HOME */
     struct aws_string *tmp_home;
@@ -277,6 +285,10 @@ static int s_credentials_provider_login_failure_token_expired(struct aws_allocat
     ASSERT_SUCCESS(aws_create_profile_file(token_path_string, s_login_token_expired));
 
     s_aws_credentials_provider_login_test_init_config_profile(allocator, s_login_config_contents);
+
+    struct aws_byte_cursor response_cursor = aws_byte_cursor_from_string(s_expired_token_refresh_response);
+    aws_array_list_push_back(&credentials_provider_http_mock_tester.response_data_callbacks, &response_cursor);
+
     uint64_t nano_expiration =
         aws_timestamp_convert(s_login_token_expiration_s + 100, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
     mock_aws_set_system_time(nano_expiration);
@@ -301,9 +313,7 @@ static int s_credentials_provider_login_failure_token_expired(struct aws_allocat
 
     aws_credentials_provider_http_mock_wait_for_credentials_result();
 
-    ASSERT_SUCCESS(s_verify_credentials(false /*no request*/, false /*get creds*/, 0 /*expected attempts*/));
-    ASSERT_INT_EQUALS(
-        credentials_provider_http_mock_tester.error_code, AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED);
+    ASSERT_SUCCESS(s_verify_credentials(true /*request made*/, true /*get creds*/, 1 /*expected attempts*/));
 
     aws_credentials_provider_release(provider);
 
@@ -316,7 +326,9 @@ static int s_credentials_provider_login_failure_token_expired(struct aws_allocat
     aws_string_destroy(token_path_string);
     return 0;
 }
-AWS_TEST_CASE(credentials_provider_login_failure_token_expired, s_credentials_provider_login_failure_token_expired);
+AWS_TEST_CASE(
+    credentials_provider_login_expired_access_token_refreshes,
+    s_credentials_provider_login_expired_access_token_refreshes);
 
 AWS_STATIC_STRING_FROM_LITERAL(
     s_login_empty_token,

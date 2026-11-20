@@ -471,3 +471,7 @@ struct aws_credentials_provider *aws_credentials_provider_new_refresh_cached(
 
     return provider;
 }
+
+bool aws_credentials_provider_is_refresh_cached(const struct aws_credentials_provider *provider) {
+    return provider->vtable == &s_aws_credentials_provider_refresh_cached_vtable;
+}

@@ -438,16 +438,7 @@ struct aws_login_token *aws_login_token_new_from_json_document(
         aws_json_value_get_string(sign_in_region, &token->sign_in_region);
     }
 
-    // check that the token has not expired yet
-    struct aws_date_time now;
-    aws_date_time_init_now(&now);
-    if (aws_date_time_as_millis(&token->expires_at) < aws_date_time_as_millis(&now)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login token: token is already expired");
-        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED);
-        goto on_finish;
-        ;
-    }
-
+    /* An expired access token is not an error: the refresh token is used to get a new one */
     token->serialized_token = document_root;
     success = true;
     goto on_finish;

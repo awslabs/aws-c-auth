@@ -379,10 +379,10 @@ on_finish:
 }
 
 /*
- * CreateOAuth2Token (rest-json) error body carries an "error" member, for example:
- * {"error": "TOKEN_EXPIRED", "message": "..."}
- * AccessDeniedException uses TOKEN_EXPIRED, AUTHCODE_EXPIRED, USER_CREDENTIALS_CHANGED or INSUFFICIENT_PERMISSIONS.
- * ValidationException is the only error the operation returns with HTTP 400.
+ * CreateOAuth2Token (rest-json) returns AccessDeniedException and ValidationException, both with HTTP 400 and
+ * an "error" member, for example: {"error": "TOKEN_EXPIRED", "message": "..."}
+ * Only the x-amzn-errortype header names the exception, and it is not read here, so every 400 is treated as
+ * non-recoverable except AUTHCODE_EXPIRED.
  * Ref: https://docs.aws.amazon.com/signin/latest/APIReference/API_dataplane-signin_CreateOAuth2Token.html
  */
 static void s_set_non_recoverable_error_from_response(struct aws_http_query_context *http_query_context) {
