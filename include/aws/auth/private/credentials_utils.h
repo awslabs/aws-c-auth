@@ -206,6 +206,12 @@ AWS_AUTH_API
 bool aws_credentials_provider_is_refresh_cached(const struct aws_credentials_provider *provider);
 
 /*
+ * Returns true if the provider is a credential_process provider.
+ */
+AWS_AUTH_API
+bool aws_credentials_provider_is_process(const struct aws_credentials_provider *provider);
+
+/*
  * If an endpoint override is configured, use that. Otherwise do the following:
  * Construct an endpoint in the format of service_name_host.region.amazonaws.com.
  * If the region is cn-north-1 or cn-northwest-1, .cn is appended to support China-specific regional endpoints.

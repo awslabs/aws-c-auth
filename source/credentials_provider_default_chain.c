@@ -13,6 +13,8 @@
 #include <aws/io/tls_channel_handler.h>
 #include <aws/io/uri.h>
 
+#define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
+
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4204)
 /*
@@ -300,8 +302,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_chain_default(
     if (profile_provider != NULL) {
         /* 1 shutdown call from the profile provider's shutdown */
         aws_atomic_fetch_add(&impl->shutdowns_remaining, 1);
-        /* STS or web identity results get a refresh cache; static and process results stay as they are */
-        profile_provider = aws_credentials_provider_wrap_if_refreshable(allocator, profile_provider);
+        if (aws_credentials_provider_is_process(profile_provider)) {
+            /* credential_process keeps the 15 minute cache it had before per-member caching */
+            struct aws_credentials_provider_cached_options cached_options = {
+                .source = profile_provider,
+                .refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS,
+            };
+            struct aws_credentials_provider *cached_provider =
+                aws_credentials_provider_new_cached(allocator, &cached_options);
+            aws_credentials_provider_release(profile_provider);
+            profile_provider = cached_provider;
+        } else {
+            /* STS or web identity results get a refresh cache; static results stay as they are */
+            profile_provider = aws_credentials_provider_wrap_if_refreshable(allocator, profile_provider);
+        }
         if (profile_provider == NULL) {
             goto on_error;
         }
