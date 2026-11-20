@@ -161,7 +161,7 @@ struct aws_credentials_provider_profile_options {
     struct aws_auth_http_system_vtable *function_table;
 
     /* Add proxy options for sts based provider */
-    struct proxy_env_var_settings *proxy_ev_settings;
+    const struct proxy_env_var_settings *proxy_ev_settings;
 };
 
 /**
