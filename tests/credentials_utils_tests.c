@@ -222,13 +222,15 @@ static int s_sts_utils_parse_error_code_test(struct aws_allocator *allocator, vo
 }
 AWS_TEST_CASE(sts_utils_parse_error_code_test, s_sts_utils_parse_error_code_test);
 
-/* Web identity retries only ExpiredToken and IDPCommunicationError */
+/* Web identity retries only ExpiredToken, ExpiredTokenException and IDPCommunicationError */
 static int s_sts_utils_retryable_web_identity_error_code_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     (void)allocator;
 
     ASSERT_TRUE(
         aws_credentials_provider_is_retryable_sts_web_identity_error_code(aws_byte_cursor_from_c_str("ExpiredToken")));
+    ASSERT_TRUE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(
+        aws_byte_cursor_from_c_str("ExpiredTokenException")));
     ASSERT_TRUE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(
         aws_byte_cursor_from_c_str("IDPCommunicationError")));
     ASSERT_FALSE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(

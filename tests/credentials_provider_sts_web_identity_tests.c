@@ -1043,6 +1043,31 @@ AWS_TEST_CASE(
     credentials_provider_sts_web_identity_test_retry_expired_token,
     s_credentials_provider_sts_web_identity_test_retry_expired_token);
 
+/* The body STS actually returns for an expired OIDC token */
+AWS_STATIC_STRING_FROM_LITERAL(
+    s_expired_token_exception_error_response,
+    "<ErrorResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\"><Error><Type>Sender</Type>"
+    "<Code>ExpiredTokenException</Code><Message>Token expired</Message></Error>"
+    "<RequestId>4442587FB7D0A2F9</RequestId></ErrorResponse>");
+
+/* ExpiredTokenException is retried within the attempt, with the token file read again each time */
+static int s_credentials_provider_sts_web_identity_test_retry_expired_token_exception(
+    struct aws_allocator *allocator,
+    void *ctx) {
+    (void)ctx;
+
+    ASSERT_SUCCESS(s_do_sts_web_identity_400_test(allocator, s_expired_token_exception_error_response));
+    ASSERT_SUCCESS(s_verify_credentials(
+        true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
+    ASSERT_TRUE(s_tester.error_code != AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE);
+
+    s_aws_sts_web_identity_tester_cleanup();
+    return 0;
+}
+AWS_TEST_CASE(
+    credentials_provider_sts_web_identity_test_retry_expired_token_exception,
+    s_credentials_provider_sts_web_identity_test_retry_expired_token_exception);
+
 AWS_STATIC_STRING_FROM_LITERAL(
     s_invalid_identity_token_error_response,
     "<ErrorResponse><Error><Type>Sender</Type><Code>InvalidIdentityToken</Code><Message>XXX</Message></Error>"

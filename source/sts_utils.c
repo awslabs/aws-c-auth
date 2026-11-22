@@ -64,8 +64,10 @@ int aws_credentials_provider_parse_sts_error_code(
 }
 
 bool aws_credentials_provider_is_retryable_sts_web_identity_error_code(struct aws_byte_cursor error_code) {
+    /* STS returns ExpiredTokenException, not ExpiredToken, for an expired OIDC token, so both are listed */
     static const char *s_retryable_sts_web_identity_error_codes[] = {
         "ExpiredToken",
+        "ExpiredTokenException",
         "IDPCommunicationError",
     };
 

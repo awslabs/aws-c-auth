@@ -1649,6 +1649,19 @@ static int s_credentials_provider_default_test(struct aws_allocator *allocator, 
     ASSERT_SUCCESS(aws_credentials_provider_invalidate(provider, rejected));
     aws_credentials_release(rejected);
 
+    /* new_cached on the default chain forwards to it, so the environment change is still seen at once */
+    struct aws_credentials_provider_cached_options cached_options = {.source = provider};
+    struct aws_credentials_provider *wrapped = aws_credentials_provider_new_cached(allocator, &cached_options);
+    ASSERT_NOT_NULL(wrapped);
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
+    ASSERT_TRUE(
+        s_do_basic_provider_test(
+            wrapped, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value, NULL) ==
+        AWS_OP_SUCCESS);
+    aws_credentials_provider_release(wrapped);
+
     aws_credentials_provider_release(provider);
 
     s_aws_wait_for_provider_shutdown_callback();
