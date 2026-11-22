@@ -226,7 +226,8 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_
     .destroy = s_cached_credentials_provider_destroy,
 };
 
-/* Returned when the source is already a refresh cache, so it is not cached twice */
+/* Returned when the source already caches (a refresh cache, a pass-through or a default chain), so it is not cached
+ * twice */
 struct aws_credentials_provider_pass_through {
     struct aws_credentials_provider *source;
 };
@@ -269,6 +270,7 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_pass_th
 
 static struct aws_credentials_provider *s_new_pass_through(
     struct aws_allocator *allocator,
+    struct aws_credentials_provider *target,
     const struct aws_credentials_provider_cached_options *options) {
 
     struct aws_credentials_provider *provider = NULL;
@@ -291,19 +293,33 @@ static struct aws_credentials_provider *s_new_pass_through(
 
     aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_pass_through_vtable, impl);
 
-    impl->source = aws_credentials_provider_acquire(options->source);
+    impl->source = aws_credentials_provider_acquire(target);
     provider->shutdown_options = options->shutdown_options;
 
     if (options->refresh_time_in_milliseconds > 0) {
         AWS_LOGF_INFO(
             AWS_LS_AUTH_CREDENTIALS_PROVIDER,
-            "(id=%p) Cached credentials provider source is already a refresh cache; refresh time of %" PRIu64
-            " ms is ignored",
+            "(id=%p) Cached credentials provider source already caches; refresh time of %" PRIu64 " ms is ignored",
             (void *)provider,
             options->refresh_time_in_milliseconds);
     }
 
     return provider;
+}
+
+/* The provider a pass-through should forward to when the source already caches, NULL otherwise */
+static struct aws_credentials_provider *s_find_cache(struct aws_credentials_provider *source) {
+    if (source->vtable == &s_aws_credentials_provider_pass_through_vtable) {
+        /* Point at what the pass-through forwards to, so pass-throughs never stack */
+        struct aws_credentials_provider_pass_through *impl = source->impl;
+        return impl->source;
+    }
+
+    if (aws_credentials_provider_is_refresh_cached(source) || aws_credentials_provider_is_default_chain(source)) {
+        return source;
+    }
+
+    return NULL;
 }
 
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
@@ -312,9 +328,10 @@ struct aws_credentials_provider *aws_credentials_provider_new_cached(
 
     AWS_ASSERT(options->source != NULL);
 
-    /* A refresh cache is not wrapped again */
-    if (aws_credentials_provider_is_refresh_cached(options->source)) {
-        return s_new_pass_through(allocator, options);
+    /* A source that already caches is not wrapped again */
+    struct aws_credentials_provider *cache = s_find_cache(options->source);
+    if (cache != NULL) {
+        return s_new_pass_through(allocator, cache, options);
     }
 
     /* Refreshable sources get the refresh cache; standard sources keep the existing cache */

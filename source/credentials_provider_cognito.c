@@ -902,8 +902,6 @@ on_error:
 
 /*************************************************************************/
 
-#define DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS (15 * 60 * 1000)
-
 /*
  * Cognito provider with caching implementation
  */
@@ -921,7 +919,6 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito_caching(
 
     struct aws_credentials_provider_cached_options cached_options = {
         .source = cognito_provider,
-        .refresh_time_in_milliseconds = DEFAULT_CREDENTIAL_PROVIDER_REFRESH_MS,
     };
 
     caching_provider = aws_credentials_provider_new_cached(allocator, &cached_options);

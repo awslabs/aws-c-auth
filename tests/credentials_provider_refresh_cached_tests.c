@@ -445,6 +445,81 @@ static int s_refresh_cached_expired_on_refresh_test(struct aws_allocator *alloca
 }
 AWS_TEST_CASE(refresh_cached_expired_on_refresh_test, s_refresh_cached_expired_on_refresh_test);
 
+/* Initial credentials already inside their refresh window are not refreshed again until one backoff has passed */
+static int s_refresh_cached_short_initial_credentials_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    s_shutdown_init();
+    s_set_time_secs(0);
+
+    struct aws_credentials *short_creds = s_new_credentials(allocator, s_access_key_1, 240);
+    struct aws_credentials *creds2 = s_new_credentials(allocator, s_access_key_2, 3600);
+    struct get_credentials_mock_result results[] = {{.credentials = short_creds}, {.credentials = creds2}};
+    struct aws_credentials_provider *mock = aws_credentials_provider_new_mock(allocator, results, 2, NULL);
+    struct aws_credentials_provider *cache = s_new_refresh_cache(allocator, mock, true);
+
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_1));
+
+    /* Backoff is 60-120 s with 240 s left */
+    s_set_time_secs(10);
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_1));
+    ASSERT_UINT_EQUALS(1, aws_credentials_provider_mock_get_call_count(mock));
+
+    s_set_time_secs(121);
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_2));
+    ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock));
+
+    s_release_cache_and_mock(cache, mock);
+    aws_credentials_release(creds2);
+    aws_credentials_release(short_creds);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(refresh_cached_short_initial_credentials_test, s_refresh_cached_short_initial_credentials_test);
+
+/* A refresh that returns credentials already inside their refresh window waits one backoff before the next */
+static int s_refresh_cached_short_refreshed_credentials_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    s_shutdown_init();
+    s_set_time_secs(0);
+
+    struct aws_credentials *creds1 = s_new_credentials(allocator, s_access_key_1, 900);
+    struct aws_credentials *short_creds = s_new_credentials(allocator, s_access_key_2, 940);
+    struct aws_credentials *creds3 = s_new_credentials(allocator, s_access_key_3, 2000);
+    struct get_credentials_mock_result results[] = {
+        {.credentials = creds1},
+        {.credentials = short_creds},
+        {.credentials = creds3},
+    };
+    struct aws_credentials_provider *mock = aws_credentials_provider_new_mock(allocator, results, 3, NULL);
+    struct aws_credentials_provider *cache = s_new_refresh_cache(allocator, mock, true);
+
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_1));
+
+    /* 200 s left: the refresh returns credentials with only 240 s left */
+    s_set_time_secs(700);
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_2));
+    ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock));
+
+    /* Backoff is 60-120 s with 240 s left */
+    s_set_time_secs(710);
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_2));
+    ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock));
+
+    s_set_time_secs(821);
+    ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_3));
+    ASSERT_UINT_EQUALS(3, aws_credentials_provider_mock_get_call_count(mock));
+
+    s_release_cache_and_mock(cache, mock);
+    aws_credentials_release(creds3);
+    aws_credentials_release(short_creds);
+    aws_credentials_release(creds1);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(refresh_cached_short_refreshed_credentials_test, s_refresh_cached_short_refreshed_credentials_test);
+
 /* A non-recoverable error on refresh is returned at once with no backoff, and cached for 1-5 s */
 static int s_refresh_cached_non_recoverable_on_refresh_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
@@ -859,6 +934,53 @@ static int s_cached_provider_pass_through_test(struct aws_allocator *allocator, 
     return AWS_OP_SUCCESS;
 }
 AWS_TEST_CASE(cached_provider_pass_through_test, s_cached_provider_pass_through_test);
+
+/* Wrapping a pass-through again forwards to the same refresh cache: one source call, invalidate still reaches it */
+static int s_cached_provider_wrap_three_times_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+    s_shutdown_init();
+    s_set_time_secs(0);
+
+    struct aws_credentials *creds1 = s_new_credentials(allocator, s_access_key_1, 3600);
+    struct aws_credentials *creds2 = s_new_credentials(allocator, s_access_key_2, 7200);
+    struct get_credentials_mock_result results[] = {{.credentials = creds1}, {.credentials = creds2}};
+    struct aws_credentials_provider *mock = aws_credentials_provider_new_mock_refreshable(allocator, results, 2, NULL);
+
+    struct aws_credentials_provider_cached_options options = {
+        .source = mock,
+        .high_res_clock_fn = mock_aws_get_high_res_time,
+        .system_clock_fn = mock_aws_get_system_time,
+    };
+    struct aws_credentials_provider *wrap1 = aws_credentials_provider_new_cached(allocator, &options);
+    options.source = wrap1;
+    struct aws_credentials_provider *wrap2 = aws_credentials_provider_new_cached(allocator, &options);
+    options.source = wrap2;
+    options.shutdown_options.shutdown_callback = s_on_shutdown_complete;
+    struct aws_credentials_provider *wrap3 = aws_credentials_provider_new_cached(allocator, &options);
+    ASSERT_NOT_NULL(wrap3);
+    ASSERT_TRUE(aws_credentials_provider_is_refresh_cached(wrap1));
+    ASSERT_FALSE(aws_credentials_provider_is_refresh_cached(wrap3));
+
+    ASSERT_SUCCESS(s_expect_credentials(wrap3, s_access_key_1));
+    ASSERT_SUCCESS(s_expect_credentials(wrap3, s_access_key_1));
+    ASSERT_UINT_EQUALS(1, aws_credentials_provider_mock_get_call_count(mock));
+
+    /* An old cache in between would keep serving the rejected key without calling the source */
+    s_set_time_secs(10);
+    ASSERT_SUCCESS(aws_credentials_provider_invalidate(wrap3, creds1));
+    ASSERT_SUCCESS(s_expect_credentials(wrap3, s_access_key_2));
+    ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock));
+
+    aws_credentials_provider_release(wrap1);
+    aws_credentials_provider_release(wrap2);
+    s_release_cache_and_mock(wrap3, mock);
+    aws_credentials_release(creds2);
+    aws_credentials_release(creds1);
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(cached_provider_wrap_three_times_test, s_cached_provider_wrap_three_times_test);
 
 /* wrap_if_refreshable wraps only refreshable providers, and passes NULL and standard providers through */
 static int s_wrap_if_refreshable_test(struct aws_allocator *allocator, void *ctx) {

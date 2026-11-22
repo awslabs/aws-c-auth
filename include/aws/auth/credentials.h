@@ -1269,13 +1269,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(
 /**
  * Creates a provider that functions as a caching decorating of another provider.
  *
- * For example, the default chain is implemented as:
- *
- * CachedProvider -> ProviderChain(EnvironmentProvider -> ProfileProvider -> ECS/EC2IMD etc...)
- *
  * A reference is taken on the target provider
  *
  * A refreshable source gets a cache that keeps credentials after a failed refresh and supports invalidate.
+ * A source that already caches (one returned by this function or a _caching constructor, or the default chain)
+ * is not cached again: the result forwards to it.
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options

@@ -405,3 +405,7 @@ on_error:
 
     return NULL;
 }
+
+bool aws_credentials_provider_is_default_chain(const struct aws_credentials_provider *provider) {
+    return provider->vtable == &s_aws_credentials_provider_default_chain_vtable;
+}

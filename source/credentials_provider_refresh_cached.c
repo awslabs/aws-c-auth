@@ -19,6 +19,7 @@
 #include <inttypes.h>
 
 /* Advisory refresh window, chosen from the lifetime of the credentials when they arrive */
+/* No provider has its own earlier schedule, so IMDS uses these too: 60 min for its 6 h credentials */
 #define REFRESH_ADVISORY_SHORT_LIFETIME_SECS (20 * 60)
 #define REFRESH_ADVISORY_MEDIUM_LIFETIME_SECS (90 * 60)
 #define REFRESH_ADVISORY_SHORT_WINDOW_SECS (5 * 60)
@@ -234,9 +235,11 @@ static void s_on_credential_source_result(struct aws_credentials *credentials, i
     impl->refresh_in_flight = false;
 
     if (credentials != NULL) {
+        bool cached_new_credentials = false;
         if (impl->cached_credentials == NULL) {
             /* Initial fetch: cache the credentials even if they are already expired */
             s_cache_credentials(provider, credentials, system_now_ns);
+            cached_new_credentials = true;
         } else if (aws_sub_u64_saturating(s_get_expiration_ns(credentials), system_now_ns) == 0) {
             s_apply_refresh_backoff(
                 provider, "the credential source returned expired credentials", system_now_ns, now_ns);
@@ -245,7 +248,23 @@ static void s_on_credential_source_result(struct aws_credentials *credentials, i
                 provider, "the credential source returned the rejected credentials", system_now_ns, now_ns);
         } else {
             s_cache_credentials(provider, credentials, system_now_ns);
+            cached_new_credentials = true;
         }
+
+        /* Credentials already inside their refresh window would make every request refresh again, so wait one
+         * backoff first. Expired credentials are left out: after an expired initial fetch the next request refreshes */
+        if (cached_new_credentials && aws_sub_u64_saturating(impl->expiration_ns, system_now_ns) > 0 &&
+            s_refresh_needed(impl, system_now_ns)) {
+            uint64_t backoff_ns = s_refresh_backoff_ns(impl, system_now_ns);
+            impl->next_refresh_allowed_ns = aws_add_u64_saturating(now_ns, backoff_ns);
+            AWS_LOGF_INFO(
+                AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+                "(id=%p) Credential source returned credentials already inside their refresh window; the next "
+                "refresh is attempted after %" PRIu64 " seconds.",
+                (void *)provider,
+                aws_timestamp_convert(backoff_ns, AWS_TIMESTAMP_NANOS, AWS_TIMESTAMP_SECS, NULL));
+        }
+
         result_credentials = impl->cached_credentials;
         aws_credentials_acquire(result_credentials);
 
@@ -468,6 +487,15 @@ struct aws_credentials_provider *aws_credentials_provider_new_refresh_cached(
     impl->system_clock_fn = options->system_clock_fn != NULL ? options->system_clock_fn : &aws_sys_clock_get_ticks;
 
     provider->shutdown_options = options->shutdown_options;
+
+    if (options->refresh_time_in_milliseconds > 0) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Refresh cached credentials provider ignores refresh time of %" PRIu64
+            " ms; refresh timing follows the credentials' expiration",
+            (void *)provider,
+            options->refresh_time_in_milliseconds);
+    }
 
     return provider;
 }
