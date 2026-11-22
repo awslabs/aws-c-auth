@@ -252,10 +252,15 @@ static void s_on_credential_source_result(struct aws_credentials *credentials, i
         }
 
         /* Credentials already inside their refresh window would make every request refresh again, so wait one
-         * backoff first. Expired credentials are left out: after an expired initial fetch the next request refreshes */
-        if (cached_new_credentials && aws_sub_u64_saturating(impl->expiration_ns, system_now_ns) > 0 &&
+         * backoff first, ending no later than the mandatory window. Credentials already in the mandatory window or
+         * expired get no wait, so the next request takes the mandatory refresh */
+        if (cached_new_credentials && !s_mandatory_refresh_needed(impl, system_now_ns) &&
             s_refresh_needed(impl, system_now_ns)) {
-            uint64_t backoff_ns = s_refresh_backoff_ns(impl, system_now_ns);
+            uint64_t mandatory_window_ns =
+                aws_timestamp_convert(REFRESH_MANDATORY_WINDOW_SECS, AWS_TIMESTAMP_SECS, AWS_TIMESTAMP_NANOS, NULL);
+            uint64_t until_mandatory_ns =
+                aws_sub_u64_saturating(aws_sub_u64_saturating(impl->expiration_ns, system_now_ns), mandatory_window_ns);
+            uint64_t backoff_ns = aws_min_u64(s_refresh_backoff_ns(impl, system_now_ns), until_mandatory_ns);
             impl->next_refresh_allowed_ns = aws_add_u64_saturating(now_ns, backoff_ns);
             AWS_LOGF_INFO(
                 AWS_LS_AUTH_CREDENTIALS_PROVIDER,
