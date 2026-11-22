@@ -243,7 +243,7 @@ static int s_sts_utils_retryable_web_identity_error_code_test(struct aws_allocat
 }
 AWS_TEST_CASE(sts_utils_retryable_web_identity_error_code_test, s_sts_utils_retryable_web_identity_error_code_test);
 
-/* Non-recoverable STS codes are exactly the six the SEP lists */
+/* Non-recoverable STS codes */
 static int s_sts_utils_non_recoverable_error_code_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     (void)allocator;
