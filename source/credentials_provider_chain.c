@@ -107,8 +107,13 @@ static void s_aws_provider_chain_member_callback(struct aws_credentials *credent
 
 on_terminate_chain:
 
-    if (credentials == NULL && wrapped_user_data->first_non_recoverable_error_code != AWS_ERROR_SUCCESS) {
-        error_code = wrapped_user_data->first_non_recoverable_error_code;
+    if (credentials == NULL) {
+        if (wrapped_user_data->first_non_recoverable_error_code != AWS_ERROR_SUCCESS) {
+            error_code = wrapped_user_data->first_non_recoverable_error_code;
+        } else if (!aws_credentials_provider_is_non_recoverable_error(error_code)) {
+            /* No member returned credentials and none failed for good */
+            error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+        }
     }
 
     wrapped_user_data->original_callback(credentials, error_code, wrapped_user_data->original_user_data);

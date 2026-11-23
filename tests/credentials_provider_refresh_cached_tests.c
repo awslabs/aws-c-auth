@@ -161,7 +161,7 @@ static int s_refresh_cached_initial_fetch_test(struct aws_allocator *allocator, 
 }
 AWS_TEST_CASE(refresh_cached_initial_fetch_test, s_refresh_cached_initial_fetch_test);
 
-/* A recoverable initial-fetch error gives NoCredentials, and the next call fetches again with no backoff */
+/* A recoverable initial-fetch error returns the source error, and the next call fetches again with no backoff */
 static int s_refresh_cached_initial_fetch_recoverable_error_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     aws_auth_library_init(allocator);
@@ -176,7 +176,7 @@ static int s_refresh_cached_initial_fetch_recoverable_error_test(struct aws_allo
     struct aws_credentials_provider *mock = aws_credentials_provider_new_mock(allocator, results, 2, NULL);
     struct aws_credentials_provider *cache = s_new_refresh_cache(allocator, mock, true);
 
-    ASSERT_SUCCESS(s_expect_error(cache, AWS_AUTH_SIGNING_NO_CREDENTIALS));
+    ASSERT_SUCCESS(s_expect_error(cache, AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE));
     ASSERT_SUCCESS(s_expect_credentials(cache, s_access_key_1));
     ASSERT_UINT_EQUALS(2, aws_credentials_provider_mock_get_call_count(mock));
 
@@ -1140,7 +1140,7 @@ static int s_check_chain_all_fail(struct aws_allocator *allocator, int error1, i
     return AWS_OP_SUCCESS;
 }
 
-/* When every member fails, the chain returns the first non-recoverable error, otherwise the last error */
+/* When every member fails, the chain returns the first non-recoverable error, otherwise no credentials */
 static int s_chain_all_fail_error_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
     aws_auth_library_init(allocator);
@@ -1159,7 +1159,7 @@ static int s_chain_all_fail_error_test(struct aws_allocator *allocator, void *ct
         allocator,
         AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE,
         AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE,
-        AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE));
+        AWS_AUTH_SIGNING_NO_CREDENTIALS));
 
     aws_auth_library_clean_up();
     return AWS_OP_SUCCESS;

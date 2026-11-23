@@ -290,7 +290,8 @@ static void s_on_credential_source_result(struct aws_credentials *credentials, i
             (void *)provider,
             error_code,
             aws_error_str(error_code));
-        result_error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+        /* Return the source error; a chain or signing reports it as no credentials */
+        result_error_code = error_code;
     }
 
     aws_mutex_unlock(&impl->lock);
