@@ -241,6 +241,7 @@ static int s_pass_through_get_credentials(
     return aws_credentials_provider_get_credentials(impl->source, callback, user_data);
 }
 
+/* Forwards the rejected credentials to the wrapped cache, which holds them and does the refresh */
 static int s_pass_through_invalidate(
     struct aws_credentials_provider *provider,
     const struct aws_credentials *rejected_credentials) {
