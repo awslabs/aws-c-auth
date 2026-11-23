@@ -506,6 +506,7 @@ static int s_on_incoming_headers_fn(
 }
 
 static void s_query_credentials(struct sts_web_identity_user_data *user_data);
+static void s_on_acquire_connection(struct aws_http_connection *connection, int error_code, void *data);
 
 static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_code, void *data) {
     struct sts_web_identity_user_data *user_data = data;
@@ -520,7 +521,13 @@ static void s_on_stream_complete_fn(struct aws_http_stream *stream, int error_co
     if (user_data->status_code != AWS_HTTP_STATUS_CODE_200_OK || error_code != AWS_OP_SUCCESS) {
         if (++user_data->attempt_count < STS_WEB_IDENTITY_MAX_ATTEMPTS && user_data->response.len) {
             if (s_parse_retryable_error_from_response(user_data->allocator, &user_data->response)) {
-                s_query_credentials(user_data);
+                /* STS can close the connection after an error response, so retry on a new connection */
+                impl->function_table->aws_http_connection_close(user_data->connection);
+                impl->function_table->aws_http_connection_manager_release_connection(
+                    impl->connection_manager, user_data->connection);
+                user_data->connection = NULL;
+                impl->function_table->aws_http_connection_manager_acquire_connection(
+                    impl->connection_manager, s_on_acquire_connection, user_data);
                 return;
             }
         }

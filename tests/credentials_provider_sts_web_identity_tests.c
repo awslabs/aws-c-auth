@@ -44,6 +44,10 @@ static struct aws_mock_sts_web_identity_tester {
     int response_code;
     int error_code;
 
+    /* Connections handed out, and whether the current one was closed */
+    int connections_acquired;
+    bool is_connection_closed;
+
     struct proxy_env_var_settings *proxy_config;
 } s_tester;
 
@@ -108,6 +112,8 @@ static void s_aws_http_connection_manager_acquire_connection_mock(
 
     if (s_tester.is_connection_acquire_successful) {
         mock_manager->count++;
+        s_tester.connections_acquired++;
+        s_tester.is_connection_closed = false;
         callback((struct aws_http_connection *)1, AWS_OP_SUCCESS, user_data);
     } else {
         aws_raise_error(AWS_ERROR_HTTP_UNKNOWN);
@@ -170,6 +176,12 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     (void)client_connection;
     (void)options;
 
+    /* A closed connection cannot carry a new request */
+    if (s_tester.is_connection_closed) {
+        aws_raise_error(AWS_ERROR_HTTP_CONNECTION_CLOSED);
+        return NULL;
+    }
+
     struct aws_byte_cursor path;
     AWS_ZERO_STRUCT(path);
     struct aws_input_stream *body_stream = aws_http_message_get_body_stream(options->request);
@@ -177,6 +189,11 @@ static struct aws_http_stream *s_aws_http_connection_make_request_mock(
     aws_byte_buf_clean_up(&s_tester.request_body);
     aws_byte_buf_init(&s_tester.request_body, allocator, 256);
     aws_input_stream_read(body_stream, &s_tester.request_body);
+
+    /* Like STS, close the connection after an error response */
+    if (s_tester.response_code != 0 && s_tester.response_code != AWS_HTTP_STATUS_CODE_200_OK) {
+        s_tester.is_connection_closed = true;
+    }
     s_invoke_mock_request_callbacks(options, &s_tester.response_data_callbacks, s_tester.is_request_successful);
 
     s_tester.attempts++;
@@ -208,6 +225,7 @@ static void s_aws_http_stream_release_mock(struct aws_http_stream *stream) {
 
 static void s_aws_http_connection_close_mock(struct aws_http_connection *connection) {
     (void)connection;
+    s_tester.is_connection_closed = true;
 }
 
 static struct aws_http_connection *s_aws_http_stream_get_connection_mock(const struct aws_http_stream *stream) {
@@ -962,6 +980,8 @@ static int s_credentials_provider_sts_web_identity_test_retry_error1(struct aws_
 
     ASSERT_SUCCESS(s_verify_credentials(
         true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
+    /* Each retry runs on a new connection, since the error response closed the last one */
+    ASSERT_INT_EQUALS(3, s_tester.connections_acquired);
 
     aws_credentials_provider_release(provider);
 
@@ -1034,6 +1054,7 @@ static int s_credentials_provider_sts_web_identity_test_retry_expired_token(
     ASSERT_SUCCESS(s_do_sts_web_identity_400_test(allocator, s_expired_token_error_response));
     ASSERT_SUCCESS(s_verify_credentials(
         true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
+    ASSERT_INT_EQUALS(3, s_tester.connections_acquired);
     ASSERT_TRUE(s_tester.error_code != AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE);
 
     s_aws_sts_web_identity_tester_cleanup();
@@ -1059,6 +1080,7 @@ static int s_credentials_provider_sts_web_identity_test_retry_expired_token_exce
     ASSERT_SUCCESS(s_do_sts_web_identity_400_test(allocator, s_expired_token_exception_error_response));
     ASSERT_SUCCESS(s_verify_credentials(
         true /*request made*/, false /*from config*/, false /*get creds*/, 3 /*expected attempts*/));
+    ASSERT_INT_EQUALS(3, s_tester.connections_acquired);
     ASSERT_TRUE(s_tester.error_code != AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE);
 
     s_aws_sts_web_identity_tester_cleanup();
@@ -1082,6 +1104,7 @@ static int s_credentials_provider_sts_web_identity_test_non_recoverable_error(
     ASSERT_SUCCESS(s_do_sts_web_identity_400_test(allocator, s_invalid_identity_token_error_response));
     ASSERT_SUCCESS(s_verify_credentials(
         true /*request made*/, false /*from config*/, false /*get creds*/, 1 /*expected attempts*/));
+    ASSERT_INT_EQUALS(1, s_tester.connections_acquired);
     ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE, s_tester.error_code);
 
     s_aws_sts_web_identity_tester_cleanup();
