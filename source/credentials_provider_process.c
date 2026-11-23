@@ -271,3 +271,7 @@ on_error:
     aws_mem_release(allocator, provider);
     return NULL;
 }
+
+bool aws_credentials_provider_is_process(const struct aws_credentials_provider *provider) {
+    return provider->vtable == &s_aws_credentials_provider_process_vtable;
+}

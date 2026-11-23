@@ -34,6 +34,17 @@ typedef int(aws_credentials_provider_get_credentials_fn)(
     aws_on_get_credentials_callback_fn callback,
     void *user_data);
 typedef void(aws_credentials_provider_destroy_fn)(struct aws_credentials_provider *provider);
+typedef int(aws_credentials_provider_invalidate_fn)(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials);
+
+/*
+ * Refreshable providers use the refresh cache behavior; standard providers keep the existing caching behavior.
+ */
+enum aws_credentials_provider_refresh_type {
+    AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_STANDARD = 0,
+    AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
+};
 
 /*
  * Common function table that all credentials provider implementations must support
@@ -41,6 +52,12 @@ typedef void(aws_credentials_provider_destroy_fn)(struct aws_credentials_provide
 struct aws_credentials_provider_vtable {
     aws_credentials_provider_get_credentials_fn *get_credentials;
     aws_credentials_provider_destroy_fn *destroy;
+
+    /* Optional. NULL means the provider has nothing to invalidate. */
+    aws_credentials_provider_invalidate_fn *invalidate;
+
+    /* Defaults to STANDARD when not set. */
+    enum aws_credentials_provider_refresh_type refresh_type;
 };
 
 typedef void(aws_credentials_provider_shutdown_completed_fn)(void *user_data);
@@ -164,6 +181,16 @@ struct aws_credentials_provider_cached_options {
      * An optional expiration time period for sourced credentials.  For a given set of cached credentials,
      * the refresh time period will be the minimum of this time and any expiration timestamp on the credentials
      * themselves.
+     * Not used when the source is refreshable (IMDS, ECS, STS, STS web identity, SSO, Login, Cognito).
+     */
+    /*
+     * ==========================
+     * DOUBT: refreshable sources ignore this value, so a caller-set refresh time (Cognito 15 min, C++
+     * CachedCredentialTTL, Swift refreshTime) no longer refreshes early. Credential Refresh SEP L739-741 keeps an
+     * earlier schedule only when it belongs to a specific provider (such as IMDS), and L743-747 covers only
+     * advisory/mandatory window settings, so neither seems to apply to this generic cache setting.
+     * Should a caller-set value still trigger an early advisory refresh?
+     * ============================
      */
     uint64_t refresh_time_in_milliseconds;
 
@@ -1178,6 +1205,20 @@ int aws_credentials_provider_get_credentials(
     void *user_data);
 
 /*
+ * Reports that a service rejected these credentials, so the provider refreshes them on the next request.
+ * Can be called on any provider. Providers without cached credentials to refresh do nothing.
+ *
+ * @param provider credentials provider that returned the rejected credentials
+ * @param rejected_credentials the credentials the service rejected
+ *
+ * @return AWS_OP_SUCCESS, or AWS_OP_ERR if the provider failed to process the call
+ */
+AWS_AUTH_API
+int aws_credentials_provider_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials);
+
+/*
  * Credentials provider variant creation
  */
 
@@ -1228,11 +1269,11 @@ struct aws_credentials_provider *aws_credentials_provider_new_environment(
 /**
  * Creates a provider that functions as a caching decorating of another provider.
  *
- * For example, the default chain is implemented as:
- *
- * CachedProvider -> ProviderChain(EnvironmentProvider -> ProfileProvider -> ECS/EC2IMD etc...)
- *
  * A reference is taken on the target provider
+ *
+ * A refreshable source gets a cache that keeps credentials after a failed refresh and supports invalidate.
+ * A source that already caches (one returned by this function or a _caching constructor, or the default chain)
+ * is not cached again: the result forwards to it.
  *
  * @param allocator memory allocator to use for all memory allocation
  * @param options provider-specific configuration options
@@ -1274,6 +1315,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts(
     const struct aws_credentials_provider_sts_options *options);
 
 /**
+ * Creates an STS AssumeRole provider that has a caching layer wrapped around it
+ * (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_options *options);
+
+/**
  * Creates a provider that sources credentials from an ordered sequence of providers, with the overall result
  * being from the first provider to return a valid set of credentials
  *
@@ -1303,6 +1358,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
     const struct aws_credentials_provider_imds_options *options);
 
 /**
+ * Creates an IMDS provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_imds_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_imds_options *options);
+
+/**
  * Creates a provider that sources credentials from the ecs role credentials service and reads the required params from
  * environment variables
  *
@@ -1313,6 +1381,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_imds(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_environment_options *options);
+
+/**
+ * Creates an ECS provider configured from environment variables, with a caching layer wrapped around it
+ * (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_environment_options *options);
 
@@ -1328,6 +1410,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environme
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_ecs(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_options *options);
+
+/**
+ * Creates an ECS provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_ecs_options *options);
 
@@ -1358,6 +1453,20 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
     const struct aws_credentials_provider_sts_web_identity_options *options);
 
 /**
+ * Creates an STS AssumeRoleWithWebIdentity provider that has a caching layer wrapped around it
+ * (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sts_web_identity_options *options);
+
+/**
  * Creates a provider that sources credentials from SSO using a SSOToken.
  *
  * @param allocator memory allocator to use for all memory allocation
@@ -1367,6 +1476,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_sts_web_identity(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_sso(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_sso_options *options);
+
+/**
+ * Creates an SSO provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_sso_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_sso_options *options);
 
@@ -1433,6 +1555,19 @@ struct aws_credentials_provider *aws_credentials_provider_new_cognito_caching(
  */
 AWS_AUTH_API
 struct aws_credentials_provider *aws_credentials_provider_new_login(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_login_options *options);
+
+/**
+ * Creates an AWS Login provider that has a caching layer wrapped around it (see aws_credentials_provider_new_cached)
+ *
+ * @param allocator memory allocator to use for all memory allocation
+ * @param options provider-specific configuration options
+ *
+ * @return the newly-constructed credentials provider, or NULL if an error occurred.
+ */
+AWS_AUTH_API
+struct aws_credentials_provider *aws_credentials_provider_new_login_caching(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_login_options *options);
 

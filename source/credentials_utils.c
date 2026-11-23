@@ -56,6 +56,40 @@ void aws_credentials_query_clean_up(struct aws_credentials_query *query) {
     }
 }
 
+void aws_credentials_query_list_notify_and_clean_up(
+    struct aws_linked_list *query_list,
+    struct aws_allocator *allocator,
+    struct aws_credentials *credentials,
+    int error_code) {
+
+    while (!aws_linked_list_empty(query_list)) {
+        struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
+        struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
+        query->callback(credentials, error_code, query->user_data);
+        aws_credentials_query_clean_up(query);
+        aws_mem_release(allocator, query);
+    }
+}
+
+struct aws_credentials_provider *aws_credentials_provider_wrap_if_refreshable(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *provider) {
+
+    if (provider == NULL || provider->vtable->refresh_type != AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE) {
+        return provider;
+    }
+
+    struct aws_credentials_provider_cached_options options = {
+        .source = provider,
+    };
+    struct aws_credentials_provider *cached = aws_credentials_provider_new_refresh_cached(allocator, &options);
+
+    /* The cache holds its own reference */
+    aws_credentials_provider_release(provider);
+
+    return cached;
+}
+
 void aws_credentials_provider_init_base(
     struct aws_credentials_provider *provider,
     struct aws_allocator *allocator,
@@ -318,6 +352,21 @@ enum aws_retry_error_type aws_credentials_provider_compute_retry_error_type(int 
     }
 
     return error_type;
+}
+
+bool aws_credentials_provider_is_non_recoverable_error(int error_code) {
+    switch (error_code) {
+        case AWS_AUTH_SSO_TOKEN_EXPIRED:
+        case AWS_AUTH_SSO_TOKEN_INVALID:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_SSO_UNAUTHORIZED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_ACCESS_DENIED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_VALIDATION_FAILED:
+        case AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE:
+            return true;
+        default:
+            return false;
+    }
 }
 
 struct aws_profile_collection *aws_load_profile_collection_from_config_file(

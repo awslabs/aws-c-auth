@@ -359,6 +359,7 @@ static void s_credentials_provider_http_destroy(struct aws_credentials_provider 
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_http_vtable = {
     .get_credentials = s_aws_http_credentials_provider_get_credentials,
     .destroy = s_credentials_provider_http_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 int aws_http_credentials_provider_init_base(

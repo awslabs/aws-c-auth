@@ -33,21 +33,6 @@ struct aws_credentials_provider_cached {
     struct aws_linked_list pending_queries;
 };
 
-static void s_aws_credentials_query_list_notify_and_clean_up(
-    struct aws_linked_list *query_list,
-    struct aws_allocator *allocator,
-    struct aws_credentials *credentials,
-    int error_code) {
-
-    while (!aws_linked_list_empty(query_list)) {
-        struct aws_linked_list_node *node = aws_linked_list_pop_front(query_list);
-        struct aws_credentials_query *query = AWS_CONTAINER_OF(node, struct aws_credentials_query, node);
-        query->callback(credentials, error_code, query->user_data);
-        aws_credentials_query_clean_up(query);
-        aws_mem_release(allocator, query);
-    }
-}
-
 static void s_swap_cached_credentials(
     struct aws_credentials_provider *provider,
     struct aws_credentials *new_credentials) {
@@ -144,7 +129,7 @@ static void s_cached_credentials_provider_get_credentials_async_callback(
         "(id=%p) Cached credentials provider notifying pending queries of new credentials",
         (void *)provider);
 
-    s_aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials, error_code);
+    aws_credentials_query_list_notify_and_clean_up(&pending_queries, provider->allocator, credentials, error_code);
 }
 
 static int s_cached_credentials_provider_get_credentials_async(
@@ -241,11 +226,119 @@ static struct aws_credentials_provider_vtable s_aws_credentials_provider_cached_
     .destroy = s_cached_credentials_provider_destroy,
 };
 
+/* Returned when the source already caches (a refresh cache, a pass-through or a default chain), so it is not cached
+ * twice */
+struct aws_credentials_provider_pass_through {
+    struct aws_credentials_provider *source;
+};
+
+static int s_pass_through_get_credentials(
+    struct aws_credentials_provider *provider,
+    aws_on_get_credentials_callback_fn callback,
+    void *user_data) {
+
+    struct aws_credentials_provider_pass_through *impl = provider->impl;
+    return aws_credentials_provider_get_credentials(impl->source, callback, user_data);
+}
+
+/* Forwards the rejected credentials to the wrapped cache, which holds them and does the refresh */
+static int s_pass_through_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials) {
+
+    struct aws_credentials_provider_pass_through *impl = provider->impl;
+    return aws_credentials_provider_invalidate(impl->source, rejected_credentials);
+}
+
+static void s_pass_through_destroy(struct aws_credentials_provider *provider) {
+    struct aws_credentials_provider_pass_through *impl = provider->impl;
+    if (impl == NULL) {
+        return;
+    }
+
+    aws_credentials_provider_release(impl->source);
+
+    aws_credentials_provider_invoke_shutdown_callback(provider);
+
+    aws_mem_release(provider->allocator, provider);
+}
+
+static struct aws_credentials_provider_vtable s_aws_credentials_provider_pass_through_vtable = {
+    .get_credentials = s_pass_through_get_credentials,
+    .destroy = s_pass_through_destroy,
+    .invalidate = s_pass_through_invalidate,
+};
+
+static struct aws_credentials_provider *s_new_pass_through(
+    struct aws_allocator *allocator,
+    struct aws_credentials_provider *target,
+    const struct aws_credentials_provider_cached_options *options) {
+
+    struct aws_credentials_provider *provider = NULL;
+    struct aws_credentials_provider_pass_through *impl = NULL;
+
+    aws_mem_acquire_many(
+        allocator,
+        2,
+        &provider,
+        sizeof(struct aws_credentials_provider),
+        &impl,
+        sizeof(struct aws_credentials_provider_pass_through));
+
+    if (!provider) {
+        return NULL;
+    }
+
+    AWS_ZERO_STRUCT(*provider);
+    AWS_ZERO_STRUCT(*impl);
+
+    aws_credentials_provider_init_base(provider, allocator, &s_aws_credentials_provider_pass_through_vtable, impl);
+
+    impl->source = aws_credentials_provider_acquire(target);
+    provider->shutdown_options = options->shutdown_options;
+
+    if (options->refresh_time_in_milliseconds > 0) {
+        AWS_LOGF_INFO(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "(id=%p) Cached credentials provider source already caches; refresh time of %" PRIu64 " ms is ignored",
+            (void *)provider,
+            options->refresh_time_in_milliseconds);
+    }
+
+    return provider;
+}
+
+/* The provider a pass-through should forward to when the source already caches, NULL otherwise */
+static struct aws_credentials_provider *s_find_cache(struct aws_credentials_provider *source) {
+    if (source->vtable == &s_aws_credentials_provider_pass_through_vtable) {
+        /* Point at what the pass-through forwards to, so pass-throughs never stack */
+        struct aws_credentials_provider_pass_through *impl = source->impl;
+        return impl->source;
+    }
+
+    if (aws_credentials_provider_is_refresh_cached(source) || aws_credentials_provider_is_default_chain(source)) {
+        return source;
+    }
+
+    return NULL;
+}
+
 struct aws_credentials_provider *aws_credentials_provider_new_cached(
     struct aws_allocator *allocator,
     const struct aws_credentials_provider_cached_options *options) {
 
     AWS_ASSERT(options->source != NULL);
+
+    /* A source that already caches is not wrapped again */
+    struct aws_credentials_provider *cache = s_find_cache(options->source);
+    if (cache != NULL) {
+        return s_new_pass_through(allocator, cache, options);
+    }
+
+    /* Refreshable sources get the refresh cache; standard sources keep the existing cache */
+    if (options->source->vtable->refresh_type == AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE) {
+        return aws_credentials_provider_new_refresh_cached(allocator, options);
+    }
 
     struct aws_credentials_provider *provider = NULL;
     struct aws_credentials_provider_cached *impl = NULL;

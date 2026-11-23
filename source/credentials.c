@@ -473,3 +473,14 @@ int aws_credentials_provider_get_credentials(
 
     return provider->vtable->get_credentials(provider, callback, user_data);
 }
+
+int aws_credentials_provider_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials) {
+
+    if (provider == NULL || rejected_credentials == NULL || provider->vtable->invalidate == NULL) {
+        return AWS_OP_SUCCESS;
+    }
+
+    return provider->vtable->invalidate(provider, rejected_credentials);
+}

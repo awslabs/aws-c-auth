@@ -22,6 +22,8 @@ struct aws_credentials_provider_chain_user_data {
     void *original_user_data;
     /* Query sent only to the pinned provider */
     bool pinned_query;
+    /* First non-recoverable member error; returned if every member fails */
+    int first_non_recoverable_error_code;
 };
 
 static void s_aws_provider_chain_member_callback(struct aws_credentials *credentials, int error_code, void *user_data) {
@@ -41,6 +43,11 @@ static void s_aws_provider_chain_member_callback(struct aws_credentials *credent
             error_code);
 
         goto on_terminate_chain;
+    }
+
+    if (credentials == NULL && wrapped_user_data->first_non_recoverable_error_code == AWS_ERROR_SUCCESS &&
+        aws_credentials_provider_is_non_recoverable_error(error_code)) {
+        wrapped_user_data->first_non_recoverable_error_code = error_code;
     }
 
     /* Pin the first member that returns credentials */
@@ -99,6 +106,15 @@ static void s_aws_provider_chain_member_callback(struct aws_credentials *credent
     return;
 
 on_terminate_chain:
+
+    if (credentials == NULL) {
+        if (wrapped_user_data->first_non_recoverable_error_code != AWS_ERROR_SUCCESS) {
+            error_code = wrapped_user_data->first_non_recoverable_error_code;
+        } else if (!aws_credentials_provider_is_non_recoverable_error(error_code)) {
+            /* No member returned credentials and none failed for good */
+            error_code = AWS_AUTH_SIGNING_NO_CREDENTIALS;
+        }
+    }
 
     wrapped_user_data->original_callback(credentials, error_code, wrapped_user_data->original_user_data);
     aws_credentials_provider_release(provider);
@@ -176,9 +192,30 @@ static void s_credentials_provider_chain_destroy(struct aws_credentials_provider
     aws_mem_release(provider->allocator, provider);
 }
 
+static int s_credentials_provider_chain_invalidate(
+    struct aws_credentials_provider *provider,
+    const struct aws_credentials *rejected_credentials) {
+
+    struct aws_credentials_provider_chain_impl *impl = provider->impl;
+
+    /* Only the member holding these credentials acts on them */
+    size_t provider_count = aws_array_list_length(&impl->providers);
+    for (size_t i = 0; i < provider_count; ++i) {
+        struct aws_credentials_provider *chain_member = NULL;
+        if (aws_array_list_get_at(&impl->providers, &chain_member, i)) {
+            continue;
+        }
+
+        aws_credentials_provider_invalidate(chain_member, rejected_credentials);
+    }
+
+    return AWS_OP_SUCCESS;
+}
+
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_chain_vtable = {
     .get_credentials = s_credentials_provider_chain_get_credentials_async,
     .destroy = s_credentials_provider_chain_destroy,
+    .invalidate = s_credentials_provider_chain_invalidate,
 };
 
 struct aws_credentials_provider *aws_credentials_provider_new_chain(

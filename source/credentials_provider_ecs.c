@@ -722,6 +722,7 @@ static void s_credentials_provider_ecs_destroy(struct aws_credentials_provider *
 static struct aws_credentials_provider_vtable s_aws_credentials_provider_ecs_vtable = {
     .get_credentials = s_credentials_provider_ecs_get_credentials_async,
     .destroy = s_credentials_provider_ecs_destroy,
+    .refresh_type = AWS_CREDENTIALS_PROVIDER_REFRESH_TYPE_REFRESHABLE,
 };
 
 static void s_on_connection_manager_shutdown(void *user_data) {
@@ -958,4 +959,20 @@ cleanup:
 
     aws_uri_clean_up(&full_uri);
     return provider;
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_options *options) {
+
+    return aws_credentials_provider_wrap_if_refreshable(
+        allocator, aws_credentials_provider_new_ecs(allocator, options));
+}
+
+struct aws_credentials_provider *aws_credentials_provider_new_ecs_from_environment_caching(
+    struct aws_allocator *allocator,
+    const struct aws_credentials_provider_ecs_environment_options *options) {
+
+    return aws_credentials_provider_wrap_if_refreshable(
+        allocator, aws_credentials_provider_new_ecs_from_environment(allocator, options));
 }

@@ -4,6 +4,7 @@
  */
 
 #include <aws/auth/private/credentials_utils.h>
+#include <aws/auth/private/sts_utils.h>
 #include <aws/common/environment.h>
 #include <aws/sdkutils/aws_profile.h>
 #include <aws/testing/aws_test_harness.h>
@@ -190,3 +191,118 @@ static int s_credentials_utils_parse_account_id_from_arn(struct aws_allocator *a
 }
 
 AWS_TEST_CASE(credentials_utils_parse_account_id_from_arn, s_credentials_utils_parse_account_id_from_arn);
+
+/* Reads <Code> from <ErrorResponse><Error> and from a bare <Error> root */
+static int s_sts_utils_parse_error_code_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+
+    struct aws_byte_cursor code;
+
+    struct aws_byte_cursor error_response = aws_byte_cursor_from_c_str(
+        "<ErrorResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\"><Error><Type>Sender</Type>"
+        "<Code>AccessDenied</Code><Message>denied</Message></Error><RequestId>id</RequestId></ErrorResponse>");
+    ASSERT_SUCCESS(aws_credentials_provider_parse_sts_error_code(allocator, error_response, &code));
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(code, "AccessDenied");
+
+    struct aws_byte_cursor bare_error =
+        aws_byte_cursor_from_c_str("<Error><Code>IDPCommunicationError</Code><Message>XXX</Message></Error>");
+    ASSERT_SUCCESS(aws_credentials_provider_parse_sts_error_code(allocator, bare_error, &code));
+    ASSERT_CURSOR_VALUE_CSTRING_EQUALS(code, "IDPCommunicationError");
+
+    struct aws_byte_cursor no_code =
+        aws_byte_cursor_from_c_str("<ErrorResponse><Error><Message>no code</Message></Error></ErrorResponse>");
+    ASSERT_SUCCESS(aws_credentials_provider_parse_sts_error_code(allocator, no_code, &code));
+    ASSERT_UINT_EQUALS(0, code.len);
+
+    struct aws_byte_cursor not_xml = aws_byte_cursor_from_c_str("not xml");
+    ASSERT_FAILS(aws_credentials_provider_parse_sts_error_code(allocator, not_xml, &code));
+    ASSERT_UINT_EQUALS(0, code.len);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(sts_utils_parse_error_code_test, s_sts_utils_parse_error_code_test);
+
+/* Web identity retries only ExpiredToken, ExpiredTokenException and IDPCommunicationError */
+static int s_sts_utils_retryable_web_identity_error_code_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+    ASSERT_TRUE(
+        aws_credentials_provider_is_retryable_sts_web_identity_error_code(aws_byte_cursor_from_c_str("ExpiredToken")));
+    ASSERT_TRUE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(
+        aws_byte_cursor_from_c_str("ExpiredTokenException")));
+    ASSERT_TRUE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(
+        aws_byte_cursor_from_c_str("IDPCommunicationError")));
+    ASSERT_FALSE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(
+        aws_byte_cursor_from_c_str("InvalidIdentityToken")));
+    ASSERT_FALSE(
+        aws_credentials_provider_is_retryable_sts_web_identity_error_code(aws_byte_cursor_from_c_str("AccessDenied")));
+    ASSERT_FALSE(aws_credentials_provider_is_retryable_sts_web_identity_error_code(aws_byte_cursor_from_c_str("")));
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(sts_utils_retryable_web_identity_error_code_test, s_sts_utils_retryable_web_identity_error_code_test);
+
+/* Non-recoverable STS codes */
+static int s_sts_utils_non_recoverable_error_code_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    (void)allocator;
+
+    const char *non_recoverable[] = {
+        "AccessDenied",
+        "IDPRejectedClaim",
+        "InvalidIdentityToken",
+        "MalformedPolicyDocument",
+        "PackedPolicyTooLarge",
+        "RegionDisabledException",
+    };
+    for (size_t i = 0; i < AWS_ARRAY_SIZE(non_recoverable); ++i) {
+        ASSERT_TRUE(
+            aws_credentials_provider_is_non_recoverable_sts_error_code(aws_byte_cursor_from_c_str(non_recoverable[i])));
+    }
+
+    const char *recoverable[] = {"ExpiredToken", "IDPCommunicationError", "Throttling", "InternalFailure", ""};
+    for (size_t i = 0; i < AWS_ARRAY_SIZE(recoverable); ++i) {
+        ASSERT_FALSE(
+            aws_credentials_provider_is_non_recoverable_sts_error_code(aws_byte_cursor_from_c_str(recoverable[i])));
+    }
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(sts_utils_non_recoverable_error_code_test, s_sts_utils_non_recoverable_error_code_test);
+
+/* The refresh cache treats only the SSO, Login and STS non-recoverable codes as non-recoverable */
+static int s_credentials_utils_is_non_recoverable_error_test(struct aws_allocator *allocator, void *ctx) {
+    (void)ctx;
+    aws_auth_library_init(allocator);
+
+    int non_recoverable[] = {
+        AWS_AUTH_SSO_TOKEN_EXPIRED,
+        AWS_AUTH_SSO_TOKEN_INVALID,
+        AWS_AUTH_CREDENTIALS_PROVIDER_SSO_UNAUTHORIZED,
+        AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN,
+        AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_ACCESS_DENIED,
+        AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_VALIDATION_FAILED,
+        AWS_AUTH_CREDENTIALS_PROVIDER_STS_NON_RECOVERABLE,
+    };
+    for (size_t i = 0; i < AWS_ARRAY_SIZE(non_recoverable); ++i) {
+        ASSERT_TRUE(aws_credentials_provider_is_non_recoverable_error(non_recoverable[i]));
+    }
+
+    int recoverable[] = {
+        AWS_ERROR_SUCCESS,
+        AWS_ERROR_UNKNOWN,
+        AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED,
+        AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE,
+        AWS_AUTH_CREDENTIALS_PROVIDER_STS_SOURCE_FAILURE,
+        AWS_AUTH_CREDENTIALS_PROVIDER_SSO_SOURCE_FAILURE,
+        AWS_AUTH_SIGNING_NO_CREDENTIALS,
+    };
+    for (size_t i = 0; i < AWS_ARRAY_SIZE(recoverable); ++i) {
+        ASSERT_FALSE(aws_credentials_provider_is_non_recoverable_error(recoverable[i]));
+    }
+
+    aws_auth_library_clean_up();
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(credentials_utils_is_non_recoverable_error_test, s_credentials_utils_is_non_recoverable_error_test);

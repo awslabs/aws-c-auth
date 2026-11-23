@@ -1423,10 +1423,10 @@ static int s_credentials_provider_chain_pin_test(struct aws_allocator *allocator
         aws_credentials_get_access_key_id(callback_results.credentials), s_access_key_id_2);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
-    /* Second call asks only member 2 and returns its error */
+    /* Second call asks only member 2; its recoverable failure is returned as no credentials */
     ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
     ASSERT_NULL(callback_results.credentials);
-    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, callback_results.last_error);
+    ASSERT_INT_EQUALS(AWS_AUTH_SIGNING_NO_CREDENTIALS, callback_results.last_error);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
     /* Member 1 was asked only on the first walk; member 2 served both calls */
@@ -1504,7 +1504,7 @@ static int s_credentials_provider_chain_pin_disabled_test(struct aws_allocator *
 
 AWS_TEST_CASE(credentials_provider_chain_pin_disabled_test, s_credentials_provider_chain_pin_disabled_test);
 
-/* When every member fails nothing is pinned, the last error is returned and the next call walks again */
+/* When every member fails nothing is pinned, no credentials is returned and the next call walks again */
 static int s_credentials_provider_chain_pin_all_fail_test(struct aws_allocator *allocator, void *ctx) {
     (void)ctx;
 
@@ -1530,10 +1530,10 @@ static int s_credentials_provider_chain_pin_all_fail_test(struct aws_allocator *
 
     struct aws_get_credentials_test_callback_result callback_results;
 
-    /* First call: both members fail, the last member's error is returned */
+    /* First call: both members fail recoverably, so no credentials is returned */
     ASSERT_SUCCESS(s_get_chain_credentials_once(chain, &callback_results));
     ASSERT_NULL(callback_results.credentials);
-    ASSERT_INT_EQUALS(AWS_AUTH_CREDENTIALS_PROVIDER_IMDS_SOURCE_FAILURE, callback_results.last_error);
+    ASSERT_INT_EQUALS(AWS_AUTH_SIGNING_NO_CREDENTIALS, callback_results.last_error);
     aws_get_credentials_test_callback_result_clean_up(&callback_results);
 
     /* Second call walks from member 1, which succeeds and is pinned */
@@ -1634,21 +1634,33 @@ static int s_credentials_provider_default_test(struct aws_allocator *allocator, 
             s_session_token_test_value,
             NULL) == AWS_OP_SUCCESS);
 
-    /*
-     * Verify that there's some caching before the environment by modifying the environment and requerying
-     */
+    /* The environment member is not cached, so a changed environment is used on the next call */
     aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_1);
     aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_1);
     aws_set_environment_value(s_session_token_env_var, s_session_token_1);
 
     ASSERT_TRUE(
+        s_do_basic_provider_test(provider, 1, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, NULL) ==
+        AWS_OP_SUCCESS);
+
+    /* invalidate is forwarded through the default chain and the chain */
+    struct aws_credentials *rejected = aws_credentials_new_from_string(
+        allocator, s_access_key_id_1, s_secret_access_key_1, s_session_token_1, UINT64_MAX);
+    ASSERT_SUCCESS(aws_credentials_provider_invalidate(provider, rejected));
+    aws_credentials_release(rejected);
+
+    /* new_cached on the default chain forwards to it, so the environment change is still seen at once */
+    struct aws_credentials_provider_cached_options cached_options = {.source = provider};
+    struct aws_credentials_provider *wrapped = aws_credentials_provider_new_cached(allocator, &cached_options);
+    ASSERT_NOT_NULL(wrapped);
+    aws_set_environment_value(s_access_key_id_env_var, s_access_key_id_test_value);
+    aws_set_environment_value(s_secret_access_key_env_var, s_secret_access_key_test_value);
+    aws_set_environment_value(s_session_token_env_var, s_session_token_test_value);
+    ASSERT_TRUE(
         s_do_basic_provider_test(
-            provider,
-            1,
-            s_access_key_id_test_value,
-            s_secret_access_key_test_value,
-            s_session_token_test_value,
-            NULL) == AWS_OP_SUCCESS);
+            wrapped, 1, s_access_key_id_test_value, s_secret_access_key_test_value, s_session_token_test_value, NULL) ==
+        AWS_OP_SUCCESS);
+    aws_credentials_provider_release(wrapped);
 
     aws_credentials_provider_release(provider);
 

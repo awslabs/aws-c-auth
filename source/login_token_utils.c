@@ -262,6 +262,13 @@ struct aws_login_token *aws_login_token_new_from_file(struct aws_allocator *allo
     AWS_ZERO_STRUCT(file_contents_buf);
     struct aws_string *file_path_str = aws_string_new_from_buf(allocator, file_path);
     if (aws_byte_buf_init_from_file(&file_contents_buf, allocator, aws_string_c_str(file_path_str))) {
+        AWS_LOGF_ERROR(
+            AWS_LS_AUTH_CREDENTIALS_PROVIDER,
+            "login token: failed to load token file %s with error %s",
+            aws_string_c_str(file_path_str),
+            aws_error_debug_str(aws_last_error()));
+        /* A missing or unreadable cached token is non-recoverable until the customer logs in again */
+        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_FAILED_TO_CREATE_TOKEN);
         goto on_finish;
     }
 
@@ -431,16 +438,7 @@ struct aws_login_token *aws_login_token_new_from_json_document(
         aws_json_value_get_string(sign_in_region, &token->sign_in_region);
     }
 
-    // check that the token has not expired yet
-    struct aws_date_time now;
-    aws_date_time_init_now(&now);
-    if (aws_date_time_as_millis(&token->expires_at) < aws_date_time_as_millis(&now)) {
-        AWS_LOGF_ERROR(AWS_LS_AUTH_CREDENTIALS_PROVIDER, "login token: token is already expired");
-        aws_raise_error(AWS_AUTH_CREDENTIALS_PROVIDER_LOGIN_TOKEN_EXPIRED);
-        goto on_finish;
-        ;
-    }
-
+    /* An expired access token is not an error: the refresh token is used to get a new one */
     token->serialized_token = document_root;
     success = true;
     goto on_finish;
